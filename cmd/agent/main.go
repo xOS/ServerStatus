@@ -91,8 +91,8 @@ func main() {
 	monitor.Version = version
 
 	flag.BoolVarP(&agentConf.Debug, "debug", "d", true, "开启调试信息")
-	flag.StringVarP(&agentConf.Server, "server", "s", "localhost:2222", "管理面板RPC端口")
-	flag.StringVarP(&agentConf.ClientSecret, "password", "p", "", "Agent连接Secret")
+	flag.StringVarP(&agentConf.Server, "server", "s", "localhost:2222", "管理面板GRPC端口")
+	flag.StringVarP(&agentConf.ClientSecret, "password", "p", "", "探针连接密钥")
 	flag.IntVar(&agentConf.ReportDelay, "report-delay", 1, "系统状态上报间隔")
 	flag.BoolVar(&agentConf.SkipConnectionCount, "skip-conn", false, "不监控连接数")
 	flag.BoolVar(&agentConf.SkipProcsCount, "skip-procs", false, "不监控进程数")
