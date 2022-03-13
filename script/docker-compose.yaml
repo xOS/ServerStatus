@@ -1,0 +1,11 @@
+version: "3.3"
+
+services:
+  dashboard:
+    image: image_url
+    restart: always
+    volumes:
+      - ./data:/dashboard/data
+    ports:
+      - site_port:site_port
+      - grpc_port:grpc_port

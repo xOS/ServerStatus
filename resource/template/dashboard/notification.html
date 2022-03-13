@@ -1,0 +1,93 @@
+{{define "dashboard/notification"}}
+{{template "common/header" .}}
+{{template "common/menu" .}}
+<div class="nb-container">
+    <div class="ui container">
+        <div class="ui grid">
+            <div class="right floated right aligned twelve wide column">
+                <button class="ui right labeled probe-primary-btn icon button" onclick="addOrEditNotification()"><i
+                        class="add icon"></i> 添加通知方式
+                </button>
+            </div>
+        </div>
+        <table class="ui very basic table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>名称</th>
+                    <th>URL</th>
+                    <th>验证SSL</th>
+                    <th>管理</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range $notification := .Notifications}}
+                <tr>
+                    <td>{{$notification.ID}}</td>
+                    <td>{{$notification.Name}}</td>
+                    <td>{{$notification.URL}}</td>
+                    <td>{{$notification.VerifySSL}}</td>
+                    <td>
+                        <div class="ui mini icon buttons">
+                            <button class="ui button" onclick="addOrEditNotification({{$notification}})">
+                                <i class="edit icon"></i>
+                            </button>
+                            <button class="ui button"
+                                onclick="showConfirm('删除通知方式','确认删除此通知方式？',deleteRequest,'/api/notification/'+{{$notification.ID}})">
+                                <i class="trash alternate outline icon"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        <div class="ui grid">
+            <div class="right floated right aligned twelve wide column">
+                <button class="ui right labeled positive icon button" onclick="addOrEditAlertRule()"><i
+                        class="add icon"></i>
+                    添加报警规则
+                </button>
+            </div>
+        </div>
+        <table class="ui very basic table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>名称</th>
+                    <th>规则</th>
+                    <th>启用</th>
+                    <th>管理</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range $rule := .AlertRules}}
+                <tr>
+                    <td>{{$rule.ID}}</td>
+                    <td>{{$rule.Name}}</td>
+                    <td>{{$rule.RulesRaw}}</td>
+                    <td>{{$rule.Enable}}</td>
+                    <td>
+                        <div class="ui mini icon buttons">
+                            <button class="ui button" onclick="addOrEditAlertRule({{$rule}})">
+                                <i class="edit icon"></i>
+                            </button>
+                            <button class="ui button"
+                                onclick="showConfirm('删除通知方式','确认删除此通知方式？',deleteRequest,'/api/alert-rule/'+{{$rule.ID}})">
+                                <i class="trash alternate outline icon"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{template "component/notification"}}
+{{template "component/rule"}}
+{{template "common/footer" .}}
+<script>
+    $('.checkbox').checkbox()
+</script>
+{{end}}

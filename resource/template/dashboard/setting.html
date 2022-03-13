@@ -1,0 +1,118 @@
+{{define "dashboard/setting"}}
+{{template "common/header" .}}
+{{template "common/menu" .}}
+<div class="nb-container">
+    <div class="ui container">
+        <form id="settingForm" class="ui large form" onsubmit="return false;">
+            <div class="field">
+                <label>站点标题</label>
+                <input type="text" name="Title" placeholder="探针" value="{{.Conf.Site.Brand}}">
+            </div>
+            <div class="field">
+                <label>管理员列表</label>
+                <input type="text" name="Admin" placeholder="1010,2020" value="{{.Conf.Oauth2.Admin}}">
+            </div>
+            <div class="field">
+                <label>面板主题</label>
+                <select name="Theme">
+                    <option value="default" {{if eq .Conf.Site.Theme "default" }} selected="selected" {{end}}>默认主题
+                    </option>
+                </select>
+            </div>
+            <div class="field">
+                <label>自定义代码(style、script 都可以)</label>
+                <textarea name="CustomCode">{{.Conf.Site.CustomCode}}</textarea>
+            </div>
+            <div class="field">
+                <label>面板查看密码</label>
+                <input type="text" name="ViewPassword" placeholder="" value="{{.Conf.Site.ViewPassword}}">
+            </div>
+            <div class="field">
+                <label>后端探针配置</label>
+            </div>
+            <div class="ui segment">
+                <div class="field">
+                    <label>探针域名/IP</label>
+                    <input type="text" name="GRPCHost" placeholder="" value="{{.Conf.GRPCHost}}">
+                </div>
+                <div class="field">
+                    <label>探针端口</label>
+                    <input type="number" name="GRPCPort" placeholder="" value="{{.Conf.GRPCPort}}">
+                </div>
+            </div>
+            <div class="field">
+                <label>IP 变更提醒</label>
+            </div>
+            <div class="ui segment">
+                <div class="field">
+                    <label>覆盖范围</label>
+                    <select name="Cover" class="ui fluid dropdown">
+                        <option value=0>覆盖所有，仅特定服务器不提醒</option>
+                        <option value=1>忽略所有，仅提醒特定服务器</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>特定服务器</label>
+                    <input type="text" name="IgnoredIPNotification" placeholder="服务器ID 以逗号隔开 1001,1002,1003"
+                        value="{{.Conf.IgnoredIPNotification}}">
+                </div>
+                <div class="field">
+                    <div class="ui nf-ssl checkbox ip-change">
+                        <input name="EnableIPChangeNotification" type="checkbox" tabindex="0" class="hidden">
+                        <label>启用</label>
+                    </div>
+                </div>
+            </div>
+            <div class="field">
+                <div class="ui nf-ssl checkbox plain-ip">
+                    <input name="EnablePlainIPInNotification" type="checkbox" tabindex="0" class="hidden">
+                    <label>通知信息IP不打码</label>
+                </div>
+            </div>
+            <button class="ui button" type="submit">保存</button>
+        </form>
+    </div>
+</div>
+{{template "common/footer" .}}
+<script>
+    $('#settingForm').submit(function () {
+        $.post('/api/setting', $('#settingForm').serialize())
+            .then((resp) => {
+                if (resp.code == 200) {
+                    $.suiAlert({
+                        title: '',
+                        description: '修改成功',
+                        type: 'success',
+                        time: '3',
+                        position: 'top-center',
+                    });
+                } else {
+                    $.suiAlert({
+                        title: '',
+                        description: resp.message,
+                        type: 'error',
+                        time: '3',
+                        position: 'top-center',
+                    });
+                }
+            }).catch(err => {
+                $.suiAlert({
+                    title: '',
+                    description: err,
+                    type: 'error',
+                    time: '3',
+                    position: 'top-center',
+                });
+            })
+        return false;
+    })
+    $('.checkbox').checkbox()
+    $('#settingForm').find("select[name=Cover]").val({{.Conf.Cover }});
+    {{if .Conf.EnableIPChangeNotification}}
+    $('.checkbox.ip-change').checkbox('set checked')
+    {{ end }}
+    {{if .Conf.EnablePlainIPInNotification}}
+    $('.checkbox.plain-ip').checkbox('set checked')
+    {{ end }}
+</script>
+{{end}}

@@ -1,0 +1,20 @@
+{{define "dashboard/login"}}
+{{template "common/header" .}}
+<div class="login nb-container">
+    <div class="ui center aligned grid">
+        <div class="column">
+            <h2 class="ui image header">
+                <img src="static/logo.png" class="image">
+                <div class="content">
+                    使用 {{.LoginType}} 账号登录
+                </div>
+            </h2>
+            <a href="/oauth2/login" class="ui fluid large probe-primary-btn submit button">登录</a>
+            <div class="ui message">
+                没有账号？ <a href="{{.RegistrationLink}}" target="_blank">注册</a>
+            </div>
+        </div>
+    </div>
+</div>
+{{template "common/footer" .}}
+{{end}}

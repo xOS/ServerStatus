@@ -1,0 +1,105 @@
+{{define "dashboard/terminal"}}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+	<meta http-equiv="Cache-Control" content="no-transform">
+	<meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+	<meta name="viewport" content="width=device-width,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+	<meta name="renderer" content="webkit">
+	<meta http-equiv="Cache-Control" content="no-transform">
+	<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+	<meta name="theme-color" content="#0F7D00">
+	<meta property="og:image" content="/static/logo.png">
+	<meta name="msapplication-TileColor" content="#0F7D00">
+    <title>TTY#{{.ServerName}} - {{.Title}}</title>
+    <link rel="shortcut icon" type="image/png" href="/static/favicon.ico" />
+    <link rel="stylesheet" href="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/xterm/4.11.0/xterm.css">
+</head>
+
+<style>
+    html,
+    body,
+    #terminal-container {
+        padding: unset;
+        margin: unset;
+        width: 100vw;
+        height: 100vh;
+    }
+
+    body {
+        background-color: black;
+    }
+</style>
+
+<body onresize="onResize()">
+    <div id="terminal-container"></div>
+    <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/xterm/4.11.0/xterm.js"></script>
+    <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/xterm/4.11.0/addons/attach/xterm-addon-attach.js"></script>
+    <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/xterm/4.11.0/addons/fit/xterm-addon-fit.js"></script>
+    <script>
+        let sendResizing = false;
+
+        function doResize() {
+            fitAddon.fit()
+            const w = fitAddon.proposeDimensions();
+            const prefix = new Int8Array([1]);
+            const resizeMessage = new TextEncoder().encode(JSON.stringify({
+                Rows: w.rows,
+                Cols: w.cols,
+            }));
+
+            var msg = new Int8Array(prefix.length + resizeMessage.length);
+            msg.set(prefix);
+            msg.set(resizeMessage, prefix.length);
+
+            socket.send(msg)
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function onResize() {
+            if (sendResizing) return;
+            sendResizing = true;
+            try {
+                await sleep(1500);
+                doResize();
+            } catch (error) {
+                console.log('resize', error);
+            } finally {
+                sendResizing = false
+            }
+        }
+
+        const term = new Terminal({
+            screenKeys: true,
+            useStyle: true,
+            cursorBlink: true,
+        });
+        const socket = new WebSocket((window.location.protocol == 'https:' ? 'wss' : 'ws') + '://' + window.location.host + '/terminal/' + '{{.SessionID}}');
+        const attachAddon = new AttachAddon.AttachAddon(socket);
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(attachAddon);
+        term.loadAddon(fitAddon);
+        term.open(document.getElementById('terminal-container'));
+
+        socket.onopen = () => {
+            onResize()
+        }
+
+        socket.onclose = () => {
+            alert('Terminal 连接超时或会话已结束')
+            window.close()
+        }
+
+        socket.onerror = () => {
+            alert('Terminal 连接失败，请检查 /terminal/* 的 WebSocket 反代情况')
+        }
+    </script>
+</body>
+
+</html>
+{{end}}

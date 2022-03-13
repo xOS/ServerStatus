@@ -1,0 +1,130 @@
+{{define "dashboard/server"}} {{template "common/header" .}} {{template "common/menu" .}}
+<div class="nb-container">
+    <div class="ui container">
+        <div class="ui grid">
+            <div class="right floated right aligned twelve wide column">
+                <button class="ui right labeled probe-primary-btn icon button" onclick="addOrEditServer()"><i
+                        class="add icon"></i> 添加服务器
+                </button>
+                <button class="ui right labeled probe-primary-btn icon button" onclick="forceUpdate()"><i
+                        class="arrow alternate circle up outline icon"></i> 强制更新
+                </button>
+            </div>
+        </div>
+        <table class="ui very basic table">
+            <thead>
+                <tr>
+                    <th><button onclick="checkAllServer()" class="ui mini probe-primary-btn button">全选</button></th>
+                    <th>ID(排序)</th>
+                    <th>名称</th>
+                    <th>分组</th>
+                    <th>IP</th>
+                    <th>版本号</th>
+                    <th>密钥</th>
+                    <th>安装指令</th>
+                    <th>说明</th>
+                    <th>管理</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range $server := .Servers}}
+                <tr>
+                    <td><input type="checkbox" class="probe-servers" value="{{$server.ID}}" /></td>
+                    <td>{{$server.ID}}({{$server.DisplayIndex}})</td>
+                    <td>{{$server.Name}}</td>
+                    <td>{{$server.Tag}}</td>
+                    <td>{{$server.Host.IP}}</td>
+                    <td>{{$server.Host.Version}}</td>
+                    <td>{{$server.Secret}}</td>
+                    <td>
+                        <button class="ui icon green mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}curl -L https://fastly.jsdelivr.net/gh/xos/probe-lite@master/script/probe.sh -o probe.sh && chmod +x probe.sh && chmod +x probe.sh && ./probe.sh install_agent {{$.Conf.GRPCHost}} {{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}请先在设置页面配置 后端探针配置{{end}}"
+                            data-tooltip="点击复制安装命令">
+                            <i class="linux icon"></i>
+                        </button>
+                        <button class="ui icon mini button" data-tooltip="尚未支持，请下载release手动安装">
+                            <i class="windows icon"></i>
+                        </button>
+                        <button class="ui icon mini button" data-tooltip="尚未支持，请下载release手动安装">
+                            <i class="apple icon"></i>
+                        </button>
+                    </td>
+                    <td style="word-break: break-word;">{{$server.Note}}</td>
+                    <td>
+                        <div class="ui mini icon buttons">
+                            <button class="ui button" onclick="connectToServer({{$server.ID}})">
+                                <i class="terminal icon"></i>
+                            </button>
+                            <button class="ui button" onclick="addOrEditServer({{$server.Marshal}})">
+                                <i class="edit icon"></i>
+                            </button>
+                            <button class="ui button" onclick="showConfirm('删除服务器','确认删除此服务器？',deleteRequest,'/api/server/'+{{$server.ID}})">
+                                <i class="trash alternate outline icon"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{template "component/server" .}} {{template "common/footer" .}}
+<script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/clipboard.js/2.0.6/clipboard.min.js"></script>
+<script>
+    var clipboard = new ClipboardJS('.ui.icon.green.mini.button');
+    const checkBoxList = document.querySelectorAll('tbody > tr > td > input.probe-servers[type=checkbox]')
+
+    function checkAllServer() {
+        checkBoxList.forEach(cb => {
+            cb.checked = true
+        })
+    }
+
+    function forceUpdate() {
+        const servers = []
+        checkBoxList.forEach(cb => {
+            if (cb.checked) {
+                servers.push(parseInt(cb.value))
+            }
+        })
+        if (servers.length == 0) {
+            $.suiAlert({
+                title: '当前没有选中的服务器',
+                description: '',
+                type: 'warning',
+                time: '2',
+                position: 'top-center',
+            });
+            return
+        }
+        $.post('/api/force-update', JSON.stringify(servers))
+            .then((resp) => {
+                if (resp.code == 200) {
+                    $.suiAlert({
+                        title: '执行结果',
+                        description: resp.message,
+                        type: 'success',
+                        time: '3',
+                        position: 'top-center',
+                    });
+                } else {
+                    $.suiAlert({
+                        title: '',
+                        description: resp.message,
+                        type: 'error',
+                        time: '3',
+                        position: 'top-center',
+                    });
+                }
+            }).catch(err => {
+                $.suiAlert({
+                    title: '',
+                    description: err,
+                    type: 'error',
+                    time: '3',
+                    position: 'top-center',
+                });
+            })
+    }
+</script>
+{{end}}
