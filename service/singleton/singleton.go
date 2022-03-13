@@ -12,7 +12,7 @@ import (
 	"github.com/xos/probe-lite/pkg/utils"
 )
 
-var Version = "v0.0.2"
+var Version = "v0.0.3"
 
 var (
 	Conf  *model.Config

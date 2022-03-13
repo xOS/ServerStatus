@@ -37,7 +37,7 @@
                     <td>{{$server.Host.Version}}</td>
                     <td>{{$server.Secret}}</td>
                     <td>
-                        <button class="ui icon green mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}curl -L https://fastly.jsdelivr.net/gh/xos/probe-lite@master/script/probe.sh -o probe.sh && chmod +x probe.sh && chmod +x probe.sh && ./probe.sh install_agent {{$.Conf.GRPCHost}} {{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}请先在设置页面配置 后端探针配置{{end}}"
+                        <button class="ui icon green mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}curl -L https://fastly.jsdelivr.net/gh/xos/probe-lite@master/script/probe.sh -o probe-lite.sh && chmod +x probe-lite.sh && chmod +x probe-lite.sh && ./probe-lite.sh install_agent {{$.Conf.GRPCHost}} {{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}请先在设置页面配置 后端探针配置{{end}}"
                             data-tooltip="点击复制安装命令">
                             <i class="linux icon"></i>
                         </button>

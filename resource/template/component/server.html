@@ -29,7 +29,7 @@
                 <label>Linux 安装指令</label>
                 <div class="ui message">
                     {{if .Conf.GRPCHost}}
-                    curl -L https://fastly.jsdelivr.net/gh/xos/probe-lite@master/script/probe.sh -o probe.sh && chmod +x probe.sh && chmod +x probe.sh && ./probe.sh install_agent <code class="command">{{.Conf.GRPCHost}}</code> <code
+                    curl -L https://fastly.jsdelivr.net/gh/xos/probe-lite@master/script/probe.sh -o probe-lite.sh && chmod +x probe-lite.sh && chmod +x probe-lite.sh && ./probe-lite.sh install_agent <code class="command">{{.Conf.GRPCHost}}</code> <code
                         class="command">{{if .Conf.ProxyGRPCPort}}{{.Conf.ProxyGRPCPort}}{{else}}{{.Conf.GRPCPort}}{{end}}</code> <code
                         class="command hostSecret"></code> <code class="command">{{if .Conf.TLS}}--tls{{end}}</code>
                     {{else}}
