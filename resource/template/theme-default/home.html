@@ -170,110 +170,127 @@
   {{template "common/footer" .}}
   <script>
     function SpecialOS(i) {
-      if (i ==="ubuntu"){
-        return "Ubuntu";
-      }
-      if (i ==="debian"){
-        return "Debian";
-      }
-      if (i ==="centos"){
-        return "CentOS";
-      }
-      if (i ==="darwin"){
-        return "MacOS";
-      }
-      if (i ==="redhat"){
-        return "RedHat";
-      }
-      if (i ==="archlinux"){
-        return "Archlinux";
-      }
-      if (i ==="coreos"){
-        return "Coreos";
-      }
-      if (i ==="deepin"){
-        return "Deepin";
-      }
-      if (i ==="fedora"){
-        return "Fedora";
-      }
-      if (i ==="alpine"){
-        return "Alpine";
-      }
-      if (i ==="tux"){
-        return "Tux";
-      }
-      if (i ==="linuxmint"){
-        return "LinuxMint";
-      }
-      if (i ==="oracle"){
-        return "Oracle";
-      }
-      if (i ==="slackware"){
-        return "SlackWare";
-      }
-      if (i ==="raspbian"){
-        return "Raspbian";
-      }
-      if (i ==="gentoo"){
-        return "Gentoo";
-      }
-      if (i ==="arch"){
-        return "Arch";
-      }
-      if (i ==="amazon"){
-        return "Amazon";
-      }
-      if (i ==="xenserver"){
-        return "XenServer";
-      }
-      if (i =="scientific"){
-        return "ScientificSL";
-      }
-      if ((i.toString().toLowerCase().indexOf("windows"))!= -1){
+    switch (i) {
+        case "ubuntu":
+            return "Ubuntu";
+            break;
+        case "debian":
+            return "Debian";
+            break;
+        case "centos":
+            return "CentOS";
+            break;
+        case "darwin":
+            return "MacOS";
+            break;
+        case "redhat":
+            return "RedHat";
+            break;
+        case "archlinux":
+            return "Archlinux";
+            break;
+        case "coreos":
+            return "Coreos";
+            break;
+        case "deepin":
+            return "Deepin";
+            break;
+        case "fedora":
+            return "Fedora";
+            break;
+        case "alpine":
+            return "Alpine";
+            break;
+        case "tux":
+            return "Tux";
+            break;
+        case "linuxmint":
+            return "LinuxMint";
+            break;
+        case "oracle":
+            return "Oracle";
+            break;
+        case "slackware":
+            return "SlackWare";
+            break;
+        case "raspbian":
+            return "Raspbian";
+            break;
+        case "gentoo":
+            return "Gentoo";
+            break;
+        case "arch":
+            return "Arch";
+            break;
+        case "amazon":
+            return "Amazon";
+            break;
+        case "xenserver":
+            return "XenServer";
+            break;
+        case "scientific":
+            return "ScientificSL";
+            break;
+    }
+    if ((i.toString().toLowerCase().indexOf("windows")) != -1) {
         var os = i.replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", "");
         return os;
-      }
-      return i;
+    }
+    return i;
     }
     function SpecialVir(i) {
-      if (i ==="kvm"){
-        return "KVM";
-      }
-      if (i ==="openvz"){
-        return "OpenVZ";
-      }
-      if (i ==="lxc"){
-        return "LXC";
-      }
-      if (i ==="xen"){
-        return "Xen";
-      }
-      if (i =="vbox"){
-        return "VBox";
-      }
-      if (i =="rkt"){
-        return "RKT";
-      }
-      if (i =="Microsoft"){
-        return "Hyper-V";
-      }
-      if (i =="docker"){
-        return "Docker";
-      }
-      if (i =="hyperv"){
-        return "Hyper-V";
-      }
-      if (i =="VMware"){
-        return "VMware";
-      }
-      if (i =="Parallels"){
-        return "Parallels";
-      }
-      if (i =="Microsoft"){
-        return "Hyper-V";
-      }
-      return i;
+    switch (i) {
+        case "kvm":
+            return "KVM";
+            break;
+        case "openvz":
+            return "OpenVZ";
+            break;
+        case "lxc":
+            return "LXC";
+            break;
+        case "xen":
+            return "Xen";
+            break;
+        case "vbox":
+            return "VBox";
+            break;
+        case "rkt":
+            return "RKT";
+            break;
+        case "Microsoft":
+            return "Hyper-V";
+            break;
+        case "docker":
+            return "Docker";
+            break;
+        case "hyperv":
+            return "Hyper-V";
+            break;
+        case "VMware":
+            return "VMware";
+            break;
+        case "Parallels":
+            return "Parallels";
+            break;
+        case "microsoft":
+            return "Hyper-V";
+            break;
+        case "VirtualBox":
+            return "VirtualBox";
+            break;
+        case "virtualbox":
+            return "VirtualBox";
+            break;
+        case "virtualBox":
+            return "VirtualBox";
+            break;
+        case "Virtualbox":
+            return "VirtualBox";
+            break;
+        default:
+            return i;
+        }
     }
     function clearString(i) { 
       if (i != null && i != "") {
