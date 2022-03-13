@@ -33,12 +33,11 @@ func UpdateIP() {
 	for {
 		ipv4 := fetchGeoIP(geoIPApiList, false)
 		ipv6 := fetchGeoIP(geoIPApiList, true)
-		if ipv4.IP == "" && ipv6.IP == "" {
-			time.Sleep(time.Minute)
-			continue
-		}
+
 		if ipv4.IP == "" && ipv6.IP == "" {
 			cachedIP = fmt.Sprintf("IPs(未获取到 IP%s%s)", ipv4.IP, ipv6.IP)
+			time.Sleep(time.Second * 30)
+			continue
 		} 
 		if ipv4.IP != "" && ipv6.IP == "" {
 			cachedIP = fmt.Sprintf("IPs(IPv4:%s%s)", ipv4.IP, ipv6.IP)
