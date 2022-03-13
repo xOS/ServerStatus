@@ -1,6 +1,7 @@
 name: Dashboard image
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - "master"

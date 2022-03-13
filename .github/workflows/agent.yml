@@ -1,6 +1,7 @@
 name: Agent release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*"
