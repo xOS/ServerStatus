@@ -1,8 +1,8 @@
 [Unit]
-Description=Probe Agent Lite
+Description=Probe Lite Agent
 After=syslog.target
 After=network.target
-#After=probe-dashboard.service
+#After=probe-lite-dashboard.service
 
 [Service]
 # Modify these two values and uncomment them if you have
@@ -15,7 +15,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/probe/agent/
-ExecStart=/opt/probe/agent/probe-agent-lite -s grpc_host:grpc_port -p client_secret
+ExecStart=/opt/probe/agent/probe-lite-agent -s grpc_host:grpc_port -p client_secret
 Restart=always
 #Environment=DEBUG=true
 
