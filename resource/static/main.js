@@ -4,7 +4,7 @@ function readableBytes(bytes) {
   }
   var i = Math.floor(Math.log(bytes) / Math.log(1024)),
     sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-  return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
+  return parseFloat((bytes / Math.pow(1024, i)).toFixed(1)) + sizes[i];
 }
 
 const confirmBtn = $(".mini.confirm.modal .probe-primary-btn.button");
