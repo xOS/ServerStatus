@@ -211,87 +211,6 @@ function addOrEditServer(server, conf) {
   showFormModal(".server.modal", "#serverForm", "/api/server");
 }
 
-function addOrEditMonitor(monitor) {
-  const modal = $(".monitor.modal");
-  modal.children(".header").text((monitor ? "修改" : "添加") + "监控");
-  modal
-    .find(".probe-primary-btn.button")
-    .html(
-      monitor ? '修改<i class="edit icon"></i>' : '添加<i class="add icon"></i>'
-    );
-  modal.find("input[name=ID]").val(monitor ? monitor.ID : null);
-  modal.find("input[name=Name]").val(monitor ? monitor.Name : null);
-  modal.find("input[name=Target]").val(monitor ? monitor.Target : null);
-  modal.find("input[name=Duration]").val(monitor && monitor.Duration ? monitor.Duration : 30);
-  modal.find("select[name=Type]").val(monitor ? monitor.Type : 1);
-  modal.find("select[name=Cover]").val(monitor ? monitor.Cover : 0);
-  if (monitor && monitor.Notify) {
-    modal.find(".ui.nb-notify.checkbox").checkbox("set checked");
-  } else {
-    modal.find(".ui.nb-notify.checkbox").checkbox("set unchecked");
-  }
-  var servers;
-  if (monitor) {
-    servers = monitor.SkipServersRaw;
-    const serverList = JSON.parse(servers || "[]");
-    const node = modal.find("i.dropdown.icon");
-    for (let i = 0; i < serverList.length; i++) {
-      node.after(
-        '<a class="ui label transition visible" data-value="' +
-        serverList[i] +
-        '" style="display: inline-block !important;">ID:' +
-        serverList[i] +
-        '<i class="delete icon"></i></a>'
-      );
-    }
-  }
-  modal
-    .find("input[name=SkipServersRaw]")
-    .val(monitor ? "[]," + servers.substr(1, servers.length - 2) : "[]");
-  showFormModal(".monitor.modal", "#monitorForm", "/api/monitor");
-}
-
-function addOrEditCron(cron) {
-  const modal = $(".cron.modal");
-  modal.children(".header").text((cron ? "修改" : "添加") + "计划任务");
-  modal
-    .find(".probe-primary-btn.button")
-    .html(
-      cron ? '修改<i class="edit icon"></i>' : '添加<i class="add icon"></i>'
-    );
-  modal.find("input[name=ID]").val(cron ? cron.ID : null);
-  modal.find("input[name=Name]").val(cron ? cron.Name : null);
-  modal.find("input[name=Scheduler]").val(cron ? cron.Scheduler : null);
-  modal.find("a.ui.label.visible").each((i, el) => {
-    el.remove();
-  });
-  var servers;
-  if (cron) {
-    servers = cron.ServersRaw;
-    const serverList = JSON.parse(servers || "[]");
-    const node = modal.find("i.dropdown.icon");
-    for (let i = 0; i < serverList.length; i++) {
-      node.after(
-        '<a class="ui label transition visible" data-value="' +
-        serverList[i] +
-        '" style="display: inline-block !important;">ID:' +
-        serverList[i] +
-        '<i class="delete icon"></i></a>'
-      );
-    }
-  }
-  modal
-    .find("input[name=ServersRaw]")
-    .val(cron ? "[]," + servers.substr(1, servers.length - 2) : "[]");
-  modal.find("textarea[name=Command]").val(cron ? cron.Command : null);
-  if (cron && cron.PushSuccessful) {
-    modal.find(".ui.push-successful.checkbox").checkbox("set checked");
-  } else {
-    modal.find(".ui.push-successful.checkbox").checkbox("set unchecked");
-  }
-  showFormModal(".cron.modal", "#cronForm", "/api/cron");
-}
-
 function deleteRequest(api) {
   $.ajax({
     url: api,
@@ -312,44 +231,6 @@ function deleteRequest(api) {
     })
     .fail((err) => {
       alert("网络错误：" + err.responseText);
-    });
-}
-
-function manualTrigger(btn, cronId) {
-  $(btn).toggleClass("loading");
-  $.ajax({
-    url: "/api/cron/" + cronId + "/manual",
-    type: "GET",
-  })
-    .done((resp) => {
-      $(btn).toggleClass("loading");
-      if (resp.code == 200) {
-        $.suiAlert({
-          title: "触发成功，等待执行结果",
-          type: "success",
-          description: resp.message,
-          time: "3",
-          position: "top-center",
-        });
-      } else {
-        $.suiAlert({
-          title: "触发失败 ",
-          type: "error",
-          description: resp.code + "：" + resp.message,
-          time: "3",
-          position: "top-center",
-        });
-      }
-    })
-    .fail((err) => {
-      $(btn).toggleClass("loading");
-      $.suiAlert({
-        title: "触发失败 ",
-        type: "error",
-        description: "网络错误：" + err.responseText,
-        time: "3",
-        position: "top-center",
-      });
     });
 }
 

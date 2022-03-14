@@ -1,7 +1,7 @@
 # 探针轻量版
 > 本项目为原项目[哪吒探针](https://github.com/naiba/nezha)的精简修改自用版
 
-![GitHub Workflow Status](https://img.shields.io/github/workflow/status/xos/probe-lite/Dashboard%20image?label=管理面板%20v0.0.5&logo=github&style=for-the-badge) ![Agent release](https://img.shields.io/github/v/release/xos/probe-lite?color=brightgreen&label=Agent&style=for-the-badge&logo=github) ![GitHub Workflow Status](https://img.shields.io/github/workflow/status/xos/probe-lite/Agent%20release?label=Agent%20CI&logo=github&style=for-the-badge) ![shell](https://img.shields.io/badge/安装脚本-v0.0.9-brightgreen?style=for-the-badge&logo=linux)
+![GitHub Workflow Status](https://img.shields.io/github/workflow/status/xos/probe-lite/Dashboard%20image?label=管理面板%20v0.0.6&logo=github&style=for-the-badge) ![Agent release](https://img.shields.io/github/v/release/xos/probe-lite?color=brightgreen&label=Agent&style=for-the-badge&logo=github) ![GitHub Workflow Status](https://img.shields.io/github/workflow/status/xos/probe-lite/Agent%20release?label=Agent%20CI&logo=github&style=for-the-badge) ![shell](https://img.shields.io/badge/安装脚本-v0.0.9-brightgreen?style=for-the-badge&logo=linux)
 
 ## 注意：
 

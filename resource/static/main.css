@@ -203,10 +203,6 @@ a {
     transform-origin: right 50%;
 }
 
-[data-tooltip]:not([data-position]):before {
-    background: rgb(250 250 250 / 100%) none;
-}
-
 .ui.green.button,
 .ui.green.buttons .button {
     background-color: #21ba45;
@@ -576,11 +572,11 @@ i.arrow.alternate.circle.up.outline.icon {
 }
 
 .status.cards .outline.icon {
-    margin-right: -4px;
+    margin-right: -2px;
 }
 
 i.s {
-    margin-right: 0px !important;
+    margin-right: 2px !important;
 }
 
 .ui.progress .bar {
@@ -591,74 +587,6 @@ i.s {
     color: rgba(255, 255, 255, 0.7);
     font-weight: 700;
     max-width: 100% !important;
-}
-
-.service-status .delay-today {
-    display: flex;
-    align-items: center;
-}
-
-.service-status .delay-today>i {
-    display: inline-block;
-    width: 1.2em;
-    height: 1.2em;
-    border-radius: 0.6em;
-    background-color: grey;
-    margin-right: 0.3em;
-}
-
-.service-status .danger {
-    background-color: #f44336 !important;
-}
-
-.service-status .good {
-    background-color: rgb(76, 175, 80) !important;
-}
-
-.service-status .warning {
-    background-color: #ff9800 !important;
-}
-
-
-/** 状态监测页样式**/
-
-.ui.table {
-    font-size: 1em;
-    position: relative;
-    border-radius: 10px;
-    margin-right: .5em;
-    margin-bottom: .5em;
-    border: 1px solid transparent;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    background-color: #fafafa80;
-    -webkit-transition: all .3s ease;
-    transition: all .3s ease;
-    -webkit-box-shadow: 0 1px 4px 0 rgb(0 0 0 / 20%);
-    box-shadow: 0 1px 4px 0 rgb(0 0 0 / 20%);
-    -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
-}
-
-.ui.table [class*="center aligned"],
-.ui.table[class*="center aligned"] {
-    background-color: rgb(255 255 255 / 0%);
-}
-
-.ui.button {
-    background: rgb(250 250 250 / 28%) none;
-}
-
-[data-tooltip]:after {
-    border: 0px !important;
-    border-radius: 0px !important;
-    background: rgb(255 255 255 / 90%) !important;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 .probe-primary-btn {
