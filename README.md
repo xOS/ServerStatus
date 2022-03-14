@@ -207,10 +207,6 @@ URL 里面也可放置占位符，请求时会进行简单的字符串替换。
   </style>
   ```
 
-- 默认主题修改 LOGO、移除版权示例（来自 [@iLay1678](https://github.com/iLay1678)）
-
-  ```
-
 - 默认主题修改 LOGO、修改页脚示例（来自 [@iLay1678](https://github.com/iLay1678)）
 
   ```html
