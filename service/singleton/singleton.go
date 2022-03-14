@@ -12,7 +12,7 @@ import (
 	"github.com/xos/probe-lite/pkg/utils"
 )
 
-var Version = "v0.0.4"
+var Version = "v0.0.5"
 
 var (
 	Conf  *model.Config
@@ -51,21 +51,6 @@ func ReSortServer() {
 var CronLock sync.RWMutex
 var Crons map[uint64]*model.Cron
 var Cron *cron.Cron
-
-func ManualTrigger(c model.Cron) {
-	CronTrigger(c)()
-}
-
-func CronTrigger(cr model.Cron) func() {
-	crIgnoreMap := make(map[uint64]bool)
-	for j := 0; j < len(cr.Servers); j++ {
-		crIgnoreMap[cr.Servers[j]] = true
-	}
-	return func() {
-		ServerLock.RLock()
-		defer ServerLock.RUnlock()
-	}
-}
 
 func IPDesensitize(ip string) string {
 	if Conf.EnablePlainIPInNotification {

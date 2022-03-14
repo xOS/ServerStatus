@@ -170,7 +170,12 @@
   {{template "common/footer" .}}
   <script>
     function SpecialOS(i) {
-    switch (i) {
+    if ((i.toString().toLowerCase().indexOf("windows")) != -1) {
+        var os = i.replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", "");
+        return os;
+    }
+    var str = i.toString().toLowerCase();
+    switch (str) {
         case "ubuntu":
             return "Ubuntu";
             break;
@@ -231,15 +236,13 @@
         case "scientific":
             return "ScientificSL";
             break;
-    }
-    if ((i.toString().toLowerCase().indexOf("windows")) != -1) {
-        var os = i.replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", "");
-        return os;
-    }
-    return i;
+        default:
+            return str;
+        }
     }
     function SpecialVir(i) {
-    switch (i) {
+    var str = i.toString().toLowerCase();
+    switch (str) {
         case "kvm":
             return "KVM";
             break;
@@ -258,7 +261,7 @@
         case "rkt":
             return "RKT";
             break;
-        case "Microsoft":
+        case "microsoft":
             return "Hyper-V";
             break;
         case "docker":
@@ -267,29 +270,17 @@
         case "hyperv":
             return "Hyper-V";
             break;
-        case "VMware":
+        case "vmware":
             return "VMware";
             break;
-        case "Parallels":
+        case "parallels":
             return "Parallels";
-            break;
-        case "microsoft":
-            return "Hyper-V";
-            break;
-        case "VirtualBox":
-            return "VirtualBox";
             break;
         case "virtualbox":
             return "VirtualBox";
             break;
-        case "virtualBox":
-            return "VirtualBox";
-            break;
-        case "Virtualbox":
-            return "VirtualBox";
-            break;
         default:
-            return i;
+            return str;
         }
     }
     function clearString(i) { 

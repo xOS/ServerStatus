@@ -25,13 +25,13 @@ var (
 		"http://ip.nan.ge/json",
 	}
 	cachedIP, cachedCountry string
-	httpClientV4            = utils.NewSingleStackHTTPClient(time.Second*20, time.Second*5, time.Second*10, false)
+	httpClientV4            = utils.NewSingleStackHTTPClient(time.Second*20, time.Second*5, time.Second*10, true)
 	httpClientV6            = utils.NewSingleStackHTTPClient(time.Second*20, time.Second*5, time.Second*10, true)
 )
 
 func UpdateIP() {
 	for {
-		ipv4 := fetchGeoIP(geoIPApiList, false)
+		ipv4 := fetchGeoIP(geoIPApiList, true)
 		ipv6 := fetchGeoIP(geoIPApiList, true)
 
 		if ipv4.IP == "" && ipv6.IP == "" {
