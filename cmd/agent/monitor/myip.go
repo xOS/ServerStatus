@@ -41,18 +41,23 @@ func UpdateIP() {
 		} 
 		if ipv4.IP != "" && ipv6.IP == "" {
 			cachedIP = fmt.Sprintf("IPs(IPv4:%s%s)", ipv4.IP, ipv6.IP)
+			break
 		} 
 		if ipv4.IP == "" && ipv6.IP != "" {
 			cachedIP = fmt.Sprintf("IPs(IPv6:%s[%s])", ipv4.IP, ipv6.IP)
+			break
 		} 
 		if ipv4.IP != "" && ipv6.IP != "" {
 			cachedIP = fmt.Sprintf("IPs(IPv4:%s,IPv6:[%s])", ipv4.IP, ipv6.IP)
+			break
 		} 
 		if ipv4.CountryCode != "" {
 			cachedCountry = ipv4.CountryCode
+			break
 		} 
 		if ipv4.CountryCode == "" && ipv6.CountryCode != "" {
 			cachedCountry = ipv6.CountryCode
+			break
 		}
 		time.Sleep(time.Minute * 30)
 	}
