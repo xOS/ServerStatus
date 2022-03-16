@@ -52,7 +52,7 @@ func init() {
 
 func initSystem() {
 	singleton.DB.AutoMigrate(model.Server{}, model.User{},
-		model.Notification{}, model.AlertRule{}, model.Cron{}, model.Transfer{})
+		model.Notification{}, model.AlertRule{}, model.Transfer{})
 
 	singleton.LoadNotifications()
 	loadServers() //加载服务器列表

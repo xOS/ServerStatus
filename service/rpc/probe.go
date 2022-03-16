@@ -14,9 +14,9 @@ type ProbeHandler struct {
 	Auth *AuthHandler
 }
 
-func (s *ProbeHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Receipt, error) {
-	return &pb.Receipt{Proced: true}, nil
-}
+// func (s *ProbeHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Receipt, error) {
+// 	return &pb.Receipt{Proced: true}, nil
+// }
 
 func (s *ProbeHandler) RequestTask(h *pb.Host, stream pb.ProbeService_RequestTaskServer) error {
 	var clientID uint64

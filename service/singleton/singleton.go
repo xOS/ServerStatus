@@ -49,7 +49,7 @@ func ReSortServer() {
 // =============== Cron Mixin ===============
 
 var CronLock sync.RWMutex
-var Crons map[uint64]*model.Cron
+// var Crons map[uint64]*model.Cron
 var Cron *cron.Cron
 
 func IPDesensitize(ip string) string {
