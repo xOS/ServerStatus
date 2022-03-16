@@ -38,11 +38,3 @@ type Monitor struct {
 	SkipServers map[uint64]bool `gorm:"-" json:"-"`
 	CronJobID   cron.EntryID    `gorm:"-" json:"-"`
 }
-
-// func (m *Monitor) PB() *pb.Task {
-// 	return &pb.Task{
-// 		Id:   m.ID,
-// 		Type: uint64(m.Type),
-// 		Data: m.Target,
-// 	}
-// }

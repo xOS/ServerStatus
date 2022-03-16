@@ -735,7 +735,6 @@ const _ = grpc.SupportPackageIsVersion6
 type ProbeServiceClient interface {
 	ReportSystemState(ctx context.Context, in *State, opts ...grpc.CallOption) (*Receipt, error)
 	ReportSystemInfo(ctx context.Context, in *Host, opts ...grpc.CallOption) (*Receipt, error)
-	// rpc ReportTask(TaskResult)returns(Receipt){}
 	RequestTask(ctx context.Context, in *Host, opts ...grpc.CallOption) (ProbeService_RequestTaskClient, error)
 }
 
@@ -801,7 +800,6 @@ func (x *probeServiceRequestTaskClient) Recv() (*Task, error) {
 type ProbeServiceServer interface {
 	ReportSystemState(context.Context, *State) (*Receipt, error)
 	ReportSystemInfo(context.Context, *Host) (*Receipt, error)
-	// rpc ReportTask(TaskResult)returns(Receipt){}
 	RequestTask(*Host, ProbeService_RequestTaskServer) error
 }
 

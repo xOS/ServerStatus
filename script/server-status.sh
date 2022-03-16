@@ -11,7 +11,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.0"
+VERSION="v0.1.1"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -141,9 +141,11 @@ install_dashboard() {
 
     echo -e "> 安装探针面板"
 
-    # 探针文件夹
-    mkdir -p $DASHBOARD_PATH
-    chmod 777 -R $DASHBOARD_PATH
+    # 探针面板文件夹
+    if [ ! -z "${DASHBOARD_PATH}" ]; then
+        mkdir -p $DASHBOARD_PATH
+        chmod 777 -R $AGENT_PATH
+    fi
 
     command -v docker >/dev/null 2>&1
     if [[ $? != 0 ]]; then
@@ -197,9 +199,10 @@ install_agent() {
     fi
 
     # 探针文件夹
-    mkdir -p $AGENT_PATH
-    chmod 777 -R $AGENT_PATH
-
+    if [ ! -z "${AGENT_PATH}" ]; then
+        mkdir -p $AGENT_PATH
+        chmod 777 -R $AGENT_PATH
+    fi
     echo -e "正在下载探针"
     wget -O server-agent_linux_${os_arch}.tar.gz https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.tar.gz >/dev/null 2>&1
     if [[ $? != 0 ]]; then
@@ -239,7 +242,10 @@ update_agent() {
     fi
 
     # 探针文件夹
-    chmod 777 -R $AGENT_PATH
+    if [ ! -z "${AGENT_PATH}" ]; then
+        mkdir -p $AGENT_PATH
+        chmod 777 -R $AGENT_PATH
+    fi
 
     echo -e "正在下载最新版探针"
     wget -O server-agent_linux_${os_arch}.tar.gz https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.tar.gz >/dev/null 2>&1

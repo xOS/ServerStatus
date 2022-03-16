@@ -12,7 +12,7 @@ import (
 	"github.com/xos/serverstatus/pkg/utils"
 )
 
-var Version = "v0.0.7"
+var Version = "v0.0.8"
 
 var (
 	Conf  *model.Config
@@ -49,7 +49,6 @@ func ReSortServer() {
 // =============== Cron Mixin ===============
 
 var CronLock sync.RWMutex
-// var Crons map[uint64]*model.Cron
 var Cron *cron.Cron
 
 func IPDesensitize(ip string) string {
