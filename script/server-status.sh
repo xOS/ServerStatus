@@ -7,11 +7,11 @@
 #   Github: https://github.com/xOS/ServerStatus
 #========================================================
 
-BASE_PATH="/opt/probe"
+BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.0.9"
+VERSION="v0.1.0"
 
 red='\033[0;31m'
 green='\033[0;32m'
