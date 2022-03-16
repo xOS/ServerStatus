@@ -6,7 +6,7 @@ import (
 	"html/template"
 	"time"
 
-	pb "github.com/xos/probe-lite/proto"
+	pb "github.com/xos/serverstatus/proto"
 )
 
 type Server struct {

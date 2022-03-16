@@ -6,8 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/xos/probe-lite/model"
-	"github.com/xos/probe-lite/service/singleton"
+	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/service/singleton"
 )
 
 var adminPage = map[string]bool{

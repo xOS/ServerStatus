@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/xos/probe-lite/model"
-	pb "github.com/xos/probe-lite/proto"
-	"github.com/xos/probe-lite/service/singleton"
+	"github.com/xos/serverstatus/model"
+	pb "github.com/xos/serverstatus/proto"
+	"github.com/xos/serverstatus/service/singleton"
 )
 
 type ProbeHandler struct {

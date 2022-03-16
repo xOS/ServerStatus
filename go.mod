@@ -1,4 +1,4 @@
-module github.com/xos/probe-lite
+module github.com/xos/serverstatus
 
 go 1.17
 

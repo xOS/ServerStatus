@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xos/probe-lite/model"
+	"github.com/xos/serverstatus/model"
 )
 
 const firstNotificationDelay = time.Minute * 15

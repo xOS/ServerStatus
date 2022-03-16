@@ -13,9 +13,9 @@ import (
 	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"
 
-	"github.com/xos/probe-lite/model"
-	"github.com/xos/probe-lite/pkg/mygin"
-	"github.com/xos/probe-lite/service/singleton"
+	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/pkg/mygin"
+	"github.com/xos/serverstatus/service/singleton"
 )
 
 func ServeWeb(port uint) *http.Server {

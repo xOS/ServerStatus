@@ -1,4 +1,4 @@
-name: Dashboard image
+name: Build Dashboard Image And Push
 
 on:
   workflow_dispatch:
@@ -19,46 +19,46 @@ jobs:
     steps:
       - uses: actions/checkout@master
 
-      - name: Log in to the GHCR
+      - name: Log In To The GHCR
         uses: docker/login-action@master
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Login to Docker Hub
+      - name: Login To Docker Hub
         uses: docker/login-action@master
         with:
           username: ${{ secrets.DOC_USER }}
           password: ${{ secrets.DOC_PAT }}    
 
-      - name: Log in to the AliyunCS
+      - name: Log In To The AliyunCS
         uses: docker/login-action@master
         with:
           registry: registry.cn-shanghai.aliyuncs.com
           username: ${{ secrets.ALI_USER }}
           password: ${{ secrets.ALI_PAT }}
       
-      - name: Set up QEMU
+      - name: Set Up QEMU
         uses: docker/setup-qemu-action@v1
         
-      - name: Set up Docker Buildx
+      - name: Set Up Docker Buildx
         uses: docker/setup-buildx-action@v1
       
-      - name: Set up image name
+      - name: Set Up Image Name
         run: |
-          GHRC_IMAGE_NAME=$(echo "ghcr.io/${{ github.repository_owner }}/probe-lite-dashboard" | tr '[:upper:]' '[:lower:]')
-          DOC_IMAGE_NAME=$(echo "nangle/probe-lite-dashboard" | tr '[:upper:]' '[:lower:]')
+          GHRC_IMAGE_NAME=$(echo "ghcr.io/${{ github.repository_owner }}/server-dash" | tr '[:upper:]' '[:lower:]')
+          DOC_IMAGE_NAME=$(echo "nangle/server-dash" | tr '[:upper:]' '[:lower:]')
           if [ ${{ github.repository_owner }} = "xOS" ]
-            then ALI_IMAGE_NAME=$(echo "registry.cn-shanghai.aliyuncs.com/dns/probe-lite-dashboard")
-            else ALI_IMAGE_NAME=$(echo "registry.cn-shanghai.aliyuncs.com/${{ github.repository_owner }}/probe-lite-dashboard" | tr '[:upper:]' '[:lower:]')
+            then ALI_IMAGE_NAME=$(echo "registry.cn-shanghai.aliyuncs.com/dns/server-dash")
+            else ALI_IMAGE_NAME=$(echo "registry.cn-shanghai.aliyuncs.com/${{ github.repository_owner }}/server-dash" | tr '[:upper:]' '[:lower:]')
           fi
           echo "::set-output name=GHRC_IMAGE_NAME::$GHRC_IMAGE_NAME"
           echo "::set-output name=ALI_IMAGE_NAME::$ALI_IMAGE_NAME"
           echo "::set-output name=DOC_IMAGE_NAME::$DOC_IMAGE_NAME"
         id: image-name
         
-      - name: Build dasbboard image And Push
+      - name: Build Dasbboard Image And Push
         uses: docker/build-push-action@v2
         with:
           context: .
@@ -70,21 +70,21 @@ jobs:
             ${{ steps.image-name.outputs.DOC_IMAGE_NAME }}
             ${{ steps.image-name.outputs.GHRC_IMAGE_NAME }}
       
-      - name: Purge jsdelivr cache
+      - name: Purge Jsdelivr Cache
         run: |
-          curl -s https://purge.jsdelivr.net/gh/${{ github.repository_owner }}/probe-lite@master/script/probe.sh
-          curl -s https://purge.jsdelivr.net/gh/${{ github.repository_owner }}/probe-lite@master/script/probe-agent-lite.service
-          curl -s https://purge.jsdelivr.net/gh/${{ github.repository_owner }}/probe-lite@master/script/docker-compose.yaml
-          curl -s https://purge.jsdelivr.net/gh/${{ github.repository_owner }}/probe-lite@master/script/config.yaml
+          curl -s https://purge.jsdelivr.net/gh/${{ github.repository_owner }}/serverstatus@master/script/server-status.sh
+          curl -s https://purge.jsdelivr.net/gh/${{ github.repository_owner }}/serverstatus@master/script/server-agent.service
+          curl -s https://purge.jsdelivr.net/gh/${{ github.repository_owner }}/serverstatus@master/script/docker-compose.yaml
+          curl -s https://purge.jsdelivr.net/gh/${{ github.repository_owner }}/serverstatus@master/script/config.yaml
           LOWER_USERNAME=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/probe-lite@master/script/probe.sh
-          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/probe-lite@master/script/probe-agent-lite.service
-          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/probe-lite@master/script/docker-compose.yaml
-          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/probe-lite@master/script/config.yaml
-          curl -s https://purge.jsdelivr.net/gh/xos/probe-lite@master/resource/static/bg/background.jpeg
-          curl -s https://purge.jsdelivr.net/gh/xos/probe-lite@master/resource/static/favicon.ico
-          curl -s https://purge.jsdelivr.net/gh/xos/probe-lite@master/resource/static/logo.png
-          curl -s https://purge.jsdelivr.net/gh/xos/probe-lite@master/resource/static/main.css
-          curl -s https://purge.jsdelivr.net/gh/xos/probe-lite@master/resource/static/main.js
-          curl -s https://purge.jsdelivr.net/gh/xos/probe-lite@master/resource/static/semantic-ui-alerts.min.css
-          curl -s https://purge.jsdelivr.net/gh/xos/probe-lite@master/resource/static/semantic-ui-alerts.min.js
+          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/script/server-status.sh
+          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/script/server-agent.service
+          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/script/docker-compose.yaml
+          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/script/config.yaml
+          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/bg/background.jpeg
+          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/favicon.ico
+          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/logo.png
+          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/main.css
+          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/main.js
+          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/semantic-ui-alerts.min.css
+          curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/semantic-ui-alerts.min.js

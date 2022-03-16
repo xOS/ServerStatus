@@ -1,7 +1,7 @@
 package model
 
 import (
-	pb "github.com/xos/probe-lite/proto"
+	pb "github.com/xos/serverstatus/proto"
 )
 
 const (

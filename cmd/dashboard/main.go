@@ -11,10 +11,10 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"github.com/xos/probe-lite/cmd/dashboard/controller"
-	"github.com/xos/probe-lite/cmd/dashboard/rpc"
-	"github.com/xos/probe-lite/model"
-	"github.com/xos/probe-lite/service/singleton"
+	"github.com/xos/serverstatus/cmd/dashboard/controller"
+	"github.com/xos/serverstatus/cmd/dashboard/rpc"
+	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/service/singleton"
 )
 
 func init() {

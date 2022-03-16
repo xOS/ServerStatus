@@ -27,16 +27,16 @@ builds:
       - goos: windows
         goarch: arm64
     main: ./cmd/agent
-    binary: probe-lite-agent
+    binary: server-agent
 universal_binaries:
-  - name_template: "probe-lite-agent"
+  - name_template: "server-agent"
     replace: false
 checksum:
   name_template: "checksums.txt"
 snapshot:
-  name_template: "probe-lite-agent"
+  name_template: "server-agent"
 archives:
-  - name_template: "probe-lite-agent_{{ .Os }}_{{ .Arch }}"
+  - name_template: "server-agent_{{ .Os }}_{{ .Arch }}"
     files:
       - none*
 changelog:

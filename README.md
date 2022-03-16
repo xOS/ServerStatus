@@ -1,7 +1,7 @@
 # 探针轻量版
 > 本项目为原项目[哪吒探针](https://github.com/naiba/nezha)的精简修改自用版
 
-![GitHub Workflow Status](https://img.shields.io/github/workflow/status/xos/probe-lite/Dashboard%20image?label=管理面板%20v0.0.6&logo=github&style=for-the-badge) ![Agent release](https://img.shields.io/github/v/release/xos/probe-lite?color=brightgreen&label=Agent&style=for-the-badge&logo=github) ![GitHub Workflow Status](https://img.shields.io/github/workflow/status/xos/probe-lite/Agent%20release?label=Agent%20CI&logo=github&style=for-the-badge) ![shell](https://img.shields.io/badge/安装脚本-v0.0.9-brightgreen?style=for-the-badge&logo=linux)
+![GitHub Workflow Status](https://img.shields.io/github/workflow/status/xOS/ServerStatus/Dashboard%20image?label=管理面板%20v0.0.6&logo=github&style=for-the-badge) ![Agent release](https://img.shields.io/github/v/release/xOS/ServerStatus?color=brightgreen&label=Agent&style=for-the-badge&logo=github) ![GitHub Workflow Status](https://img.shields.io/github/workflow/status/xOS/ServerStatus/Agent%20release?label=Agent%20CI&logo=github&style=for-the-badge) ![shell](https://img.shields.io/badge/安装脚本-v0.0.9-brightgreen?style=for-the-badge&logo=linux)
 
 ## 注意：
 
@@ -24,16 +24,16 @@
 **推荐配置：** 安装前解析 _两个域名_ 到面板服务器，一个作为 _公开访问_ ，可以 **接入CDN**；另外一个作为安装探针时连接面板使用，**不能接入CDN** 直接暴露面板主机IP。
 
 ```shell
-curl -L https://raw.githubusercontent.com/xos/probe-lite/master/script/probe.sh -o probe-lite.sh && chmod +x probe-lite.sh
-sudo ./probe-lite.sh
+curl -L https://raw.githubusercontent.com/xos/serverstatus/master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh
+sudo ./server-status.sh
 ```
 
 <details>
     <summary>国内镜像加速：</summary>
 
 ```shell
-curl -L https://cdn.jsdelivr.net/gh/xos/probe-lite@master/script/probe.sh -o probe-lite.sh && chmod +x probe-lite.sh
-CN=true sudo ./probe-lite.sh
+curl -L https://cdn.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh
+CN=true sudo ./server-status.sh
 ```
 
 </details>
@@ -47,19 +47,19 @@ _\* 使用 WatchTower 可以自动更新面板，Windows 终端可以使用 nssm
 注意：
 
 * 需要安装`Golang`且版本需要1.17或以上。
-* 默认安装路径 `/opt/probe/dashboard`。
+* 默认安装路径 `/opt/server-status/dashboard`。
 * 手动部署的面板暂无法通过脚本进行面板部分的控制操作。
 
 1.克隆仓库
 
 ```bash
-git clone https://github.com/xos/probe-lite.git
+git clone https://github.com/xOS/ServerStatus.git
 ```
 
 2.下载依赖
 
 ```bash
-cd Probe/
+cd ServerStatus/
 go mod tidy -v
 ```
 
@@ -67,33 +67,33 @@ go mod tidy -v
 
 ```bash
 cd cmd/dashboard/
-CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o probe-lite-dashboard -ldflags="-s -w"
+CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o server-dash -ldflags="-s -w"
 ```
 
 4.部署面板为系统服务
 
 ```bash
-mkdir -p /opt/probe/dashboard
-mv probe-lite-dashboard /opt/probe/dashboard/
-cp /root/Probe/resource/ /opt/probe/dashboard/ -r
+mkdir -p /opt/server-status/dashboard
+mv server-dash /opt/server-status/dashboard/
 cd ../..
-mkdir -p /opt/probe/dashboard/data
-cp script/config.yaml /opt/probe/dashboard/data
-cp script/probe-lite-dashboard.service /etc/systemd/system
+cp resource/ /opt/server-status/dashboard/ -r
+mkdir -p /opt/server-status/dashboard/data
+cp script/config.yaml /opt/server-status/dashboard/data
+cp script/server-dash.service /etc/systemd/system
 ```
 
-5.修改配置文件`/opt/probe/dashboard/data/config.yaml`，注册服务并启动
+5.修改配置文件`/opt/server-status/dashboard/data/config.yaml`，注册服务并启动
 
 ```bash
-systemctl enable probe-lite-dashboard
-systemctl start probe-lite-dashboard
+systemctl enable server-dash
+systemctl start server-dash
 ```
 
 
 
 ### 增强配置
 
-通过执行 `./probe-lite-agent --help` 查看支持的参数，如果你使用一键脚本，可以编辑 `/etc/systemd/system/probe-lite-agent.service`，在 `ExecStart=` 这一行的末尾加上
+通过执行 `./server-agent --help` 查看支持的参数，如果你使用一键脚本，可以编辑 `/etc/systemd/system/server-agent.service`，在 `ExecStart=` 这一行的末尾加上
 
 - `--report-delay` 系统信息上报的间隔，默认为 1 秒，可以设置为 3 来进一步降低探针端系统资源占用（配置区间 1-4）
 - `--skip-conn` 不监控连接数，机场/连接密集型机器推荐设置，不然比较占 CPU([shirou/gopsutil/issues#220](https://github.com/shirou/gopsutil/issues/220))
@@ -252,7 +252,7 @@ URL 里面也可放置占位符，请求时会进行简单的字符串替换。
     <summary>如何进行数据迁移、备份恢复？</summary>
 
 1. 先使用一键脚本 `停止面板`
-2. 打包 `/opt/probe/dashboard` 文件夹，到新环境相同位置
+2. 打包 `/opt/server-status/dashboard` 文件夹，到新环境相同位置
 3. 使用一键脚本 `启动面板`
 
 </details>
@@ -261,7 +261,7 @@ URL 里面也可放置占位符，请求时会进行简单的字符串替换。
     <summary>探针启动/上线 问题自检流程</summary>
 
 
-1. 直接执行 `/opt/probe/agent/probe-lite-agent -s 面板IP或非CDN域名:面板GRPC端口 -p 探针密钥 -d` 查看日志是否是 DNS 问题。
+1. 直接执行 `/opt/server-status/agent/server-agent -s 面板IP或非CDN域名:面板GRPC端口 -p 探针密钥 -d` 查看日志是否是 DNS 问题。
 2. `nc -v 域名/IP 面板GRPC端口` 或者 `telnet 域名/IP 面板GRPC端口` 检验是否是网络问题，检查本机与面板服务器出入站防火墙，如果单机无法判断可借助 https://port.ping.pe/ 提供的端口检查工具进行检测。
 3. 如果上面步骤检测正常，探针正常上线，尝试关闭 SELinux，[如何关闭 SELinux？](https://www.google.com/search?q=%E5%85%B3%E9%97%ADSELINUX)
 </details>
@@ -276,7 +276,7 @@ URL 里面也可放置占位符，请求时会进行简单的字符串替换。
 <details>
     <summary>如何使 新版OpenWRT 自启动？来自 @艾斯德斯</summary>
 
-首先在 release 下载对应的二进制解压 tar.gz 包后放置到 `/root`，然后 `chmod +x /root/probe-lite-agent` 赋予执行权限，然后创建 `/etc/init.d/probe-service`：
+首先在 release 下载对应的二进制解压 tar.gz 包后放置到 `/root`，然后 `chmod +x /root/server-agent` 赋予执行权限，然后创建 `/etc/init.d/server-status-service`：
 
 ```shell
 #!/bin/sh /etc/rc.common
@@ -286,13 +286,13 @@ USE_PROCD=1
 
 start_service() {
 	procd_open_instance
-	procd_set_param command /root/probe-lite-agent -s 面板域名:接收端口 -p 唯一秘钥 -d
+	procd_set_param command /root/server-agent -s 面板域名:接收端口 -p 唯一秘钥 -d
 	procd_set_param respawn
 	procd_close_instance
 }
 
 stop_service() {
-    killall probe-lite-agent
+    killall server-agent
 }
 
 restart() {
@@ -302,7 +302,7 @@ restart() {
 }
 ```
 
-赋予执行权限 `chmod +x /etc/init.d/probe-service` 然后启动服务 `/etc/init.d/probe-service enable && /etc/init.d/probe-service start`
+赋予执行权限 `chmod +x /etc/init.d/server-status-service` 然后启动服务 `/etc/init.d/server-status-service enable && /etc/init.d/server-status-service start`
 
 </details>
 
@@ -394,7 +394,7 @@ ip-to-dashboard.nai.ba:443 { # 你的探针连接面板的域名
 面板端配置
 
 - 首先登录面板进入管理后台 打开设置页面，在 `未接入CDN的面板服务器域名/IP` 中填入上一步在 Nginx 或 Caddy 中配置的域名 比如 `ip-to-dashboard.nai.ba` ，并保存。
-- 然后在面板服务器中，打开 /opt/probe/dashboard/data/config.yaml 文件，将 `proxygrpcport` 修改为 Nginx 或 Caddy 监听的端口，比如上一步设置的 `443` ；因为我们在 Nginx 或 Caddy 中开启了 SSL/TLS，所以需要将 `tls` 设置为 `true` ；修改完成后重启面板。
+- 然后在面板服务器中，打开 /opt/server-status/dashboard/data/config.yaml 文件，将 `proxygrpcport` 修改为 Nginx 或 Caddy 监听的端口，比如上一步设置的 `443` ；因为我们在 Nginx 或 Caddy 中开启了 SSL/TLS，所以需要将 `tls` 设置为 `true` ；修改完成后重启面板。
 
 
 探针端配置

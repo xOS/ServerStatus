@@ -1,5 +1,5 @@
 [Unit]
-Description=Probe Lite Dashborad
+Description=Server Status Dashborad
 After=syslog.target
 After=network.target
 After=mariadb.service mysqld.service postgresql.service memcached.service redis.service
@@ -14,8 +14,8 @@ After=mariadb.service mysqld.service postgresql.service memcached.service redis.
 Type=simple
 #User=root
 #Group=root
-WorkingDirectory=/opt/probe/dashboard/
-ExecStart=/opt/probe/dashboard/probe-lite-dashboard
+WorkingDirectory=/opt/server-status/dashboard/
+ExecStart=/opt/server-status/dashboard/server-dash
 Restart=always
 #Environment=DEBUG=true
 

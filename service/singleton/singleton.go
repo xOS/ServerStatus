@@ -8,8 +8,8 @@ import (
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 
-	"github.com/xos/probe-lite/model"
-	"github.com/xos/probe-lite/pkg/utils"
+	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/pkg/utils"
 )
 
 var Version = "v0.0.6"

@@ -14,10 +14,10 @@ import (
 	"github.com/hashicorp/go-uuid"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/xos/probe-lite/model"
-	"github.com/xos/probe-lite/pkg/mygin"
-	"github.com/xos/probe-lite/proto"
-	"github.com/xos/probe-lite/service/singleton"
+	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/pkg/mygin"
+	"github.com/xos/serverstatus/proto"
+	"github.com/xos/serverstatus/service/singleton"
 )
 
 type terminalContext struct {

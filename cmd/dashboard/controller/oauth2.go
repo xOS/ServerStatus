@@ -12,10 +12,10 @@ import (
 	"golang.org/x/oauth2"
 	GitHubOauth2 "golang.org/x/oauth2/github"
 
-	"github.com/xos/probe-lite/model"
-	"github.com/xos/probe-lite/pkg/mygin"
-	"github.com/xos/probe-lite/pkg/utils"
-	"github.com/xos/probe-lite/service/singleton"
+	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/pkg/mygin"
+	"github.com/xos/serverstatus/pkg/utils"
+	"github.com/xos/serverstatus/service/singleton"
 )
 
 type oauth2controller struct {

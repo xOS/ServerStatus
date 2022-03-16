@@ -19,11 +19,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	"github.com/xos/probe-lite/cmd/agent/monitor"
-	"github.com/xos/probe-lite/cmd/agent/pty"
-	"github.com/xos/probe-lite/model"
-	pb "github.com/xos/probe-lite/proto"
-	"github.com/xos/probe-lite/service/rpc"
+	"github.com/xos/serverstatus/cmd/agent/monitor"
+	"github.com/xos/serverstatus/cmd/agent/pty"
+	"github.com/xos/serverstatus/model"
+	pb "github.com/xos/serverstatus/proto"
+	"github.com/xos/serverstatus/service/rpc"
 )
 
 type AgentConfig struct {
@@ -264,7 +264,7 @@ func doSelfUpdate(useLocalVersion bool) {
 		v = semver.MustParse(version)
 	}
 	println("检查更新：", v)
-	latest, err := selfupdate.UpdateSelf(v, "xos/probe-lite")
+	latest, err := selfupdate.UpdateSelf(v, "xos/serverstatus")
 	if err != nil {
 		println("自动更新失败：", err)
 		return

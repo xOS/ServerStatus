@@ -4,13 +4,13 @@
 #   System Required: CentOS 7+ / Debian 8+ / Ubuntu 16+ /
 #   Arch 未测试
 #   Description: 探针轻量版安装脚本
-#   Github: https://github.com/xos/probe-lite
+#   Github: https://github.com/xOS/ServerStatus
 #========================================================
 
 BASE_PATH="/opt/probe"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
-AGENT_SERVICE="/etc/systemd/system/probe-lite-agent.service"
+AGENT_SERVICE="/etc/systemd/system/server-agent.service"
 VERSION="v0.0.9"
 
 red='\033[0;31m'
@@ -69,18 +69,18 @@ pre_check() {
     fi
 
     if [[ -z "${CN}" ]]; then
-        GITHUB_RAW_URL="raw.githubusercontent.com/xos/probe-lite/master"
+        GITHUB_RAW_URL="raw.githubusercontent.com/xos/serverstatus/master"
         GITHUB_URL="github.com"
         Get_Docker_URL="get.docker.com"
         Get_Docker_Argu=" "
-        Docker_IMG="ghcr.io\/xos\/probe-lite-dashboard"
+        Docker_IMG="ghcr.io\/xos\/server-dash"
     else
-        GITHUB_RAW_URL="cdn.jsdelivr.net/gh/xos/probe-lite@master"
+        GITHUB_RAW_URL="cdn.jsdelivr.net/gh/xos/serverstatus@master"
         GITHUB_URL="dn-dao-github-mirror.daocloud.io"
         Get_Docker_URL="get.daocloud.io/docker"
         Get_Docker_Argu=" -s docker --mirror Aliyun"
-        Docker_IMG="registry.cn-shanghai.aliyuncs.com\/dns\/probe-lite-dashboard"
-        curl -s https://purge.jsdelivr.net/gh/xos/probe-lite@master/script/probe.sh > /dev/null 2>&1
+        Docker_IMG="registry.cn-shanghai.aliyuncs.com\/dns\/server-dash"
+        curl -s https://purge.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh > /dev/null 2>&1
     fi
 }
 
@@ -103,19 +103,19 @@ confirm() {
 update_script() {
     echo -e "> 更新脚本"
 
-    curl -sL https://${GITHUB_RAW_URL}/script/probe.sh -o /tmp/probe.sh
-    new_version=$(cat /tmp/probe.sh | grep "VERSION" | head -n 1 | awk -F "=" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
+    curl -sL https://${GITHUB_RAW_URL}/script/server-status.sh -o /tmp/server-status.sh
+    new_version=$(cat /tmp/server-status.sh | grep "VERSION" | head -n 1 | awk -F "=" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
     if [ ! -n "$new_version" ]; then
-        echo -e "脚本获取失败，请检查本机能否链接 https://${GITHUB_RAW_URL}/script/probe.sh"
+        echo -e "脚本获取失败，请检查本机能否链接 https://${GITHUB_RAW_URL}/script/server-status.sh"
         return 1
     fi
     echo -e "当前最新版本为: ${new_version}"
-    mv -f /tmp/probe.sh ./probe.sh && chmod a+x ./probe.sh
+    mv -f /tmp/server-status.sh ./server-status.sh && chmod a+x ./server-status.sh
 
     echo -e "3s后执行新脚本"
     sleep 3s
     clear
-    exec ./probe.sh
+    exec ./server-status.sh
     exit 0
 }
 
@@ -184,13 +184,13 @@ install_agent() {
 
     echo -e "正在获取探针版本号"
 
-    local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/probe-lite/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
+    local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serverstatus/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
     if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "https://cdn.jsdelivr.net/gh/xos/probe-lite/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/probe-lite@/v/g')
+        version=$(curl -m 10 -sL "https://cdn.jsdelivr.net/gh/xos/serverstatus/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serverstatus@/v/g')
     fi
 
     if [ ! -n "$version" ]; then
-        echo -e "获取版本号失败，请检查本机能否链接 https://api.github.com/repos/xos/probe-lite/releases/latest"
+        echo -e "获取版本号失败，请检查本机能否链接 https://api.github.com/repos/xos/serverstatus/releases/latest"
         return 0
     else
         echo -e "当前最新版本为: ${version}"
@@ -201,14 +201,14 @@ install_agent() {
     chmod 777 -R $AGENT_PATH
 
     echo -e "正在下载探针"
-    wget -O probe-lite-agent_linux_${os_arch}.tar.gz https://${GITHUB_URL}/xos/probe-lite/releases/download/${version}/probe-lite-agent_linux_${os_arch}.tar.gz >/dev/null 2>&1
+    wget -O server-agent_linux_${os_arch}.tar.gz https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.tar.gz >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}Release 下载失败，请检查本机能否连接 ${GITHUB_URL}${plain}"
         return 0
     fi
-    tar xf probe-lite-agent_linux_${os_arch}.tar.gz &&
-        mv probe-lite-agent $AGENT_PATH &&
-        rm -rf probe-lite-agent_linux_${os_arch}.tar.gz README.md
+    tar xf server-agent_linux_${os_arch}.tar.gz &&
+        mv server-agent $AGENT_PATH &&
+        rm -rf server-agent_linux_${os_arch}.tar.gz README.md
 
     if [ $# -ge 3 ]; then
         modify_agent_config "$@"
@@ -226,13 +226,13 @@ update_agent() {
 
     echo -e "正在获取探针版本号"
 
-    local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/probe-lite/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
+    local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serverstatus/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
     if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "https://cdn.jsdelivr.net/gh/xos/probe-lite/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/probe-lite@/v/g')
+        version=$(curl -m 10 -sL "https://cdn.jsdelivr.net/gh/xos/serverstatus/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serverstatus@/v/g')
     fi
 
     if [ ! -n "$version" ]; then
-        echo -e "获取版本号失败，请检查本机能否链接 https://api.github.com/repos/xos/probe-lite/releases/latest"
+        echo -e "获取版本号失败，请检查本机能否链接 https://api.github.com/repos/xos/serverstatus/releases/latest"
         return 0
     else
         echo -e "当前最新版本为: ${version}"
@@ -242,16 +242,16 @@ update_agent() {
     chmod 777 -R $AGENT_PATH
 
     echo -e "正在下载最新版探针"
-    wget -O probe-lite-agent_linux_${os_arch}.tar.gz https://${GITHUB_URL}/xos/probe-lite/releases/download/${version}/probe-lite-agent_linux_${os_arch}.tar.gz >/dev/null 2>&1
+    wget -O server-agent_linux_${os_arch}.tar.gz https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.tar.gz >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}Release 下载失败，请检查本机能否连接 ${GITHUB_URL}${plain}"
         return 0
     fi
-    tar xf probe-lite-agent_linux_${os_arch}.tar.gz &&
-        chmod +x probe-lite-agent &&
-        mv probe-lite-agent $AGENT_PATH &&
-        systemctl restart probe-lite-agent
-        rm -rf probe-lite-agent_linux_${os_arch}.tar.gz README.md
+    tar xf server-agent_linux_${os_arch}.tar.gz &&
+        chmod +x server-agent &&
+        mv server-agent $AGENT_PATH &&
+        systemctl restart server-agent
+        rm -rf server-agent_linux_${os_arch}.tar.gz README.md
 
     if [[ $# == 0 ]]; then
         echo -e "更新完毕！"
@@ -273,8 +273,8 @@ set_secret(){
 }
 read_config(){
 	[[ ! -e ${AGENT_SERVICE} ]] && echo -e "${red} 探针启动文件不存在 ! ${plain}" && exit 1
-    	host=$(cat ${AGENT_SERVICE}|grep 'probe-lite-agent'|awk -F '-s' '{print $2}'|head -1|sed 's/\:/ /'|awk '{print $1}')
-	port=$(cat ${AGENT_SERVICE}|grep 'probe-lite-agent'|awk -F '-s' '{print $2}'|head -1|sed 's/\:/ /'|awk '{print $2}')
+    	host=$(cat ${AGENT_SERVICE}|grep 'server-agent'|awk -F '-s' '{print $2}'|head -1|sed 's/\:/ /'|awk '{print $1}')
+	port=$(cat ${AGENT_SERVICE}|grep 'server-agent'|awk -F '-s' '{print $2}'|head -1|sed 's/\:/ /'|awk '{print $2}')
 	secret=$(cat ${AGENT_SERVICE}|grep 'p '|awk -F 'p ' '{print $NF}')
 }
 set_agent(){
@@ -295,8 +295,8 @@ set_agent(){
         sed -i "s/${host}/${grpc_host}/" ${AGENT_SERVICE}
         echo -e "探针域名 ${green}修改成功，请稍等重启生效${plain}"
         systemctl daemon-reload
-        systemctl enable probe-lite-agent
-        systemctl restart probe-lite-agent
+        systemctl enable server-agent
+        systemctl restart server-agent
         echo -e "探针 已重启完毕！"
         before_show_menu
 
@@ -307,8 +307,8 @@ set_agent(){
         sed -i "s/${port}/${grpc_port}/" ${AGENT_SERVICE}
         echo -e "探针端口${green} 修改成功，请稍等重启生效${plain}"
         systemctl daemon-reload
-        systemctl enable probe-lite-agent
-        systemctl restart probe-lite-agent
+        systemctl enable server-agent
+        systemctl restart server-agent
         echo -e "探针 已重启完毕！"
         before_show_menu
 
@@ -319,8 +319,8 @@ set_agent(){
         sed -i "s/${secret}/${client_secret}/" ${AGENT_SERVICE}
         echo -e "探针密钥${green} 修改成功，请稍等重启生效${plain}"
         systemctl daemon-reload
-        systemctl enable probe-lite-agent
-        systemctl restart probe-lite-agent
+        systemctl enable server-agent
+        systemctl restart server-agent
         echo -e "探针 已重启完毕！"
         before_show_menu
 
@@ -336,7 +336,7 @@ set_agent(){
 modify_agent_config() {
     echo -e "> 初始化探针配置"
 
-    wget -O $AGENT_SERVICE https://${GITHUB_RAW_URL}/script/probe-lite-agent.service >/dev/null 2>&1
+    wget -O $AGENT_SERVICE https://${GITHUB_RAW_URL}/script/server-agent.service >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
         return 0
@@ -374,8 +374,8 @@ modify_agent_config() {
     echo -e "探针配置 ${green}修改成功，请稍等重启生效${plain}"
 
     systemctl daemon-reload
-    systemctl enable probe-lite-agent
-    systemctl restart probe-lite-agent
+    systemctl enable server-agent
+    systemctl restart server-agent
 
     if [[ $# == 0 ]]; then
         echo -e "探针 已重启完毕！"
@@ -517,8 +517,8 @@ uninstall_dashboard() {
     cd $DASHBOARD_PATH &&
         docker-compose down
     rm -rf $DASHBOARD_PATH
-    docker rmi -f ghcr.io/xos/probe-lite-dashboard > /dev/null 2>&1
-    docker rmi -f registry.cn-shanghai.aliyuncs.com/dns/probe-lite-dashboard > /dev/null 2>&1
+    docker rmi -f ghcr.io/xos/server-dash > /dev/null 2>&1
+    docker rmi -f registry.cn-shanghai.aliyuncs.com/dns/server-dash > /dev/null 2>&1
     clean_all
 
     if [[ $# == 0 ]]; then
@@ -529,7 +529,7 @@ uninstall_dashboard() {
 show_agent_log() {
     echo -e "> 获取探针日志"
 
-    systemctl status probe-lite-agent.service
+    systemctl status server-agent.service
 
     if [[ $# == 0 ]]; then
         before_show_menu
@@ -539,8 +539,8 @@ show_agent_log() {
 uninstall_agent() {
     echo -e "> 卸载 探针"
 
-    systemctl disable probe-lite-agent.service
-    systemctl stop probe-lite-agent.service
+    systemctl disable server-agent.service
+    systemctl stop server-agent.service
     rm -rf $AGENT_SERVICE
     systemctl daemon-reload
 
@@ -555,7 +555,7 @@ uninstall_agent() {
 restart_agent() {
     echo -e "> 重启 探针"
 
-    systemctl restart probe-lite-agent.service
+    systemctl restart server-agent.service
 
     if [[ $# == 0 ]]; then
         before_show_menu
@@ -571,22 +571,22 @@ clean_all() {
 show_usage() {
     echo "探针 管理脚本使用方法: "
     echo "--------------------------------------------------------"
-    echo "./probe.sh                            - 显示管理菜单"
-    echo "./probe.sh install_dashboard          - 安装面板端"
-    echo "./probe.sh modify_dashboard_config    - 修改面板配置"
-    echo "./probe.sh start_dashboard            - 启动探针面板"
-    echo "./probe.sh stop_dashboard             - 停止探针面板"
-    echo "./probe.sh restart_and_update         - 重启并更新面板"
-    echo "./probe.sh show_dashboard_log         - 查看面板日志"
-    echo "./probe.sh uninstall_dashboard        - 卸载管理面板"
+    echo "./server-status.sh                            - 显示管理菜单"
+    echo "./server-status.sh install_dashboard          - 安装面板端"
+    echo "./server-status.sh modify_dashboard_config    - 修改面板配置"
+    echo "./server-status.sh start_dashboard            - 启动探针面板"
+    echo "./server-status.sh stop_dashboard             - 停止探针面板"
+    echo "./server-status.sh restart_and_update         - 重启并更新面板"
+    echo "./server-status.sh show_dashboard_log         - 查看面板日志"
+    echo "./server-status.sh uninstall_dashboard        - 卸载管理面板"
     echo "--------------------------------------------------------"
-    echo "./probe.sh install_agent              - 安装探针"
-    echo "./probe.sh update_agent               - 更新探针"
-    echo "./probe.sh modify_agent_config        - 修改探针配置"
-    echo "./probe.sh show_agent_log             - 探针状态"
-    echo "./probe.sh uninstall_agent            - 卸载探针"
-    echo "./probe.sh restart_agent              - 重启探针"
-    echo "./probe.sh update_script              - 更新脚本"
+    echo "./server-status.sh install_agent              - 安装探针"
+    echo "./server-status.sh update_agent               - 更新探针"
+    echo "./server-status.sh modify_agent_config        - 修改探针配置"
+    echo "./server-status.sh show_agent_log             - 探针状态"
+    echo "./server-status.sh uninstall_agent            - 卸载探针"
+    echo "./server-status.sh restart_agent              - 重启探针"
+    echo "./server-status.sh update_script              - 更新脚本"
     echo "--------------------------------------------------------"
 }
 
@@ -596,30 +596,30 @@ show_menu() {
     =========================
     ${green}探针管理脚本${plain} ${red}[${VERSION}]${plain}
     =========================
-    ${green}1.${plain}  安装探针面板
-    ${green}2.${plain}  修改探针面板配置
-    ${green}3.${plain}  启动探针面板
-    ${green}4.${plain}  停止探针面板
-    ${green}5.${plain}  重启并更新探针面板
-    ${green}6.${plain}  查看探针面板日志
-    ${green}7.${plain}  卸载管理探针面板
+    ${green}1.${plain} 安装探针面板
+    ${green}2.${plain} 修改探针面板配置
+    ${green}3.${plain} 启动探针面板
+    ${green}4.${plain} 停止探针面板
+    ${green}5.${plain} 重启并更新探针面板
+    ${green}6.${plain} 查看探针面板日志
+    ${green}7.${plain} 卸载管理探针面板
     —————————————————————————
-    ${green}8.${plain}  安装 探针
-    ${green}9.${plain}  更新 探针
+    ${green}8.${plain} 安装 探针
+    ${green}9.${plain} 更新 探针
     ${green}10.${plain} 探针 状态
     ${green}11.${plain} 卸载 探针
     ${green}12.${plain} 重启 探针
     —————————————————————————
     ${green}13.${plain} 修改探针配置
     —————————————————————————
-    ${green}00.${plain} 更新脚本
-    ${green}0.${plain}  退出脚本
+    ${green}0.${plain} 更新脚本
+    ${green}00.${plain} 退出脚本
     =========================
     "
     echo && read -ep "请输入选择 [0-13]: " num
 
     case "${num}" in
-    0)
+    00)
         exit 0
         ;;
     1)
@@ -661,7 +661,7 @@ show_menu() {
     13)
         set_agent
         ;;
-    00)
+    0)
         update_script
         ;;
     *)
@@ -702,6 +702,9 @@ if [[ $# > 0 ]]; then
         else
             install_agent 0
         fi
+        ;;
+    "update_agent")
+        update_agent 0
         ;;
     "modify_agent_config")
         modify_agent_config 0

@@ -2,7 +2,7 @@ package model
 
 import (
 	"github.com/robfig/cron/v3"
-	pb "github.com/xos/probe-lite/proto"
+	pb "github.com/xos/serverstatus/proto"
 )
 
 const (

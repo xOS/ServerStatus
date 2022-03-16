@@ -3,7 +3,7 @@ package rpc
 import (
 	"context"
 
-	"github.com/xos/probe-lite/service/singleton"
+	"github.com/xos/serverstatus/service/singleton"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"

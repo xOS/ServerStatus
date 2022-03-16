@@ -6,10 +6,10 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/xos/probe-lite/model"
-	pb "github.com/xos/probe-lite/proto"
-	rpcService "github.com/xos/probe-lite/service/rpc"
-	"github.com/xos/probe-lite/service/singleton"
+	"github.com/xos/serverstatus/model"
+	pb "github.com/xos/serverstatus/proto"
+	rpcService "github.com/xos/serverstatus/service/rpc"
+	"github.com/xos/serverstatus/service/singleton"
 )
 
 func ServeRPC(port uint) {
