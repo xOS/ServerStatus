@@ -209,11 +209,6 @@ a {
     color: #1b1c1d;
 }
 
-i.icon {
-    width: 1em !important;
-}
-
-
 /**背景图片**/
 
 #bg {
@@ -447,6 +442,10 @@ i.os-win10 {
 
 i.os-tux {
     color: #1b1c1d!important;
+}
+
+i.os-opensuse {
+    color: #73ba25!important;
 }
 
 i.yellow.icon {
