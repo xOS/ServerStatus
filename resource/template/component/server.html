@@ -29,7 +29,7 @@
                 <label>Linux 安装指令</label>
                 <div class="ui message">
                     {{if .Conf.GRPCHost}}
-                    curl -L https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && chmod +x server-status.sh && ./server-status.sh install_agent <code class="command">{{.Conf.GRPCHost}}</code> <code
+                    curl -L https://cdn.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && chmod +x server-status.sh && ./server-status.sh install_agent <code class="command">{{.Conf.GRPCHost}}</code> <code
                         class="command">{{if .Conf.ProxyGRPCPort}}{{.Conf.ProxyGRPCPort}}{{else}}{{.Conf.GRPCPort}}{{end}}</code> <code
                         class="command hostSecret"></code> <code class="command">{{if .Conf.TLS}}--tls{{end}}</code>
                     {{else}}
