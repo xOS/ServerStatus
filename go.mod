@@ -10,8 +10,6 @@ require (
 	github.com/creack/pty v1.1.17
 	github.com/gin-contrib/pprof v1.3.0
 	github.com/gin-gonic/gin v1.7.7
-	github.com/go-ping/ping v0.0.0-20211130115550-779d1e919534
-	github.com/golang/protobuf v1.5.2
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-uuid v1.0.2
@@ -42,8 +40,8 @@ require (
 	github.com/go-playground/locales v0.14.0 // indirect
 	github.com/go-playground/universal-translator v0.18.0 // indirect
 	github.com/go-playground/validator/v10 v10.10.0 // indirect
+	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
@@ -71,7 +69,6 @@ require (
 	github.com/ulikunitz/xz v0.5.10 // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd // indirect
-	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
 	golang.org/x/sys v0.0.0-20220204135822-1c1b9b1eba6a // indirect
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
