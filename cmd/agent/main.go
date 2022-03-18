@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +21,7 @@ import (
 	"github.com/xos/serverstatus/cmd/agent/monitor"
 	"github.com/xos/serverstatus/cmd/agent/pty"
 	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/pkg/utils"
 	pb "github.com/xos/serverstatus/proto"
 	"github.com/xos/serverstatus/service/rpc"
 )
@@ -291,7 +291,7 @@ func handleTerminalTask(task *pb.Task) {
 		return
 	}
 	var terminal model.TerminalTask
-	err := json.Unmarshal([]byte(task.GetData()), &terminal)
+	err := utils.Json.Unmarshal([]byte(task.GetData()), &terminal)
 	if err != nil {
 		println("Terminal 任务解析错误：", err)
 		return
@@ -359,7 +359,7 @@ func handleTerminalTask(task *pb.Task) {
 		case 0:
 			io.Copy(tty, reader)
 		case 1:
-			decoder := json.NewDecoder(reader)
+			decoder := utils.Json.NewDecoder(reader)
 			var resizeMessage WindowSize
 			err := decoder.Decode(&resizeMessage)
 			if err != nil {

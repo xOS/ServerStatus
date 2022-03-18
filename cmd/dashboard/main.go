@@ -24,6 +24,7 @@ func init() {
 	}
 
 	// 初始化 dao 包
+	singleton.Init()
 	singleton.Conf = &model.Config{}
 	singleton.Cron = cron.New(cron.WithSeconds(), cron.WithLocation(shanghai))
 	singleton.ServerList = make(map[uint64]*model.Server)
