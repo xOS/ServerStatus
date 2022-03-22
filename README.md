@@ -46,7 +46,7 @@ _\* 使用 WatchTower 可以自动更新面板，Windows 终端可以使用 nssm
 
 注意：
 
-* 需要安装`Golang`且版本需要1.17或以上。
+* 需要安装`Golang`且版本需要1.18或以上。
 * 默认安装路径 `/opt/server-status/dashboard`。
 * 手动部署的面板暂无法通过脚本进行面板部分的控制操作。
 
@@ -89,9 +89,13 @@ systemctl enable server-dash
 systemctl start server-dash
 ```
 
+### 探针 Agent 自定义
 
+#### 自定义监控的网卡和硬盘分区
 
-### 增强配置
+执行 `/opt/server-status/agent/server-agent --edit-agent-config` 来选择自定义的网卡和分区，然后重启探针即可
+
+#### 运行参数
 
 通过执行 `./server-agent --help` 查看支持的参数，如果你使用一键脚本，可以编辑 `/etc/systemd/system/server-agent.service`，在 `ExecStart=` 这一行的末尾加上
 
