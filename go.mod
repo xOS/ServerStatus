@@ -11,6 +11,7 @@ require (
 	github.com/creack/pty v1.1.17
 	github.com/gin-contrib/pprof v1.3.0
 	github.com/gin-gonic/gin v1.7.7
+	github.com/golang/protobuf v1.5.2
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-uuid v1.0.2
