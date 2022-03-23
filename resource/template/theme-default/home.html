@@ -5,7 +5,8 @@
     <div id="app">
       <div class="ui styled fluid accordion" v-for="group in groups">
         <div class="active title">
-          <i class="dropdown icon"></i>@#(group.Tag!==''?group.Tag:'默认')#@
+		<i class="dropdown icon"></i>
+		@#(group.Tag!==''?group.Tag:'默认')#@
         </div>
         <div class="active content">
           <div class="ui four stackable status cards">
@@ -287,7 +288,7 @@
     }
     return format;
   }
-  const initData = {{.Servers }};
+  const initData = JSON.parse('{{.Servers}}').servers;
   var statusCards = new Vue({
     el: '#app',
     delimiters: ['@#', '#@'],
