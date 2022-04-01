@@ -11,15 +11,30 @@ import (
 )
 
 type geoIP struct {
-	CountryCode string `json:"country_code,omitempty"`
-	IP          string `json:"ip,omitempty"`
-	Query       string `json:"query,omitempty"`
+	CountryCode  string `json:"country_code,omitempty"`
+	CountryCode2 string `json:"countryCode,omitempty"`
+	IP           string `json:"ip,omitempty"`
+	Query        string `json:"query,omitempty"`
+}
+
+func (ip *geoIP) Unmarshal(body []byte) error {
+	if err := utils.Json.Unmarshal(body, ip); err != nil {
+		return err
+	}
+	if ip.IP == "" && ip.Query != "" {
+		ip.IP = ip.Query
+	}
+	if ip.CountryCode == "" && ip.CountryCode2 != "" {
+		ip.CountryCode = ip.CountryCode2
+	}
+	return nil
 }
 
 var (
 	geoIPApiList = []string{
 		"http://ip.qste.com/json",
 		"https://api.ip.sb/geoip",
+		"https://ipapi.co/json",
 		"http://ip-api.com/json/",
 		"http://ip.nan.ge/json",
 	}
@@ -58,6 +73,7 @@ func fetchGeoIP(servers []string, isV6 bool) geoIP {
 	var ip geoIP
 	var resp *http.Response
 	var err error
+	// 双栈支持参差不齐，不能随机请求，有些 IPv6 取不到 IP
 	for i := 0; i < len(servers); i++ {
 		if isV6 {
 			resp, err = httpClientV6.Get(servers[i])
@@ -70,12 +86,8 @@ func fetchGeoIP(servers []string, isV6 bool) geoIP {
 				continue
 			}
 			resp.Body.Close()
-			err = utils.Json.Unmarshal(body, &ip)
-			if err != nil {
+			if err := ip.Unmarshal(body); err != nil {
 				continue
-			}
-			if ip.IP == "" && ip.Query != "" {
-				ip.IP = ip.Query
 			}
 			// 没取到 v6 IP
 			if isV6 && !strings.Contains(ip.IP, ":") {
@@ -89,4 +101,13 @@ func fetchGeoIP(servers []string, isV6 bool) geoIP {
 		}
 	}
 	return ip
+}
+
+func httpGetWithUA(client *http.Client, url string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.4 Safari/605.1.15")
+	return client.Do(req)
 }

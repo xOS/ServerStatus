@@ -11,7 +11,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.1"
+VERSION="v0.1.2"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -48,8 +48,8 @@ pre_check() {
 
     ## China_IP
     if [[ -z "${CN}" ]]; then
-        if [[ $(curl -m 10 -s https://api.ip.sb/geoip | grep 'China') != "" ]]; then
-            echo "根据ip.sb提供的信息，当前IP可能在中国"
+        if [[ $(curl -m 10 -s https://ipapi.co/json | grep 'China') != "" ]]; then
+            echo "根据 ipapi.co 提供的信息，当前服务器可能在中国"
             read -e -r -p "是否选用中国镜像完成安装? [Y/n] " input
             case $input in
             [yY][eE][sS] | [yY])
