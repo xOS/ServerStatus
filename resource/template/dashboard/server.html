@@ -37,7 +37,8 @@
                     <td>{{$server.Host.Version}}</td>
                     <td>{{$server.Secret}}</td>
                     <td>
-                        <button class="ui icon green mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}curl -L https://cdn.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && chmod +x server-status.sh && ./server-status.sh install_agent {{$.Conf.GRPCHost}} {{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}请先在设置页面配置 后端探针配置{{end}}"
+                        <div class="ui mini icon buttons">
+                        <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}curl -L https://cdn.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && chmod +x server-status.sh && ./server-status.sh install_agent {{$.Conf.GRPCHost}} {{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}请先在设置页面配置 后端探针配置{{end}}"
                             data-tooltip="点击复制安装命令">
                             <i class="linux icon"></i>
                         </button>
@@ -47,6 +48,7 @@
                         <button class="ui icon mini button" data-tooltip="尚未支持，请下载release手动安装">
                             <i class="apple icon"></i>
                         </button>
+                        </div>
                     </td>
                     <td style="word-break: break-word;">{{$server.Note}}</td>
                     <td>
