@@ -7,10 +7,19 @@
 </div>
 <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/jquery/3.4.1/jquery.min.js"></script>
 <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/semantic-ui/2.4.1/semantic.min.js"></script>
-<script src="/static/semantic-ui-alerts.min.js"></script>
+<script src="static/semantic-ui-alerts.min.js"></script>
 <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/vue/2.6.12/vue.min.js"></script>
-<script src="/static/main.js"></script>
+<script src="static/main.js"></script>
+<script src="static/wallpaper.js"></script>
+<script>
+    var def_bg = document.getElementById('def_background');
+    if (def_bg) {
+        Wallpaper.init(def_bg);
+    Wallpaper.animate(true);
+    window.onfocus = function () {Wallpaper.update(); };
+		}
+    document.body.classList.remove('no_transition');
+</script>
 </body>
-
 </html>
 {{end}}
