@@ -59,6 +59,7 @@ func initSystem() {
 	loadServers() //加载服务器列表
 }
 
+// recordTransferHourlyUsage 对流量记录进行打点
 func recordTransferHourlyUsage() {
 	singleton.ServerLock.Lock()
 	defer singleton.ServerLock.Unlock()
