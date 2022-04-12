@@ -48,6 +48,7 @@ var (
 	httpClientV6            = utils.NewSingleStackHTTPClient(time.Second*20, time.Second*5, time.Second*10, true)
 )
 
+// UpdateIP 每30分钟汇报一次IP地址信息
 func UpdateIP() {
 	for {
 		ipv4 := fetchGeoIP(geoIPApiList, false)
@@ -70,7 +71,7 @@ func UpdateIP() {
 		} else if ipv6.CountryCode != "" {
 			cachedCountry = ipv6.CountryCode
 		}
-		time.Sleep(time.Minute * 30)
+		time.Sleep(time.Minute * 20)
 	}
 }
 

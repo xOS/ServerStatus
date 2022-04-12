@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
+	"log"
+
+	"github.com/ory/graceful"
 	"github.com/xos/serverstatus/cmd/dashboard/controller"
 	"github.com/xos/serverstatus/cmd/dashboard/rpc"
-	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/service/singleton"
-	"github.com/ory/graceful"
-	"log"
 )
 
 func init() {
@@ -36,11 +36,8 @@ func initSystem() {
 func main() {
 	singleton.CleanMonitorHistory()
 	go rpc.ServeRPC(singleton.Conf.GRPCPort)
-	serviceSentinelDispatchBus := make(chan model.Monitor) // 用于传递服务监控任务信息的channel
-	go rpc.DispatchTask(serviceSentinelDispatchBus)
 	go rpc.DispatchKeepalive()
 	go singleton.AlertSentinelStart()
-	singleton.NewServiceSentinel(serviceSentinelDispatchBus)
 	srv := controller.ServeWeb(singleton.Conf.HTTPPort)
 	graceful.Graceful(func() error {
 		return srv.ListenAndServe()
