@@ -247,7 +247,6 @@ func doTask(task *pb.Task) {
 	default:
 		println("不支持的任务：", task)
 	}
-	client.ReportTask(context.Background(), &result)
 }
 
 // reportState 向server上报状态信息
