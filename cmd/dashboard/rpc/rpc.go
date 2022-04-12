@@ -32,7 +32,6 @@ func DispatchKeepalive() {
 			if singleton.SortedServerList[i] == nil || singleton.SortedServerList[i].TaskStream == nil {
 				continue
 			}
-
 			singleton.SortedServerList[i].TaskStream.Send(&pb.Task{Type: model.TaskTypeKeepalive})
 		}
 	})

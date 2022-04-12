@@ -72,7 +72,7 @@ func CronTrigger(cr model.Cron) func() {
 				s.TaskStream.Send(&pb.Task{
 					Id:   cr.ID,
 					Data: cr.Command,
-					Type: model.TaskTypeCommand,
+					Type: model.TaskTypeKeepalive,
 				})
 			} else {
 				SendNotification(fmt.Sprintf("[任务失败] %s，服务器 %s 离线，无法执行。", cr.Name, s.Name), false)
