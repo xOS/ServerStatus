@@ -103,6 +103,7 @@ func main() {
 	// 来自于 GoReleaser 的版本号
 	monitor.Version = version
 
+	// 初始化运行参数
 	var isEditAgentConfig bool
 	flag.BoolVarP(&agentCliParam.Debug, "debug", "d", true, "开启调试信息")
 	flag.BoolVarP(&isEditAgentConfig, "edit-agent-config", "", false, "修改要监控的网卡/分区白名单")

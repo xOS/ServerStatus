@@ -38,8 +38,8 @@ func (ip *geoIP) Unmarshal(body []byte) error {
 
 var (
 	geoIPApiList = []string{
-		"https://ipapi.co/json",
 		"http://ip.qste.com/json",
+		"https://ipapi.co/json",
 		"http://ip-api.com/json/",
 		"http://ip.nan.ge/json",
 	}
