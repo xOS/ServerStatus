@@ -37,8 +37,7 @@ func Init() {
 func LoadSingleton() {
 	LoadNotifications() // 加载通知服务
 	LoadServers()       // 加载服务器列表
-	// InitCronTask()     // 加载定时任务
-	LoadCronTasks()     // 加载定时任务
+	InitCronTask()     // 加载定时任务
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
