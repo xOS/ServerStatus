@@ -98,6 +98,9 @@ func (c *Config) Read(path string) error {
 	if c.Site.Theme == "" {
 		c.Site.Theme = "default"
 	}
+	if c.GRPCPort == 0 {
+		c.GRPCPort = 2222
+	}
 
 	c.updateIgnoredIPNotificationID()
 	return nil
