@@ -17,7 +17,7 @@
 
 ## 演示图
 
-![首页截图](https://i.cdn.ink/views/a4f36a.png)
+![首页截图](https://i.cdn.ink/views/e6c1b8.png)
 
 ## 安装脚本
 
