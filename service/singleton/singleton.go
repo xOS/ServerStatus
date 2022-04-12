@@ -37,7 +37,6 @@ func Init() {
 func LoadSingleton() {
 	LoadNotifications() // 加载通知服务
 	LoadServers()       // 加载服务器列表
-	InitCronTask()     // 加载定时任务
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
@@ -61,8 +60,7 @@ func InitDBFromPath(path string) {
 		DB = DB.Debug()
 	}
 	err = DB.AutoMigrate(model.Server{}, model.User{},
-		model.Notification{}, model.AlertRule{}, model.Monitor{},
-		model.MonitorHistory{}, model.Transfer{})
+		model.Notification{}, model.AlertRule{}, model.Monitor{})
 	if err != nil {
 		panic(err)
 	}

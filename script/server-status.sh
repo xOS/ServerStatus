@@ -11,7 +11,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.3"
+VERSION="v0.1.4"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -535,7 +535,7 @@ uninstall_dashboard() {
 show_agent_log() {
     echo -e "> 获取探针日志"
 
-    systemctl status server-agent.service
+    journalctl -xf -u server-agent.service
 
     if [[ $# == 0 ]]; then
         before_show_menu

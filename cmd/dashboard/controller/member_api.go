@@ -62,18 +62,6 @@ func (ma *memberAPI) delete(c *gin.Context) {
 			delete(singleton.ServerList, id)
 			singleton.ServerLock.Unlock()
 			singleton.ReSortServer()
-			// 删除循环流量状态中的此服务器相关的记录
-			singleton.AlertsLock.Lock()
-			for i := 0; i < len(singleton.Alerts); i++ {
-				if singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID] != nil {
-					delete(singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID].ServerName, id)
-					delete(singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID].Transfer, id)
-					delete(singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID].NextUpdate, id)
-				}
-			}
-			singleton.AlertsLock.Unlock()
-			// 删除服务器相关循环流量记录
-			singleton.DB.Unscoped().Delete(&model.Transfer{}, "server_id = ?", id)
 		}
 	case "notification":
 		err = singleton.DB.Unscoped().Delete(&model.Notification{}, "id = ?", id).Error
@@ -290,24 +278,17 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 			err = errors.New("至少定义一条规则")
 		} else {
 			for i := 0; i < len(r.Rules); i++ {
-				if !r.Rules[i].IsTransferDurationRule() {
-					if r.Rules[i].Duration < 3 {
-						err = errors.New("错误：Duration 至少为 3")
-						break
-					}
-				} else {
-					if r.Rules[i].CycleInterval < 1 {
-						err = errors.New("错误: cycle_interval 至少为 1")
-						break
-					}
-					if r.Rules[i].CycleStart == nil {
-						err = errors.New("错误: cycle_start 未设置")
-						break
-					}
-					if r.Rules[i].CycleStart.After(time.Now()) {
-						err = errors.New("错误: cycle_start 是个未来值")
-						break
-					}
+				if r.Rules[i].CycleInterval < 1 {
+					err = errors.New("错误: cycle_interval 至少为 1")
+					break
+				}
+				if r.Rules[i].CycleStart == nil {
+					err = errors.New("错误: cycle_start 未设置")
+					break
+				}
+				if r.Rules[i].CycleStart.After(time.Now()) {
+					err = errors.New("错误: cycle_start 是个未来值")
+					break
 				}
 			}
 		}
