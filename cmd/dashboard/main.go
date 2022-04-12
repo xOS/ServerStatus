@@ -36,7 +36,6 @@ func initSystem() {
 func main() {
 	singleton.CleanMonitorHistory()
 	go rpc.ServeRPC(singleton.Conf.GRPCPort)
-	go rpc.DispatchKeepalive()
 	go singleton.AlertSentinelStart()
 	srv := controller.ServeWeb(singleton.Conf.HTTPPort)
 	graceful.Graceful(func() error {

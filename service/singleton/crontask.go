@@ -7,7 +7,6 @@ import (
 
 	"github.com/robfig/cron/v3"
 	"github.com/xos/serverstatus/model"
-	pb "github.com/xos/serverstatus/proto"
 )
 
 var (
@@ -68,13 +67,7 @@ func CronTrigger(cr model.Cron) func() {
 			if cr.Cover == model.CronCoverIgnoreAll && !crIgnoreMap[s.ID] {
 				continue
 			}
-			if s.TaskStream != nil {
-				s.TaskStream.Send(&pb.Task{
-					Id:   cr.ID,
-					Data: cr.Command,
-					Type: model.TaskTypeKeepalive,
-				})
-			} else {
+			if s.TaskStream == nil {
 				SendNotification(fmt.Sprintf("[任务失败] %s，服务器 %s 离线，无法执行。", cr.Name, s.Name), false)
 			}
 		}

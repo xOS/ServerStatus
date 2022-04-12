@@ -37,6 +37,7 @@ func Init() {
 func LoadSingleton() {
 	LoadNotifications() // 加载通知服务
 	LoadServers()       // 加载服务器列表
+	// InitCronTask()     // 加载定时任务
 	LoadCronTasks()     // 加载定时任务
 }
 
