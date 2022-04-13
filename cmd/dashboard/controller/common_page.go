@@ -252,10 +252,13 @@ func (cp *commonPage) terminal(c *gin.Context) {
 			return
 		}
 
+		var cloudflareCookies string
+		cloudflareCookies, _ = c.Cookie("CF_Authorization")
 		terminalData, _ := utils.Json.Marshal(&model.TerminalTask{
 			Host:    terminal.host,
 			UseSSL:  terminal.useSSL,
 			Session: terminalID,
+			Cookie:  cloudflareCookies,
 		})
 
 		if err := server.TaskStream.Send(&proto.Task{
