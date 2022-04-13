@@ -44,12 +44,6 @@ func (s *ProbeHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.Re
 	singleton.ServerList[clientID].LastActive = time.Now()
 	singleton.ServerList[clientID].State = &state
 
-	// 如果从未记录过，先打点，等到小时时间点时入库
-	if singleton.ServerList[clientID].PrevHourlyTransferIn == 0 || singleton.ServerList[clientID].PrevHourlyTransferOut == 0 {
-		singleton.ServerList[clientID].PrevHourlyTransferIn = int64(state.NetInTransfer)
-		singleton.ServerList[clientID].PrevHourlyTransferOut = int64(state.NetOutTransfer)
-	}
-
 	return &pb.Receipt{Proced: true}, nil
 }
 
@@ -70,14 +64,8 @@ func (s *ProbeHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rece
 		host.IP != "" &&
 		singleton.ServerList[clientID].Host.IP != host.IP {
 		singleton.SendNotification(fmt.Sprintf(
-			"#探针通知" + "\n" + "[IP 变更]" + "\n" + "%s " + "\n" + "旧 IP：%s" + "\n" + "新 IP：%s",
+			"#探针通知"+"\n"+"[IP 变更]"+"\n"+"%s "+"\n"+"旧 IP：%s"+"\n"+"新 IP：%s",
 			singleton.ServerList[clientID].Name, singleton.IPDesensitize(singleton.ServerList[clientID].Host.IP), singleton.IPDesensitize(host.IP)), true)
-	}
-
-	// 判断是否是机器重启，如果是机器重启要录入最后记录的流量里面
-	if singleton.ServerList[clientID].Host.BootTime < host.BootTime {
-		singleton.ServerList[clientID].PrevHourlyTransferIn = singleton.ServerList[clientID].PrevHourlyTransferIn - int64(singleton.ServerList[clientID].State.NetInTransfer)
-		singleton.ServerList[clientID].PrevHourlyTransferOut = singleton.ServerList[clientID].PrevHourlyTransferOut - int64(singleton.ServerList[clientID].State.NetOutTransfer)
 	}
 
 	singleton.ServerList[clientID].Host = &host

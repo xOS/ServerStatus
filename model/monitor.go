@@ -9,7 +9,6 @@ const (
 	_ = iota
 	TaskTypeTerminal
 	TaskTypeUpgrade
-	TaskTypeKeepalive
 )
 
 type TerminalTask struct {

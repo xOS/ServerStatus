@@ -243,8 +243,6 @@ func doTask(task *pb.Task) {
 		handleTerminalTask(task)
 	case model.TaskTypeUpgrade:
 		handleUpgradeTask(task, &result)
-	case model.TaskTypeKeepalive:
-		return
 	default:
 		println("不支持的任务：", task)
 	}
