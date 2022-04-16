@@ -43,13 +43,6 @@ func (s *ProbeHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.Re
 	defer singleton.ServerLock.RUnlock()
 	singleton.ServerList[clientID].LastActive = time.Now()
 	singleton.ServerList[clientID].State = &state
-
-	// 如果从未记录过，先打点，等到小时时间点时入库
-	if singleton.ServerList[clientID].PrevHourlyTransferIn == 0 || singleton.ServerList[clientID].PrevHourlyTransferOut == 0 {
-		singleton.ServerList[clientID].PrevHourlyTransferIn = int64(state.NetInTransfer)
-		singleton.ServerList[clientID].PrevHourlyTransferOut = int64(state.NetOutTransfer)
-	}
-
 	return &pb.Receipt{Proced: true}, nil
 }
 
