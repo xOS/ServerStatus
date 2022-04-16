@@ -45,7 +45,6 @@ func AlertSentinelStart() {
 		}
 		alertsStore[alert.ID] = make(map[uint64][][]interface{})
 		alertsPrevState[alert.ID] = make(map[uint64]uint)
-		addCycleTransferStatsInfo(alert)
 	}
 	AlertsLock.Unlock()
 
