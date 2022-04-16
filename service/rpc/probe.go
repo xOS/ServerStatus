@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/xos/serverstatus/model"
@@ -68,7 +69,7 @@ func (s *ProbeHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rece
 		singleton.ServerList[clientID].Host.IP != "" &&
 		host.IP != "" &&
 		singleton.ServerList[clientID].Host.IP != host.IP {
-		singleton.SendNotification(singleton.Conf.IPChangeNotificationTag, ffmt.Sprintf(
+		singleton.SendNotification(singleton.Conf.IPChangeNotificationTag, fmt.Sprintf(
 			"#探针通知"+"\n"+"[IP 变更]"+"\n"+"%s "+"\n"+"旧 IP：%s"+"\n"+"新 IP：%s",
 			singleton.ServerList[clientID].Name, singleton.IPDesensitize(singleton.ServerList[clientID].Host.IP), singleton.IPDesensitize(host.IP)), true)
 	}
