@@ -7,10 +7,11 @@ import (
 
 type AlertRule struct {
 	Common
-	Name     string
-	RulesRaw string
-	Enable   *bool
-	Rules    []Rule `gorm:"-" json:"-"`
+	Name            string
+	RulesRaw        string
+	Enable          *bool
+	NotificationTag string // 该报警规则所在的通知组
+	Rules           []Rule `gorm:"-" json:"-"`
 }
 
 func (r *AlertRule) BeforeSave(tx *gorm.DB) error {
@@ -44,27 +45,27 @@ func (r *AlertRule) Check(points [][]interface{}) (int, bool) {
 	var max int   // 报警持续时间
 	var count int // 检查未通过的个数
 	for i := 0; i < len(r.Rules); i++ {
-			// 常规报警
-			total := 0.0
-			fail := 0.0
-			num := int(r.Rules[i].Duration)
-			if num > max {
-				max = num
+		// 常规报警
+		total := 0.0
+		fail := 0.0
+		num := int(r.Rules[i].Duration)
+		if num > max {
+			max = num
+		}
+		if len(points) < num {
+			continue
+		}
+		for j := len(points) - 1; j >= 0 && len(points)-num <= j; j-- {
+			total++
+			if points[j][i] != nil {
+				fail++
 			}
-			if len(points) < num {
-				continue
-			}
-			for j := len(points) - 1; j >= 0 && len(points)-num <= j; j-- {
-				total++
-				if points[j][i] != nil {
-					fail++
-				}
-			}
-			// 当70%以上的采样点未通过规则判断时 才认为当前检查未通过
-			if fail/total > 0.7 {
-				count++
-				break
-			}
+		}
+		// 当70%以上的采样点未通过规则判断时 才认为当前检查未通过
+		if fail/total > 0.7 {
+			count++
+			break
+		}
 	}
 	// 仅当所有检查均未通过时 返回false
 	return max, count != len(r.Rules)

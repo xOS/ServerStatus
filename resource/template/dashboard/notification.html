@@ -15,6 +15,7 @@
                 <tr>
                     <th>ID</th>
                     <th>名称</th>
+                    <th>分组</th>
                     <th>URL</th>
                     <th>验证SSL</th>
                     <th>管理</th>
@@ -25,6 +26,7 @@
                 <tr>
                     <td>{{$notification.ID}}</td>
                     <td>{{$notification.Name}}</td>
+                    <td>{{$notification.Tag}}</td>
                     <td>{{$notification.URL}}</td>
                     <td>{{$notification.VerifySSL}}</td>
                     <td>
@@ -44,7 +46,7 @@
         </table>
         <div class="ui grid">
             <div class="right floated right aligned twelve wide column">
-                <button class="ui right labeled positive icon button" onclick="addOrEditAlertRule()"><i
+                <button class="ui right labeled probe-primary-btn icon button" onclick="addOrEditAlertRule()"><i
                         class="add icon"></i>
                     添加报警规则
                 </button>
@@ -55,6 +57,7 @@
                 <tr>
                     <th>ID</th>
                     <th>名称</th>
+                    <th>通知方式组</th>
                     <th>规则</th>
                     <th>启用</th>
                     <th>管理</th>
@@ -65,6 +68,7 @@
                 <tr>
                     <td>{{$rule.ID}}</td>
                     <td>{{$rule.Name}}</td>
+                    <td>{{$rule.NotificationTag}}</td>
                     <td>{{$rule.RulesRaw}}</td>
                     <td>{{$rule.Enable}}</td>
                     <td>

@@ -4,7 +4,7 @@ function readableBytes(bytes) {
   }
   var i = Math.floor(Math.log(bytes) / Math.log(1024)),
     sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-  return parseFloat((bytes / Math.pow(1024, i)).toFixed(1)) + sizes[i];
+  return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
 }
 
 const confirmBtn = $(".mini.confirm.modal .probe-primary-btn.button");
@@ -114,6 +114,7 @@ function addOrEditAlertRule(rule) {
   modal.find("input[name=ID]").val(rule ? rule.ID : null);
   modal.find("input[name=Name]").val(rule ? rule.Name : null);
   modal.find("textarea[name=RulesRaw]").val(rule ? rule.RulesRaw : null);
+  modal.find("input[name=NotificationTag]").val(rule ? rule.NotificationTag : null);
   if (rule && rule.Enable) {
     modal.find(".ui.rule-enable.checkbox").checkbox("set checked");
   } else {
@@ -134,6 +135,7 @@ function addOrEditNotification(notification) {
     );
   modal.find("input[name=ID]").val(notification ? notification.ID : null);
   modal.find("input[name=Name]").val(notification ? notification.Name : null);
+  modal.find("input[name=Tag]").val(notification ? notification.Tag : null);
   modal.find("input[name=URL]").val(notification ? notification.URL : null);
   modal
     .find("textarea[name=RequestHeader]")

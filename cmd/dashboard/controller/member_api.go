@@ -215,6 +215,7 @@ func (ma *memberAPI) forceUpdate(c *gin.Context) {
 type notificationForm struct {
 	ID            uint64
 	Name          string
+	Tag           string // 分组名
 	URL           string
 	RequestMethod int
 	RequestType   int
@@ -229,6 +230,7 @@ func (ma *memberAPI) addOrEditNotification(c *gin.Context) {
 	err := c.ShouldBindJSON(&nf)
 	if err == nil {
 		n.Name = nf.Name
+		n.Tag = nf.Tag
 		n.RequestMethod = nf.RequestMethod
 		n.RequestType = nf.RequestType
 		n.RequestHeader = nf.RequestHeader
@@ -240,6 +242,10 @@ func (ma *memberAPI) addOrEditNotification(c *gin.Context) {
 		err = n.Send("这是测试消息")
 	}
 	if err == nil {
+		// 保证Tag不为空
+		if n.Tag == "" {
+			n.Tag = "default"
+		}
 		if n.ID == 0 {
 			err = singleton.DB.Create(&n).Error
 		} else {
@@ -253,17 +259,18 @@ func (ma *memberAPI) addOrEditNotification(c *gin.Context) {
 		})
 		return
 	}
-	singleton.OnRefreshOrAddNotification(n)
+	singleton.OnRefreshOrAddNotification(&n)
 	c.JSON(http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }
 
 type alertRuleForm struct {
-	ID       uint64
-	Name     string
-	RulesRaw string
-	Enable   string
+	ID              uint64
+	Name            string
+	RulesRaw        string
+	NotificationTag string
+	Enable          string
 }
 
 func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
@@ -296,9 +303,14 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 	if err == nil {
 		r.Name = arf.Name
 		r.RulesRaw = arf.RulesRaw
+		r.NotificationTag = arf.NotificationTag
 		enable := arf.Enable == "on"
 		r.Enable = &enable
 		r.ID = arf.ID
+		//保证NotificationTag不为空
+		if r.NotificationTag == "" {
+			r.NotificationTag = "default"
+		}
 		if r.ID == 0 {
 			err = singleton.DB.Create(&r).Error
 		} else {
@@ -349,15 +361,16 @@ func (ma *memberAPI) logout(c *gin.Context) {
 }
 
 type settingForm struct {
-	Title                 string
-	Admin                 string
-	Theme                 string
-	CustomCode            string
-	ViewPassword          string
-	IgnoredIPNotification string
-	GRPCHost              string
-	GRPCPort              uint
-	Cover                 uint8
+	Title                   string
+	Admin                   string
+	Theme                   string
+	CustomCode              string
+	ViewPassword            string
+	IgnoredIPNotification   string
+	IPChangeNotificationTag string // IP变更提醒的通知组
+	GRPCHost                string
+	GRPCPort                uint
+	Cover                   uint8
 
 	EnableIPChangeNotification  string
 	EnablePlainIPInNotification string
@@ -378,11 +391,16 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 	singleton.Conf.GRPCHost = sf.GRPCHost
 	singleton.Conf.GRPCPort = sf.GRPCPort
 	singleton.Conf.IgnoredIPNotification = sf.IgnoredIPNotification
+	singleton.Conf.IPChangeNotificationTag = sf.IPChangeNotificationTag
 	singleton.Conf.Site.Brand = sf.Title
 	singleton.Conf.Site.Theme = sf.Theme
 	singleton.Conf.Site.CustomCode = sf.CustomCode
 	singleton.Conf.Site.ViewPassword = sf.ViewPassword
 	singleton.Conf.Oauth2.Admin = sf.Admin
+	// 保证NotificationTag不为空
+	if singleton.Conf.IPChangeNotificationTag == "" {
+		singleton.Conf.IPChangeNotificationTag = "default"
+	}
 	if err := singleton.Conf.Save(); err != nil {
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,

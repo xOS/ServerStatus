@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/xos/serverstatus/model"
@@ -44,6 +43,12 @@ func (s *ProbeHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.Re
 	singleton.ServerList[clientID].LastActive = time.Now()
 	singleton.ServerList[clientID].State = &state
 
+	// 如果从未记录过，先打点，等到小时时间点时入库
+	if singleton.ServerList[clientID].PrevHourlyTransferIn == 0 || singleton.ServerList[clientID].PrevHourlyTransferOut == 0 {
+		singleton.ServerList[clientID].PrevHourlyTransferIn = int64(state.NetInTransfer)
+		singleton.ServerList[clientID].PrevHourlyTransferOut = int64(state.NetOutTransfer)
+	}
+
 	return &pb.Receipt{Proced: true}, nil
 }
 
@@ -63,7 +68,7 @@ func (s *ProbeHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rece
 		singleton.ServerList[clientID].Host.IP != "" &&
 		host.IP != "" &&
 		singleton.ServerList[clientID].Host.IP != host.IP {
-		singleton.SendNotification(fmt.Sprintf(
+		singleton.SendNotification(singleton.Conf.IPChangeNotificationTag, ffmt.Sprintf(
 			"#探针通知"+"\n"+"[IP 变更]"+"\n"+"%s "+"\n"+"旧 IP：%s"+"\n"+"新 IP：%s",
 			singleton.ServerList[clientID].Name, singleton.IPDesensitize(singleton.ServerList[clientID].Host.IP), singleton.IPDesensitize(host.IP)), true)
 	}
