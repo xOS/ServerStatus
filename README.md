@@ -1,7 +1,7 @@
 # 探针轻量版
 > 本项目为原项目[哪吒探针](https://github.com/naiba/nezha)的精简修改自用版
 
-![GitHub Workflow Status](https://img.shields.io/github/workflow/status/xOS/ServerStatus/Dashboard%20image?label=管理面板%20v0.1.6&logo=github&style=for-the-badge) ![Agent release](https://img.shields.io/github/v/release/xOS/ServerStatus?color=brightgreen&label=Agent&style=for-the-badge&logo=github) ![GitHub Workflow Status](https://img.shields.io/github/workflow/status/xOS/ServerStatus/Agent%20release?label=Agent%20CI&logo=github&style=for-the-badge) ![shell](https://img.shields.io/badge/安装脚本-v0.1.4-brightgreen?style=for-the-badge&logo=linux)
+![GitHub Workflow Status](https://img.shields.io/github/workflow/status/xOS/ServerStatus/Dashboard%20image?label=管理面板%20v0.1.7&logo=github&style=for-the-badge) ![Agent release](https://img.shields.io/github/v/release/xOS/ServerStatus?color=brightgreen&label=Agent&style=for-the-badge&logo=github) ![GitHub Workflow Status](https://img.shields.io/github/workflow/status/xOS/ServerStatus/Agent%20release?label=Agent%20CI&logo=github&style=for-the-badge) ![shell](https://img.shields.io/badge/安装脚本-v0.1.4-brightgreen?style=for-the-badge&logo=linux)
 
 ## 注意：
 
@@ -13,7 +13,8 @@
 1. 远程脚本执行；
 2. 远程定时任务；
 3. 网站监测，包含SSL证书监测；
-4. 暂时精简这么多吧。
+4. 周期流量统计。
+5. ......
 
 ## 演示图
 
@@ -110,7 +111,7 @@ systemctl start server-dash
 ## 功能说明
 
 <details>
-    <summary>报警通知：负载、CPU、内存、硬盘、带宽、流量、月流量、进程数、连接数实时监控。</summary>
+    <summary>报警通知：负载、CPU、内存、硬盘、带宽、流量、进程数、连接数实时监控。</summary>
 #### 灵活通知方式
 
 `#NG#` 是面板消息占位符，面板触发通知时会自动替换占位符到实际消息
@@ -181,21 +182,6 @@ URL 里面也可放置占位符，请求时会进行简单的字符串替换。
   - `1` 忽略所有，通过 `ignore` 监控特定服务器
 - ignore: `{"1": true, "2":false}` 特定服务器，搭配 `cover` 使用
 
-##### 特殊：任意周期流量报警
-
-可以用作月流量报警
-
-- type
-  - transfer_in_cycle 周期内的入站流量
-  - transfer_out_cycle 周期内的出站流量
-  - transfer_all_cycle 周期内双向流量和
-- cycle_start 统计周期开始日期（可以是你机器计费周期的开始日期），RFC3339 时间格式，例如北京时间为`2022-01-11T08:00:00.00+08:00`
-- cycle_interval 每隔多少个周期单位（例如，周期单位为天，该值为 7，则代表每隔 7 天统计一次）
-- cycle_unit 统计周期单位，默认`hour`,可选(`hour`, `day`, `week`, `month`, `year`)
-- min/max、cover、ignore 参考基本规则配置
-- 示例: ID 为 3 的机器（ignore 里面定义）的每月 15 号计费的出站月流量 1T 报警 `[{"type":"transfer_out_cycle","max":1000000000000,"cycle_start":"2022-01-11T08:00:00.00+08:00","cycle_interval":1,"cycle_unit":"month","cover":1,"ignore":{"3":true}}]`
-  ![7QKaUx.md.png](https://s4.ax1x.com/2022/01/13/7QKaUx.md.png)
-
 </details>
 
 <details>
@@ -235,16 +221,6 @@ URL 里面也可放置占位符，请求时会进行简单的字符串替换。
   avatar.style.visibility="visible"
   }
   </script>
-  ```
-
-- 默认主题更改背景图片示例
-
-  ```html
-  <style>
-  #bg {
-    background-image: url(bg/background.jpeg) !important;
-  }
-  </style>
   ```
 
 </details>
