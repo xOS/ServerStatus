@@ -222,6 +222,7 @@ type notificationForm struct {
 	RequestHeader string
 	RequestBody   string
 	VerifySSL     string
+	SkipCheck     string
 }
 
 func (ma *memberAPI) addOrEditNotification(c *gin.Context) {
@@ -243,7 +244,10 @@ func (ma *memberAPI) addOrEditNotification(c *gin.Context) {
 			Notification: &n,
 			Server:       nil,
 		}
-		err = ns.Send("这是测试消息")
+		// 勾选了跳过检查
+		if nf.SkipCheck != "on" {
+			err = ns.Send("这是测试消息")
+		}
 	}
 	if err == nil {
 		// 保证Tag不为空

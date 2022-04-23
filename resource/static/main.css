@@ -12,6 +12,11 @@
     }
 }
 
+td {
+  word-wrap: break-word;
+  word-break: break-all;
+}
+
 /**背景**/
 
 body {
