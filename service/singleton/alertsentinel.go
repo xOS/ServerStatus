@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/model"
 )
 
@@ -122,11 +123,15 @@ func checkStatus() {
 			copier.Copy(&curServer, server)
 			if !passed {
 				alertsPrevState[alert.ID][server.ID] = _RuleCheckFail
-				message := fmt.Sprintf("#探针通知"+"\n"+"[主机异常]"+"\n"+"%s[%s]"+"\n"+"规则：%s", server.Name, IPDesensitize(server.Host.IP), alert.Name)
+				message := fmt.Sprintf("#探针通知" + "\n" + "[主机异常]" + "\n" + "%s[%s]" + "\n" + "规则：%s", Localizer.MustLocalize(&i18n.LocalizeConfig{
+					MessageID: "Incident",
+				}), server.Name, IPDesensitize(server.Host.IP), alert.Name)
 				go SendNotification(alert.NotificationTag, message, true, &curServer)
 			} else {
 				if alertsPrevState[alert.ID][server.ID] == _RuleCheckFail {
-					message := fmt.Sprintf("#探针通知"+"\n"+"[主机恢复]"+"\n"+"%s[%s]"+"\n"+"规则：%s", server.Name, IPDesensitize(server.Host.IP), alert.Name)
+					message := fmt.Sprintf("#探针通知" + "\n" + "[主机恢复]" + "\n" + "%s[%s]" + "\n" + "规则：%s", Localizer.MustLocalize(&i18n.LocalizeConfig{
+						MessageID: "Resolved",
+					}), server.Name, IPDesensitize(server.Host.IP), alert.Name)
 					go SendNotification(alert.NotificationTag, message, true, &curServer)
 				}
 				alertsPrevState[alert.ID][server.ID] = _RuleCheckPass

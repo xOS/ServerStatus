@@ -11,7 +11,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.4"
+VERSION="v0.1.5"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -125,8 +125,8 @@ before_show_menu() {
 }
 
 install_base() {
-    (command -v git >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v wget >/dev/null 2>&1 && command -v tar >/dev/null 2>&1) ||
-        (install_soft curl wget git tar)
+    (command -v git >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v wget >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1) ||
+        (install_soft curl wget git unzip)
 }
 
 install_soft() {
@@ -204,14 +204,14 @@ install_agent() {
         chmod 777 -R $AGENT_PATH
     fi
     echo -e "正在下载探针"
-    wget -O server-agent_linux_${os_arch}.tar.gz https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.tar.gz >/dev/null 2>&1
+    wget -O server-agent_linux_${os_arch}.zip https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}Release 下载失败，请检查本机能否连接 ${GITHUB_URL}${plain}"
         return 0
     fi
-    tar xf server-agent_linux_${os_arch}.tar.gz &&
+    unzip -qo server-agent_linux_${os_arch}.zip &&
         mv server-agent $AGENT_PATH &&
-        rm -rf server-agent_linux_${os_arch}.tar.gz README.md
+        rm -rf server-agent_linux_${os_arch}.zip README.md
 
     if [ $# -ge 3 ]; then
         modify_agent_config "$@"
@@ -248,16 +248,16 @@ update_agent() {
     fi
 
     echo -e "正在下载最新版探针"
-    wget -O server-agent_linux_${os_arch}.tar.gz https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.tar.gz >/dev/null 2>&1
+    wget -O server-agent_linux_${os_arch}.zip https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}Release 下载失败，请检查本机能否连接 ${GITHUB_URL}${plain}"
         return 0
     fi
-    tar xf server-agent_linux_${os_arch}.tar.gz &&
+    unzip -qo server-agent_linux_${os_arch}.zip &&
         chmod +x server-agent &&
         mv server-agent $AGENT_PATH &&
         systemctl restart server-agent
-        rm -rf server-agent_linux_${os_arch}.tar.gz README.md
+        rm -rf server-agent_linux_${os_arch}.zip README.md
 
     if [[ $# == 0 ]]; then
         echo -e "更新完毕！"

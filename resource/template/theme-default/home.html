@@ -5,8 +5,7 @@
     <div id="app">
       <div class="ui styled fluid accordion" v-for="group in groups">
         <div class="active title">
-		<i class="dropdown icon"></i>
-		@#(group.Tag!==''?group.Tag:'默认')#@
+          <i class="dropdown icon"></i>@#(group.Tag!==''?group.Tag:'{{tr "Default"}}')#@
         </div>
         <div class="active content">
           <div class="ui four stackable status cards">
@@ -20,28 +19,28 @@
                   <i v-if='server.Host.Platform == "opensuse"' class="os-opensuse"></i>
                   <i :class="'os-'+server.Host.OS"></i>
                   <i :class="'os-'+server.Host.Platform"></i>
-                  @#server.Name + (server.live?'':' [已离线]')#@
+                  @#server.Name + (server.live?'':' [{{tr "Offline"}}]')#@
                   <i class="probe-primary-font info circle icon" style="height: 28px"></i>
                   <div class="ui content popup" style="">
-                    系统：@#specialOS(server.Host.Platform)#@ <span
+                    {{tr "Platform"}}：@#specialOS(server.Host.Platform)#@ <span
                       v-if='server.Host.OS!= "windows"'>@#server.Host.PlatformVersion#@ <span
                         v-if='!server.Host.Virtualization'>KVM</span></span> @#specialVir(server.Host.Virtualization)#@
                     [@#server.Host.Arch#@]<br />
                     CPU：@#clearString(server.Host.CPU)#@<br />
-                    硬盘：@#formatByteSize(server.State.DiskUsed)#@ / @#formatByteSize(server.Host.DiskTotal)#@<br />
-                    内存：@#formatByteSize(server.State.MemUsed)#@ / @#formatByteSize(server.Host.MemTotal)#@<br />
-                    交换：@#formatByteSize(server.State.SwapUsed)#@ / @#formatByteSize(server.Host.SwapTotal)#@<br />
-                    负载：@# toFixed2(server.State.Load1) #@ | @# toFixed2(server.State.Load5) #@ | @#
+                    {{tr "DiskUsed"}}：@#formatByteSize(server.State.DiskUsed)#@ / @#formatByteSize(server.Host.DiskTotal)#@<br />
+                    {{tr "MemUsed"}}：@#formatByteSize(server.State.MemUsed)#@ / @#formatByteSize(server.Host.MemTotal)#@<br />
+                    {{tr "SwapUsed"}}：@#formatByteSize(server.State.SwapUsed)#@ / @#formatByteSize(server.Host.SwapTotal)#@<br />
+                    {{tr "Load"}}：@# toFixed2(server.State.Load1) #@ | @# toFixed2(server.State.Load5) #@ | @#
                     toFixed2(server.State.Load15) #@<br />
-                    进程：@# server.State.ProcessCount #@ 个<br />
-                    连接：TCP @# server.State.TcpConnCount #@ 个 | UDP @# server.State.UdpConnCount #@ 个 <br />
-                    流量：<i
+                    {{tr "ProcessCount"}}：@# server.State.ProcessCount #@ 个<br />
+                    {{tr "ConnCount"}}：TCP @# server.State.TcpConnCount #@ 个 | UDP @# server.State.UdpConnCount #@ 个 <br />
+                    {{tr "NetTransfer"}}：<i
                       class="arrow alternate circle down outline icon s"></i>@#formatByteSize(server.State.NetInTransfer)#@
                     | <i
                       class="arrow alternate circle up outline icon s"></i>@#formatByteSize(server.State.NetOutTransfer)#@<br />
-                    启动：@# formatTimestamp(server.Host.BootTime) #@<br />
-                    活动：@# timeStamp(server.LastActive) #@<br />
-                    版本：@#server.Host.Version#@<br />
+                    {{tr "BootTime"}}：@# formatTimestamp(server.Host.BootTime) #@<br />
+                    {{tr "LastActive"}}：@# timeStamp(server.LastActive) #@<br />
+                    {{tr "Version"}}：@#server.Host.Version#@<br />
                   </div>
                   <div class="ui divider" style="margin-bottom: 5px"></div>
                 </div>
@@ -55,7 +54,7 @@
                         </div>
                       </div>
                     </div>
-                    <div class="three wide column">内存</div>
+                    <div class="three wide column">{{tr "MemUsed"}}</div>
                     <div class="thirteen wide column">
                       <div :class="formatPercent(server.live,server.State.MemUsed, server.Host.MemTotal).class">
                         <div class="bar"
@@ -64,7 +63,7 @@
                         </div>
                       </div>
                     </div>
-                    <div class="three wide column">交换</div>
+                    <div class="three wide column">{{tr "SwapUsed"}}</div>
                     <div class="thirteen wide column">
                       <div :class="formatPercent(server.live,server.State.SwapUsed, server.Host.SwapTotal).class">
                         <div class="bar"
@@ -73,14 +72,14 @@
                         </div>
                       </div>
                     </div>
-                    <div class="three wide column">网络</div>
+                    <div class="three wide column">{{tr "NetSpeed"}}</div>
                     <div class="thirteen wide column">
                       <i class="arrow alternate circle down outline icon"></i>
                       @#formatByteSize(server.State.NetInSpeed)#@/s |
                       <i class="arrow alternate circle up outline icon"></i>
                       @#formatByteSize(server.State.NetOutSpeed)#@/s
                     </div>
-                    <div class="three wide column">硬盘</div>
+                    <div class="three wide column">{{tr "DiskUsed"}}</div>
                     <div class="thirteen wide column">
                       <div :class="formatPercent(server.live,server.State.DiskUsed, server.Host.DiskTotal).class">
                         <div class="bar"
@@ -89,7 +88,7 @@
                         </div>
                       </div>
                     </div>
-                    <div class="three wide column">在线</div>
+                    <div class="three wide column">{{tr "Uptime"}}</div>
                     <div class="thirteen wide column">
                       <i class="clock icon"></i>@#secondToDate(server.State.Uptime)#@
                     </div>
@@ -98,7 +97,7 @@
               </div>
               <div class="content" v-else>
                 <p>@#server.Name#@</p>
-                <p>节点已离线</p>
+                <p>{{tr "ServerIsOffline"}}</p>
               </div>
             </div>
           </div>
@@ -347,7 +346,7 @@
       secondToDate(s) {
         var d = Math.floor(s / 3600 / 24);
         if (d > 0) {
-          return d + "天"
+          return d + " {{tr "Day"}}"
         }
         var h = Math.floor(s / 3600 % 24);
         var m = Math.floor(s / 60 % 60);
@@ -367,19 +366,19 @@
     }
   })
 
-  function groupingData(data, filed) {
+  function groupingData(data, field) {
     let map = {};
     let dest = [];
     data.forEach(item => {
-      if (!map[item[filed]]) {
+      if (!map[item[field]]) {
         dest.push({
-          [filed]: item[filed],
+          [field]: item[field],
           data: [item]
         });
-        map[item[filed]] = item;
+        map[item[field]] = item;
       } else {
         dest.forEach(dItem => {
-          if (dItem[filed] == item[filed]) {
+          if (dItem[field] == item[field]) {
             dItem.data.push(item);
           }
         });

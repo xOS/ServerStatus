@@ -4,26 +4,26 @@
         <div class="ui grid">
             <div class="right floated right aligned twelve wide column">
                 <button class="ui right labeled probe-primary-btn icon button" onclick="addOrEditServer()"><i
-                        class="add icon"></i> 添加服务器
+                        class="add icon"></i> {{tr "AddServer"}}
                 </button>
                 <button class="ui right labeled probe-primary-btn icon button" onclick="forceUpdate()"><i
-                        class="arrow alternate circle up outline icon"></i> 强制更新
+                        class="arrow alternate circle up outline icon"></i> {{tr "ForceUpdate"}}
                 </button>
             </div>
         </div>
         <table class="ui very basic table">
             <thead>
                 <tr>
-                    <th><button onclick="checkAllServer()" class="ui mini probe-primary-btn button">全选</button></th>
-                    <th>ID(排序)</th>
-                    <th>名称</th>
-                    <th>分组</th>
+                    <th><button onclick="checkAllServer()" class="ui mini probe-primary-btn button">{{tr "SelectAll"}}</button></th>
+                    <th>ID({{tr "DisplayIndex"}})</th>
+                    <th>{{tr "Name"}}</th>
+                    <th>{{tr "ServerGroup"}}</th>
                     <th>IP</th>
-                    <th>版本号</th>
-                    <th>密钥</th>
-                    <th>安装指令</th>
-                    <th>说明</th>
-                    <th>管理</th>
+                    <th>{{tr "VersionNumber"}}</th>
+                    <th>{{tr "Secret"}}</th>
+                    <th>{{tr "OneKeyInstall"}}</th>
+                    <th>{{tr "Note"}}</th>
+                    <th>{{tr "Administration"}}</th>
                 </tr>
             </thead>
             <tbody>
@@ -38,17 +38,14 @@
                     <td>{{$server.Secret}}</td>
                     <td>
                         <div class="ui mini icon buttons">
-                        <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}curl -L https://cdn.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && chmod +x server-status.sh && ./server-status.sh install_agent {{$.Conf.GRPCHost}} {{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}请先在设置页面配置 后端探针配置{{end}}"
-                            data-tooltip="点击复制安装命令">
+                        <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}curl -L https://cdn.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && ./server-status.sh install_agent {{$.Conf.GRPCHost}} {{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}"
+                            data-tooltip="{{tr "ClickToCopyTheInstallationCommand"}}">
                             <i class="linux icon"></i>
                         </button>
-                        <button class="ui icon mini button" data-tooltip="尚未支持，请下载release手动安装">
+                        <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}set-ExecutionPolicy RemoteSigned;Invoke-WebRequest https://cdn.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.ps1 -OutFile C:\server-status.ps1;powershell.exe C:\server-status.ps1 {{$.Conf.GRPCHost}}:{{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}"
+                            data-tooltip="{{tr "ClickToCopyTheInstallationCommand"}}">
                             <i class="windows icon"></i>
                         </button>
-                        <button class="ui icon mini button" data-tooltip="尚未支持，请下载release手动安装">
-                            <i class="apple icon"></i>
-                        </button>
-                        </div>
                     </td>
                     <td style="word-break: break-word;">{{$server.Note}}</td>
                     <td>
@@ -59,7 +56,8 @@
                             <button class="ui button" onclick="addOrEditServer({{$server.Marshal}})">
                                 <i class="edit icon"></i>
                             </button>
-                            <button class="ui button" onclick="showConfirm('删除服务器','确认删除此服务器？',deleteRequest,'/api/server/'+{{$server.ID}})">
+                            <button class="ui button"
+                                onclick="showConfirm('{{tr "DeleteServer"}}}','{{tr "ConfirmToDeleteThisServer"}}',deleteRequest,'/api/server/'+{{$server.ID}})">
                                 <i class="trash alternate outline icon"></i>
                             </button>
                         </div>
@@ -91,7 +89,7 @@
         })
         if (servers.length == 0) {
             $.suiAlert({
-                title: '当前没有选中的服务器',
+                title: '{{tr "NoServerSelected"}}',
                 description: '',
                 type: 'warning',
                 time: '2',
@@ -103,7 +101,7 @@
             .then((resp) => {
                 if (resp.code == 200) {
                     $.suiAlert({
-                        title: '执行结果',
+                        title: '{{tr "ExecutionResults"}}',
                         description: resp.message,
                         type: 'success',
                         time: '3',

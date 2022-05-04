@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/model"
 	pb "github.com/xos/serverstatus/proto"
 	"github.com/xos/serverstatus/service/singleton"
@@ -64,6 +65,9 @@ func (s *ProbeHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rece
 		singleton.ServerList[clientID].Host.IP != host.IP {
 		singleton.SendNotification(singleton.Conf.IPChangeNotificationTag, fmt.Sprintf(
 			"#探针通知"+"\n"+"[IP 变更]"+"\n"+"%s "+"\n"+"旧 IP：%s"+"\n"+"新 IP：%s",
+			singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
+				MessageID: "IPChanged",
+			}),
 			singleton.ServerList[clientID].Name, singleton.IPDesensitize(singleton.ServerList[clientID].Host.IP), singleton.IPDesensitize(host.IP)), true)
 	}
 

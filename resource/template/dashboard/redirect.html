@@ -1,6 +1,6 @@
 {{define "dashboard/redirect"}}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{.Conf.Language}}">
 
 <head>
     <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 </head>
 
 <body>
+    <p>Please click <a href="{{.URL}}">here</a> if you are not redirected.</p>
     <script>window.location.href = "{{.URL}}"</script>
 </body>
 

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/service/singleton"
@@ -39,7 +40,7 @@ func (gp *guestPage) login(c *gin.Context) {
 		RegistrationLink = "https://gitee.com/signup"
 	}
 	c.HTML(http.StatusOK, "dashboard/login", mygin.CommonEnvironment(c, gin.H{
-		"Title":            "登录",
+		"Title":            singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Login"}),
 		"LoginType":        LoginType,
 		"RegistrationLink": RegistrationLink,
 	}))

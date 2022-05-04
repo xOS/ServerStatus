@@ -3,6 +3,7 @@ package singleton
 import (
 	"time"
 
+	"github.com/patrickmn/go-cache"
 	"gorm.io/driver/sqlite"
 
 	"github.com/patrickmn/go-cache"
@@ -12,7 +13,7 @@ import (
 	"github.com/xos/serverstatus/pkg/utils"
 )
 
-var Version = "v0.1.13"
+var Version = "v0.1.14"
 
 var (
 	Conf  *model.Config
@@ -30,7 +31,6 @@ func Init() {
 		panic(err)
 	}
 
-	Conf = &model.Config{}
 	Cache = cache.New(5*time.Minute, 10*time.Minute)
 }
 
@@ -42,6 +42,7 @@ func LoadSingleton() {
 
 // InitConfigFromPath 从给出的文件路径中加载配置
 func InitConfigFromPath(path string) {
+	Conf = &model.Config{}
 	err := Conf.Read(path)
 	if err != nil {
 		panic(err)

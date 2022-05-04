@@ -1,31 +1,31 @@
 {{define "component/rule"}}
 <div class="ui tiny rule modal transition hidden">
-    <div class="header">添加通知规则</div>
+    <div class="header">{{tr "AddNotificationRule"}}</div>
     <div class="content">
         <form id="ruleForm" class="ui form">
             <input type="hidden" name="ID">
             <div class="field">
-                <label>名称</label>
+                <label>{{tr "Name"}}</label>
                 <input type="text" name="Name">
             </div>
             <div class="secret field">
-                <label>规则</label>
+                <label>{{tr "Rules"}}</label>
                 <textarea name="RulesRaw"></textarea>
             </div>
             <div class="field">
-                <label>通知分组</label>
+                <label>{{tr "NotificationMethodGroup"}}</label>
                 <input type="text" name="NotificationTag" placeholder="default">
             </div>
             <div class="field">
                 <div class="ui rule-enable checkbox">
                     <input name="Enable" type="checkbox" tabindex="0" class="hidden">
-                    <label>启用</label>
+                    <label>{{tr "Enable"}}</label>
                 </div>
             </div>
         </form>
     </div>
     <div class="actions">
-        <div class="ui negative button">取消</div>
+        <div class="ui negative button">{{tr "Cancel"}}</div>
         <button class="ui positive probe-primary-btn right labeled icon button">确认<i class="checkmark icon"></i>
         </button>
     </div>

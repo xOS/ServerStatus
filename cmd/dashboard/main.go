@@ -14,6 +14,7 @@ func init() {
 	singleton.Init()
 	singleton.InitConfigFromPath("data/config.yaml")
 	singleton.InitDBFromPath("data/sqlite.db")
+	singleton.InitLocalizer()
 	initSystem()
 }
 
