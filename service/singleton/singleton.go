@@ -5,8 +5,6 @@ import (
 
 	"github.com/patrickmn/go-cache"
 	"gorm.io/driver/sqlite"
-
-	"github.com/patrickmn/go-cache"
 	"gorm.io/gorm"
 
 	"github.com/xos/serverstatus/model"
