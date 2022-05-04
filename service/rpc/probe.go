@@ -64,7 +64,7 @@ func (s *ProbeHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rece
 		host.IP != "" &&
 		singleton.ServerList[clientID].Host.IP != host.IP {
 		singleton.SendNotification(singleton.Conf.IPChangeNotificationTag, fmt.Sprintf(
-			"#探针通知"+"\n"+"[IP 变更]"+"\n"+"%s "+"\n"+"旧 IP：%s"+"\n"+"新 IP：%s",
+			"#探针通知"+"\n"+"[%s]"+"\n"+"%s"+"\n"+"旧IP：%s"+"\n"+"新 IP：%s",
 			singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
 				MessageID: "IPChanged",
 			}),
