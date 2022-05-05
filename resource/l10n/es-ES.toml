@@ -521,7 +521,7 @@ other = "Tarea ejecutada fallida"
 other = "Cambio de IP"
 
 [Notify]
-other = "Sonda sonda"
+other = "Notificación de sondeo"
 
 [OldIP]
 other = "IP antigua:"
