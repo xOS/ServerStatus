@@ -124,15 +124,30 @@ func checkStatus() {
 			copier.Copy(&curServer, server)
 			if !passed {
 				alertsPrevState[alert.ID][server.ID] = _RuleCheckFail
-				message := fmt.Sprintf("#探针通知"+"\n"+"[%s]"+"\n"+"%s[%s]"+"\n"+"规则：%s", Localizer.MustLocalize(&i18n.LocalizeConfig{
-					MessageID: "Incident",
-				}), server.Name, IPDesensitize(server.Host.IP), alert.Name)
+				message := fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s[%s]"+"\n"+"%s%s",
+					Localizer.MustLocalize(&i18n.LocalizeConfig{
+						MessageID: "Notify",
+					}),
+					Localizer.MustLocalize(&i18n.LocalizeConfig{
+						MessageID: "Incident",
+					}), server.Name, IPDesensitize(server.Host.IP),
+					Localizer.MustLocalize(&i18n.LocalizeConfig{
+						MessageID: "Rule",
+					}),
+					alert.Name)
 				go SendNotification(alert.NotificationTag, message, true, &curServer)
 			} else {
 				if alertsPrevState[alert.ID][server.ID] == _RuleCheckFail {
-					message := fmt.Sprintf("#探针通知"+"\n"+"[%s]"+"\n"+"%s[%s]"+"\n"+"规则：%s", Localizer.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "Resolved",
-					}), server.Name, IPDesensitize(server.Host.IP), alert.Name)
+					message := fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s[%s]"+"\n"+"%s%s",
+						Localizer.MustLocalize(&i18n.LocalizeConfig{
+							MessageID: "Notify",
+						}),
+						Localizer.MustLocalize(&i18n.LocalizeConfig{
+							MessageID: "Resolved",
+						}), server.Name, IPDesensitize(server.Host.IP),
+						Localizer.MustLocalize(&i18n.LocalizeConfig{
+							MessageID: "Rule",
+						}), alert.Name)
 					go SendNotification(alert.NotificationTag, message, true, &curServer)
 				}
 				alertsPrevState[alert.ID][server.ID] = _RuleCheckPass

@@ -519,3 +519,21 @@ other = "Task Failed"
 
 [IPChanged]
 other = "IP Changed"
+
+[Notify]
+other = "Porbe Notify"
+
+[OldIP]
+other = "Old IP:"
+
+[NewIP]
+other = "New IP:"
+
+[Rule]
+other = "Rule:"
+
+[TaskServer]
+other = "TaskServer:"
+
+[TaskLog]
+other = "TaskLog:"

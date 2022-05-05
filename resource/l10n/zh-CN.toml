@@ -518,4 +518,22 @@ other = "任务成功"
 other = "任务失败"
 
 [IPChanged]
-other = "IP变更"
+other = "IP 变更"
+
+[Notify]
+other = "探针通知"
+
+[OldIP]
+other = "旧 IP："
+
+[NewIP]
+other = "新 IP："
+
+[Rule]
+other = "规则："
+
+[TaskServer]
+other = "服务器："
+
+[TaskLog]
+other = "日志："

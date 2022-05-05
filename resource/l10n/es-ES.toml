@@ -519,3 +519,21 @@ other = "Tarea ejecutada fallida"
 
 [IPChanged]
 other = "Cambio de IP"
+
+[Notify]
+other = "Sonda sonda"
+
+[OldIP]
+other = "IP antigua:"
+
+[NewIP]
+other = "IP nueva:"
+
+[Rule]
+other = "Regla:"
+
+[TaskServer]
+other = "Servidor de tareas:"
+
+[TaskLog]
+other = "Registro de tareas:"
