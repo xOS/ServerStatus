@@ -11,7 +11,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.5"
+VERSION="v0.1.6"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -142,10 +142,27 @@ install_dashboard() {
     echo -e "> 安装探针面板"
 
     # 探针面板文件夹
-    if [ ! -z "${DASHBOARD_PATH}" ]; then
+    if [ ! -d "${DASHBOARD_PATH}" ]; then
         mkdir -p $DASHBOARD_PATH
-        chmod 777 -R $AGENT_PATH
+	else
+        echo "您可能已经安装过面板端，重复安装会覆盖数据，请注意备份。"
+        read -e -r -p "是否退出安装? [Y/n] " input
+        case $input in
+        [yY][eE][sS] | [yY])
+            echo "退出安装"
+            exit 0
+            ;;
+        [nN][oO] | [nN])
+            echo "继续安装"
+            ;;
+        *)
+            echo "退出安装"
+            exit 0
+            ;;
+        esac
     fi
+    
+    chmod 777 -R $DASHBOARD_PATH
 
     command -v docker >/dev/null 2>&1
     if [[ $? != 0 ]]; then
@@ -190,6 +207,9 @@ install_agent() {
     if [ ! -n "$version" ]; then
         version=$(curl -m 10 -sL "https://cdn.jsdelivr.net/gh/xos/serverstatus/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serverstatus@/v/g')
     fi
+    if [ ! -n "$version" ]; then
+        version=$(curl -m 10 -sL "https://gcore.jsdelivr.net/gh/xos/serverstatus/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serverstatus@/v/g')
+    fi
 
     if [ ! -n "$version" ]; then
         echo -e "获取版本号失败，请检查本机能否链接 https://api.github.com/repos/xos/serverstatus/releases/latest"
@@ -232,6 +252,9 @@ update_agent() {
     local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serverstatus/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
     if [ ! -n "$version" ]; then
         version=$(curl -m 10 -sL "https://cdn.jsdelivr.net/gh/xos/serverstatus/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serverstatus@/v/g')
+    fi
+    if [ ! -n "$version" ]; then
+        version=$(curl -m 10 -sL "https://gcore.jsdelivr.net/gh/xos/serverstatus/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serverstatus@/v/g')
     fi
 
     if [ ! -n "$version" ]; then

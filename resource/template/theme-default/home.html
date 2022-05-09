@@ -14,9 +14,12 @@
                 <div class="header">
                   <i :class="'flag-icon flag-icon-'+server.Host.CountryCode"></i>
                   <i v-if='server.Host.OS == "windows"' class="os-win10"></i>
-                  <i v-if='server.Host.Platform == "darwin"' class="os-apple"></i>
-                  <i v-if='server.Host.Platform == "suse"' class="os-opensuse"></i>
-                  <i v-if='server.Host.Platform == "opensuse"' class="os-opensuse"></i>
+                  <i v-else-if='server.Host.Platform == "darwin"' class="os-apple"></i>
+                  <i v-else-if='server.Host.Platform == "suse"' class="os-opensuse"></i>
+                  <i v-else-if='server.Host.Platform == "opensuse"' class="os-opensuse"></i>
+                  <i v-else-if='server.Host.Platform == "openwrt"' class="os-tux"></i>
+                  <i v-else-if='server.Host.Platform == "linux"' class="os-tux"></i>
+                  <i v-else-if='server.Host.Platform == "amazon"' class="os-redhat"></i>
                   <i :class="'os-'+server.Host.OS"></i>
                   <i :class="'os-'+server.Host.Platform"></i>
                   @#server.Name + (server.live?'':' [{{tr "Offline"}}]')#@
