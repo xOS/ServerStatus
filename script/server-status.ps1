@@ -10,6 +10,14 @@ else {
     $file = "server-agent_windows_386.zip"
 }
 $releases = "https://api.github.com/repos/$repo/releases"
+#重复运行自动更新
+if (Test-Path "C:\server-status") {
+    Write-Host "Server Status monitoring already exists, delete and reinstall" -BackgroundColor DarkGreen -ForegroundColor White
+    C:/server-status/nssm.exe stop server-status
+    C:/server-status/nssm.exe remove server-status
+    Remove-Item "C:\server-status" -Recurse
+}
+#TLS/SSL
 Write-Host "Determining latest server-status release" -BackgroundColor DarkGreen -ForegroundColor White
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $tag = (Invoke-WebRequest -Uri $releases -UseBasicParsing | ConvertFrom-Json)[0].tag_name
@@ -39,7 +47,7 @@ Expand-Archive "C:\server-status.zip" -DestinationPath "C:\temp" -Force
 Expand-Archive "C:\nssm.zip" -DestinationPath "C:\temp" -Force
 if (!(Test-Path "C:\server-status")) { New-Item -Path "C:\server-status" -type directory }
 #整理文件
-Move-Item -Path "C:\temp\server-agent.exe" -Destination "C:\server-status\server-status.exe"
+Move-Item -Path "C:\temp\server-agent.exe" -Destination "C:\server-status\server-agent.exe"
 if ($file = "server-agent_windows_amd64.zip") {
     Move-Item -Path "C:\temp\nssm-2.24\win64\nssm.exe" -Destination "C:\server-status\nssm.exe"
 }
@@ -51,7 +59,7 @@ Remove-Item "C:\server-status.zip"
 Remove-Item "C:\nssm.zip"
 Remove-Item "C:\temp" -Recurse
 #安装部分
-C:\server-status\nssm.exe install server-status C:\server-status\server-status.exe -s $server -p $key -d 
+C:\server-status\nssm.exe install server-status C:\server-status\server-agent.exe -s $server -p $key -d 
 C:\server-status\nssm.exe start server-status
 #enjoy
 Write-Host "Enjoy It!" -BackgroundColor DarkGreen -ForegroundColor Red
