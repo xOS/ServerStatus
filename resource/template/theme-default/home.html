@@ -30,9 +30,9 @@
                         v-if='!server.Host.Virtualization'>KVM</span></span> @#specialVir(server.Host.Virtualization)#@
                     [@#server.Host.Arch#@]<br />
                     CPU：@#clearString(server.Host.CPU)#@<br />
-                    {{tr "DiskUsed"}}：@#formatByteSize(server.State.DiskUsed)#@ / @#formatByteSize(server.Host.DiskTotal)#@<br />
                     {{tr "MemUsed"}}：@#formatByteSize(server.State.MemUsed)#@ / @#formatByteSize(server.Host.MemTotal)#@<br />
                     {{tr "SwapUsed"}}：@#formatByteSize(server.State.SwapUsed)#@ / @#formatByteSize(server.Host.SwapTotal)#@<br />
+                    {{tr "DiskUsed"}}：@#formatByteSize(server.State.DiskUsed)#@ / @#formatByteSize(server.Host.DiskTotal)#@<br />
                     {{tr "Load"}}：@# toFixed2(server.State.Load1) #@ | @# toFixed2(server.State.Load5) #@ | @#
                     toFixed2(server.State.Load15) #@<br />
                     {{tr "ProcessCount"}}：@# server.State.ProcessCount #@ 个<br />
