@@ -21,7 +21,7 @@ function readableBytes(bytes) {
   return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
 }
 
-const confirmBtn = $(".mini.confirm.modal .probe-primary-btn.button");
+const confirmBtn = $(".mini.confirm.modal .server-primary-btn.button");
 
 function showConfirm(title, content, callFn, extData) {
   const modal = $(".mini.confirm.modal");
@@ -48,7 +48,7 @@ function showFormModal(modelSelector, formID, URL, getData) {
       closable: true,
       onApprove: function () {
         let success = false;
-        const btn = $(modelSelector + " .probe-primary-btn.button");
+        const btn = $(modelSelector + " .server-primary-btn.button");
         const form = $(modelSelector + " form");
         if (btn.hasClass("loading")) {
           return success;
@@ -121,7 +121,7 @@ function addOrEditAlertRule(rule) {
   const modal = $(".rule.modal");
   modal.children(".header").text((rule ? LANG.Edit : LANG.Add) + ' ' + LANG.AlarmRule);
   modal
-    .find(".probe-primary-btn.button")
+    .find(".server-primary-btn.button")
     .html(
       rule ? LANG.Edit + '<i class="edit icon"></i>' : LANG.Add + '<i class="add icon"></i>'
     );
@@ -141,7 +141,7 @@ function addOrEditNotification(notification) {
   const modal = $(".notification.modal");
   modal.children(".header").text((notification ? LANG.Edit : LANG.Add) + ' ' + LANG.Notification);
   modal
-    .find(".probe-primary-btn.button")
+    .find(".server-primary-btn.button")
     .html(
       notification
         ? LANG.Edit + '<i class="edit icon"></i>'
@@ -204,7 +204,7 @@ function addOrEditServer(server, conf) {
   const modal = $(".server.modal");
   modal.children(".header").text((server ? LANG.Edit : LANG.Add) + ' ' + LANG.Server);
   modal
-    .find(".probe-primary-btn.button")
+    .find(".server-primary-btn.button")
     .html(
       server ? LANG.Edit + '<i class="edit icon"></i>' : LANG.Add + '<i class="add icon"></i>'
     );

@@ -3,10 +3,10 @@
     <div class="ui container">
         <div class="ui grid">
             <div class="right floated right aligned twelve wide column">
-                <button class="ui right labeled probe-primary-btn icon button" onclick="addOrEditServer()"><i
+                <button class="ui right labeled server-primary-btn icon button" onclick="addOrEditServer()"><i
                         class="add icon"></i> {{tr "AddServer"}}
                 </button>
-                <button class="ui right labeled probe-primary-btn icon button" onclick="forceUpdate()"><i
+                <button class="ui right labeled server-primary-btn icon button" onclick="forceUpdate()"><i
                         class="arrow alternate circle up outline icon"></i> {{tr "ForceUpdate"}}
                 </button>
             </div>
@@ -14,7 +14,7 @@
         <table class="ui very basic table">
             <thead>
                 <tr>
-                    <th><button onclick="checkAllServer()" class="ui mini probe-primary-btn button">{{tr "SelectAll"}}</button></th>
+                    <th><button onclick="checkAllServer()" class="ui mini server-primary-btn button">{{tr "SelectAll"}}</button></th>
                     <th>ID({{tr "DisplayIndex"}})</th>
                     <th>{{tr "Name"}}</th>
                     <th>{{tr "ServerGroup"}}</th>
@@ -29,7 +29,7 @@
             <tbody>
                 {{range $server := .Servers}}
                 <tr>
-                    <td><input type="checkbox" class="probe-servers" value="{{$server.ID}}" /></td>
+                    <td><input type="checkbox" class="server-servers" value="{{$server.ID}}" /></td>
                     <td>{{$server.ID}}({{$server.DisplayIndex}})</td>
                     <td>{{$server.Name}}</td>
                     <td>{{$server.Tag}}</td>
@@ -72,7 +72,7 @@
 <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/clipboard.js/2.0.6/clipboard.min.js"></script>
 <script>
     var clipboard = new ClipboardJS('.ui.icon.mini.button');
-    const checkBoxList = document.querySelectorAll('tbody > tr > td > input.probe-servers[type=checkbox]')
+    const checkBoxList = document.querySelectorAll('tbody > tr > td > input.server-servers[type=checkbox]')
 
     function checkAllServer() {
         checkBoxList.forEach(cb => {

@@ -23,7 +23,7 @@
                   <i :class="'os-'+server.Host.OS"></i>
                   <i :class="'os-'+server.Host.Platform"></i>
                   @#server.Name + (server.live?'':' [{{tr "Offline"}}]')#@
-                  <i class="probe-primary-font info circle icon" style="height: 28px"></i>
+                  <i class="server-primary-font info circle icon" style="height: 28px"></i>
                   <div class="ui content popup" style="">
                     {{tr "Platform"}}：@#specialOS(server.Host.Platform)#@ <span
                       v-if='server.Host.OS!= "windows"'>@#server.Host.PlatformVersion#@ <span
@@ -303,7 +303,7 @@
       this.group()
     },
     mounted() {
-      $('.probe-primary-font.info.icon').popup({
+      $('.server-primary-font.info.icon').popup({
         popup: '.ui.content.popup',
         exclusive: true,
       });

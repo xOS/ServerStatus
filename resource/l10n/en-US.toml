@@ -1,5 +1,5 @@
-[ProbeMonitoring]
-other = "Probe Monitoring"
+[ServerMonitoring]
+other = "Server Monitoring"
 
 [Server]
 other = "Servers"

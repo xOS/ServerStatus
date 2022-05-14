@@ -1,4 +1,4 @@
-[ProbeMonitoring]
+[ServerMonitoring]
 other = "服务器"
 
 [Server]
@@ -329,7 +329,7 @@ other = "默认"
 other = "已离线"
 
 [Platform]
-other = "系统"
+other = "架构"
 
 [DiskUsed]
 other = "硬盘"

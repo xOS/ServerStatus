@@ -710,15 +710,15 @@ i.s {
     max-width: 100% !important;
 }
 
-.probe-primary-btn {
+.server-primary-btn {
     background-color: #f88400 !important;
     color: white !important;
 }
 
-.probe-primary-font {
+.server-primary-font {
     color: #f88400 !important;
 }
 
-.probe-secondary-font {
+.server-secondary-font {
     color: rgba(252, 166, 7, 0.952) !important;
 }
