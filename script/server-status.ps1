@@ -1,5 +1,5 @@
 #Get server and key
-param($server, $key)
+param($server, $key, $tls)
 # Download latest release from github
 $repo = "xos/serverstatus"
 #  x86 or x64
@@ -59,7 +59,7 @@ Remove-Item "C:\server-status.zip"
 Remove-Item "C:\nssm.zip"
 Remove-Item "C:\temp" -Recurse
 #安装部分
-C:\server-status\nssm.exe install server-status C:\server-status\server-agent.exe -s $server -p $key -d 
+C:\server-status\nssm.exe install server-status C:\server-status\server-agent.exe -s $server -p $key $tls -d 
 C:\server-status\nssm.exe start server-status
 #enjoy
 Write-Host "Enjoy It!" -BackgroundColor DarkGreen -ForegroundColor Red
