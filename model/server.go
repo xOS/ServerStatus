@@ -21,8 +21,8 @@ type Server struct {
 	State      *HostState `gorm:"-"`
 	LastActive time.Time  `gorm:"-"`
 
-	TaskClose  chan error                        `gorm:"-" json:"-"`
-	TaskStream pb.ProbeService_RequestTaskServer `gorm:"-" json:"-"`
+	TaskClose  chan error                         `gorm:"-" json:"-"`
+	TaskStream pb.ServerService_RequestTaskServer `gorm:"-" json:"-"`
 }
 
 func (s *Server) CopyFromRunningServer(old *Server) {

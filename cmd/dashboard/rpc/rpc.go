@@ -12,7 +12,7 @@ import (
 
 func ServeRPC(port uint) {
 	server := grpc.NewServer()
-	pb.RegisterProbeServiceServer(server, &rpcService.ProbeHandler{
+	pb.RegisterServerServiceServer(server, &rpcService.ServerHandler{
 		Auth: &rpcService.AuthHandler{},
 	})
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -21,4 +21,3 @@ func ServeRPC(port uint) {
 	}
 	server.Serve(listen)
 }
-

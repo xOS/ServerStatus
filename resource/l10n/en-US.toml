@@ -278,13 +278,13 @@ other = "Custom code (style, script)"
 other = "Access Password"
 
 [AgentConfig]
-other = "Backend probe configuration"
+other = "Backend server configuration"
 
 [AgentDomainOrIP]
-other = "The domain name or IP pointed to by the backend probe"
+other = "The domain name or IP pointed to by the backend server"
 
 [AgentPort]
-other = "Port pointed to by the backend probe"
+other = "Port pointed to by the backend server"
 
 [IPChangeAlert]
 other = "IP Change Alert"

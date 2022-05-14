@@ -11,11 +11,11 @@ import (
 	"github.com/xos/serverstatus/service/singleton"
 )
 
-type ProbeHandler struct {
+type ServerHandler struct {
 	Auth *AuthHandler
 }
 
-func (s *ProbeHandler) RequestTask(h *pb.Host, stream pb.ProbeService_RequestTaskServer) error {
+func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestTaskServer) error {
 	var clientID uint64
 	var err error
 	if clientID, err = s.Auth.Check(stream.Context()); err != nil {
@@ -33,7 +33,7 @@ func (s *ProbeHandler) RequestTask(h *pb.Host, stream pb.ProbeService_RequestTas
 	return <-closeCh
 }
 
-func (s *ProbeHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.Receipt, error) {
+func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.Receipt, error) {
 	var clientID uint64
 	var err error
 	if clientID, err = s.Auth.Check(c); err != nil {
@@ -47,7 +47,7 @@ func (s *ProbeHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.Re
 	return &pb.Receipt{Proced: true}, nil
 }
 
-func (s *ProbeHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Receipt, error) {
+func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Receipt, error) {
 	var clientID uint64
 	var err error
 	if clientID, err = s.Auth.Check(c); err != nil {

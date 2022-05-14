@@ -48,7 +48,7 @@ type AgentCliParam struct {
 var (
 	version string
 	arch    string
-	client  pb.ProbeServiceClient
+	client  pb.ServerServiceClient
 	inited  bool
 )
 
@@ -189,7 +189,7 @@ func run() {
 			continue
 		}
 		cancel()
-		client = pb.NewProbeServiceClient(conn)
+		client = pb.NewServerServiceClient(conn)
 		// 第一步注册
 		timeOutCtx, cancel = context.WithTimeout(context.Background(), networkTimeOut)
 		_, err = client.ReportSystemInfo(timeOutCtx, monitor.GetHost(&agentConfig).PB())
@@ -214,7 +214,7 @@ func run() {
 	}
 }
 
-func receiveTasks(tasks pb.ProbeService_RequestTaskClient) error {
+func receiveTasks(tasks pb.ServerService_RequestTaskClient) error {
 	var err error
 	defer println("receiveTasks exit", time.Now(), "=>", err)
 	for {

@@ -3,7 +3,7 @@ option go_package = "./proto";
 
 package proto;
 
-service ProbeService {
+service ServerService {
     rpc ReportSystemState(State)returns(Receipt){}
     rpc ReportSystemInfo(Host)returns(Receipt){}
     rpc RequestTask(Host)returns(stream Task){}
