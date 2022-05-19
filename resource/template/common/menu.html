@@ -5,8 +5,8 @@
             <a class="logo{{if eq .MatchedPath " /"}} active{{end}}" href="/"><img src="static/logo.png?v20220423" style="display: inline-block; vertical-align: middle; margin: -.3em 0; width: 2.5em;"></a>
         </div>
         {{if .IsAdminPage}}
-        <a class='item{{if eq .MatchedPath "/server"}} active{{end}}' href="/server"><i class="server icon"></i>资产</a>
-        <a class='item{{if eq .MatchedPath "/notification"}} active{{end}}' href="/notification"><i class="bell icon"></i>报警</a>
+        <a class='item{{if eq .MatchedPath "/server"}} active{{end}}' href="/server"><i class="server icon"></i>{{tr "Server"}}</a>
+        <a class='item{{if eq .MatchedPath "/notification"}} active{{end}}' href="/notification"><i class="bell icon"></i>{{tr "Notification"}}</a>
         <a class='item{{if eq .MatchedPath "/setting"}} active{{end}}' href="/setting">
             <i class="setting icon"></i>{{tr "Settings"}}
         </a>
@@ -25,6 +25,9 @@
                         {{if .IsAdminPage}}
                         <a class="item" href="/">
                             <i class="chart area icon"></i>{{tr "BackToHomepage"}}
+                        </a>
+                        <a class="item" href="/api">
+                            <i class="chart key icon"></i>API Token
                         </a>
                         {{else}}
                         <a class="item" href="/server">

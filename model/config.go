@@ -18,6 +18,7 @@ var Languages = map[string]string{
 
 var Themes = map[string]string{
 	"default": "Default",
+	"custom":   "Custom(third-party)",
 }
 
 const (

@@ -44,7 +44,7 @@ func execCase(t *testing.T, item testSt) {
 		Note:         "",
 		DisplayIndex: 0,
 		Host: &Host{
-			OS:        "",
+			OS:              "",
 			Platform:        "",
 			PlatformVersion: "",
 			CPU:             nil,
@@ -75,11 +75,9 @@ func execCase(t *testing.T, item testSt) {
 			UdpConnCount:   0,
 			ProcessCount:   0,
 		},
-		LastActive:            time.Time{},
-		TaskClose:             nil,
-		TaskStream:            nil,
-		PrevHourlyTransferIn:  0,
-		PrevHourlyTransferOut: 0,
+		LastActive: time.Time{},
+		TaskClose:  nil,
+		TaskStream: nil,
 	}
 	ns := NotificationServerBundle{
 		Notification: &n,

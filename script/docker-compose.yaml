@@ -6,6 +6,8 @@ services:
     restart: always
     volumes:
       - ./data:/dashboard/data
+      - ./theme-custom/template:/dashboard/resuorce/template/theme-default:ro
+      - ./theme-custom/static:/dashboard/resuorce/static/theme-default:ro
     ports:
       - site_port:site_port
       - grpc_port:grpc_port

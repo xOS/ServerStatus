@@ -26,6 +26,16 @@ func (mp *memberPage) serve() {
 	mr.GET("/server", mp.server)
 	mr.GET("/notification", mp.notification)
 	mr.GET("/setting", mp.setting)
+	mr.GET("/api", mp.api)
+}
+
+func (mp *memberPage) api(c *gin.Context) {
+	singleton.ApiLock.RLock()
+	defer singleton.ApiLock.RUnlock()
+	c.HTML(http.StatusOK, "dashboard/api", mygin.CommonEnvironment(c, gin.H{
+		"title":  singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ApiManagement"}),
+		"Tokens": singleton.ApiTokenList,
+	}))
 }
 
 func (mp *memberPage) server(c *gin.Context) {

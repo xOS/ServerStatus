@@ -11,7 +11,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.7"
+VERSION="v0.1.8"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -130,9 +130,9 @@ install_base() {
 }
 
 install_soft() {
-    # Arch官方库不包含selinux等组件
-    (command -v yum >/dev/null 2>&1 && yum install $* selinux-policy -y) ||
-        (command -v apt >/dev/null 2>&1 && apt install $* selinux-utils -y) ||
+	# Arch官方库不包含selinux等组件
+    (command -v yum >/dev/null 2>&1 && yum update && yum install $* selinux-policy -y) ||
+        (command -v apt >/dev/null 2>&1 && apt update && apt install $* selinux-utils -y) ||
         (command -v pacman >/dev/null 2>&1 && pacman -Syu $*) ||
         (command -v apt-get >/dev/null 2>&1 && apt-get update && apt-get install $* selinux-utils -y)
 }
@@ -210,6 +210,7 @@ selinux(){
 
 install_agent() {
     install_base
+    selinux
 
     echo -e "> 安装探针"
 

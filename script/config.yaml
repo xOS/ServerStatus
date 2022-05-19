@@ -1,4 +1,5 @@
 debug: true
+language: zh-CN
 httpport: site_port
 grpcport: grpc_port
 grpchost: grpc_host

@@ -11,7 +11,7 @@ import (
 	"github.com/xos/serverstatus/pkg/utils"
 )
 
-var Version = "v0.1.15"
+var Version = "v0.1.16"
 
 var (
 	Conf  *model.Config
@@ -36,6 +36,7 @@ func Init() {
 func LoadSingleton() {
 	LoadNotifications() // 加载通知服务
 	LoadServers()       // 加载服务器列表
+	LoadAPI()
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
@@ -60,7 +61,7 @@ func InitDBFromPath(path string) {
 		DB = DB.Debug()
 	}
 	err = DB.AutoMigrate(model.Server{}, model.User{},
-		model.Notification{}, model.AlertRule{}, model.Monitor{})
+		model.Notification{}, model.AlertRule{}, model.Monitor{}, model.ApiToken{})
 	if err != nil {
 		panic(err)
 	}
