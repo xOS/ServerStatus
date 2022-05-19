@@ -595,7 +595,7 @@ i.icon.area.chart {
 }
 
 i.logout.icon {
-    color: #f44336 !important;
+    color: #ef1505 !important;
 }
 
 i.edit.icon {
@@ -603,7 +603,19 @@ i.edit.icon {
 }
 
 i.sellsy.icon {
-    color: #f88400 !important;
+    color: #9c27b0 !important;
+}
+
+i.heartbeat.icon {
+    color: #fa1605 !important;
+}
+
+i.globe.icon {
+    color: #03a9f4 !important;
+}
+
+i.home.icon {
+    color: #03a9f4 !important;
 }
 
 i.trash.alternate.outline.icon {
@@ -611,7 +623,11 @@ i.trash.alternate.outline.icon {
 }
 
 i.terminal.icon {
-    color: #f3670b !important;
+    color: #03a9f4 !important;
+}
+
+i.th.icon {
+    color: #03a9f4 !important;
 }
 
 i.key.icon {

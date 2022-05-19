@@ -479,16 +479,19 @@ other = "计划任务"
 other="API"
 
 [IssueNewApiToken]
-other="添加 Token"
+other="添加密钥"
+
+[APIToken]
+other="API 密钥"
 
 [Token]
-other="Token"
+other="密钥"
 
 [DeleteToken]
-other="删除 Token"
+other="删除密钥"
 
 [ConfirmToDeleteThisToken]
-other="确认删除 Token"
+other="确认删除密钥"
 
 [YouAreNotAuthorized]
 other = "此页面需要登录"

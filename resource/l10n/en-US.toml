@@ -481,6 +481,9 @@ other = "API"
 [IssueNewApiToken]
 other = "Add a token"
 
+[APIToken]
+other="API Token"
+
 [Token]
 other = "Token"
 

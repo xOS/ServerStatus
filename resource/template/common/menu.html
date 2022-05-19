@@ -24,14 +24,14 @@
                     <div class="menu">
                         {{if .IsAdminPage}}
                         <a class="item" href="/">
-                            <i class="chart area icon"></i>{{tr "BackToHomepage"}}
+                            <i class="home icon"></i>{{tr "BackToHomepage"}}
                         </a>
                         <a class="item" href="/api">
-                            <i class="chart key icon"></i>API Token
+                            <i class="chart key icon"></i>{{tr "APIToken"}}
                         </a>
                         {{else}}
                         <a class="item" href="/server">
-                            <i class="terminal icon"></i>{{tr "AdminPanel"}}
+                            <i class="th icon"></i>{{tr "AdminPanel"}}
                         </a>
                         {{end}}
                         <button class="item" onclick="showConfirm('{{tr "ConfirmLogout"}}','{{tr "AfterLoggingOutYouHaveToLoginAgain"}}',logout,{{.Admin.ID}})">
