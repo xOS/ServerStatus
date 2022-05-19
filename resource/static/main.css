@@ -614,6 +614,10 @@ i.terminal.icon {
     color: #f3670b !important;
 }
 
+i.key.icon {
+    color: #f88400 !important;
+}
+
 i.arrow.alternate.circle.down.outline.icon {
     color: green;
 }
