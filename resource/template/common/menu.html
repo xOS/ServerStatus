@@ -6,6 +6,7 @@
         </div>
         {{if .IsAdminPage}}
         <a class='item{{if eq .MatchedPath "/server"}} active{{end}}' href="/server"><i class="server icon"></i>{{tr "Server"}}</a>
+        <a class='item{{if eq .MatchedPath "/api"}} active{{end}}' href="/api"><i class="chart key icon"></i>{{tr "ApiManagement"}}</a>
         <a class='item{{if eq .MatchedPath "/notification"}} active{{end}}' href="/notification"><i class="bell icon"></i>{{tr "Notification"}}</a>
         <a class='item{{if eq .MatchedPath "/setting"}} active{{end}}' href="/setting">
             <i class="setting icon"></i>{{tr "Settings"}}
@@ -25,9 +26,6 @@
                         {{if .IsAdminPage}}
                         <a class="item" href="/">
                             <i class="home icon"></i>{{tr "BackToHomepage"}}
-                        </a>
-                        <a class="item" href="/api">
-                            <i class="chart key icon"></i>{{tr "APIToken"}}
                         </a>
                         {{else}}
                         <a class="item" href="/server">
