@@ -22,8 +22,6 @@
 
 ## 安装脚本
 
-**推荐配置：** 安装前解析 _两个域名_ 到面板服务器，一个作为 _公开访问_ ，可以 **接入CDN**；另外一个作为安装探针时连接面板使用，**不能接入CDN** 直接暴露面板主机IP。
-
 ```shell
 curl -L https://raw.githubusercontent.com/xos/serverstatus/master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh
 sudo ./server-status.sh
@@ -104,24 +102,24 @@ URL 里面也可放置占位符，请求时会进行简单的字符串替换。
    - server 酱示例
 
      - 名称：server 酱
-     - URL：<https://sc.ftqq.com/SCUrandomkeys.send?text=#NG>#
-     - 请求方式: GET
+     - URL：`https://sc.ftqq.com/SCUrandomkeys.send?text=#NG#`
+     - 请求方式: `GET`
      - 请求类型: 默认
      - Body: 空
 
    - wxpusher 示例，需要关注你的应用
 
      - 名称: wxpusher
-     - URL：<http://wxpusher.zjiecode.com/api/send/message>
-     - 请求方式: POST
-     - 请求类型: JSON
+     - URL：`http://wxpusher.zjiecode.com/api/send/message`
+     - 请求方式: `POST`
+     - 请求类型: `JSON`
      - Body: `{"appToken":"你的appToken","topicIds":[],"content":"#NG#","contentType":"1","uids":["你的uid"]}`
 
    - telegram 示例 [@haitau](https://github.com/haitau) 贡献
 
      - 名称：telegram 机器人消息通知
-     - URL：<https://api.telegram.org/botXXXXXX/sendMessage?chat_id=YYYYYY&text=#NG>#
-     - 请求方式: GET
+     - URL：`https://api.telegram.org/botXXXXXX/sendMessage?chat_id=YYYYYY&text=#NG#`
+     - 请求方式: `GET`
      - 请求类型: 默认
      - Body: 空
      - URL 参数获取说明：botXXXXXX 中的 XXXXXX 是在 telegram 中关注官方 @Botfather ，输入/newbot ，创建新的机器人（bot）时，会提供的 token（在提示 Use this token to access the HTTP API:后面一行）这里 'bot' 三个字母不可少。创建 bot 后，需要先在 telegram 中与 BOT 进行对话（随便发个消息），然后才可用 API 发送消息。YYYYYY 是 telegram 用户的数字 ID。与机器人@userinfobot 对话可获得。
