@@ -18,7 +18,13 @@
 
 ## 演示图
 
+### 前台
+
 ![首页截图](https://i.cdn.ink/views/e6c1b8.png)
+
+### 后台
+
+![后台截图](https://i.cdn.ink/views/dab12c.png)
 
 ## 安装脚本
 
