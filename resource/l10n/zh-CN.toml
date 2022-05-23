@@ -235,6 +235,12 @@ other = "删除通知方式"
 [ConfirmToDeleteThisNotificationMethod]
 other = "确认删除此通知方式？"
 
+[DeleteNotificationRule]
+other = "删除报警规则"
+
+[ConfirmToDeleteThisNotificationRule]
+other = "确认删除此报警规则？"
+
 [ForceUpdate]
 other = "强制更新"
 
@@ -491,7 +497,7 @@ other="密钥"
 other="删除密钥"
 
 [ConfirmToDeleteThisToken]
-other="确认删除密钥"
+other="确认删除密钥？"
 
 [YouAreNotAuthorized]
 other = "此页面需要登录"

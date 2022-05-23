@@ -35,7 +35,7 @@
                                 <i class="edit icon"></i>
                             </button>
                             <button class="ui button"
-                                onclick="showConfirm('{{tr "DeleteNotificationMethod"}}','{{tr "ConfirmToDeleteThisNotificationMethod"}}',deleteRequest,'/api/notification/'+{{$notification.ID}})">
+                                onclick="showConfirm('{{tr "DeleteNotificationMethod"}}'+'[{{$notification.Name}}]','{{tr "ConfirmToDeleteThisNotificationMethod"}}',deleteRequest,'/api/notification/'+{{$notification.ID}})">
                                 <i class="trash alternate outline icon"></i>
                             </button>
                         </div>
@@ -77,7 +77,7 @@
                                 <i class="edit icon"></i>
                             </button>
                             <button class="ui button"
-                                onclick="showConfirm('{{tr "DeleteNotificationMethod"}}','{{tr "ConfirmToDeleteThisNotificationMethod"}}',deleteRequest,'/api/alert-rule/'+{{$rule.ID}})">
+                                onclick="showConfirm('{{tr "DeleteNotificationRule"}}'+'[{{$rule.Name}}]','{{tr "ConfirmToDeleteThisNotificationRule"}}',deleteRequest,'/api/alert-rule/'+{{$rule.ID}})">
                                 <i class="trash alternate outline icon"></i>
                             </button>
                         </div>
