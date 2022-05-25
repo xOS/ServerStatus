@@ -20,11 +20,11 @@
 
 ### 前台
 
-![首页截图](https://i.cdn.ink/views/e6c1b8.png)
+![首页截图](https://i.cdn.ink/views/2022/05/25/b168b1.png)
 
 ### 后台
 
-![后台截图](https://i.cdn.ink/views/dab12c.png)
+![后台截图](https://i.cdn.ink/views/2022/05/25/fd1b7d.png)
 
 ## 安装脚本
 
@@ -37,7 +37,7 @@ sudo ./server-status.sh
     <summary>国内镜像加速：</summary>
 
 ```shell
-curl -L https://cdn.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh
+curl -L https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh
 CN=true sudo ./server-status.sh
 ```
 
