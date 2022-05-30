@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -211,6 +210,7 @@ func (ma *memberAPI) delete(c *gin.Context) {
 		err = singleton.DB.Unscoped().Delete(&model.Notification{}, "id = ?", id).Error
 		if err == nil {
 			singleton.OnDeleteNotification(id)
+		}
 	case "cron":
 		err = singleton.DB.Unscoped().Delete(&model.Cron{}, "id = ?", id).Error
 		if err == nil {
