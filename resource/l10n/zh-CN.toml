@@ -561,3 +561,9 @@ other = "服务器："
 
 [TaskLog]
 other = "日志："
+
+[Traffic]
+other = "流量"
+
+[Transleft]
+other = "流量剩余"

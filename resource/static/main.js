@@ -4,6 +4,7 @@ let LANG = {
   AlarmRule: "报警规则",
   Notification: "通知方式",
   Server: "服务器",
+  Traffic: "流量",
   Cron: "计划任务",
 }
 
@@ -302,6 +303,44 @@ function deleteRequest(api) {
     })
     .fail((err) => {
       alert("网络错误：" + err.responseText);
+    });
+}
+
+function manualTrigger(btn, cronId) {
+  $(btn).toggleClass("loading");
+  $.ajax({
+    url: "/api/cron/" + cronId + "/manual",
+    type: "GET",
+  })
+    .done((resp) => {
+      $(btn).toggleClass("loading");
+      if (resp.code == 200) {
+        $.suiAlert({
+          title: "触发成功，等待执行结果",
+          type: "success",
+          description: resp.message,
+          time: "3",
+          position: "top-center",
+        });
+      } else {
+        $.suiAlert({
+          title: "触发失败 ",
+          type: "error",
+          description: resp.code + "：" + resp.message,
+          time: "3",
+          position: "top-center",
+        });
+      }
+    })
+    .fail((err) => {
+      $(btn).toggleClass("loading");
+      $.suiAlert({
+        title: "触发失败 ",
+        type: "error",
+        description: "网络错误：" + err.responseText,
+        time: "3",
+        position: "top-center",
+      });
     });
 }
 

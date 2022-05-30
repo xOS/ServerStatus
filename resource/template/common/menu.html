@@ -6,6 +6,7 @@
         </div>
         {{if .IsAdminPage}}
         <a class='item{{if eq .MatchedPath "/server"}} active{{end}}' href="/server"><i class="server icon"></i>{{tr "Server"}}</a>
+        <a class='item{{if eq .MatchedPath "/traffic"}} active{{end}}' href="/traffic"><i class="bullseye icon"></i>{{tr "Traffic"}}</a>
         <a class='item{{if eq .MatchedPath "/cron"}} active{{end}}' href="/cron"><i class="clock icon"></i>{{tr "Task"}}</a>
         <a class='item{{if eq .MatchedPath "/api"}} active{{end}}' href="/api"><i class="chart key icon"></i>{{tr "ApiManagement"}}</a>
         <a class='item{{if eq .MatchedPath "/notification"}} active{{end}}' href="/notification"><i class="bell icon"></i>{{tr "Notification"}}</a>

@@ -561,3 +561,9 @@ other = "TaskServer:"
 
 [TaskLog]
 other = "TaskLog:"
+
+[Traffic]
+other = "Traffic"
+
+[Transleft]
+other = "Data remaining"

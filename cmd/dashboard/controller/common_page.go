@@ -101,6 +101,7 @@ func (p *commonPage) checkViewPassword(c *gin.Context) {
 
 	c.Next()
 }
+
 func (cp *commonPage) getServerStat() ([]byte, error) {
 	v, err, _ := cp.requestGroup.Do("serverStats", func() (any, error) {
 		singleton.SortedServerLock.RLock()
