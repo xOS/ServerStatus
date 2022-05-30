@@ -33,6 +33,7 @@ func (ma *memberAPI) serve() {
 
 	mr.GET("/search-server", ma.searchServer)
 	mr.POST("/server", ma.addOrEditServer)
+	mr.POST("/traffic", ma.addOrEditAlertRule)
 	mr.POST("/cron", ma.addOrEditCron)
 	mr.GET("/cron/:id/manual", ma.manualTrigger)
 	mr.POST("/force-update", ma.forceUpdate)
