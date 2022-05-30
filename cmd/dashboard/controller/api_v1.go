@@ -1,11 +1,12 @@
 package controller
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/service/singleton"
-	"strconv"
-	"strings"
 )
 
 type apiV1 struct {

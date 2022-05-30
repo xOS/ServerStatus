@@ -21,8 +21,10 @@ var Themes = map[string]string{
 }
 
 const (
-	ConfigTypeGitHub = "github"
-	ConfigTypeGitee  = "gitee"
+	ConfigTypeGitHub  = "github"
+	ConfigTypeGitee   = "gitee"
+	ConfigTypeGitlab  = "gitlab"
+	ConfigTypeJihulab = "jihulab"
 )
 
 const (

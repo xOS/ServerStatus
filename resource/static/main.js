@@ -4,6 +4,7 @@ let LANG = {
   AlarmRule: "报警规则",
   Notification: "通知方式",
   Server: "服务器",
+  Cron: "计划任务",
 }
 
 function updateLang(newLang) {
@@ -240,6 +241,47 @@ function addOrEditServer(server, conf) {
   showFormModal(".server.modal", "#serverForm", "/api/server");
 }
 
+function addOrEditCron(cron) {
+  const modal = $(".cron.modal");
+  modal.children(".header").text((cron ? LANG.Edit : LANG.Add) + ' ' + LANG.Cron);
+  modal
+    .find(".probe-primary-btn.button")
+    .html(
+      cron ? LANG.Edit + '<i class="edit icon"></i>' : LANG.Add + '<i class="add icon"></i>'
+    );
+  modal.find("input[name=ID]").val(cron ? cron.ID : null);
+  modal.find("input[name=Name]").val(cron ? cron.Name : null);
+  modal.find("input[name=NotificationTag]").val(cron ? cron.NotificationTag : null);
+  modal.find("input[name=Scheduler]").val(cron ? cron.Scheduler : null);
+  modal.find("a.ui.label.visible").each((i, el) => {
+    el.remove();
+  });
+  var servers;
+  if (cron) {
+    servers = cron.ServersRaw;
+    const serverList = JSON.parse(servers || "[]");
+    const node = modal.find("i.dropdown.icon");
+    for (let i = 0; i < serverList.length; i++) {
+      node.after(
+        '<a class="ui label transition visible" data-value="' +
+        serverList[i] +
+        '" style="display: inline-block !important;">ID:' +
+        serverList[i] +
+        '<i class="delete icon"></i></a>'
+      );
+    }
+  }
+  modal
+    .find("input[name=ServersRaw]")
+    .val(cron ? "[]," + servers.substr(1, servers.length - 2) : "[]");
+  modal.find("textarea[name=Command]").val(cron ? cron.Command : null);
+  if (cron && cron.PushSuccessful) {
+    modal.find(".ui.push-successful.checkbox").checkbox("set checked");
+  } else {
+    modal.find(".ui.push-successful.checkbox").checkbox("set unchecked");
+  }
+  showFormModal(".cron.modal", "#cronForm", "/api/cron");
+}
 function deleteRequest(api) {
   $.ajax({
     url: api,

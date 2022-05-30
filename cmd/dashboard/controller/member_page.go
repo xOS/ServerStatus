@@ -4,10 +4,10 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/service/singleton"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
 type memberPage struct {
@@ -24,6 +24,7 @@ func (mp *memberPage) serve() {
 		Redirect: "/login",
 	}))
 	mr.GET("/server", mp.server)
+	mr.GET("/cron", mp.cron)
 	mr.GET("/notification", mp.notification)
 	mr.GET("/setting", mp.setting)
 	mr.GET("/api", mp.api)
@@ -47,6 +48,14 @@ func (mp *memberPage) server(c *gin.Context) {
 	}))
 }
 
+func (mp *memberPage) cron(c *gin.Context) {
+	var crons []model.Cron
+	singleton.DB.Find(&crons)
+	c.HTML(http.StatusOK, "dashboard/cron", mygin.CommonEnvironment(c, gin.H{
+		"Title": singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ScheduledTasks"}),
+		"Crons": crons,
+	}))
+}
 func (mp *memberPage) notification(c *gin.Context) {
 	var nf []model.Notification
 	singleton.DB.Find(&nf)

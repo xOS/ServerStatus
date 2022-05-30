@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/xos/serverstatus/cmd/agent/monitor"
+	"github.com/xos/serverstatus/cmd/agent/processgroup"
 	"github.com/xos/serverstatus/cmd/agent/pty"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/utils"
@@ -108,7 +110,7 @@ func main() {
 	flag.BoolVarP(&agentCliParam.Debug, "debug", "d", true, "开启调试信息")
 	flag.BoolVarP(&isEditAgentConfig, "edit-agent-config", "", false, "修改要监控的网卡/分区白名单")
 	flag.StringVarP(&agentCliParam.Server, "server", "s", "localhost:2222", "管理面板RPC端口")
-	flag.StringVarP(&agentCliParam.ClientSecret, "password", "p", "", "探针连接Secret")
+	flag.StringVarP(&agentCliParam.ClientSecret, "password", "p", "", "探针连接密钥")
 	flag.IntVar(&agentCliParam.ReportDelay, "report-delay", 1, "系统状态上报间隔")
 	flag.BoolVar(&agentCliParam.SkipConnectionCount, "skip-conn", false, "不监控连接数")
 	flag.BoolVar(&agentCliParam.SkipProcsCount, "skip-procs", false, "不监控进程数")
@@ -241,11 +243,16 @@ func doTask(task *pb.Task) {
 	switch task.GetType() {
 	case model.TaskTypeTerminal:
 		handleTerminalTask(task)
+	case model.TaskTypeCommand:
+		handleCommandTask(task, &result)
 	case model.TaskTypeUpgrade:
 		handleUpgradeTask(task, &result)
+	case model.TaskTypeKeepalive:
+		return
 	default:
 		println("不支持的任务：", task)
 	}
+	client.ReportTask(context.Background(), &result)
 }
 
 // reportState 向server上报状态信息
@@ -297,6 +304,49 @@ func handleUpgradeTask(task *pb.Task, result *pb.TaskResult) {
 		return
 	}
 	doSelfUpdate(false)
+}
+func handleCommandTask(task *pb.Task, result *pb.TaskResult) {
+	if agentCliParam.DisableCommandExecute {
+		result.Data = "该节点已禁止命令执行"
+		return
+	}
+	startedAt := time.Now()
+	var cmd *exec.Cmd
+	var endCh = make(chan struct{})
+	pg, err := processgroup.NewProcessExitGroup()
+	if err != nil {
+		// 进程组创建失败，直接退出
+		result.Data = err.Error()
+		return
+	}
+	timeout := time.NewTimer(time.Hour * 2)
+	if utils.IsWindows() {
+		cmd = exec.Command("cmd", "/c", task.GetData()) // #nosec
+	} else {
+		cmd = exec.Command("sh", "-c", task.GetData()) // #nosec
+	}
+	cmd.Env = os.Environ()
+	pg.AddProcess(cmd)
+	go func() {
+		select {
+		case <-timeout.C:
+			result.Data = "任务执行超时\n"
+			close(endCh)
+			pg.Dispose()
+		case <-endCh:
+			timeout.Stop()
+		}
+	}()
+	output, err := cmd.Output()
+	if err != nil {
+		result.Data += fmt.Sprintf("%s\n%s", string(output), err.Error())
+	} else {
+		close(endCh)
+		result.Data = string(output)
+		result.Successful = true
+	}
+	pg.Dispose()
+	result.Delay = float32(time.Since(startedAt).Seconds())
 }
 
 type WindowSize struct {

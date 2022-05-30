@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +34,8 @@ func (ma *memberAPI) serve() {
 
 	mr.GET("/search-server", ma.searchServer)
 	mr.POST("/server", ma.addOrEditServer)
+	mr.POST("/cron", ma.addOrEditCron)
+	mr.GET("/cron/:id/manual", ma.manualTrigger)
 	mr.POST("/force-update", ma.forceUpdate)
 	mr.POST("/notification", ma.addOrEditNotification)
 	mr.POST("/alert-rule", ma.addOrEditAlertRule)
@@ -191,11 +194,33 @@ func (ma *memberAPI) delete(c *gin.Context) {
 			}
 			singleton.ServerLock.Unlock()
 			singleton.ReSortServer()
+			// 删除循环流量状态中的此服务器相关的记录
+			singleton.AlertsLock.Lock()
+			for i := 0; i < len(singleton.Alerts); i++ {
+				if singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID] != nil {
+					delete(singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID].ServerName, id)
+					delete(singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID].Transfer, id)
+					delete(singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID].NextUpdate, id)
+				}
+			}
+			singleton.AlertsLock.Unlock()
+			// 删除服务器相关循环流量记录
+			singleton.DB.Unscoped().Delete(&model.Transfer{}, "server_id = ?", id)
 		}
 	case "notification":
 		err = singleton.DB.Unscoped().Delete(&model.Notification{}, "id = ?", id).Error
 		if err == nil {
 			singleton.OnDeleteNotification(id)
+	case "cron":
+		err = singleton.DB.Unscoped().Delete(&model.Cron{}, "id = ?", id).Error
+		if err == nil {
+			singleton.CronLock.RLock()
+			defer singleton.CronLock.RUnlock()
+			cr := singleton.Crons[id]
+			if cr != nil && cr.CronJobID != 0 {
+				singleton.Cron.Remove(cr.CronJobID)
+			}
+			delete(singleton.Crons, id)
 		}
 	case "alert-rule":
 		err = singleton.DB.Unscoped().Delete(&model.AlertRule{}, "id = ?", id).Error
@@ -326,6 +351,91 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 	})
 }
 
+type cronForm struct {
+	ID              uint64
+	Name            string
+	Scheduler       string
+	Command         string
+	ServersRaw      string
+	Cover           uint8
+	PushSuccessful  string
+	NotificationTag string
+}
+
+func (ma *memberAPI) addOrEditCron(c *gin.Context) {
+	var cf cronForm
+	var cr model.Cron
+	err := c.ShouldBindJSON(&cf)
+	if err == nil {
+		cr.Name = cf.Name
+		cr.Scheduler = cf.Scheduler
+		cr.Command = cf.Command
+		cr.ServersRaw = cf.ServersRaw
+		cr.PushSuccessful = cf.PushSuccessful == "on"
+		cr.NotificationTag = cf.NotificationTag
+		cr.ID = cf.ID
+		cr.Cover = cf.Cover
+		err = utils.Json.Unmarshal([]byte(cf.ServersRaw), &cr.Servers)
+	}
+	tx := singleton.DB.Begin()
+	if err == nil {
+		// 保证NotificationTag不为空
+		if cr.NotificationTag == "" {
+			cr.NotificationTag = "default"
+		}
+		if cf.ID == 0 {
+			err = tx.Create(&cr).Error
+		} else {
+			err = tx.Save(&cr).Error
+		}
+	}
+	if err == nil {
+		cr.CronJobID, err = singleton.Cron.AddFunc(cr.Scheduler, singleton.CronTrigger(cr))
+	}
+	if err == nil {
+		err = tx.Commit().Error
+	} else {
+		tx.Rollback()
+	}
+	if err != nil {
+		c.JSON(http.StatusOK, model.Response{
+			Code:    http.StatusBadRequest,
+			Message: fmt.Sprintf("请求错误：%s", err),
+		})
+		return
+	}
+
+	singleton.CronLock.Lock()
+	defer singleton.CronLock.Unlock()
+	crOld := singleton.Crons[cr.ID]
+	if crOld != nil && crOld.CronJobID != 0 {
+		singleton.Cron.Remove(crOld.CronJobID)
+	}
+
+	delete(singleton.Crons, cr.ID)
+	singleton.Crons[cr.ID] = &cr
+
+	c.JSON(http.StatusOK, model.Response{
+		Code: http.StatusOK,
+	})
+}
+
+func (ma *memberAPI) manualTrigger(c *gin.Context) {
+	var cr model.Cron
+	if err := singleton.DB.First(&cr, "id = ?", c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusOK, model.Response{
+			Code:    http.StatusBadRequest,
+			Message: err.Error(),
+		})
+		return
+	}
+
+	singleton.ManualTrigger(cr)
+
+	c.JSON(http.StatusOK, model.Response{
+		Code: http.StatusOK,
+	})
+}
 func (ma *memberAPI) forceUpdate(c *gin.Context) {
 	var forceUpdateServers []uint64
 	if err := c.ShouldBindJSON(&forceUpdateServers); err != nil {
@@ -442,9 +552,24 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 			err = errors.New("至少定义一条规则")
 		} else {
 			for i := 0; i < len(r.Rules); i++ {
-				if r.Rules[i].Duration < 3 {
-					err = errors.New("错误：Duration 至少为 3")
-					break
+				if !r.Rules[i].IsTransferDurationRule() {
+					if r.Rules[i].Duration < 3 {
+						err = errors.New("错误：Duration 至少为 3")
+						break
+					}
+				} else {
+					if r.Rules[i].CycleInterval < 1 {
+						err = errors.New("错误: cycle_interval 至少为 1")
+						break
+					}
+					if r.Rules[i].CycleStart == nil {
+						err = errors.New("错误: cycle_start 未设置")
+						break
+					}
+					if r.Rules[i].CycleStart.After(time.Now()) {
+						err = errors.New("错误: cycle_start 是个未来值")
+						break
+					}
 				}
 			}
 		}

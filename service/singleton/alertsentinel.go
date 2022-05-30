@@ -25,17 +25,44 @@ type NotificationHistory struct {
 
 // 报警规则
 var (
-	AlertsLock      sync.RWMutex
-	Alerts          []*model.AlertRule
-	alertsStore     map[uint64]map[uint64][][]interface{} // [alert_id][server_id] -> 对应报警规则的检查结果
-	alertsPrevState map[uint64]map[uint64]uint            // [alert_id][server_id] -> 对应报警规则的上一次报警状态
-
+	AlertsLock                    sync.RWMutex
+	Alerts                        []*model.AlertRule
+	alertsStore                   map[uint64]map[uint64][][]interface{} // [alert_id][server_id] -> 对应报警规则的检查结果
+	alertsPrevState               map[uint64]map[uint64]uint            // [alert_id][server_id] -> 对应报警规则的上一次报警状态
+	AlertsCycleTransferStatsStore map[uint64]*model.CycleTransferStats  // [alert_id] -> 对应报警规则的周期流量统计
 )
+
+// addCycleTransferStatsInfo 向AlertsCycleTransferStatsStore中添加周期流量报警统计信息
+func addCycleTransferStatsInfo(alert *model.AlertRule) {
+	if !alert.Enabled() {
+		return
+	}
+	for j := 0; j < len(alert.Rules); j++ {
+		if !alert.Rules[j].IsTransferDurationRule() {
+			continue
+		}
+		if AlertsCycleTransferStatsStore[alert.ID] == nil {
+			from := alert.Rules[j].GetTransferDurationStart()
+			to := alert.Rules[j].GetTransferDurationEnd()
+			AlertsCycleTransferStatsStore[alert.ID] = &model.CycleTransferStats{
+				Name:       alert.Name,
+				From:       from,
+				To:         to,
+				Max:        uint64(alert.Rules[j].Max),
+				Min:        uint64(alert.Rules[j].Min),
+				ServerName: make(map[uint64]string),
+				Transfer:   make(map[uint64]uint64),
+				NextUpdate: make(map[uint64]time.Time),
+			}
+		}
+	}
+}
 
 // AlertSentinelStart 报警器启动
 func AlertSentinelStart() {
 	alertsStore = make(map[uint64]map[uint64][][]interface{})
 	alertsPrevState = make(map[uint64]map[uint64]uint)
+	AlertsCycleTransferStatsStore = make(map[uint64]*model.CycleTransferStats)
 	AlertsLock.Lock()
 	if err := DB.Find(&Alerts).Error; err != nil {
 		panic(err)
@@ -48,6 +75,7 @@ func AlertSentinelStart() {
 		}
 		alertsStore[alert.ID] = make(map[uint64][][]interface{})
 		alertsPrevState[alert.ID] = make(map[uint64]uint)
+		addCycleTransferStatsInfo(alert)
 	}
 	AlertsLock.Unlock()
 
@@ -86,6 +114,8 @@ func OnRefreshOrAddAlert(alert model.AlertRule) {
 	}
 	alertsStore[alert.ID] = make(map[uint64][][]interface{})
 	alertsPrevState[alert.ID] = make(map[uint64]uint)
+	delete(AlertsCycleTransferStatsStore, alert.ID)
+	addCycleTransferStatsInfo(&alert)
 }
 
 func OnDeleteAlert(id uint64) {
@@ -99,6 +129,7 @@ func OnDeleteAlert(id uint64) {
 			i--
 		}
 	}
+	delete(AlertsCycleTransferStatsStore, id)
 }
 
 // checkStatus 检查报警规则并发送报警
@@ -116,7 +147,7 @@ func checkStatus() {
 		for _, server := range ServerList {
 			// 监测点
 			alertsStore[alert.ID][server.ID] = append(alertsStore[alert.
-				ID][server.ID], alert.Snapshot(server, DB))
+				ID][server.ID], alert.Snapshot(AlertsCycleTransferStatsStore[alert.ID], server, DB))
 			// 发送通知，分为触发报警和恢复通知
 			max, passed := alert.Check(alertsStore[alert.ID][server.ID])
 			// 保存当前服务器状态信息

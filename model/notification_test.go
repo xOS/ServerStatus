@@ -75,9 +75,11 @@ func execCase(t *testing.T, item testSt) {
 			UdpConnCount:   0,
 			ProcessCount:   0,
 		},
-		LastActive: time.Time{},
-		TaskClose:  nil,
-		TaskStream: nil,
+		LastActive:            time.Time{},
+		TaskClose:             nil,
+		TaskStream:            nil,
+		PrevHourlyTransferIn:  0,
+		PrevHourlyTransferOut: 0,
 	}
 	ns := NotificationServerBundle{
 		Notification: &n,

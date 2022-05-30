@@ -6,6 +6,7 @@ package proto;
 service ServerService {
     rpc ReportSystemState(State)returns(Receipt){}
     rpc ReportSystemInfo(Host)returns(Receipt){}
+    rpc ReportTask(TaskResult)returns(Receipt){}
     rpc RequestTask(Host)returns(stream Task){}
 }
 

@@ -4,7 +4,7 @@ httpport: site_port
 grpcport: grpc_port
 grpchost: grpc_host
 oauth2:
-  type: "oauth2_type" #Oauth2 登录接入类型，gitee/github
+  type: "oauth2_type" #Oauth2 登录接入类型，Github/Gitlab/jihulab/Gitee
   admin: "admin_logins" #管理员列表，半角逗号隔开
   clientid: "github_oauth_client_id" # 在 https://github.com/settings/developers 创建，无需审核 Callback 填 http(s)://域名或IP/oauth2/callback
   clientsecret: "github_oauth_client_secret"

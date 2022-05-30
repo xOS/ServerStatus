@@ -29,7 +29,7 @@ type Host struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	OS              string   `protobuf:"bytes,13,opt,name=os,proto3" json:"os,omitempty"`
+	Os              string   `protobuf:"bytes,13,opt,name=os,proto3" json:"os,omitempty"`
 	Platform        string   `protobuf:"bytes,1,opt,name=platform,proto3" json:"platform,omitempty"`
 	PlatformVersion string   `protobuf:"bytes,2,opt,name=platform_version,json=platformVersion,proto3" json:"platform_version,omitempty"`
 	Cpu             []string `protobuf:"bytes,3,rep,name=cpu,proto3" json:"cpu,omitempty"`
@@ -78,7 +78,7 @@ func (*Host) Descriptor() ([]byte, []int) {
 
 func (x *Host) GetOs() string {
 	if x != nil {
-		return x.OS
+		return x.Os
 	}
 	return ""
 }
@@ -586,18 +586,21 @@ var file_proto_server_proto_rawDesc = []byte{
 	0x20, 0x01, 0x28, 0x08, 0x52, 0x0a, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x66, 0x75, 0x6c,
 	0x22, 0x21, 0x0a, 0x07, 0x52, 0x65, 0x63, 0x65, 0x69, 0x70, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x70,
 	0x72, 0x6f, 0x63, 0x65, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x08, 0x52, 0x06, 0x70, 0x72, 0x6f,
-	0x63, 0x65, 0x64, 0x32, 0xa4, 0x01, 0x0a, 0x0d, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x53, 0x65,
+	0x63, 0x65, 0x64, 0x32, 0xd7, 0x01, 0x0a, 0x0d, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x53, 0x65,
 	0x72, 0x76, 0x69, 0x63, 0x65, 0x12, 0x33, 0x0a, 0x11, 0x52, 0x65, 0x70, 0x6f, 0x72, 0x74, 0x53,
 	0x79, 0x73, 0x74, 0x65, 0x6d, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x0c, 0x2e, 0x70, 0x72, 0x6f,
 	0x74, 0x6f, 0x2e, 0x53, 0x74, 0x61, 0x74, 0x65, 0x1a, 0x0e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
 	0x2e, 0x52, 0x65, 0x63, 0x65, 0x69, 0x70, 0x74, 0x22, 0x00, 0x12, 0x31, 0x0a, 0x10, 0x52, 0x65,
 	0x70, 0x6f, 0x72, 0x74, 0x53, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x49, 0x6e, 0x66, 0x6f, 0x12, 0x0b,
 	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x48, 0x6f, 0x73, 0x74, 0x1a, 0x0e, 0x2e, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x63, 0x65, 0x69, 0x70, 0x74, 0x22, 0x00, 0x12, 0x2b, 0x0a,
-	0x0b, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x54, 0x61, 0x73, 0x6b, 0x12, 0x0b, 0x2e, 0x70,
-	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x48, 0x6f, 0x73, 0x74, 0x1a, 0x0b, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x2e, 0x54, 0x61, 0x73, 0x6b, 0x22, 0x00, 0x30, 0x01, 0x42, 0x09, 0x5a, 0x07, 0x2e, 0x2f,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x63, 0x65, 0x69, 0x70, 0x74, 0x22, 0x00, 0x12, 0x31, 0x0a,
+	0x0a, 0x52, 0x65, 0x70, 0x6f, 0x72, 0x74, 0x54, 0x61, 0x73, 0x6b, 0x12, 0x11, 0x2e, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x61, 0x73, 0x6b, 0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x1a, 0x0e,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x63, 0x65, 0x69, 0x70, 0x74, 0x22, 0x00,
+	0x12, 0x2b, 0x0a, 0x0b, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x54, 0x61, 0x73, 0x6b, 0x12,
+	0x0b, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x48, 0x6f, 0x73, 0x74, 0x1a, 0x0b, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x61, 0x73, 0x6b, 0x22, 0x00, 0x30, 0x01, 0x42, 0x09, 0x5a,
+	0x07, 0x2e, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -623,12 +626,14 @@ var file_proto_server_proto_goTypes = []interface{}{
 var file_proto_server_proto_depIdxs = []int32{
 	1, // 0: proto.ServerService.ReportSystemState:input_type -> proto.State
 	0, // 1: proto.ServerService.ReportSystemInfo:input_type -> proto.Host
-	0, // 2: proto.ServerService.RequestTask:input_type -> proto.Host
-	4, // 3: proto.ServerService.ReportSystemState:output_type -> proto.Receipt
-	4, // 4: proto.ServerService.ReportSystemInfo:output_type -> proto.Receipt
-	2, // 5: proto.ServerService.RequestTask:output_type -> proto.Task
-	3, // [3:6] is the sub-list for method output_type
-	0, // [0:3] is the sub-list for method input_type
+	3, // 2: proto.ServerService.ReportTask:input_type -> proto.TaskResult
+	0, // 3: proto.ServerService.RequestTask:input_type -> proto.Host
+	4, // 4: proto.ServerService.ReportSystemState:output_type -> proto.Receipt
+	4, // 5: proto.ServerService.ReportSystemInfo:output_type -> proto.Receipt
+	4, // 6: proto.ServerService.ReportTask:output_type -> proto.Receipt
+	2, // 7: proto.ServerService.RequestTask:output_type -> proto.Task
+	4, // [4:8] is the sub-list for method output_type
+	0, // [0:4] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -735,6 +740,7 @@ const _ = grpc.SupportPackageIsVersion6
 type ServerServiceClient interface {
 	ReportSystemState(ctx context.Context, in *State, opts ...grpc.CallOption) (*Receipt, error)
 	ReportSystemInfo(ctx context.Context, in *Host, opts ...grpc.CallOption) (*Receipt, error)
+	ReportTask(ctx context.Context, in *TaskResult, opts ...grpc.CallOption) (*Receipt, error)
 	RequestTask(ctx context.Context, in *Host, opts ...grpc.CallOption) (ServerService_RequestTaskClient, error)
 }
 
@@ -758,6 +764,15 @@ func (c *serverServiceClient) ReportSystemState(ctx context.Context, in *State, 
 func (c *serverServiceClient) ReportSystemInfo(ctx context.Context, in *Host, opts ...grpc.CallOption) (*Receipt, error) {
 	out := new(Receipt)
 	err := c.cc.Invoke(ctx, "/proto.ServerService/ReportSystemInfo", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *serverServiceClient) ReportTask(ctx context.Context, in *TaskResult, opts ...grpc.CallOption) (*Receipt, error) {
+	out := new(Receipt)
+	err := c.cc.Invoke(ctx, "/proto.ServerService/ReportTask", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -800,6 +815,7 @@ func (x *serverServiceRequestTaskClient) Recv() (*Task, error) {
 type ServerServiceServer interface {
 	ReportSystemState(context.Context, *State) (*Receipt, error)
 	ReportSystemInfo(context.Context, *Host) (*Receipt, error)
+	ReportTask(context.Context, *TaskResult) (*Receipt, error)
 	RequestTask(*Host, ServerService_RequestTaskServer) error
 }
 
@@ -812,6 +828,9 @@ func (*UnimplementedServerServiceServer) ReportSystemState(context.Context, *Sta
 }
 func (*UnimplementedServerServiceServer) ReportSystemInfo(context.Context, *Host) (*Receipt, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportSystemInfo not implemented")
+}
+func (*UnimplementedServerServiceServer) ReportTask(context.Context, *TaskResult) (*Receipt, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportTask not implemented")
 }
 func (*UnimplementedServerServiceServer) RequestTask(*Host, ServerService_RequestTaskServer) error {
 	return status.Errorf(codes.Unimplemented, "method RequestTask not implemented")
@@ -857,6 +876,24 @@ func _ServerService_ReportSystemInfo_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ServerService_ReportTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TaskResult)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ServerServiceServer).ReportTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.ServerService/ReportTask",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ServerServiceServer).ReportTask(ctx, req.(*TaskResult))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ServerService_RequestTask_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(Host)
 	if err := stream.RecvMsg(m); err != nil {
@@ -889,6 +926,10 @@ var _ServerService_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportSystemInfo",
 			Handler:    _ServerService_ReportSystemInfo_Handler,
+		},
+		{
+			MethodName: "ReportTask",
+			Handler:    _ServerService_ReportTask_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

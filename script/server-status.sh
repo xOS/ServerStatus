@@ -445,7 +445,7 @@ modify_dashboard_config() {
 
     echo "关于 GitHub Oauth2 应用：在 https://github.com/settings/developers 创建，无需审核，Callback 填 http(s)://域名或IP/oauth2/callback" &&
         echo "关于 Gitee Oauth2 应用：在 https://gitee.com/oauth/applications 创建，无需审核，Callback 填 http(s)://域名或IP/oauth2/callback" &&
-        read -ep "请输入 OAuth2 提供商(Gitee/Github，默认 Github): " oauth2_type &&
+        read -ep "请输入 OAuth2 提供商(github/gitlab/jihulab/gitee，默认 github): " oauth2_type &&
         read -ep "请输入 Oauth2 应用的 Client ID: " github_oauth_client_id &&
         read -ep "请输入 Oauth2 应用的 Client Secret: " github_oauth_client_secret &&
         read -ep "请输入 GitHub/Gitee 登录名作为管理员，多个以逗号隔开: " admin_logins &&

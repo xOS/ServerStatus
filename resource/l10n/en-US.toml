@@ -368,7 +368,7 @@ other = "Last Active"
 other = "Version"
 
 [NetSpeed]
-other = "Network Speed"
+other = "Network"
 
 [Uptime]
 other = "Uptime"
