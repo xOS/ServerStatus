@@ -541,6 +541,9 @@ other = "任务成功"
 [ScheduledTaskExecutedFailed]
 other = "任务失败"
 
+[IPAddress]
+other = "IP 地址"
+
 [IPChanged]
 other = "IP 变更"
 
