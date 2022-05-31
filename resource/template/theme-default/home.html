@@ -30,13 +30,17 @@
                         v-if='!server.Host.Virtualization'>KVM</span></span> @#specialVir(server.Host.Virtualization)#@
                     [@#server.Host.Arch#@]<br />
                     CPU：@#clearString(server.Host.CPU)#@<br />
-                    {{tr "MemUsed"}}：@#formatByteSize(server.State.MemUsed)#@ / @#formatByteSize(server.Host.MemTotal)#@<br />
-                    {{tr "SwapUsed"}}：@#formatByteSize(server.State.SwapUsed)#@ / @#formatByteSize(server.Host.SwapTotal)#@<br />
-                    {{tr "DiskUsed"}}：@#formatByteSize(server.State.DiskUsed)#@ / @#formatByteSize(server.Host.DiskTotal)#@<br />
+                    {{tr "MemUsed"}}：@#formatByteSize(server.State.MemUsed)#@ /
+                    @#formatByteSize(server.Host.MemTotal)#@<br />
+                    {{tr "SwapUsed"}}：@#formatByteSize(server.State.SwapUsed)#@ /
+                    @#formatByteSize(server.Host.SwapTotal)#@<br />
+                    {{tr "DiskUsed"}}：@#formatByteSize(server.State.DiskUsed)#@ /
+                    @#formatByteSize(server.Host.DiskTotal)#@<br />
                     {{tr "Load"}}：@# toFixed2(server.State.Load1) #@ | @# toFixed2(server.State.Load5) #@ | @#
                     toFixed2(server.State.Load15) #@<br />
                     {{tr "ProcessCount"}}：@# server.State.ProcessCount #@ 个<br />
-                    {{tr "ConnCount"}}：TCP @# server.State.TcpConnCount #@ 个 | UDP @# server.State.UdpConnCount #@ 个 <br />
+                    {{tr "ConnCount"}}：TCP @# server.State.TcpConnCount #@ 个 | UDP @# server.State.UdpConnCount #@ 个
+                    <br />
                     {{tr "NetTransfer"}}：<i
                       class="arrow alternate circle down outline icon s"></i>@#formatByteSize(server.State.NetInTransfer)#@
                     | <i
@@ -103,6 +107,60 @@
                 <p>{{tr "ServerIsOffline"}}</p>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+      <div class="ui styled fluid accordion">
+        <div class="title"><i class="dropdown icon"></i>{{tr "CycleTransferStats"}}
+        </div>
+        <div class="content">
+          <div id="traffic" style="margin: 0.1em 0.15em;" class="ui four stackable status cards transition hidden">
+            {{if .CycleTransferStats}}
+            <table class="ui celled table">
+              <thead style="background: rgb(255 255 255 / 50%);">
+                <tr>
+                  <th class="ui center aligned">ID</th>
+                  <th class="ui center aligned">{{tr "Rules"}}</th>
+                  <th class="ui center aligned">{{tr "Server"}}</th>
+                  <th class="ui center aligned">{{tr "From"}}</th>
+                  <th class="ui center aligned">{{tr "To"}}</th>
+                  <th class="ui center aligned">MAX</th>
+                  <th class="ui center aligned">MIN</th>
+                  <th class="ui center aligned">{{tr "NextCheck"}}</th>
+                  <th class="ui center aligned">{{tr "CurrentUsage"}}</th>
+                  <th class='ui center aligned' style='padding: 0px 31px 0px 31px;'>{{tr "Transleft"}}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range $id, $stats := .CycleTransferStats}}
+                {{range $innerId, $transfer := $stats.Transfer}}
+                {{$TransLeftPercent := TransLeftPercent (UintToFloat $transfer) (UintToFloat $stats.Max)}}
+                <tr>
+                  <td class="ui center aligned">{{$id}}</td>
+                  <td class="ui center aligned">{{$stats.Name}}</td>
+                  <td class="ui center aligned">{{index $stats.ServerName $innerId}}</td>
+                  <td class="ui center aligned">{{$stats.From|tf}}</td>
+                  <td class="ui center aligned">{{$stats.To|tf}}</td>
+                  <td class="ui center aligned">{{$stats.Max|bf}}</td>
+                  <td class="ui center aligned">{{$stats.Min|bf}}</td>
+                  <td class="ui center aligned">{{(index $stats.NextUpdate $innerId)|sft}}</td>
+                  <td class="ui center aligned">{{$transfer|bf}}</td>
+                  <td class="ui center aligned" style="padding: 10px 10px 0px 10px; position: relative;">
+                    <div class="thirteen wide column" style="margin: 1.5em 0em;">
+                      <div class="ui progress {{TransClassName $TransLeftPercent}}"
+                        style=" background: rgba(0,0,0,.1); background-color: rgba(0,0,0,.1)!important; height: 25px;">
+                        <div class="bar" style="transition-duration: 300ms; width: {{$TransLeftPercent}}% !important;">
+                        </div><small style="position: relative; top: -2em; margin-left: -20px; line-height: 1.75em;color: rgba(255, 255, 255, 0.7);
+    font-weight: 700;">{{TransLeft $stats.Max $transfer}} | {{$TransLeftPercent}}%</small>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                {{end}}
+                {{end}}
+              </tbody>
+            </table>
+            {{end}}
           </div>
         </div>
       </div>

@@ -407,7 +407,7 @@ other = "Availability"
 other = "Average Latency"
 
 [CycleTransferStats]
-other = "Cycle Transfer Statistics"
+other = "Transfer Statistics"
 
 [From]
 other = "From"

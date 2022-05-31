@@ -407,7 +407,7 @@ other = "在线率"
 other = "平均延迟"
 
 [CycleTransferStats]
-other = "循环流量统计"
+other = "流量统计"
 
 [From]
 other = "自"

@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jinzhu/copier"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
@@ -25,7 +24,6 @@ func (mp *memberPage) serve() {
 		Redirect: "/login",
 	}))
 	mr.GET("/server", mp.server)
-	mr.GET("/traffic", mp.traffic)
 	mr.GET("/cron", mp.cron)
 	mr.GET("/notification", mp.notification)
 	mr.GET("/setting", mp.setting)
@@ -47,17 +45,6 @@ func (mp *memberPage) server(c *gin.Context) {
 	c.HTML(http.StatusOK, "dashboard/server", mygin.CommonEnvironment(c, gin.H{
 		"Title":   singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ServersManagement"}),
 		"Servers": singleton.SortedServerList,
-	}))
-}
-
-func (mp *memberPage) traffic(c *gin.Context) {
-	singleton.AlertsLock.RLock()
-	defer singleton.AlertsLock.RUnlock()
-	var statsStore map[uint64]model.CycleTransferStats
-	copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
-	c.HTML(http.StatusOK, "dashboard/traffic", mygin.CommonEnvironment(c, gin.H{
-		"Title":              singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Traffic"}),
-		"CycleTransferStats": statsStore,
 	}))
 }
 

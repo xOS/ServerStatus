@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/go-uuid"
+	"github.com/jinzhu/copier"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/singleflight"
@@ -116,6 +117,10 @@ func (cp *commonPage) getServerStat() ([]byte, error) {
 
 func (cp *commonPage) home(c *gin.Context) {
 	stat, err := cp.getServerStat()
+	singleton.AlertsLock.RLock()
+	defer singleton.AlertsLock.RUnlock()
+	var statsStore map[uint64]model.CycleTransferStats
+	copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
 	if err != nil {
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
 			Code: http.StatusInternalServerError,
@@ -129,8 +134,9 @@ func (cp *commonPage) home(c *gin.Context) {
 		return
 	}
 	c.HTML(http.StatusOK, "theme-"+singleton.Conf.Site.Theme+"/home", mygin.CommonEnvironment(c, gin.H{
-		"Servers":    string(stat),
-		"CustomCode": singleton.Conf.Site.CustomCode,
+		"Servers":            string(stat),
+		"CycleTransferStats": statsStore,
+		"CustomCode":         singleton.Conf.Site.CustomCode,
 	}))
 }
 

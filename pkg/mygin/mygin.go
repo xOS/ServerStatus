@@ -17,7 +17,6 @@ var adminPage = map[string]bool{
 	"/notification": true,
 	"/cron":         true,
 	"/api":          true,
-	"/traffic":      true,
 }
 
 func CommonEnvironment(c *gin.Context, data map[string]interface{}) gin.H {
@@ -43,7 +42,6 @@ func CommonEnvironment(c *gin.Context, data map[string]interface{}) gin.H {
 		"Notification": singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "NotificationMethod"}),
 		"Server":       singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Server"}),
 		"Cron":         singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ScheduledTasks"}),
-		"Traffic":      singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Traffic"}),
 	}
 	return data
 }
