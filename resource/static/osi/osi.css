@@ -65,6 +65,7 @@
 .os-devuan:before,
 .os-docker:before,
 .os-elementary:before,
+.os-endeavour:before,
 .os-fedora:before,
 .os-fedora-inverse:before,
 .os-ferris:before,
@@ -127,6 +128,7 @@
 .os-devuan:before { content: "\f10c"; }
 .os-docker:before { content: "\f10d"; }
 .os-elementary:before { content: "\f10e"; }
+.os-endeavour:before { content: "\f130"; }
 .os-fedora:before { content: "\f10f"; }
 .os-fedora-inverse:before { content: "\f110"; }
 .os-ferris:before { content: "\f111"; }

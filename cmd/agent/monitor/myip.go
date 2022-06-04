@@ -38,10 +38,10 @@ func (ip *geoIP) Unmarshal(body []byte) error {
 
 var (
 	geoIPApiList = []string{
-		"http://api.nan.ge/json",
+		"http://api.qste.com/json",
 		"https://ipapi.co/json",
 		"http://ip-api.com/json/",
-		"http://ip.nan.ge/json",
+		"http://ip.qste.com/json",
 	}
 	cachedIP, cachedCountry string
 	httpClientV4            = utils.NewSingleStackHTTPClient(time.Second*20, time.Second*5, time.Second*10, false)
