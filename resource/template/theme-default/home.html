@@ -448,28 +448,41 @@
     return dest;
   }
 
-  const wsProtocol = window.location.protocol == "https:" ? "wss" : "ws"
-  const ws = new WebSocket(wsProtocol + '://' + window.location.host + '/ws');
-  ws.onmessage = function (evt) {
-    const oldServers = statusCards.servers
-    const data = JSON.parse(evt.data)
-    statusCards.servers = data.servers
-    for (let i = 0; i < statusCards.servers.length; i++) {
-      const ns = statusCards.servers[i];
-      if (!ns.Host) ns.live = false
-      else {
-        const lastActive = new Date(ns.LastActive).getTime()
-        if (data.now - lastActive > 10 * 1000) {
-          ns.live = false
-        } else {
-          ns.live = true
+  let canShowError = true;
+  function connect() {
+    const wsProtocol = window.location.protocol == "https:" ? "wss" : "ws"
+    const ws = new WebSocket(wsProtocol + '://' + window.location.host + '/ws');
+    ws.onmessage = function (evt) {
+      const oldServers = statusCards.servers
+      const data = JSON.parse(evt.data)
+      statusCards.servers = data.servers
+      for (let i = 0; i < statusCards.servers.length; i++) {
+        const ns = statusCards.servers[i];
+        if (!ns.Host) ns.live = false
+        else {
+          const lastActive = new Date(ns.LastActive).getTime()
+          if (data.now - lastActive > 10 * 1000) {
+            ns.live = false
+          } else {
+            ns.live = true
+          }
         }
       }
+      statusCards.groups = groupingData(statusCards.servers, "Tag")
     }
-    statusCards.groups = groupingData(statusCards.servers, "Tag")
+    ws.onclose = function () {
+      setTimeout(function () {
+        connect()
+      }, 3000);
+    }
+    ws.onerror = function () {
+      ws.close()
+    }
   }
-  $('.ui.accordion')
-    .accordion({ "exclusive": false });
+
+  connect();
+
+  $('.ui.accordion').accordion({ "exclusive": false });
 </script>
 <script>
   var statusList = document.getElementsByTagName('small')
