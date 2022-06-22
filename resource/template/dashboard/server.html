@@ -42,7 +42,7 @@
                             data-tooltip="{{tr "ClickToCopyTheInstallationCommand"}}">
                             <i class="linux icon"></i>
                         </button>
-                        <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}set-ExecutionPolicy RemoteSigned;Invoke-WebRequest https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.ps1 -OutFile C:\server-status.ps1;powershell.exe C:\server-status.ps1 {{$.Conf.GRPCHost}}:{{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}"
+                        <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Ssl3 -bor [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12;set-ExecutionPolicy RemoteSigned;Invoke-WebRequest https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.ps1 -OutFile C:\server-status.ps1;powershell.exe C:\server-status.ps1 {{$.Conf.GRPCHost}}:{{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}"
                             data-tooltip="{{tr "ClickToCopyTheInstallationCommand"}}">
                             <i class="windows icon"></i>
                         </button>
