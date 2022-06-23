@@ -661,6 +661,13 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 		})
 		return
 	}
+	if yes, err := utils.IsTemplateDirEmpty("theme-" + sf.Theme); err != nil || yes {
+		c.JSON(http.StatusOK, model.Response{
+			Code:    http.StatusBadRequest,
+			Message: fmt.Sprintf("前台主题文件异常：%s", err),
+		})
+		return
+	}
 	singleton.Conf.Language = sf.Language
 	singleton.Conf.EnableIPChangeNotification = sf.EnableIPChangeNotification == "on"
 	singleton.Conf.EnablePlainIPInNotification = sf.EnablePlainIPInNotification == "on"
