@@ -180,7 +180,7 @@ a {
 /**进度条**/
 
 .ui.fine.progress>.bar {
-    background-color: #21ba45 !important;
+    background-color: #03a9f4 !important;
 }
 
 .ui.progress>.bar {
@@ -188,7 +188,7 @@ a {
 }
 
 .ui.progress.fine .bar {
-    background-color: #21ba45 !important;
+    background-color: #03a9f4 !important;
 }
 
 .ui.progress.warning .bar {
