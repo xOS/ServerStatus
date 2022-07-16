@@ -661,13 +661,23 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 		})
 		return
 	}
-	if yes, err := utils.IsTemplateDirEmpty("theme-" + sf.Theme); err != nil || yes {
+
+	if _, yes := model.Themes[sf.Theme]; !yes {
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("前台主题文件异常：%s", err),
+			Message: fmt.Sprintf("前台主题不存在：%s", sf.Theme),
 		})
 		return
 	}
+
+	if !utils.IsFileExists("resource/template/theme-" + sf.Theme + "/home.html") {
+		c.JSON(http.StatusOK, model.Response{
+			Code:    http.StatusBadRequest,
+			Message: fmt.Sprintf("前台主题文件异常：%s", sf.Theme),
+		})
+		return
+	}
+
 	singleton.Conf.Language = sf.Language
 	singleton.Conf.EnableIPChangeNotification = sf.EnableIPChangeNotification == "on"
 	singleton.Conf.EnablePlainIPInNotification = sf.EnablePlainIPInNotification == "on"
