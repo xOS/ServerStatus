@@ -38,8 +38,9 @@ func (ip *geoIP) Unmarshal(body []byte) error {
 
 var (
 	geoIPApiList = []string{
+		"http://api.ipapi.com/check?access_key=a4f23fa3948dc4d1c74183ee1271dea5&format=1",
+		"https://extreme-ip-lookup.com/json/",
 		"http://api.qste.com/json",
-		"http://ip.qste.com/json",
 	}
 	cachedIP, cachedCountry string
 	httpClientV4            = utils.NewSingleStackHTTPClient(time.Second*20, time.Second*5, time.Second*10, false)
