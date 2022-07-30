@@ -39,6 +39,7 @@ func (ip *geoIP) Unmarshal(body []byte) error {
 var (
 	geoIPApiList = []string{
 		"https://extreme-ip-lookup.com/json/",
+		"https://api.myip.la/en?json",
 		"http://api.qste.com/json",
 	}
 	cachedIP, cachedCountry string
