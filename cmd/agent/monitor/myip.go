@@ -38,8 +38,8 @@ func (ip *geoIP) Unmarshal(body []byte) error {
 
 var (
 	geoIPApiList = []string{
-		"http://api.ipapi.com/check?access_key=a4f23fa3948dc4d1c74183ee1271dea5&format=1",
 		"https://extreme-ip-lookup.com/json/",
+		"http://api.ipapi.com/check?access_key=a4f23fa3948dc4d1c74183ee1271dea5&format=1",
 		"http://api.qste.com/json",
 	}
 	cachedIP, cachedCountry string
