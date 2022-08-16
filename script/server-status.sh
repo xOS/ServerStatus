@@ -11,7 +11,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.9"
+VERSION="v0.1.10"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -480,6 +480,7 @@ modify_dashboard_config() {
     sed -i "s/grpc_port/${grpc_port}/g" ${DASHBOARD_PATH}/data/config.yaml
     sed -i "s/github_oauth_client_id/${github_oauth_client_id}/" ${DASHBOARD_PATH}/data/config.yaml
     sed -i "s/github_oauth_client_secret/${github_oauth_client_secret}/" ${DASHBOARD_PATH}/data/config.yaml
+	sed -i "s/nz_language/zh-CN/" ${DASHBOARD_PATH}/data/config.yaml
     sed -i "s/site_title/${site_title}/g" ${DASHBOARD_PATH}/data/config.yaml
     sed -i "s/site_port/${site_port}/g" ${DASHBOARD_PATH}/docker-compose.yaml
     sed -i "s/grpc_port/${grpc_port}/g" ${DASHBOARD_PATH}/docker-compose.yaml

@@ -40,7 +40,7 @@ var (
 	geoIPApiList = []string{
 		"https://extreme-ip-lookup.com/json/",
 		"https://api.myip.la/en?json",
-		"http://api.qste.com/json",
+		"http://api.nange.cn/json",
 	}
 	cachedIP, cachedCountry string
 	httpClientV4            = utils.NewSingleStackHTTPClient(time.Second*20, time.Second*5, time.Second*10, false)
