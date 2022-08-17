@@ -38,9 +38,11 @@ func (ip *geoIP) Unmarshal(body []byte) error {
 
 var (
 	geoIPApiList = []string{
-		"https://extreme-ip-lookup.com/json/",
+		"https://extreme-ip-lookup.com/json/?key=4ouEeuaL1jBnnHBgkQ5L",
+		"https://extreme-ip-lookup.com/json/?key=eqEKD78o20R8GhHCpvDp",
+		"https://extreme-ip-lookup.com/json/?key=8NaaAC3PkbrdiYZvxZ7g",
 		"https://api.myip.la/en?json",
-		"http://api.nange.cn/json",
+		"https://api.nange.cn/json",
 	}
 	cachedIP, cachedCountry string
 	httpClientV4            = utils.NewSingleStackHTTPClient(time.Second*20, time.Second*5, time.Second*10, false)
