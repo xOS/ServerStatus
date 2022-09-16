@@ -70,6 +70,9 @@ other = "Ignore All, Only execute by specific servers"
 [AllIncludedOnlySpecificServersAreNotExecuted]
 other = "Cover All, Only ignore specific servers"
 
+[ExecuteByTriggerServer]
+other = "Only servers that are included in the notification rule"
+
 [SpecificServers]
 other = "Specific Servers"
 
@@ -81,6 +84,15 @@ other = "Notification Group"
 
 [PushSuccessMessages]
 other = "Send Success Notification"
+
+[TaskType]
+other = "Task type"
+
+[CronTask]
+other = "Scheduled task"
+
+[TriggerTask]
+other = "Trigger task"
 
 [TheFormaOfTheScheduleIs]
 other = "The Cron Expression is like:"
@@ -148,6 +160,21 @@ other = "Add Alarm Rule"
 [Rules]
 other = "Rules"
 
+[NotificationTriggerMode]
+other = "Mode of triggering notification"
+
+[ModeAlwaysTrigger]
+other = "Always triggered"
+
+[ModeOnetimeTrigger]
+other = "Triggered only once"
+
+[FailTriggerTasks]
+other = "Tasks to be triggered in case of failure"
+
+[RecoverTriggerTasks]
+other = "Tasks to be triggered after fault recovery"
+
 [Enable]
 other = "Enable"
 
@@ -195,6 +222,9 @@ other = "Cover All"
 
 [IgnoreAll]
 other = "Ignore All"
+
+[ByTrigger]
+other = "Execute when triggered"
 
 [DeleteScheduledTask]
 other = "Delete Scheduled Task"
@@ -570,3 +600,6 @@ other = "Traffic"
 
 [Transleft]
 other = "Data remaining"
+
+[DashboardTheme]
+other = "Dasboard Theme"

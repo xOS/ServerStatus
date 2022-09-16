@@ -1,7 +1,6 @@
 package model
 
 import (
-	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -58,7 +57,7 @@ func (c *AgentConfig) Save() error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(c.v.ConfigFileUsed(), data, os.ModePerm)
+	return os.WriteFile(c.v.ConfigFileUsed(), data, os.ModePerm)
 }
 
 // Config 站点配置
@@ -146,5 +145,5 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(c.v.ConfigFileUsed(), data, os.ModePerm)
+	return os.WriteFile(c.v.ConfigFileUsed(), data, os.ModePerm)
 }

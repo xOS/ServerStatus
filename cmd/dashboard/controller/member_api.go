@@ -32,6 +32,7 @@ func (ma *memberAPI) serve() {
 	}))
 
 	mr.GET("/search-server", ma.searchServer)
+	mr.GET("/search-tasks", ma.searchTask)
 	mr.POST("/server", ma.addOrEditServer)
 	mr.POST("/traffic", ma.addOrEditAlertRule)
 	mr.POST("/cron", ma.addOrEditCron)
@@ -268,6 +269,27 @@ func (ma *memberAPI) searchServer(c *gin.Context) {
 	})
 }
 
+func (ma *memberAPI) searchTask(c *gin.Context) {
+	var tasks []model.Cron
+	likeWord := "%" + c.Query("word") + "%"
+	singleton.DB.Select("id,name").Where("id = ? OR name LIKE ?",
+		c.Query("word"), likeWord).Find(&tasks)
+
+	var resp []searchResult
+	for i := 0; i < len(tasks); i++ {
+		resp = append(resp, searchResult{
+			Value: tasks[i].ID,
+			Name:  tasks[i].Name,
+			Text:  tasks[i].Name,
+		})
+	}
+
+	c.JSON(http.StatusOK, map[string]interface{}{
+		"success": true,
+		"results": resp,
+	})
+}
+
 type serverForm struct {
 	ID           uint64
 	Name         string `binding:"required"`
@@ -354,6 +376,7 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 
 type cronForm struct {
 	ID              uint64
+	TaskType        uint8 // 0:计划任务 1:触发任务
 	Name            string
 	Scheduler       string
 	Command         string
@@ -368,6 +391,7 @@ func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 	var cr model.Cron
 	err := c.ShouldBindJSON(&cf)
 	if err == nil {
+		cr.TaskType = cf.TaskType
 		cr.Name = cf.Name
 		cr.Scheduler = cf.Scheduler
 		cr.Command = cf.Command
@@ -378,6 +402,17 @@ func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 		cr.Cover = cf.Cover
 		err = utils.Json.Unmarshal([]byte(cf.ServersRaw), &cr.Servers)
 	}
+
+	// 计划任务类型不得使用触发服务器执行方式
+	if cr.TaskType == model.CronTypeCronTask && cr.Cover == model.CronCoverAlertTrigger {
+		err = errors.New("计划任务类型不得使用触发服务器执行方式")
+		c.JSON(http.StatusOK, model.Response{
+			Code:    http.StatusBadRequest,
+			Message: fmt.Sprintf("请求错误：%s", err),
+		})
+		return
+	}
+
 	tx := singleton.DB.Begin()
 	if err == nil {
 		// 保证NotificationTag不为空
@@ -391,7 +426,10 @@ func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 		}
 	}
 	if err == nil {
-		cr.CronJobID, err = singleton.Cron.AddFunc(cr.Scheduler, singleton.CronTrigger(cr))
+		// 对于计划任务类型，需要更新CronJob
+		if cf.TaskType == model.CronTypeCronTask {
+			cr.CronJobID, err = singleton.Cron.AddFunc(cr.Scheduler, singleton.CronTrigger(cr))
+		}
 	}
 	if err == nil {
 		err = tx.Commit().Error
@@ -534,11 +572,14 @@ func (ma *memberAPI) addOrEditNotification(c *gin.Context) {
 }
 
 type alertRuleForm struct {
-	ID              uint64
-	Name            string
-	RulesRaw        string
-	NotificationTag string
-	Enable          string
+	ID                     uint64
+	Name                   string
+	RulesRaw               string
+	FailTriggerTasksRaw    string // 失败时触发的任务id
+	RecoverTriggerTasksRaw string // 恢复时触发的任务id
+	NotificationTag        string
+	TriggerMode            int
+	Enable                 string
 }
 
 func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
@@ -578,11 +619,22 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 	if err == nil {
 		r.Name = arf.Name
 		r.RulesRaw = arf.RulesRaw
+		r.FailTriggerTasksRaw = arf.FailTriggerTasksRaw
+		r.RecoverTriggerTasksRaw = arf.RecoverTriggerTasksRaw
 		r.NotificationTag = arf.NotificationTag
 		enable := arf.Enable == "on"
+		r.TriggerMode = arf.TriggerMode
 		r.Enable = &enable
 		r.ID = arf.ID
-		//保证NotificationTag不为空
+	}
+	if err == nil {
+		err = utils.Json.Unmarshal([]byte(arf.FailTriggerTasksRaw), &r.FailTriggerTasks)
+	}
+	if err == nil {
+		err = utils.Json.Unmarshal([]byte(arf.RecoverTriggerTasksRaw), &r.RecoverTriggerTasks)
+	}
+	//保证NotificationTag不为空
+	if err == nil {
 		if r.NotificationTag == "" {
 			r.NotificationTag = "default"
 		}
