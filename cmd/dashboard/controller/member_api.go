@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -756,6 +757,7 @@ type settingForm struct {
 	Admin                   string
 	Language                string
 	Theme                   string
+	DashboardTheme          string
 	CustomCode              string
 	ViewPassword            string
 	IgnoredIPNotification   string

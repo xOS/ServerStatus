@@ -198,7 +198,4 @@ var funcMap = template.FuncMap{
 		}
 		return "danger"
 	},
-	"statusName": func(val float32) string {
-		return singleton.StatusCodeToString(singleton.GetStatusCode(val))
-	},
 }
