@@ -77,6 +77,8 @@ function showFormModal(modelSelector, formID, URL, getData) {
                 item.name === "Duration"
               ) {
                 obj[item.name] = parseInt(item.value);
+              } else if (item.name.endsWith("Latency")) {
+                obj[item.name] = parseFloat(item.value);
               } else {
                 obj[item.name] = item.value;
               }
