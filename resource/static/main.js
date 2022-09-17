@@ -165,29 +165,29 @@ function addOrEditAlertRule(rule) {
     const node2 = modal.find("i.dropdown.icon.2");
     for (let i = 0; i < failTriggerTasksList.length; i++) {
       node1.after(
-          '<a class="ui label transition visible" data-value="' +
-          failTriggerTasksList[i] +
-          '" style="display: inline-block !important;">ID:' +
-          failTriggerTasksList[i] +
-          '<i class="delete icon"></i></a>'
+        '<a class="ui label transition visible" data-value="' +
+        failTriggerTasksList[i] +
+        '" style="display: inline-block !important;">ID:' +
+        failTriggerTasksList[i] +
+        '<i class="delete icon"></i></a>'
       );
     }
     for (let i = 0; i < recoverTriggerTasksList.length; i++) {
       node2.after(
-          '<a class="ui label transition visible" data-value="' +
-          recoverTriggerTasksList[i] +
-          '" style="display: inline-block !important;">ID:' +
-          recoverTriggerTasksList[i] +
-          '<i class="delete icon"></i></a>'
+        '<a class="ui label transition visible" data-value="' +
+        recoverTriggerTasksList[i] +
+        '" style="display: inline-block !important;">ID:' +
+        recoverTriggerTasksList[i] +
+        '<i class="delete icon"></i></a>'
       );
     }
   }
   modal
-      .find("input[name=FailTriggerTasksRaw]")
-      .val(rule ? "[]," + failTriggerTasks.substr(1, failTriggerTasks.length - 2) : "[]");
+    .find("input[name=FailTriggerTasksRaw]")
+    .val(rule ? "[]," + failTriggerTasks.substr(1, failTriggerTasks.length - 2) : "[]");
   modal
-      .find("input[name=RecoverTriggerTasksRaw]")
-      .val(rule ? "[]," + recoverTriggerTasks.substr(1, recoverTriggerTasks.length - 2) : "[]");
+    .find("input[name=RecoverTriggerTasksRaw]")
+    .val(rule ? "[]," + recoverTriggerTasks.substr(1, recoverTriggerTasks.length - 2) : "[]");
 
   showFormModal(".rule.modal", "#ruleForm", "/api/alert-rule");
 }
@@ -260,9 +260,9 @@ function issueNewApiToken(apiToken) {
   modal.children(".header").text((apiToken ? LANG.Edit : LANG.Add) + ' ' + "API Token");
   modal
       .find(".server-primary-btn.button")
-      .html(
-          apiToken ? LANG.Edit + '<i class="edit icon"></i>' : LANG.Add + '<i class="add icon"></i>'
-      );
+    .html(
+      apiToken ? LANG.Edit + '<i class="edit icon"></i>' : LANG.Add + '<i class="add icon"></i>'
+    );
   modal.find("textarea[name=Note]").val(apiToken ? apiToken.Note : null);
   showFormModal(".api.modal", "#apiForm", "/api/token");
 }

@@ -21,7 +21,7 @@ var Themes = map[string]string{
 
 var DashboardThemes = map[string]string{
 	"default": "Default",
-	"custom":  "Custom(third-party)",
+	"custom":  "Custom(local)",
 }
 
 const (
