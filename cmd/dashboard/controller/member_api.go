@@ -786,10 +786,26 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 		return
 	}
 
+	if _, yes := model.Themes[sf.DashboardTheme]; !yes {
+		c.JSON(http.StatusOK, model.Response{
+			Code:    http.StatusBadRequest,
+			Message: fmt.Sprintf("后台主题不存在：%s", sf.DashboardTheme),
+		})
+		return
+	}
+
 	if !utils.IsFileExists("resource/template/theme-" + sf.Theme + "/home.html") {
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("前台主题文件异常：%s", sf.Theme),
+		})
+		return
+	}
+
+	if !utils.IsFileExists("resource/template/dashboard-" + sf.DashboardTheme + "/setting.html") {
+		c.JSON(http.StatusOK, model.Response{
+			Code:    http.StatusBadRequest,
+			Message: fmt.Sprintf("后台主题文件异常：%s", sf.DashboardTheme),
 		})
 		return
 	}
@@ -804,6 +820,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 	singleton.Conf.IPChangeNotificationTag = sf.IPChangeNotificationTag
 	singleton.Conf.Site.Brand = sf.Title
 	singleton.Conf.Site.Theme = sf.Theme
+	singleton.Conf.Site.DashboardTheme = sf.DashboardTheme
 	singleton.Conf.Site.CustomCode = sf.CustomCode
 	singleton.Conf.Site.ViewPassword = sf.ViewPassword
 	singleton.Conf.Oauth2.Admin = sf.Admin

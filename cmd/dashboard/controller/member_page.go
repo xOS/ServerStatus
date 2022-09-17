@@ -33,7 +33,7 @@ func (mp *memberPage) serve() {
 func (mp *memberPage) api(c *gin.Context) {
 	singleton.ApiLock.RLock()
 	defer singleton.ApiLock.RUnlock()
-	c.HTML(http.StatusOK, "dashboard/api", mygin.CommonEnvironment(c, gin.H{
+	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/api", mygin.CommonEnvironment(c, gin.H{
 		"title":  singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ApiManagement"}),
 		"Tokens": singleton.ApiTokenList,
 	}))
@@ -42,7 +42,7 @@ func (mp *memberPage) api(c *gin.Context) {
 func (mp *memberPage) server(c *gin.Context) {
 	singleton.SortedServerLock.RLock()
 	defer singleton.SortedServerLock.RUnlock()
-	c.HTML(http.StatusOK, "dashboard/server", mygin.CommonEnvironment(c, gin.H{
+	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/server", mygin.CommonEnvironment(c, gin.H{
 		"Title":   singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ServersManagement"}),
 		"Servers": singleton.SortedServerList,
 	}))
@@ -51,7 +51,7 @@ func (mp *memberPage) server(c *gin.Context) {
 func (mp *memberPage) cron(c *gin.Context) {
 	var crons []model.Cron
 	singleton.DB.Find(&crons)
-	c.HTML(http.StatusOK, "dashboard/cron", mygin.CommonEnvironment(c, gin.H{
+	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/cron", mygin.CommonEnvironment(c, gin.H{
 		"Title": singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ScheduledTasks"}),
 		"Crons": crons,
 	}))
@@ -61,7 +61,7 @@ func (mp *memberPage) notification(c *gin.Context) {
 	singleton.DB.Find(&nf)
 	var ar []model.AlertRule
 	singleton.DB.Find(&ar)
-	c.HTML(http.StatusOK, "dashboard/notification", mygin.CommonEnvironment(c, gin.H{
+	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/notification", mygin.CommonEnvironment(c, gin.H{
 		"Title":         singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Notification"}),
 		"Notifications": nf,
 		"AlertRules":    ar,
@@ -69,9 +69,10 @@ func (mp *memberPage) notification(c *gin.Context) {
 }
 
 func (mp *memberPage) setting(c *gin.Context) {
-	c.HTML(http.StatusOK, "dashboard/setting", mygin.CommonEnvironment(c, gin.H{
-		"Title":     singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Settings"}),
-		"Languages": model.Languages,
-		"Themes":    model.Themes,
+	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/setting", mygin.CommonEnvironment(c, gin.H{
+		"Title":           singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Settings"}),
+		"Languages":       model.Languages,
+		"Themes":          model.Themes,
+		"DashboardThemes": model.DashboardThemes,
 	}))
 }
