@@ -377,10 +377,6 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 		Code: http.StatusOK,
 	})
 }
-	c.JSON(http.StatusOK, model.Response{
-		Code: http.StatusOK,
-	})
-}
 
 type cronForm struct {
 	ID              uint64
