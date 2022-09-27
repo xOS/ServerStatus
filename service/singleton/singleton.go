@@ -12,7 +12,7 @@ import (
 	"github.com/xos/serverstatus/pkg/utils"
 )
 
-var Version = "v0.1.26"
+var Version = "v0.1.27"
 
 var (
 	Conf  *model.Config
