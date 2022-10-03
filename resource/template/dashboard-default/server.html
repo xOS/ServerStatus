@@ -23,6 +23,7 @@
                     <th>{{tr "ServerGroup"}}</th>
                     <th>{{tr "IPAddress"}}</th>
                     <th>{{tr "VersionNumber"}}</th>
+                    <th>{{tr "HideForGuest"}}</th>
                     <th>{{tr "Secret"}}</th>
                     <th>{{tr "OneKeyInstall"}}</th>
                     <th>{{tr "Note"}}</th>
@@ -38,9 +39,12 @@
                     <td>{{$server.Tag}}</td>
                     <td>{{$server.Host.IP}}</td>
                     <td>{{$server.Host.Version}}</td>
-                    <td>{{$server.Secret}}</td>
+                    <td>{{$server.HideForGuest}}</td>
                     <td>
                         <div class="ui mini icon buttons">
+						<button class="ui icon mini button" data-clipboard-text="{{$server.Secret}}">
+                            <i class="copy icon"></i>
+                        </button>
                         <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}curl -L https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && ./server-status.sh install_agent {{$.Conf.GRPCHost}} {{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}"
                             data-tooltip="{{tr "ClickToCopyTheInstallationCommand"}}">
                             <i class="linux icon"></i>

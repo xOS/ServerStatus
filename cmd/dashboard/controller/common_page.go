@@ -100,23 +100,57 @@ func (p *commonPage) checkViewPassword(c *gin.Context) {
 		return
 	}
 
+	c.Set(model.CtxKeyViewPasswordVerified, true)
 	c.Next()
 }
 
-func (cp *commonPage) getServerStat() ([]byte, error) {
+func (p *commonPage) service(c *gin.Context) {
+	res, _, _ := p.requestGroup.Do("servicePage", func() (interface{}, error) {
+		singleton.AlertsLock.RLock()
+		defer singleton.AlertsLock.RUnlock()
+		var stats map[uint64]model.ServiceItemResponse
+		var statsStore map[uint64]model.CycleTransferStats
+		copier.Copy(&stats, singleton.ServiceSentinelShared.LoadStats())
+		copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
+		return []interface {
+		}{
+			stats, statsStore,
+		}, nil
+	})
+	c.HTML(http.StatusOK, "theme-"+singleton.Conf.Site.Theme+"/service", mygin.CommonEnvironment(c, gin.H{
+		"Title":              singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ServicesStatus"}),
+		"Services":           res.([]interface{})[0],
+		"CycleTransferStats": res.([]interface{})[1],
+		"CustomCode":         singleton.Conf.Site.CustomCode,
+	}))
+}
+
+func (cp *commonPage) getServerStat(c *gin.Context) ([]byte, error) {
 	v, err, _ := cp.requestGroup.Do("serverStats", func() (any, error) {
 		singleton.SortedServerLock.RLock()
 		defer singleton.SortedServerLock.RUnlock()
+
+		_, isMember := c.Get(model.CtxKeyAuthorizedUser)
+		_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
+
+		var servers []*model.Server
+
+		if isMember || isViewPasswordVerfied {
+			servers = singleton.SortedServerList
+		} else {
+			servers = singleton.SortedServerListForGuest
+		}
+
 		return utils.Json.Marshal(Data{
 			Now:     time.Now().Unix() * 1000,
-			Servers: singleton.SortedServerList,
+			Servers: servers,
 		})
 	})
 	return v.([]byte), err
 }
 
 func (cp *commonPage) home(c *gin.Context) {
-	stat, err := cp.getServerStat()
+	stat, err := cp.getServerStat(c)
 	singleton.AlertsLock.RLock()
 	defer singleton.AlertsLock.RUnlock()
 	var statsStore map[uint64]model.CycleTransferStats
@@ -169,7 +203,7 @@ func (cp *commonPage) ws(c *gin.Context) {
 	defer conn.Close()
 	count := 0
 	for {
-		stat, err := cp.getServerStat()
+		stat, err := cp.getServerStat(c)
 		if err != nil {
 			continue
 		}
