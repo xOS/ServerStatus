@@ -203,7 +203,7 @@ other = "批量修改分组"
 other = "输入分组名称"
 
 [ServerGroup]
-other = "服务器分组"
+other = "分组"
 
 [EinsteinLightspeed1]
 other = "北京"
@@ -216,6 +216,9 @@ other = "越大越靠前"
 
 [Secret]
 other = "密钥"
+
+[CopySecret]
+other="复制密钥"
 
 [Note]
 other = "备注"
@@ -236,7 +239,7 @@ other = "最后执行"
 other = "最后结果"
 
 [Administration]
-other = "管理"
+other = "操作"
 
 [CoverAll]
 other = "覆盖所有"
@@ -299,7 +302,7 @@ other = "强制更新"
 other = "全选"
 
 [VersionNumber]
-other = "版本号"
+other = "版本"
 
 [OneKeyInstall]
 other = "一键安装"
@@ -626,4 +629,4 @@ other = "流量剩余"
 other = "管理后台主题"
 
 [HideForGuest]
-other = "对游客隐藏"
+other = "仅管理可见"

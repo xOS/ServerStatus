@@ -13,8 +13,9 @@
         <table class="ui very basic table">
             <thead>
             <tr>
-                <th>{{tr "Token"}}</th>
+                <th>{{tr "APIToken"}}</th>
                 <th>{{tr "Note"}}</th>
+                <th>{{tr "Administration"}}</th>
             </tr>
             </thead>
             <tbody>
@@ -24,6 +25,9 @@
                 <td>{{$token.Note}}</td>
                 <td>
                     <div class="ui mini icon buttons">
+                        <button class="ui icon mini button" data-clipboard-text="{{$token.Token}}">
+                            <i class="copy icon"></i>
+                        </button>
                         <button class="ui button"
                                 onclick="showConfirm('{{tr "DeleteToken"}}'+'[{{$token.Note}}]','{{tr "ConfirmToDeleteThisToken"}}',deleteRequest,'/api/token/'+{{$token.Token}})">
                         <i class="trash alternate outline icon"></i>

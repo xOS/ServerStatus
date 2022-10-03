@@ -11,7 +11,9 @@
 <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/vue/2.6.14/vue.min.js"></script>
 <script src="static/main.js?v20221003"></script>
 <script src="static/wallpaper.js?v20220423"></script>
+<script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/clipboard.js/2.0.6/clipboard.min.js"></script>
 <script>
+    var clipboard = new ClipboardJS('.ui.icon.mini.button');
     var def_bg = document.getElementById('def_background');
     if (def_bg) {
         Wallpaper.init(def_bg);

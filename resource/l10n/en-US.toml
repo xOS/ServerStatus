@@ -217,6 +217,9 @@ other = "Greater numbers will be displayed first"
 [Secret]
 other = "Secret"
 
+[CopySecret]
+other="Copy Secret"
+
 [Note]
 other = "Note"
 

@@ -598,6 +598,10 @@ i.logout.icon {
     color: #ef1505 !important;
 }
 
+i.copy.icon {
+    color: #FF9800 !important;
+}
+
 i.edit.icon {
     color: #21ba45 !important;
 }
