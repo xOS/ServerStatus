@@ -110,7 +110,6 @@ func (p *commonPage) service(c *gin.Context) {
 		defer singleton.AlertsLock.RUnlock()
 		var stats map[uint64]model.ServiceItemResponse
 		var statsStore map[uint64]model.CycleTransferStats
-		copier.Copy(&stats, singleton.ServiceSentinelShared.LoadStats())
 		copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
 		return []interface {
 		}{
