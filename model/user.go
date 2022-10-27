@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"code.gitea.io/sdk/gitea"
-	"github.com/google/go-github/github"
+	"github.com/google/go-github/v47/github"
 	"github.com/xanzy/go-gitlab"
 
 	"github.com/xos/serverstatus/pkg/utils"
