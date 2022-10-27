@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"github.com/ory/graceful"
-	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/cmd/dashboard/controller"
 	"github.com/xos/serverstatus/cmd/dashboard/rpc"
 	"github.com/xos/serverstatus/service/singleton"

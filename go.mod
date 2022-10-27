@@ -12,7 +12,6 @@ require (
 	github.com/creack/pty v1.1.18
 	github.com/gin-contrib/pprof v1.4.0
 	github.com/gin-gonic/gin v1.8.1
-	github.com/google/go-github v17.0.0+incompatible
 	github.com/google/go-github/v47 v47.1.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/go-uuid v1.0.3
@@ -51,6 +50,7 @@ require (
 	github.com/go-playground/validator/v10 v10.11.1 // indirect
 	github.com/goccy/go-json v0.9.11 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/google/go-github v17.0.0+incompatible // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.1 // indirect
