@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
-	"gopkg.in/yaml.v2"
+	"sigs.k8s.io/yaml"
 )
 
 var Languages = map[string]string{
@@ -29,6 +29,7 @@ const (
 	ConfigTypeGitee   = "gitee"
 	ConfigTypeGitlab  = "gitlab"
 	ConfigTypeJihulab = "jihulab"
+	ConfigTypeGitea   = "gitea"
 )
 
 const (
@@ -82,6 +83,7 @@ type Config struct {
 		Admin        string // 管理员用户名列表
 		ClientID     string
 		ClientSecret string
+		Endpoint     string
 	}
 	HTTPPort      uint
 	GRPCPort      uint
@@ -96,6 +98,8 @@ type Config struct {
 	IPChangeNotificationTag    string
 	Cover                      uint8  // 覆盖范围（0:提醒未被 IgnoredIPNotification 包含的所有服务器; 1:仅提醒被 IgnoredIPNotification 包含的服务器;）
 	IgnoredIPNotification      string // 特定服务器IP（多个服务器用逗号分隔）
+
+	Location string // 时区，默认为 Asia/Shanghai
 
 	v                              *viper.Viper
 	IgnoredIPNotificationServerIDs map[uint64]bool // [ServerID] -> bool(值为true代表当前ServerID在特定服务器列表内）
@@ -129,6 +133,9 @@ func (c *Config) Read(path string) error {
 	}
 	if c.EnableIPChangeNotification && c.IPChangeNotificationTag == "" {
 		c.IPChangeNotificationTag = "default"
+	}
+	if c.Location == "" {
+		c.Location = "Asia/Shanghai"
 	}
 
 	c.updateIgnoredIPNotificationID()

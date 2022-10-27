@@ -8,6 +8,7 @@ oauth2:
   admin: "admin_logins" #管理员列表，半角逗号隔开
   clientid: "github_oauth_client_id" # 在 https://github.com/settings/developers 创建，无需审核 Callback 填 http(s)://域名或IP/oauth2/callback
   clientsecret: "github_oauth_client_secret"
+  endpoint: "" # 如gitea自建需要设置
 site:
   brand: "site_title"
   cookiename: "server-dash" #浏览器 Cookie 字段名，可不改

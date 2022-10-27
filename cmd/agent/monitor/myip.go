@@ -2,7 +2,7 @@ package monitor
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -44,7 +44,7 @@ var (
 		"https://api.myip.la/en?json",
 		"https://api.nange.cn/json",
 	}
-	cachedIP, cachedCountry string
+	CachedIP, cachedCountry string
 	httpClientV4            = utils.NewSingleStackHTTPClient(time.Second*20, time.Second*5, time.Second*10, false)
 	httpClientV6            = utils.NewSingleStackHTTPClient(time.Second*20, time.Second*5, time.Second*10, true)
 )
@@ -88,7 +88,7 @@ func fetchGeoIP(servers []string, isV6 bool) geoIP {
 			resp, err = httpClientV4.Get(servers[i])
 		}
 		if err == nil {
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				continue
 			}
@@ -119,6 +119,6 @@ func httpGetWithUA(client *http.Client, url string) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36")
+	req.Header.Add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36")
 	return client.Do(req)
 }

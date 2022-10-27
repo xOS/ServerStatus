@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/ory/graceful"
+	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/cmd/dashboard/controller"
 	"github.com/xos/serverstatus/cmd/dashboard/rpc"
 	"github.com/xos/serverstatus/service/singleton"
@@ -12,8 +13,8 @@ import (
 
 func init() {
 	// 初始化 dao 包
-	singleton.Init()
 	singleton.InitConfigFromPath("data/config.yaml")
+	singleton.InitTimezoneAndCache()
 	singleton.InitDBFromPath("data/sqlite.db")
 	singleton.InitLocalizer()
 	initSystem()

@@ -307,8 +307,8 @@ other = "版本"
 [OneKeyInstall]
 other = "一键安装"
 
-[ClickToCopyTheInstallationCommand]
-other = "点击复制安装命令"
+[ClickToCopy]
+other = "点击复制"
 
 [DeleteServer]
 other = "删除主机"
