@@ -56,16 +56,16 @@ func UpdateIP() {
 		ipv6 := fetchGeoIP(geoIPApiList, true)
 
 		if ipv4.IP == "" && ipv6.IP == "" {
-			cachedIP = fmt.Sprintf("IPs[未获取到 IP]")
+			CachedIP = fmt.Sprintf("IPs[未获取到 IP]")
 			time.Sleep(time.Second * 30)
 			continue
 		}
 		if ipv4.IP != "" && ipv6.IP == "" {
-			cachedIP = fmt.Sprintf("IPs[IPv4:%s]", ipv4.IP)
+			CachedIP = fmt.Sprintf("IPs[IPv4:%s]", ipv4.IP)
 		} else if ipv4.IP == "" && ipv6.IP != "" {
-			cachedIP = fmt.Sprintf("IPs[IPv6:[%s]]", ipv6.IP)
+			CachedIP = fmt.Sprintf("IPs[IPv6:[%s]]", ipv6.IP)
 		} else {
-			cachedIP = fmt.Sprintf("IPs[IPv4:%s,IPv6:[%s]]", ipv4.IP, ipv6.IP)
+			CachedIP = fmt.Sprintf("IPs[IPv4:%s,IPv6:[%s]]", ipv4.IP, ipv6.IP)
 		}
 		if ipv4.CountryCode != "" {
 			cachedCountry = ipv4.CountryCode
