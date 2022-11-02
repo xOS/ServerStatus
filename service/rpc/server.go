@@ -57,7 +57,7 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 							MessageID: "TaskLog",
 						},
 					),
-					r.GetData()), false, &curServer)
+					r.GetData()), nil, &curServer)
 			}
 			if !r.GetSuccessful() {
 				singleton.SendNotification(cr.NotificationTag, fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s "+"\n"+"%s%s，%s\n%s",
@@ -83,7 +83,7 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 							MessageID: "TaskLog",
 						},
 					),
-					r.GetData()), false, &curServer)
+					r.GetData()), nil, &curServer)
 			}
 			singleton.DB.Model(cr).Updates(model.Cron{
 				LastExecutedAt: time.Now().Add(time.Second * -1 * time.Duration(r.GetDelay())),
@@ -166,7 +166,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 				MessageID: "NewIP",
 			}),
 			singleton.IPDesensitize(host.IP),
-		), true)
+		), nil)
 	}
 
 	// 判断是否是机器重启，如果是机器重启要录入最后记录的流量里面

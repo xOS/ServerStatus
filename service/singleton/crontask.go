@@ -3,8 +3,9 @@ package singleton
 import (
 	"bytes"
 	"fmt"
-	"github.com/jinzhu/copier"
 	"sync"
+
+	"github.com/jinzhu/copier"
 
 	"github.com/robfig/cron/v3"
 	"github.com/xos/serverstatus/model"
@@ -58,7 +59,7 @@ func LoadCronTasks() {
 	// 向注册错误的计划任务所在通知组发送通知
 	for _, tag := range notificationTagList {
 		notificationMsgMap[tag].WriteString("] 这些任务将无法正常执行,请进入后点重新修改保存。")
-		SendNotification(tag, notificationMsgMap[tag].String(), false)
+		SendNotification(tag, notificationMsgMap[tag].String(), nil)
 	}
 	Cron.Start()
 }
@@ -106,7 +107,7 @@ func CronTrigger(cr model.Cron, triggerServer ...uint64) func() {
 					// 保存当前服务器状态信息
 					curServer := model.Server{}
 					copier.Copy(&curServer, s)
-					SendNotification(cr.NotificationTag, fmt.Sprintf("[任务失败] %s，服务器 %s 离线，无法执行。", cr.Name, s.Name), false, &curServer)
+					SendNotification(cr.NotificationTag, fmt.Sprintf("[任务失败] %s，服务器 %s 离线，无法执行。", cr.Name, s.Name), nil, &curServer)
 				}
 			}
 			return
@@ -131,7 +132,7 @@ func CronTrigger(cr model.Cron, triggerServer ...uint64) func() {
 				// 保存当前服务器状态信息
 				curServer := model.Server{}
 				copier.Copy(&curServer, s)
-				SendNotification(cr.NotificationTag, fmt.Sprintf("[任务失败] %s，服务器 %s 离线，无法执行。", cr.Name, s.Name), false, &curServer)
+				SendNotification(cr.NotificationTag, fmt.Sprintf("[任务失败] %s，服务器 %s 离线，无法执行。", cr.Name, s.Name), nil, &curServer)
 			}
 		}
 	}

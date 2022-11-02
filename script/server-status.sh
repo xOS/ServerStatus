@@ -11,7 +11,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.10"
+VERSION="v0.1.11"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -131,7 +131,7 @@ install_base() {
 
 install_soft() {
 	# Arch官方库不包含selinux等组件
-    (command -v yum >/dev/null 2>&1 && yum update && yum install $* selinux-policy -y) ||
+    (command -v yum >/dev/null 2>&1 && yum makecache && yum install $* selinux-policy -y) ||
         (command -v apt >/dev/null 2>&1 && apt update && apt install $* selinux-utils -y) ||
         (command -v pacman >/dev/null 2>&1 && pacman -Syu $*) ||
         (command -v apt-get >/dev/null 2>&1 && apt-get update && apt-get install $* selinux-utils -y)
@@ -237,7 +237,7 @@ install_agent() {
         chmod 777 -R $AGENT_PATH
     fi
     echo -e "正在下载探针"
-    wget -O server-agent_linux_${os_arch}.zip https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
+    wget -t 2 -T 10 -O server-agent_linux_${os_arch}.zip https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}Release 下载失败，请检查本机能否连接 ${GITHUB_URL}${plain}"
         return 0
@@ -284,7 +284,7 @@ update_agent() {
     fi
 
     echo -e "正在下载最新版探针"
-    wget -O server-agent_linux_${os_arch}.zip https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
+    wget -t 2 -T 10 -O server-agent_linux_${os_arch}.zip https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}Release 下载失败，请检查本机能否连接 ${GITHUB_URL}${plain}"
         return 0
@@ -378,7 +378,7 @@ set_agent(){
 modify_agent_config() {
     echo -e "> 初始化探针配置"
 
-    wget -O $AGENT_SERVICE https://${GITHUB_RAW_URL}/script/server-agent.service >/dev/null 2>&1
+    wget -t 2 -T 10 -O $AGENT_SERVICE https://${GITHUB_RAW_URL}/script/server-agent.service >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
         return 0
@@ -429,7 +429,7 @@ modify_dashboard_config() {
     echo -e "> 修改探针面板配置"
 
     echo -e "正在下载 Docker 脚本"
-    wget -O ${DASHBOARD_PATH}/docker-compose.yaml https://${GITHUB_RAW_URL}/script/docker-compose.yaml >/dev/null 2>&1
+    wget -t 2 -T 10 -O ${DASHBOARD_PATH}/docker-compose.yaml https://${GITHUB_RAW_URL}/script/docker-compose.yaml >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}下载脚本失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
         return 0
@@ -437,7 +437,7 @@ modify_dashboard_config() {
 
     mkdir -p $DASHBOARD_PATH/data
 
-    wget -O ${DASHBOARD_PATH}/data/config.yaml https://${GITHUB_RAW_URL}/script/config.yaml >/dev/null 2>&1
+    wget -t 2 -T 10 -O ${DASHBOARD_PATH}/data/config.yaml https://${GITHUB_RAW_URL}/script/config.yaml >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}下载脚本失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
         return 0

@@ -20,13 +20,14 @@ import (
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
+	"github.com/xos/serverstatus/pkg/websocketx"
 	"github.com/xos/serverstatus/proto"
 	"github.com/xos/serverstatus/service/singleton"
 )
 
 type terminalContext struct {
-	agentConn *websocket.Conn
-	userConn  *websocket.Conn
+	agentConn *websocketx.Conn
+	userConn  *websocketx.Conn
 	serverID  uint64
 	host      string
 	useSSL    bool
@@ -335,7 +336,7 @@ func (cp *commonPage) terminal(c *gin.Context) {
 		}
 	}
 
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	wsConn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
 			Code: http.StatusInternalServerError,
@@ -348,7 +349,8 @@ func (cp *commonPage) terminal(c *gin.Context) {
 		}, true)
 		return
 	}
-	defer conn.Close()
+	defer wsConn.Close()
+	conn := &websocketx.Conn{Conn: wsConn}
 
 	log.Printf("NG>> terminal connected %t %q", isAgent, c.Request.URL)
 	defer log.Printf("NG>> terminal disconnected %t %q", isAgent, c.Request.URL)
@@ -407,7 +409,7 @@ func (cp *commonPage) terminal(c *gin.Context) {
 	}()
 
 	var dataBuffer [][]byte
-	var distConn *websocket.Conn
+	var distConn *websocketx.Conn
 	checkDistConn := func() {
 		if distConn == nil {
 			if isAgent {
