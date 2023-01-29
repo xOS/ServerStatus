@@ -43,6 +43,7 @@ var (
 		"https://extreme-ip-lookup.com/json/?key=8NaaAC3PkbrdiYZvxZ7g",
 		"https://api.myip.la/en?json",
 		"https://api.nange.cn/json",
+		"https://ip.hi.cn/json",
 	}
 	CachedIP, cachedCountry string
 	httpClientV4            = utils.NewSingleStackHTTPClient(time.Second*20, time.Second*5, time.Second*10, false)

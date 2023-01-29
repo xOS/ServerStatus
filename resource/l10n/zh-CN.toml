@@ -630,3 +630,6 @@ other = "管理后台主题"
 
 [HideForGuest]
 other = "仅管理可见"
+
+[Detail]
+other = "信息"

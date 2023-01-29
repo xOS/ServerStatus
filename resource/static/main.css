@@ -654,6 +654,18 @@ i.arrow.alternate.circle.up.outline.icon {
     color: #ff5722;
 }
 
+i.fa-solid.fa-microchip {
+    color: #03a9f4 !important;
+}
+
+i.fa-solid.fa-memory {
+    color: #f2711c !important;
+}
+
+i.fa-solid.fa-hard-drive {
+    color: #9c27b0 !important;
+}
+
 .nb-container {
     padding-top: 75px;
     min-height: 100vh;
