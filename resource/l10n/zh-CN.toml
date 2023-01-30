@@ -20,13 +20,13 @@ other = "设置"
 other = "首页"
 
 [BackToHomepage]
-other = "返回前台"
+other = "前台"
 
 [AdminPanel]
-other = "管理后台"
+other = "后台"
 
 [Logout]
-other = "注销登录"
+other = "注销"
 
 [Login]
 other = "登录"
