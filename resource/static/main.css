@@ -654,6 +654,22 @@ i.arrow.alternate.circle.up.outline.icon {
     color: #ff5722;
 }
 
+i.fa-sharp.fa-solid.fa-down {
+    color: green;
+}
+
+i.fa-sharp.fa-solid.fa-up {
+    color: #ff5722;
+}
+
+i.fa-regular.fa-down {
+    color: green;
+}
+
+i.fa-regular.fa-up {
+    color: #ff5722;
+}
+
 i.fa-solid.fa-microchip {
     color: #03a9f4 !important;
 }
@@ -664,6 +680,10 @@ i.fa-solid.fa-memory {
 
 i.fa-solid.fa-hard-drive {
     color: #9c27b0 !important;
+}
+
+i.fa-solid.fa-sliders.icon {
+    color: #2196f3 !important;
 }
 
 .nb-container {

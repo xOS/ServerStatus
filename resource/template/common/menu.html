@@ -7,10 +7,10 @@
         {{if .IsAdminPage}}
         <a class='item{{if eq .MatchedPath "/server"}} active{{end}}' href="/server"><i class="server icon"></i>{{tr "Server"}}</a>
         <a class='item{{if eq .MatchedPath "/setting"}} active{{end}}' href="/setting">
-            <i class="setting icon"></i>{{tr "Settings"}}
+            <i class="fa-solid fa-sliders icon"></i>{{tr "Settings"}}
         </a>
         {{else}}
-        <a class="item" href="http://status.nange.cn/" target="_blank"><i class="sellsy icon"></i>{{tr "Services"}}</a>
+        <a class="item" href="http://status.nange.cn/" target="_blank"><i class="server icon"></i>{{tr "Services"}}</a>
         {{end}}
         <div class="right menu">
             <div class="item">

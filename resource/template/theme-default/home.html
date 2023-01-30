@@ -42,9 +42,9 @@
                     {{tr "ConnCount"}}：TCP @# server.State.TcpConnCount #@ 个 | UDP @# server.State.UdpConnCount #@ 个
                     <br />
                     {{tr "NetTransfer"}}：<i
-                      class="arrow alternate circle down outline icon s"></i>@#formatByteSize(server.State.NetInTransfer)#@
+                      class="fa-regular fa-down s"></i>@#formatByteSize(server.State.NetInTransfer)#@
                     | <i
-                      class="arrow alternate circle up outline icon s"></i>@#formatByteSize(server.State.NetOutTransfer)#@<br />
+                      class="fa-regular fa-up s"></i>@#formatByteSize(server.State.NetOutTransfer)#@<br />
                     {{tr "BootTime"}}：@# formatTimestamp(server.Host.BootTime) #@<br />
                     {{tr "LastActive"}}：@# timeStamp(server.LastActive) #@<br />
                     {{tr "Version"}}：@#server.Host.Version#@<br />
@@ -81,9 +81,9 @@
                     </div>
                     <div class="three wide column">{{tr "NetSpeed"}}</div>
                     <div class="thirteen wide column">
-                      <i class="arrow alternate circle down outline icon"></i>
+                      <i class="fa-regular fa-down"></i>
                       @#formatByteSize(server.State.NetInSpeed)#@/s |
-                      <i class="arrow alternate circle up outline icon"></i>
+                      <i class="fa-regular fa-up"></i>
                       @#formatByteSize(server.State.NetOutSpeed)#@/s
                     </div>
                     <div class="three wide column">{{tr "DiskUsed"}}</div>
