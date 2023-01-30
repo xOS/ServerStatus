@@ -11,7 +11,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.11"
+VERSION="v0.1.12"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -20,14 +20,11 @@ plain='\033[0m'
 export PATH=$PATH:/usr/local/bin
 
 os_arch=""
+[ -e /etc/os-release ] && cat /etc/os-release | grep -i "PRETTY_NAME" | grep -qi "alpine" && os_alpine='1'
 
 pre_check() {
-    command -v systemctl >/dev/null 2>&1
-    if [[ $? != 0 ]]; then
-        echo "不支持此系统：未找到 systemctl 命令"
-        exit 1
-    fi
-
+    [ "$os_alpine" != 1 ] && ! command -v systemctl >/dev/null 2>&1 && echo "不支持此系统：未找到 systemctl 命令" && exit 1
+    
     # check root
     [[ $EUID -ne 0 ]] && echo -e "${red}错误: ${plain} 必须使用root用户运行此脚本！\n" && exit 1
 
@@ -133,7 +130,7 @@ install_soft() {
 	# Arch官方库不包含selinux等组件
     (command -v yum >/dev/null 2>&1 && yum makecache && yum install $* selinux-policy -y) ||
         (command -v apt >/dev/null 2>&1 && apt update && apt install $* selinux-utils -y) ||
-        (command -v pacman >/dev/null 2>&1 && pacman -Syu $*) ||
+        (command -v pacman >/dev/null 2>&1 && pacman -Syu $* base-devel --noconfirm && install_arch) ||
         (command -v apt-get >/dev/null 2>&1 && apt-get update && apt-get install $* selinux-utils -y)
 }
 
