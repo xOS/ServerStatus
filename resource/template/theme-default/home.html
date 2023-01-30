@@ -444,9 +444,9 @@
 	    if(Core === '?'){
 	        let Core = str.match(/(\d|\.)+ Virtual/g);
 	        Core = Core!==null?Core.hasOwnProperty(0)===false?'?':Core[0]:'?'
-	        return Core.replace('Virtual','Core')
+	        return Core.replace('Virtual','Core').replace(/\s*/g,"")
 	    }
-	    return Core.replace('Physical','Core');
+	    return Core.replace('Physical','Core').replace(/\s*/g,"");
 	   
       },
       getK2Gb(bs){
