@@ -13,20 +13,21 @@
               <div class="content" v-if="server.Host" style="margin-top: 10px; padding-bottom: 5px">
                 <div class="header">
                   <i :class="'flag-icon flag-icon-'+server.Host.CountryCode"></i>
-                  <i v-if='server.Host.OS == "windows"' class="os-win10"></i>
-                  <i v-else-if='server.Host.Platform == "darwin"' class="os-apple"></i>
-                  <i v-else-if='server.Host.Platform == "suse"' class="os-opensuse"></i>
-                  <i v-else-if='server.Host.Platform == "opensuse"' class="os-opensuse"></i>
-                  <i v-else-if='server.Host.Platform == "openwrt"' class="os-tux"></i>
-                  <i v-else-if='server.Host.Platform == "linux"' class="os-tux"></i>
-                  <i v-else-if='server.Host.Platform == "amazon"' class="os-redhat"></i>
-                  <i :class="'os-'+server.Host.OS"></i>
-                  <i :class="'os-'+server.Host.Platform"></i>
+                  <i v-if='server.Host.Platform == "darwin"' class="os-apple"></i>
+                  <i v-if='server.Host.Platform == "suse"' class="os-opensuse"></i>
+                  <i v-if='server.Host.Platform == "opensuse"' class="os-opensuse"></i>
+                  <i v-if='server.Host.Platform == "openwrt"' class="os-tux"></i>
+                  <i v-if='server.Host.Platform == "linux"' class="os-tux"></i>
+                  <i v-if='server.Host.Platform == "amazon"' class="os-redhat"></i>
+                  <i v-else-if='isWindowsPlatform(server.Host.Platform)' class="os-win10"></i>
+                  <i v-else :class="'os-' + getOsLogo(server.Host.Platform)"></i>
+                  <!--<i :class="'os-'+server.Host.OS"></i>-->
+                  <!--<i v-else :class="'os-'+server.Host.Platform"></i>-->
                   @#server.Name + (server.live?'':' [{{tr "Offline"}}]')#@
                   <i class="server-primary-font info circle icon" style="height: 28px"></i>
                   <div class="ui content popup" style="">
                     {{tr "Platform"}}：@#specialOS(server.Host.Platform)#@ <span
-                      v-if='server.Host.OS!= "windows"'>@#server.Host.PlatformVersion#@ <span
+                      v-if='!isWindowsPlatform(server.Host.Platform)'>@#server.Host.PlatformVersion#@ <span
                         v-if='!server.Host.Virtualization'>KVM</span></span> @#specialVir(server.Host.Virtualization)#@
                     [@#server.Host.Arch#@]<br />
                     CPU：@#clearString(server.Host.CPU)#@<br />
@@ -377,6 +378,66 @@
     methods: {
       toFixed2(f) {
         return f.toFixed(2)
+      },
+      isWindowsPlatform(str) {
+        return str.includes('indows')
+      },
+      getOsLogo(str) {
+        if (["almalinux",
+          "alpine",
+          "aosc",
+          "apple",
+          "archlinux",
+          "archlabs",
+          "artix",
+          "budgie",
+          "centos",
+          "coreos",
+          "debian",
+          "deepin",
+          "devuan",
+          "docker",
+          "elementary",
+          "fedora",
+          "ferris",
+          "flathub",
+          "freebsd",
+          "gentoo",
+          "gnu-guix",
+          "illumos",
+          "kali-linux",
+          "linuxmint",
+          "mageia",
+          "mandriva",
+          "manjaro",
+          "nixos",
+          "openbsd",
+          "opensuse",
+          "pop-os",
+          "raspberry-pi",
+          "redhat",
+          "rocky-linux",
+          "sabayon",
+          "slackware",
+          "snappy",
+          "solus",
+          "tux",
+          "ubuntu",
+          "void",
+          "zorin"].indexOf(str)
+          > -1) {
+            return str;
+        }
+        if (['openwrt','linux'].indexOf(str) > -1) {
+          return 'tux';
+        }
+        if (str == 'amazon') {
+          return 'redhat';
+        }
+        if (str == 'arch') {
+          return 'archlinux';
+        }
+        return '';
       },
       group() {
         this.groups = groupingData(this.data, "Tag")
