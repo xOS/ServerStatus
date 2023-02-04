@@ -41,7 +41,7 @@ var (
 		"https://extreme-ip-lookup.com/json/?key=4ouEeuaL1jBnnHBgkQ5L",
 		"https://extreme-ip-lookup.com/json/?key=eqEKD78o20R8GhHCpvDp",
 		"https://extreme-ip-lookup.com/json/?key=8NaaAC3PkbrdiYZvxZ7g",
-		"https://api.myip.la/en?json",
+		"http://api.myip.la/en?json",
 		"https://api.nange.cn/json",
 		"https://ip.hi.cn/json",
 	}
@@ -120,6 +120,6 @@ func httpGetWithUA(client *http.Client, url string) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36")
+	req.Header.Add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36")
 	return client.Do(req)
 }
