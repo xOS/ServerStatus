@@ -23,7 +23,7 @@ other = "首页"
 other = "前台"
 
 [AdminPanel]
-other = "后台"
+other = "管理"
 
 [Logout]
 other = "注销"

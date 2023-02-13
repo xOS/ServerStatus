@@ -566,6 +566,66 @@ i.os-opensuse {
     color: #73ba25 !important;
 }
 
+i.fl-centos {
+    color: #9c27b0 !important;
+}
+
+i.fl-ubuntu {
+    color: #ff5722 !important;
+}
+
+i.fl-debian {
+    color: #e91e63 !important;
+}
+
+i.fl-freebsd {
+    color: #f44336 !important;
+}
+
+i.windows.icon {
+    color: #03a9f4 !important;
+}
+
+i.fl-apple {
+    color: #9e9e9e !important;
+}
+
+i.fl-fedora {
+    color: #2196f3 !important;
+}
+
+i.fl-redhat {
+    color: #f44336 !important;
+}
+
+i.fl-deepin {
+    color: #03a9f4 !important;
+}
+
+i.fl-coreos {
+    color: #2185d0 !important;
+}
+
+i.fl-archlinux {
+    color: #2185d0 !important;
+}
+
+i.fl-alpine {
+    color: #176eaf !important;
+}
+
+i.fl-win10 {
+    color: #03a9f4 !important;
+}
+
+i.fl-tux {
+    color: #1b1c1d !important;
+}
+
+i.fl-opensuse {
+    color: #73ba25 !important;
+}
+
 i.yellow.icon {
     color: #ff9800 !important;
 }

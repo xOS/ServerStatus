@@ -13,16 +13,16 @@
               <div class="content" v-if="server.Host" style="margin-top: 10px; padding-bottom: 5px">
                 <div class="header">
                   <i :class="'flag-icon flag-icon-'+server.Host.CountryCode"></i>
-                  <i v-if='server.Host.Platform == "darwin"' class="os-apple"></i>
-                  <i v-if='server.Host.Platform == "suse"' class="os-opensuse"></i>
-                  <i v-if='server.Host.Platform == "opensuse"' class="os-opensuse"></i>
-                  <i v-if='server.Host.Platform == "openwrt"' class="os-tux"></i>
-                  <i v-if='server.Host.Platform == "linux"' class="os-tux"></i>
-                  <i v-if='server.Host.Platform == "amazon"' class="os-redhat"></i>
-                  <i v-else-if='isWindowsPlatform(server.Host.Platform)' class="os-win10"></i>
-                  <i v-else :class="'os-' + getOsLogo(server.Host.Platform)"></i>
-                  <!--<i :class="'os-'+server.Host.OS"></i>-->
-                  <!--<i v-else :class="'os-'+server.Host.Platform"></i>-->
+                  <i v-if='server.Host.Platform == "darwin"' class="fl-apple"></i>
+                  <i v-if='server.Host.Platform == "suse"' class="fl-opensuse"></i>
+                  <i v-if='server.Host.Platform == "opensuse"' class="fl-opensuse"></i>
+                  <i v-if='server.Host.Platform == "openwrt"' class="fl-tux"></i>
+                  <i v-if='server.Host.Platform == "linux"' class="fl-tux"></i>
+                  <i v-if='server.Host.Platform == "amazon"' class="fl-redhat"></i>
+                  <i v-else-if='isWindowsPlatform(server.Host.Platform)' class="windows icon"></i>
+                  <i v-else :class="'fl-' + getOsLogo(server.Host.Platform)"></i>
+                  <!--<i :class="'fl-'+server.Host.OS"></i>-->
+                  <!--<i v-else :class="'fl-'+server.Host.Platform"></i>-->
                   @#server.Name + (server.live?'':' [{{tr "Offline"}}]')#@
                   <i class="server-primary-font info circle icon" style="height: 28px"></i>
                   <div class="ui content popup" style="">
