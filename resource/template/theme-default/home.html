@@ -494,7 +494,7 @@
         return x != "NaN undefined" ? x : '0B'
       },
       getCoreAndGHz(str){
-        if(str.hasOwnProperty(0) === false){
+        if((str || []).hasOwnProperty(0) === false){
             return '';
         }
         str = str[0];
@@ -513,6 +513,13 @@
       getK2Gb(bs){
           bs = bs / 1024 /1024 /1024;
           return Math.ceil(bs.toFixed(2)) + 'GB';
+      },
+      listTipsMouseenter(obj,strs,tipsNum=1){
+          this.layerIndex = layer.tips(strs, '#'+obj,{tips: [tipsNum, 'rgb(0 0 0 / 85%)'],time:0});
+          $('#'+obj).attr('layerIndex',this.layerIndex)
+      },
+      listTipsMouseleave(obj){
+          layer.close(this.layerIndex)
       }
     }
   })
