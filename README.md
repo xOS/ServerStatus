@@ -19,11 +19,11 @@
 
 ### 前台
 
-![首页截图](https://i.cdn.ink/views/2022/05/25/b168b1.png)
+![首页截图](https://i.qste.com/views/2022/05/25/b168b1.png)
 
 ### 后台
 
-![后台截图](https://i.cdn.ink/views/2022/05/25/fd1b7d.png)
+![后台截图](https://i.qste.com/views/2022/05/25/fd1b7d.png)
 
 ## 安装脚本
 
