@@ -11,7 +11,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.12"
+VERSION="v0.1.13"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -71,12 +71,14 @@ pre_check() {
         Get_Docker_URL="get.docker.com"
         Get_Docker_Argu=" "
         Docker_IMG="ghcr.io\/xos\/server-dash"
+        GITHUB_RELEASE_URL="github.com/xos/serverstatus/releases/latest/download"
     else
         GITHUB_RAW_URL="fastly.jsdelivr.net/gh/xos/serverstatus@master"
         GITHUB_URL="dn-dao-github-mirror.daocloud.io"
         Get_Docker_URL="get.daocloud.io/docker"
         Get_Docker_Argu=" -s docker --mirror Aliyun"
         Docker_IMG="registry.cn-shanghai.aliyuncs.com\/dns\/server-dash"
+        GITHUB_RELEASE_URL="hub.fgit.cf/xos/serverstatus/releases/latest/download"
         curl -s https://purge.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh > /dev/null 2>&1
     fi
 }
@@ -234,7 +236,7 @@ install_agent() {
         chmod 777 -R $AGENT_PATH
     fi
     echo -e "正在下载探针"
-    wget -t 2 -T 10 -O server-agent_linux_${os_arch}.zip https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
+    wget -t 2 -T 10 -O server-agent_linux_${os_arch}.zip https://${GITHUB_RELEASE_URL}/${version}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}Release 下载失败，请检查本机能否连接 ${GITHUB_URL}${plain}"
         return 0
@@ -281,7 +283,7 @@ update_agent() {
     fi
 
     echo -e "正在下载最新版探针"
-    wget -t 2 -T 10 -O server-agent_linux_${os_arch}.zip https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
+    wget -t 2 -T 10 -O server-agent_linux_${os_arch}.zip https://${GITHUB_RELEASE_URL}/${version}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}Release 下载失败，请检查本机能否连接 ${GITHUB_URL}${plain}"
         return 0

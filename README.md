@@ -2,7 +2,7 @@
 
 > 本项目为原项目[哪吒探针](https://github.com/naiba/nezha)的精简修改自用版
 
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/xos/serverstatus/dashboard.yml?label=管理面板%20v0.1.35&logo=github&style=for-the-badge) ![Agent release](https://img.shields.io/github/v/release/xOS/ServerStatus?color=brightgreen&label=探针&style=for-the-badge&logo=github) ![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/xos/serverstatus/agent.yml?label=探针%20CI&logo=github&style=for-the-badge) ![shell](https://img.shields.io/badge/安装脚本-v0.1.12-brightgreen?style=for-the-badge&logo=linux) 
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/xos/serverstatus/dashboard.yml?label=管理面板%20v0.1.36&logo=github&style=for-the-badge) ![Agent release](https://img.shields.io/github/v/release/xOS/ServerStatus?color=brightgreen&label=探针&style=for-the-badge&logo=github) ![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/xos/serverstatus/agent.yml?label=探针%20CI&logo=github&style=for-the-badge) ![shell](https://img.shields.io/badge/安装脚本-v0.1.12-brightgreen?style=for-the-badge&logo=linux) 
 
 
 ## 注意：
@@ -19,11 +19,11 @@
 
 ### 前台
 
-![首页截图](https://i.qste.com/views/2022/05/25/b168b1.png)
+![首页截图](https://i.nange.cn/views/2022/05/25/b168b1.png)
 
 ### 后台
 
-![后台截图](https://i.qste.com/views/2022/05/25/fd1b7d.png)
+![后台截图](https://i.nange.cn/views/2022/05/25/fd1b7d.png)
 
 ## 安装脚本
 
