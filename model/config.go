@@ -15,8 +15,8 @@ var Languages = map[string]string{
 }
 
 var Themes = map[string]string{
-	"default":  "Default",
-	"custom":   "Custom(local)",
+	"default": "Default",
+	"custom":  "Custom(local)",
 }
 
 var DashboardThemes = map[string]string{
@@ -40,6 +40,7 @@ const (
 type AgentConfig struct {
 	HardDrivePartitionAllowlist []string
 	NICAllowlist                map[string]bool
+	DNS                         []string
 	v                           *viper.Viper
 }
 

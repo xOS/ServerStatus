@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -45,6 +47,7 @@ type AgentCliParam struct {
 	ClientSecret          string // 客户端密钥
 	ReportDelay           int    // 报告间隔
 	TLS                   bool   // 是否使用TLS加密传输至服务端
+	Version               bool   // 当前版本号
 }
 
 var (
@@ -71,8 +74,30 @@ const (
 )
 
 func init() {
-	http.DefaultClient.Timeout = time.Second * 5
+	net.DefaultResolver.PreferGo = true // 使用 Go 内置的 DNS 解析器解析域名
+	net.DefaultResolver.Dial = func(ctx context.Context, network, address string) (net.Conn, error) {
+		d := net.Dialer{
+			Timeout: time.Second * 5,
+		}
+		dnsServers := utils.DNSServersAll
+		if len(agentConfig.DNS) > 0 {
+			dnsServers = agentConfig.DNS
+		}
+		index := int(time.Now().Unix()) % int(len(dnsServers))
+		queue := generateQueue(index, len(dnsServers))
+		var conn net.Conn
+		var err error
+		for i := 0; i < len(queue); i++ {
+			conn, err = d.DialContext(ctx, "udp", dnsServers[queue[i]])
+			if err == nil {
+				return conn, nil
+			}
+		}
+		return nil, err
+	}
 	flag.CommandLine.ParseErrorsWhitelist.UnknownFlags = true
+
+	http.DefaultClient.Timeout = time.Second * 5
 
 	ex, err := os.Executable()
 	if err != nil {
@@ -118,7 +143,13 @@ func main() {
 	flag.BoolVar(&agentCliParam.DisableAutoUpdate, "disable-auto-update", false, "禁用自动升级")
 	flag.BoolVar(&agentCliParam.DisableForceUpdate, "disable-force-update", false, "禁用强制升级")
 	flag.BoolVar(&agentCliParam.TLS, "tls", false, "启用SSL/TLS加密")
+	flag.BoolVarP(&agentCliParam.Version, "version", "v", false, "查看当前版本号")
 	flag.Parse()
+
+	if agentCliParam.Version {
+		fmt.Println(version)
+		return
+	}
 
 	if isEditAgentConfig {
 		editAgentConfig()
@@ -481,11 +512,19 @@ func editAgentConfig() {
 				Options: diskAllowlistOptions,
 			},
 		},
+		{
+			Name: "dns",
+			Prompt: &survey.Input{
+				Message: "自定义 DNS，可输入空格跳过，如 1.1.1.1:53,1.0.0.1:53",
+				Default: strings.Join(agentConfig.DNS, ","),
+			},
+		},
 	}
 
 	answers := struct {
 		Nic  []string
 		Disk []string
+		DNS  string
 	}{}
 
 	err = survey.Ask(qs, &answers, survey.WithValidator(survey.Required))
@@ -504,6 +543,25 @@ func editAgentConfig() {
 		agentConfig.NICAllowlist[v] = true
 	}
 
+	dnsServers := strings.TrimSpace(answers.DNS)
+
+	if dnsServers != "" {
+		agentConfig.DNS = strings.Split(dnsServers, ",")
+		for _, s := range agentConfig.DNS {
+			host, _, err := net.SplitHostPort(s)
+			if err == nil {
+				if net.ParseIP(host) == nil {
+					err = errors.New("格式错误")
+				}
+			}
+			if err != nil {
+				panic(fmt.Sprintf("自定义 DNS 格式错误：%s %v", s, err))
+			}
+		}
+	} else {
+		agentConfig.DNS = []string{}
+	}
+
 	if err = agentConfig.Save(); err != nil {
 		panic(err)
 	}
@@ -516,4 +574,16 @@ func println(v ...interface{}) {
 		fmt.Printf("NG@%s>> ", time.Now().Format("2006-01-02 15:04:05"))
 		fmt.Println(v...)
 	}
+}
+
+func generateQueue(start int, size int) []int {
+	var result []int
+	for i := start; i < start+size; i++ {
+		if i < size {
+			result = append(result, i)
+		} else {
+			result = append(result, i-size)
+		}
+	}
+	return result
 }
