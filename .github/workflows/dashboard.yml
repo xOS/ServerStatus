@@ -106,11 +106,7 @@ jobs:
               zip -r "$file.zip" "$file"
             fi
           done
-      - name: Release
-        uses: ncipollo/release-action@v1
-        with:
-          artifacts: "dist/*.zip"
-          generateReleaseNotes: true
+
       - name: Purge Jsdelivr Cache
         run: |
           curl -s https://purge.jsdelivr.net/gh/${{ github.repository_owner }}/serverstatus@master/script/server-status.sh
