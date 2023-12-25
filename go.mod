@@ -1,6 +1,6 @@
 module github.com/xos/serverstatus
 
-go 1.19
+go 1.21
 
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20230406175530-3579ae0680eb
@@ -37,8 +37,8 @@ require (
 	golang.org/x/text v0.14.0
 	google.golang.org/grpc v1.56.3
 	google.golang.org/protobuf v1.30.0
-	gorm.io/driver/sqlite v1.5.0
-	gorm.io/gorm v1.25.0
+	gorm.io/driver/sqlite v1.5.4
+	gorm.io/gorm v1.25.5
 	sigs.k8s.io/yaml v1.3.0
 )
 
