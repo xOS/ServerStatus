@@ -1,4 +1,4 @@
-name: Agent release
+name: Release
 
 on:
   workflow_dispatch:
@@ -10,14 +10,16 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     container:
-      image: goreleaser/goreleaser-cross:v1.19.2
+      image: goreleaser/goreleaser-cross:v1.21
     steps:
+      - run: |
+          git config --global --add safe.directory /__w/agent/agent
       - uses: actions/checkout@master
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v4
         with:
-          go-version: "^1.19.0"
+          go-version: "^1.21.3"
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v2
         with:
