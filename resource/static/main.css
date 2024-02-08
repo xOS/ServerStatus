@@ -752,6 +752,10 @@ i.fa-solid.fa-sliders.icon {
     color: #2196f3 !important;
 }
 
+i.icon.outline {
+    color: #ff5722 !important;
+}
+
 .nb-container {
     padding-top: 75px;
     min-height: 100vh;
