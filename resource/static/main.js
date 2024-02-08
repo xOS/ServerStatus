@@ -4,6 +4,7 @@ let LANG = {
   AlarmRule: "报警规则",
   Notification: "通知方式",
   Server: "服务器",
+  Monitor: "监控",
   Traffic: "流量",
   Cron: "计划任务",
 }
@@ -42,6 +43,30 @@ function showConfirm(title, content, callFn, extData) {
       },
     })
     .modal("show");
+}
+
+function postJson(url, data) {
+  return $.ajax({
+    url: url,
+    type: "POST",
+    contentType: "application/json",
+    data: JSON.stringify(data),
+  }).done((resp) => {
+    if (resp.code == 200) {
+      if (resp.message) {
+        alert(resp.message);
+      } else {
+        alert("删除成功");
+      }
+      window.location.reload();
+    } else {
+      alert("删除失败 " + resp.code + "：" + resp.message);
+      confirmBtn.toggleClass("loading");
+    }
+  })
+    .fail((err) => {
+      alert("网络错误：" + err.responseText);
+    });
 }
 
 function showFormModal(modelSelector, formID, URL, getData) {
@@ -300,11 +325,100 @@ function addOrEditServer(server, conf) {
   showFormModal(".server.modal", "#serverForm", "/api/server");
 }
 
+function addOrEditMonitor(monitor) {
+  const modal = $(".monitor.modal");
+  modal.children(".header").text((monitor ? LANG.Edit : LANG.Add) + ' ' + LANG.Monitor);
+  modal
+    .find(".server-primary-btn.button")
+    .html(
+      monitor ? LANG.Edit + '<i class="edit icon"></i>' : LANG.Add + '<i class="add icon"></i>'
+    );
+  modal.find("input[name=ID]").val(monitor ? monitor.ID : null);
+  modal.find("input[name=Name]").val(monitor ? monitor.Name : null);
+  modal.find("input[name=Target]").val(monitor ? monitor.Target : null);
+  modal.find("input[name=Duration]").val(monitor && monitor.Duration ? monitor.Duration : 30);
+  modal.find("select[name=Type]").val(monitor ? monitor.Type : 1);
+  modal.find("select[name=Cover]").val(monitor ? monitor.Cover : 0);
+  modal.find("input[name=NotificationTag]").val(monitor ? monitor.NotificationTag : null);
+  if (monitor && monitor.Notify) {
+    modal.find(".ui.nb-notify.checkbox").checkbox("set checked");
+  } else {
+    modal.find(".ui.nb-notify.checkbox").checkbox("set unchecked");
+  }
+  modal.find("input[name=MaxLatency]").val(monitor ? monitor.MaxLatency : null);
+  modal.find("input[name=MinLatency]").val(monitor ? monitor.MinLatency : null);
+  if (monitor && monitor.LatencyNotify) {
+    modal.find(".ui.nb-lt-notify.checkbox").checkbox("set checked");
+  } else {
+    modal.find(".ui.nb-lt-notify.checkbox").checkbox("set unchecked");
+  }
+  modal.find("a.ui.label.visible").each((i, el) => {
+    el.remove();
+  });
+  if (monitor && monitor.EnableTriggerTask) {
+    modal.find(".ui.nb-EnableTriggerTask.checkbox").checkbox("set checked");
+  } else {
+    modal.find(".ui.nb-EnableTriggerTask.checkbox").checkbox("set unchecked");
+  }
+  var servers;
+  var failTriggerTasks;
+  var recoverTriggerTasks;
+  if (monitor) {
+    servers = monitor.SkipServersRaw;
+    const serverList = JSON.parse(servers || "[]");
+    const node = modal.find("i.dropdown.icon.specificServer");
+    for (let i = 0; i < serverList.length; i++) {
+      node.after(
+        '<a class="ui label transition visible" data-value="' +
+        serverList[i] +
+        '" style="display: inline-block !important;">ID:' +
+        serverList[i] +
+        '<i class="delete icon"></i></a>'
+      );
+    }
+
+    failTriggerTasks = monitor.FailTriggerTasksRaw;
+    recoverTriggerTasks = monitor.RecoverTriggerTasksRaw;
+    const failTriggerTasksList = JSON.parse(failTriggerTasks || "[]");
+    const recoverTriggerTasksList = JSON.parse(recoverTriggerTasks || "[]");
+    const node1 = modal.find("i.dropdown.icon.failTask");
+    const node2 = modal.find("i.dropdown.icon.recoverTask");
+    for (let i = 0; i < failTriggerTasksList.length; i++) {
+      node1.after(
+        '<a class="ui label transition visible" data-value="' +
+        failTriggerTasksList[i] +
+        '" style="display: inline-block !important;">ID:' +
+        failTriggerTasksList[i] +
+        '<i class="delete icon"></i></a>'
+      );
+    }
+    for (let i = 0; i < recoverTriggerTasksList.length; i++) {
+      node2.after(
+        '<a class="ui label transition visible" data-value="' +
+        recoverTriggerTasksList[i] +
+        '" style="display: inline-block !important;">ID:' +
+        recoverTriggerTasksList[i] +
+        '<i class="delete icon"></i></a>'
+      );
+    }
+  }
+  modal
+    .find("input[name=FailTriggerTasksRaw]")
+    .val(monitor ? "[]," + failTriggerTasks.substr(1, failTriggerTasks.length - 2) : "[]");
+  modal
+    .find("input[name=RecoverTriggerTasksRaw]")
+    .val(monitor ? "[]," + recoverTriggerTasks.substr(1, recoverTriggerTasks.length - 2) : "[]");
+
+  modal
+    .find("input[name=SkipServersRaw]")
+    .val(monitor ? "[]," + servers.substr(1, servers.length - 2) : "[]");
+  showFormModal(".monitor.modal", "#monitorForm", "/api/monitor");
+}
 function addOrEditCron(cron) {
   const modal = $(".cron.modal");
   modal.children(".header").text((cron ? LANG.Edit : LANG.Add) + ' ' + LANG.Cron);
   modal
-    .find(".probe-primary-btn.button")
+    .find(".server-primary-btn.button")
     .html(
       cron ? LANG.Edit + '<i class="edit icon"></i>' : LANG.Add + '<i class="add icon"></i>'
     );

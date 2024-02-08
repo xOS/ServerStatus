@@ -639,3 +639,9 @@ other = "配置"
 
 [NetworkStatus]
 other = "网络波动"
+
+[EnableTriggerTask]
+other = "启用触发任务"
+
+[BatchDeleteServer]
+other = "批量删除服务器"
