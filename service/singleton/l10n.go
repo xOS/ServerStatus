@@ -8,6 +8,7 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/resource"
 )
 
 var Localizer *i18n.Localizer
