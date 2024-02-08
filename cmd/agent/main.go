@@ -274,6 +274,8 @@ func doTask(task *pb.Task) {
 	switch task.GetType() {
 	case model.TaskTypeTerminal:
 		handleTerminalTask(task)
+	case model.TaskTypeTCPPing:
+		handleTcpPingTask(task, &result)
 	case model.TaskTypeCommand:
 		handleCommandTask(task, &result)
 	case model.TaskTypeUpgrade:
@@ -335,6 +337,19 @@ func handleUpgradeTask(task *pb.Task, result *pb.TaskResult) {
 		return
 	}
 	doSelfUpdate(false)
+}
+func handleTcpPingTask(task *pb.Task, result *pb.TaskResult) {
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", task.GetData(), time.Second*10)
+	if err == nil {
+		conn.Write([]byte("ping\n"))
+		conn.Close()
+		result.Delay = float32(time.Since(start).Microseconds()) / 1000.0
+		result.Successful = true
+		result.ServerId = task.ServerId
+	} else {
+		result.Data = err.Error()
+	}
 }
 func handleCommandTask(task *pb.Task, result *pb.TaskResult) {
 	if agentCliParam.DisableCommandExecute {

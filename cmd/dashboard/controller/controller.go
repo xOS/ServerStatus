@@ -3,7 +3,10 @@ package controller
 import (
 	"fmt"
 	"html/template"
+	"io/fs"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,20 +18,32 @@ import (
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 
 	"github.com/xos/serverstatus/pkg/mygin"
+	"github.com/xos/serverstatus/resource"
 	"github.com/xos/serverstatus/service/singleton"
 )
 
 func ServeWeb(port uint) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
+	tmpl := template.New("").Funcs(funcMap)
+	var err error
+	tmpl, err = tmpl.ParseFS(resource.TemplateFS, "template/**/*.html")
+	if err != nil {
+		panic(err)
+	}
+	tmpl = loadThirdPartyTemplates(tmpl)
+	r.SetHTMLTemplate(tmpl)
 	if singleton.Conf.Debug {
 		gin.SetMode(gin.DebugMode)
 		pprof.Register(r)
 	}
 	r.Use(mygin.RecordPath)
-	r.SetFuncMap(funcMap)
-	r.Static("/static", "resource/static")
-	r.LoadHTMLGlob("resource/template/**/*.html")
+	staticFs, err := fs.Sub(resource.StaticFS, "static")
+	if err != nil {
+		panic(err)
+	}
+	r.StaticFS("/static", http.FS(staticFs))
+	r.Static("/static-custom", "resource/static/custom")
 	routers(r)
 
 	page404 := func(c *gin.Context) {
@@ -67,6 +82,28 @@ func routers(r *gin.Engine) {
 		ma := &memberAPI{api}
 		ma.serve()
 	}
+}
+
+func loadThirdPartyTemplates(tmpl *template.Template) *template.Template {
+	var ret = tmpl
+	themes, err := os.ReadDir("resource/template")
+	if err != nil {
+		log.Printf("NG>> Error reading themes folder: %v", err)
+		return ret
+	}
+	for _, theme := range themes {
+		if !theme.IsDir() {
+			continue
+		}
+		// load templates
+		t, err := ret.ParseGlob(fmt.Sprintf("resource/template/%s/*.html", theme.Name()))
+		if err != nil {
+			log.Printf("NG>> Error parsing templates %s error: %v", theme.Name(), err)
+			continue
+		}
+		ret = t
+	}
+	return ret
 }
 
 var funcMap = template.FuncMap{
@@ -197,5 +234,8 @@ var funcMap = template.FuncMap{
 			return "warning"
 		}
 		return "danger"
+	},
+	"statusName": func(val float32) string {
+		return singleton.StatusCodeToString(singleton.GetStatusCode(val))
 	},
 }

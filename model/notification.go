@@ -28,6 +28,7 @@ const (
 type NotificationServerBundle struct {
 	Notification *Notification
 	Server       *Server
+	Loc          *time.Location
 }
 
 type Notification struct {

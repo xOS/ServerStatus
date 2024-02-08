@@ -131,9 +131,8 @@
                   <th class="ui center aligned">{{tr "Server"}}</th>
                   <th class="ui center aligned">{{tr "From"}}</th>
                   <th class="ui center aligned">{{tr "To"}}</th>
-                  <th class="ui center aligned">MAX</th>
-                  <th class="ui center aligned">MIN</th>
                   <th class="ui center aligned">{{tr "NextCheck"}}</th>
+                  <th class="ui center aligned">{{tr "TrafficTotal"}}</th>
                   <th class="ui center aligned">{{tr "CurrentUsage"}}</th>
                   <th class='ui center aligned' style='padding: 0px 31px 0px 31px;'>{{tr "Transleft"}}</th>
                 </tr>
@@ -148,9 +147,8 @@
                   <td class="ui center aligned">{{index $stats.ServerName $innerId}}</td>
                   <td class="ui center aligned">{{$stats.From|tf}}</td>
                   <td class="ui center aligned">{{$stats.To|tf}}</td>
-                  <td class="ui center aligned">{{$stats.Max|bf}}</td>
-                  <td class="ui center aligned">{{$stats.Min|bf}}</td>
                   <td class="ui center aligned">{{(index $stats.NextUpdate $innerId)|sft}}</td>
+                  <td class="ui center aligned">{{$stats.Max|bf}}</td>
                   <td class="ui center aligned">{{$transfer|bf}}</td>
                   <td class="ui center aligned" style="padding: 10px 10px 0px 10px; position: relative;">
                     <div class="thirteen wide column" style="margin: 1.5em 0em;">
@@ -460,10 +458,10 @@
           if (percent < 0) {
             this.cache[percent].style['background-color'] = 'slategray'
             this.cache[percent].class.offline = true
-          } else if (percent < 71) {
+          } else if (percent < 60) {
             this.cache[percent].style['background-color'] = 'rgb(76,175,80)'
             this.cache[percent].class.fine = true
-          } else if (percent < 91) {
+          } else if (percent < 90) {
             this.cache[percent].style['background-color'] = '#ff9800'
             this.cache[percent].class.warning = true
           } else {

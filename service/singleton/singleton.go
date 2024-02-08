@@ -12,7 +12,7 @@ import (
 	"github.com/xos/serverstatus/pkg/utils"
 )
 
-var Version = "v0.1.36"
+var Version = "v0.1.37"
 
 var (
 	Conf  *model.Config
@@ -61,7 +61,8 @@ func InitDBFromPath(path string) {
 		DB = DB.Debug()
 	}
 	err = DB.AutoMigrate(model.Server{}, model.User{},
-		model.Notification{}, model.AlertRule{}, model.Monitor{}, model.Cron{}, model.Transfer{}, model.ApiToken{})
+		model.Notification{}, model.AlertRule{}, model.Monitor{},
+		model.MonitorHistory{}, model.Cron{}, model.Transfer{}, model.ApiToken{})
 	if err != nil {
 		panic(err)
 	}
@@ -96,6 +97,8 @@ func RecordTransferHourlyUsage() {
 
 // CleanMonitorHistory 清理无效或过时的 监控记录 和 流量记录
 func CleanMonitorHistory() {
+	// 清理已被删除的服务器的监控记录与流量记录
+	DB.Unscoped().Delete(&model.MonitorHistory{}, "created_at < ? OR monitor_id NOT IN (SELECT `id` FROM monitors)", time.Now().AddDate(0, 0, -30))
 	DB.Unscoped().Delete(&model.Transfer{}, "server_id NOT IN (SELECT `id` FROM servers)")
 	// 计算可清理流量记录的时长
 	var allServerKeep time.Time

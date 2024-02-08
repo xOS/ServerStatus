@@ -334,6 +334,7 @@ type Task struct {
 	Id   uint64 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Type uint64 `protobuf:"varint,2,opt,name=type,proto3" json:"type,omitempty"`
 	Data string `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	ServerId uint64 `protobuf:"varint,4,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
 }
 
 func (x *Task) Reset() {
@@ -387,6 +388,13 @@ func (x *Task) GetData() string {
 		return x.Data
 	}
 	return ""
+}
+
+func (x *Task) GetServerId() uint64 {
+	if x != nil {
+		return x.ServerId
+	}
+	return 0
 }
 
 type TaskResult struct {
@@ -466,6 +474,13 @@ func (x *TaskResult) GetSuccessful() bool {
 		return x.Successful
 	}
 	return false
+}
+
+func (x *TaskResult) GetServerId() uint64 {
+	if x != nil {
+		return x.ServerId
+	}
+	return 0
 }
 
 type Receipt struct {

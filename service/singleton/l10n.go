@@ -20,13 +20,13 @@ func InitLocalizer() {
 		log.Println("NG>> language not exists:", Conf.Language)
 		Conf.Language = "zh-CN"
 	} else {
-		_, err := bundle.LoadMessageFile("resource/l10n/" + Conf.Language + ".toml")
+		_, err := bundle.LoadMessageFileFS(resource.I18nFS, "l10n/"+Conf.Language+".toml")
 		if err != nil {
 			panic(err)
 		}
 	}
 
-	if _, err := bundle.LoadMessageFile("resource/l10n/zh-CN.toml"); err != nil {
+	if _, err := bundle.LoadMessageFileFS(resource.I18nFS, "l10n/zh-CN.toml"); err != nil {
 		panic(err)
 	}
 	Localizer = i18n.NewLocalizer(bundle, Conf.Language)

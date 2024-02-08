@@ -102,11 +102,16 @@ func OnDeleteNotification(id uint64) {
 	delete(NotificationIDToTag, id)
 }
 
+func UnMuteNotification(notificationTag string, muteLabel *string) {
+	fullMuteLabel := *NotificationMuteLabel.AppendNotificationTag(muteLabel, notificationTag)
+	Cache.Delete(fullMuteLabel)
+}
+
 // SendNotification 向指定的通知方式组的所有通知方式发送通知
 func SendNotification(notificationTag string, desc string, muteLabel *string, ext ...*model.Server) {
 	if muteLabel != nil {
 		// 将通知方式组名称加入静音标志
-		muteLabel := fmt.Sprintf("%s:%s", *muteLabel, notificationTag)
+		muteLabel := *NotificationMuteLabel.AppendNotificationTag(muteLabel, notificationTag)
 		// 通知防骚扰策略
 		var flag bool
 		if cacheN, has := Cache.Get(muteLabel); has {
@@ -148,6 +153,7 @@ func SendNotification(notificationTag string, desc string, muteLabel *string, ex
 		ns := model.NotificationServerBundle{
 			Notification: n,
 			Server:       nil,
+			Loc:          Loc,
 		}
 		if len(ext) > 0 {
 			ns.Server = ext[0]
@@ -179,6 +185,11 @@ func (_NotificationMuteLabel) ServerIncidentResolved(alertId uint64, serverId ui
 	return &label
 }
 
+func (_NotificationMuteLabel) AppendNotificationTag(label *string, notificationTag string) *string {
+	newLabel := fmt.Sprintf("%s:%s", *label, notificationTag)
+	return &newLabel
+}
+
 func (_NotificationMuteLabel) ServiceLatencyMin(serviceId uint64) *string {
 	label := fmt.Sprintf("bf::sln-%d", serviceId)
 	return &label
@@ -194,7 +205,7 @@ func (_NotificationMuteLabel) ServiceStateChanged(serviceId uint64) *string {
 	return &label
 }
 
-func (_NotificationMuteLabel) ServiceSSL(serviceId uint64) *string {
-	label := fmt.Sprintf("bf::sssl-%d", serviceId)
+func (_NotificationMuteLabel) ServiceSSL(serviceId uint64, extraInfo string) *string {
+	label := fmt.Sprintf("bf::sssl-%d-%s", serviceId, extraInfo)
 	return &label
 }

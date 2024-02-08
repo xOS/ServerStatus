@@ -90,6 +90,11 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 				LastResult:     r.GetSuccessful(),
 			})
 		}
+	} else if model.IsServiceSentinelNeeded(r.GetType()) {
+		singleton.ServiceSentinelShared.Dispatch(singleton.ReportData{
+			Data:     r,
+			Reporter: clientID,
+		})
 	}
 	return &pb.Receipt{Proced: true}, nil
 }

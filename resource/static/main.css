@@ -1,14 +1,20 @@
-@media only screen and (min-width: 1200px) {
+@media only screen and (min-width: 1390px) {
     .ui.container {
-        width: 77%;
+    width: 77%;
     }
 }
 
-@media only screen and (max-width: 767px) {
+@media only screen and (max-width: 1389px) {
 
     .ui.card>.content>.header:not(.ui),
     .ui.cards>.card>.content>.header:not(.ui) {
-        margin-top: 0.5em;
+    margin-top: 0.5em;
+    }
+    .cards {
+    justify-content: center;
+    }
+    .ui.four.cards>.card {
+    width: 250px;
     }
 }
 
