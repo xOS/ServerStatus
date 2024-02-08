@@ -906,7 +906,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 		return
 	}
 
-	if !utils.IsFileExists("resource/template/theme-" + sf.Theme + "/home.html") {
+	if !utils.IsFileExists("resource/template/theme-"+sf.Theme+"/home.html") && !resource.IsTemplateFileExist("template/theme-"+sf.Theme+"/home.html") {
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("前台主题文件异常：%s", sf.Theme),
@@ -914,7 +914,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 		return
 	}
 
-	if !utils.IsFileExists("resource/template/dashboard-" + sf.DashboardTheme + "/setting.html") {
+	if !utils.IsFileExists("resource/template/dashboard-"+sf.DashboardTheme+"/setting.html") && !resource.IsTemplateFileExist("template/dashboard-"+sf.DashboardTheme+"/setting.html") {
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("后台主题文件异常：%s", sf.DashboardTheme),
