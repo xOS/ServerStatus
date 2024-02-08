@@ -464,16 +464,19 @@ other = "平均延迟"
 other = "流量统计"
 
 [From]
-other = "自"
+other = "起始"
 
 [To]
-other = "至"
+other = "结束"
 
 [NextCheck]
 other = "下次检查"
 
 [CurrentUsage]
 other = "当前用量"
+
+[TrafficTotal]
+other = "总流量"
 
 [VerifyPassword]
 other = "验证查看密码"
@@ -633,3 +636,6 @@ other = "仅管理可见"
 
 [Detail]
 other = "配置"
+
+[NetworkStatus]
+other = "网络波动"

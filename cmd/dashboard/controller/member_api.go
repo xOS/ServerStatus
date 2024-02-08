@@ -17,6 +17,7 @@ import (
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
 	"github.com/xos/serverstatus/proto"
+	"github.com/xos/serverstatus/resource"
 	"github.com/xos/serverstatus/service/singleton"
 )
 
@@ -37,6 +38,7 @@ func (ma *memberAPI) serve() {
 	mr.GET("/search-server", ma.searchServer)
 	mr.GET("/search-tasks", ma.searchTask)
 	mr.POST("/server", ma.addOrEditServer)
+	mr.POST("/monitor", ma.addOrEditMonitor)
 	mr.POST("/traffic", ma.addOrEditAlertRule)
 	mr.POST("/cron", ma.addOrEditCron)
 	mr.GET("/cron/:id/manual", ma.manualTrigger)

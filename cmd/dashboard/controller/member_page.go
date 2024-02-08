@@ -24,6 +24,7 @@ func (mp *memberPage) serve() {
 		Redirect: "/login",
 	}))
 	mr.GET("/server", mp.server)
+	mr.GET("/monitor", mp.monitor)
 	mr.GET("/cron", mp.cron)
 	mr.GET("/notification", mp.notification)
 	mr.GET("/setting", mp.setting)
@@ -45,6 +46,13 @@ func (mp *memberPage) server(c *gin.Context) {
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/server", mygin.CommonEnvironment(c, gin.H{
 		"Title":   singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ServersManagement"}),
 		"Servers": singleton.SortedServerList,
+	}))
+}
+
+func (mp *memberPage) monitor(c *gin.Context) {
+	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/monitor", mygin.CommonEnvironment(c, gin.H{
+		"Title":    singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ServicesManagement"}),
+		"Monitors": singleton.ServiceSentinelShared.Monitors(),
 	}))
 }
 

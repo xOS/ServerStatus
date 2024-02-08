@@ -472,6 +472,9 @@ other = "To"
 [NextCheck]
 other = "Next check"
 
+[TrafficTotal]
+other = "Total Flow"
+
 [CurrentUsage]
 other = "Current Usage"
 
@@ -633,3 +636,6 @@ other = "No display to visitors"
 
 [Detail]
 other = "Detail"
+
+[NetworkStatus]
+other = "Network Fluctuation"

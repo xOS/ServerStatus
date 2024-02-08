@@ -11,6 +11,7 @@
         </a>
         {{else}}
         <a class="item" href="http://status.nange.cn/" target="_blank"><i class="server icon"></i>{{tr "Services"}}</a>
+        <a class='item{{if eq .MatchedPath "/network"}} active{{end}}' href="/network"><i class="bi bi-hdd-network icon"></i>{{tr "NetworkStatus"}}</a>
         {{end}}
         <div class="right menu">
             <div class="item">
