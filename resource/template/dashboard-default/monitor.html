@@ -1,4 +1,5 @@
-{{define "dashboard-default/monitor"}} {{template "common/header" .}}
+{{define "dashboard-default/monitor"}}
+{{template "common/header" .}}
 {{template "common/menu" .}}
 <div class="nb-container">
   <div class="ui container">
@@ -37,8 +38,8 @@
           <td>{{if eq $monitor.Cover 0}}{{tr "CoverAll"}}{{else}}{{tr "IgnoreAll"}}{{end}}</td>
           <td>{{$monitor.SkipServersRaw}}</td>
           <td>
-            {{if eq $monitor.Type 1}}{{tr "SSLCertificate"}} {{else if eq $monitor.Type
-            2}} ICMP Ping {{else}} {{tr "TCPPort"}} {{end}}
+            {{if eq $monitor.Type
+            1}} ICMP Ping {{else}} {{tr "TCPPort"}} {{end}}
           </td>
           <td>{{$monitor.Duration}} {{tr "Seconds"}}</td>
           <td>{{$monitor.NotificationTag}}</td>
@@ -53,7 +54,7 @@
                 <i class="edit icon"></i>
               </button>
               <button class="ui button"
-                onclick="showConfirm('{{tr "DeleteService"}}','{{tr "ConfirmToDeleteThisService"}}',deleteRequest,'/api/monitor/'+{{$monitor.ID}})">
+                onclick="showConfirm('{{tr "DeleteService"}}'+'[{{$monitor.Name}}]','{{tr "ConfirmToDeleteThisService"}}',deleteRequest,'/api/monitor/'+{{$monitor.ID}})">
                 <i class="trash alternate outline icon"></i>
               </button>
             </div>

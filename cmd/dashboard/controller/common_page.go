@@ -59,7 +59,7 @@ type viewPasswordForm struct {
 	Password string
 }
 
-func (p *commonPage) issueViewPassword(c *gin.Context) {
+func (cp *commonPage) issueViewPassword(c *gin.Context) {
 	var vpf viewPasswordForm
 	err := c.ShouldBind(&vpf)
 	var hash []byte
@@ -84,7 +84,7 @@ func (p *commonPage) issueViewPassword(c *gin.Context) {
 	c.Redirect(http.StatusFound, c.Request.Referer())
 }
 
-func (p *commonPage) checkViewPassword(c *gin.Context) {
+func (cp *commonPage) checkViewPassword(c *gin.Context) {
 	if singleton.Conf.Site.ViewPassword == "" {
 		c.Next()
 		return
@@ -109,8 +109,8 @@ func (p *commonPage) checkViewPassword(c *gin.Context) {
 	c.Next()
 }
 
-func (p *commonPage) service(c *gin.Context) {
-	res, _, _ := p.requestGroup.Do("servicePage", func() (interface{}, error) {
+func (cp *commonPage) service(c *gin.Context) {
+	res, _, _ := cp.requestGroup.Do("servicePage", func() (interface{}, error) {
 		singleton.AlertsLock.RLock()
 		defer singleton.AlertsLock.RUnlock()
 		var stats map[uint64]model.ServiceItemResponse

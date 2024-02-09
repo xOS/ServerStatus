@@ -843,6 +843,11 @@ i.s {
     max-width: 100% !important;
 }
 
+.network-primary-btn {
+    background-color: rgb(255 255 255 / 50%) !important;
+    color: white !important;
+}
+
 .server-primary-btn {
     background-color: #f88400 !important;
     color: white !important;
@@ -880,17 +885,4 @@ i.s {
 
 .ui.button {
     background: rgb(250 250 250 / 75%) none;
-}
-
-.server-primary-btn {
-    background-color: #f88400 !important;
-    color: white !important;
-}
-
-.server-primary-font {
-    color: #f88400 !important;
-}
-
-.server-secondary-font {
-    color: rgba(252, 166, 7, 0.952) !important;
 }

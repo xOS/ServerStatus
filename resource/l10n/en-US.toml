@@ -147,9 +147,8 @@ other = "Latency Notification"
 
 [IntroductionOfMonitor]
 other = """
-Input URL(With http/https prefix) for type <b>HTTP-GET</b>, SSL Certificate will be monitored automatically when URL has https prefix;<br>
 Input hostname/IP for type <b>ICMP-Ping</b>: example.com;<br>
-Input hostname/IP:Port for type <b>TCP-Ping</b>: example.com:22;"""
+Input hostname/IP:Port for type <b>TCP-Ping</b>: 1.1.1.1:53;"""
 
 [AddNotificationMethod]
 other = "Add Notification Method"
@@ -639,3 +638,9 @@ other = "Detail"
 
 [NetworkStatus]
 other = "Network Fluctuation"
+
+[EnableTriggerTask]
+other = "Enable Trigger Task务"
+
+[BatchDeleteServer]
+other = "Batch Delete Servers"
