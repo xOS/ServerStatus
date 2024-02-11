@@ -49,6 +49,7 @@ func (cp *commonPage) serve() {
 	cr.Use(cp.checkViewPassword) // 前端查看密码鉴权
 	cr.GET("/", cp.home)
 	cr.GET("/service", cp.service)
+	// TODO: 界面直接跳转使用该接口
 	cr.GET("/network/:id", cp.network)
 	cr.GET("/network", cp.network)
 	cr.GET("/ws", cp.ws)
@@ -187,7 +188,7 @@ func (cp *commonPage) network(c *gin.Context) {
 			return
 		}
 	}
-	monitorHistories := singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": id}, 4320)
+	monitorHistories := singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": id})
 	monitorInfos, _ = utils.Json.Marshal(monitorHistories)
 	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
 	_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)

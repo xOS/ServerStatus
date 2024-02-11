@@ -28,9 +28,6 @@ func (v *apiV1) serve() {
 	r.GET("/server/details", v.serverDetails)
 	mr := v.r.Group("monitor")
 	mr.GET("/:id", v.monitorHistoriesById)
-	mr.GET("/day/:id", v.monitorHistoriesDayById)
-	mr.GET("/month/:id", v.monitorHistoriesMonthById)
-	mr.GET("", v.monitorHistories)
 }
 
 // serverList 获取服务器列表 不传入Query参数则获取全部
@@ -86,19 +83,5 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 		})
 		return
 	}
-	c.JSON(200, singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": server.ID}, 4320))
-}
-
-func (v *apiV1) monitorHistoriesDayById(c *gin.Context) {
-	id := c.Param("id")
-	c.JSON(200, singleton.MonitorAPI.GetMonitorHistories(map[string]any{"monitor_id": id}, 24*60))
-}
-
-func (v *apiV1) monitorHistoriesMonthById(c *gin.Context) {
-	id := c.Param("id")
-	c.JSON(200, singleton.MonitorAPI.GetMonitorHistories(map[string]any{"monitor_id": id}, 24*60*30))
-}
-
-func (v *apiV1) monitorHistories(c *gin.Context) {
-	c.JSON(200, singleton.MonitorAPI.GetMonitorHistories(nil, 0))
+	c.JSON(200, singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": server.ID}))
 }

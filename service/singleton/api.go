@@ -226,7 +226,7 @@ func (s *ServerAPIService) GetAllList() *ServerInfoResponse {
 	return res
 }
 
-func (m *MonitorAPIService) GetMonitorHistories(query map[string]any, limit int) *MonitorInfoResponse {
+func (m *MonitorAPIService) GetMonitorHistories(query map[string]any) *MonitorInfoResponse {
 	var (
 		resultMap        = make(map[uint64]*MonitorInfo)
 		monitorHistories []*model.MonitorHistory

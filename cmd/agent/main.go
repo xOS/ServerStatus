@@ -274,6 +274,8 @@ func doTask(task *pb.Task) {
 	switch task.GetType() {
 	case model.TaskTypeTerminal:
 		handleTerminalTask(task)
+	case model.TaskTypeICMPPing:
+		handleIcmpPingTask(task, &result)
 	case model.TaskTypeTCPPing:
 		handleTcpPingTask(task, &result)
 	case model.TaskTypeCommand:
@@ -345,6 +347,27 @@ func handleTcpPingTask(task *pb.Task, result *pb.TaskResult) {
 		conn.Write([]byte("ping\n"))
 		conn.Close()
 		result.Delay = float32(time.Since(start).Microseconds()) / 1000.0
+		result.Successful = true
+		result.ServerId = task.ServerId
+	} else {
+		result.Data = err.Error()
+	}
+}
+func handleIcmpPingTask(task *pb.Task, result *pb.TaskResult) {
+	pinger, err := ping.NewPinger(task.GetData())
+	if err == nil {
+		pinger.SetPrivileged(true)
+		pinger.Count = 5
+		pinger.Timeout = time.Second * 20
+		err = pinger.Run() // Blocks until finished.
+	}
+	if err == nil {
+		stat := pinger.Statistics()
+		if stat.PacketsRecv == 0 {
+			result.Data = "pockets recv 0"
+			return
+		}
+		result.Delay = float32(stat.AvgRtt.Microseconds()) / 1000.0
 		result.Successful = true
 		result.ServerId = task.ServerId
 	} else {

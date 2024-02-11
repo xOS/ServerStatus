@@ -7,7 +7,6 @@ require (
 	code.gitea.io/sdk/gitea v0.16.0
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/BurntSushi/toml v1.3.2
-	github.com/EDDYCJY/fake-useragent v0.2.0
 	github.com/artdarek/go-unzip v1.0.0
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/creack/pty v1.1.21
@@ -20,7 +19,8 @@ require (
 	github.com/iamacarpet/go-winpty v1.0.4
 	github.com/jinzhu/copier v0.4.0
 	github.com/json-iterator/go v1.1.12
-	github.com/nezhahq/go-github-selfupdate v0.0.0-20221018153747-e1fb0e0b65b0
+	github.com/nezhahq/agent v0.15.19
+	github.com/nezhahq/go-github-selfupdate v0.0.0-20240209130611-ee68e0684126
 	github.com/nicksnyder/go-i18n/v2 v2.2.2
 	github.com/ory/graceful v0.1.3
 	github.com/patrickmn/go-cache v2.1.0+incompatible
@@ -31,8 +31,8 @@ require (
 	github.com/spf13/viper v1.18.2
 	github.com/stretchr/testify v1.8.4
 	github.com/xanzy/go-gitlab v0.94.0
-	golang.org/x/crypto v0.17.0
-	golang.org/x/oauth2 v0.15.0
+	golang.org/x/crypto v0.18.0
+	golang.org/x/oauth2 v0.16.0
 	golang.org/x/sync v0.5.0
 	golang.org/x/text v0.14.0
 	google.golang.org/grpc v1.60.1
@@ -43,8 +43,6 @@ require (
 )
 
 require (
-	github.com/PuerkitoBio/goquery v1.8.1 // indirect
-	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/bytedance/sonic v1.9.1 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -102,9 +100,9 @@ require (
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/arch v0.3.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
-	golang.org/x/net v0.19.0 // indirect
-	golang.org/x/sys v0.15.0 // indirect
-	golang.org/x/term v0.15.0 // indirect
+	golang.org/x/net v0.20.0 // indirect
+	golang.org/x/sys v0.16.0 // indirect
+	golang.org/x/term v0.16.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231120223509-83a465c0220f // indirect
