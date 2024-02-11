@@ -45,7 +45,7 @@ func NewServiceSentinel(serviceSentinelDispatchBus chan<- model.Monitor) {
 		serviceResponseDataStoreCurrentUp:       make(map[uint64]uint64),
 		serviceResponseDataStoreCurrentDown:     make(map[uint64]uint64),
 		serviceResponseDataStoreCurrentAvgDelay: make(map[uint64]float32),
-		serviceResponseTCPPing:                  make(map[uint64]map[uint64]*tcppingStore),
+		serviceResponsePing:                  make(map[uint64]map[uint64]*pingStore),
 		monitors:                                make(map[uint64]*model.Monitor),
 		sslCertCache:                            make(map[uint64]string),
 		// 30天数据缓存
@@ -104,7 +104,7 @@ type ServiceSentinel struct {
 	serviceResponseDataStoreCurrentUp       map[uint64]uint64                   // [monitor_id] -> 当前服务在线计数
 	serviceResponseDataStoreCurrentDown     map[uint64]uint64                   // [monitor_id] -> 当前服务离线计数
 	serviceResponseDataStoreCurrentAvgDelay map[uint64]float32                  // [monitor_id] -> 当前服务离线计数
-	serviceResponseTCPPing                  map[uint64]map[uint64]*tcppingStore // [monitor_id] -> ClientID -> delay
+	serviceResponsePing                  map[uint64]map[uint64]*pingStore // [monitor_id] -> ClientID -> delay
 	lastStatus                              map[uint64]int
 	sslCertCache                            map[uint64]string
 
@@ -116,7 +116,7 @@ type ServiceSentinel struct {
 	monthlyStatus     map[uint64]*model.ServiceItemResponse // [monitor_id] -> model.ServiceItemResponse
 }
 
-type tcppingStore struct {
+type pingStore struct {
 	count int
 	ping  float32
 }
@@ -336,15 +336,15 @@ func (ss *ServiceSentinel) worker() {
 			continue
 		}
 		mh := r.Data
-		if mh.Type == model.TaskTypeTCPPing {
-			monitorTcpMap, ok := ss.serviceResponseTCPPing[mh.GetId()]
+		if mh.Type == model.TaskTypeTCPPing || mh.Type == model.TaskTypeICMPPing {
+			monitorTcpMap, ok := ss.serviceResponsePing[mh.GetId()]
 			if !ok {
-				monitorTcpMap = make(map[uint64]*tcppingStore)
-				ss.serviceResponseTCPPing[mh.GetId()] = monitorTcpMap
+				monitorTcpMap = make(map[uint64]*pingStore)
+				ss.serviceResponsePing[mh.GetId()] = monitorTcpMap
 			}
 			ts, ok := monitorTcpMap[mh.GetServerId()]
 			if !ok {
-				ts = &tcppingStore{}
+				ts = &pingStore{}
 			}
 			ts.count++
 			ts.ping = (ts.ping*float32(ts.count-1) + mh.Delay) / float32(ts.count)

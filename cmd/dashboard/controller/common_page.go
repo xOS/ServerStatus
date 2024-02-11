@@ -148,7 +148,7 @@ func (cp *commonPage) network(c *gin.Context) {
 			Code:  http.StatusForbidden,
 			Title: "请求失败",
 			Msg:   "请求参数有误：" + "server monitor history not found",
-			Link:  "/server",
+			Link:  "/",
 			Btn:   "返回重试",
 		}, true)
 		return
@@ -171,7 +171,7 @@ func (cp *commonPage) network(c *gin.Context) {
 				Code:  http.StatusForbidden,
 				Title: "请求失败",
 				Msg:   "请求参数有误：" + err.Error(),
-				Link:  "/server",
+				Link:  "/",
 				Btn:   "返回重试",
 			}, true)
 			return
@@ -182,7 +182,7 @@ func (cp *commonPage) network(c *gin.Context) {
 				Code:  http.StatusForbidden,
 				Title: "请求失败",
 				Msg:   "请求参数有误：" + "server id not found",
-				Link:  "/server",
+				Link:  "/",
 				Btn:   "返回重试",
 			}, true)
 			return
@@ -201,8 +201,8 @@ func (cp *commonPage) network(c *gin.Context) {
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
 			Code:  http.StatusForbidden,
 			Title: "请求失败",
-			Msg:   "请求参数有误：" + "server id not found",
-			Link:  "/server",
+			Msg:   "请求参数有误：" + "no server id not found with monitor histories",
+			Link:  "/",
 			Btn:   "返回重试",
 		}, true)
 		return
