@@ -12,6 +12,7 @@ import (
 
 const (
 	_ = iota
+	TaskTypeICMPPing
 	TaskTypeTCPPing
 	TaskTypeCommand
 	TaskTypeTerminal
