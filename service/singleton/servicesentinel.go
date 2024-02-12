@@ -3,7 +3,6 @@ package singleton
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"sort"
 	"strings"
 	"sync"
