@@ -39,7 +39,7 @@ func NewServiceSentinel(serviceSentinelDispatchBus chan<- model.Monitor) {
 	ServiceSentinelShared = &ServiceSentinel{
 		serviceReportChannel:                    make(chan ReportData, 200),
 		serviceStatusToday:                      make(map[uint64]*_TodayStatsOfMonitor),
-		serviceCurrentStatusIndex:               make(map[uint64]int),
+		serviceCurrentStatusIndex:               make(map[uint64]*indexStore),
 		serviceCurrentStatusData:                make(map[uint64][]*pb.TaskResult),
 		lastStatus:                              make(map[uint64]int),
 		serviceResponseDataStoreCurrentUp:       make(map[uint64]uint64),
@@ -99,7 +99,7 @@ type ServiceSentinel struct {
 
 	serviceResponseDataStoreLock            sync.RWMutex
 	serviceStatusToday                      map[uint64]*_TodayStatsOfMonitor    // [monitor_id] -> _TodayStatsOfMonitor
-	serviceCurrentStatusIndex               map[uint64]int                      // [monitor_id] -> 该监控ID对应的 serviceCurrentStatusData 的最新索引下标
+	serviceCurrentStatusIndex               map[uint64]*indexStore                      // [monitor_id] -> 该监控ID对应的 serviceCurrentStatusData 的最新索引下标
 	serviceCurrentStatusData                map[uint64][]*pb.TaskResult         // [monitor_id] -> []model.MonitorHistory
 	serviceResponseDataStoreCurrentUp       map[uint64]uint64                   // [monitor_id] -> 当前服务在线计数
 	serviceResponseDataStoreCurrentDown     map[uint64]uint64                   // [monitor_id] -> 当前服务离线计数
@@ -114,6 +114,11 @@ type ServiceSentinel struct {
 	// 30天数据缓存
 	monthlyStatusLock sync.Mutex
 	monthlyStatus     map[uint64]*model.ServiceItemResponse // [monitor_id] -> model.ServiceItemResponse
+}
+
+type indexStore struct {
+	index int
+	t     time.Time
 }
 
 type pingStore struct {
@@ -342,13 +347,13 @@ func (ss *ServiceSentinel) worker() {
 				monitorTcpMap = make(map[uint64]*pingStore)
 				ss.serviceResponsePing[mh.GetId()] = monitorTcpMap
 			}
-			ts, ok := monitorTcpMap[mh.GetServerId()]
+			ts, ok := monitorTcpMap[r.Reporter]
 			if !ok {
 				ts = &pingStore{}
 			}
 			ts.count++
 			ts.ping = (ts.ping*float32(ts.count-1) + mh.Delay) / float32(ts.count)
-			if ts.count == _CurrentTCPPingStatus {
+			if ts.count == Conf.AvgPingCount {
 				if ts.ping > float32(Conf.MaxTCPPingValue) {
 					ts.ping = float32(Conf.MaxTCPPingValue)
 				}
@@ -357,16 +362,14 @@ func (ss *ServiceSentinel) worker() {
 					MonitorID: mh.GetId(),
 					AvgDelay:  ts.ping,
 					Data:      mh.Data,
-					ServerID:  mh.GetServerId(),
+					ServerID:  r.Reporter,
 				}).Error; err != nil {
 					log.Println("NG>> 服务监控数据持久化失败：", err)
 				}
 			}
-			monitorTcpMap[mh.GetServerId()] = ts
-			if !(rand.Intn(len(ServerList)) == 0) {
-				continue
-			}
+			monitorTcpMap[r.Reporter] = ts
 		}
+
 		ss.serviceResponseDataStoreLock.Lock()
 		// 写入当天状态
 		if mh.Successful {
@@ -377,9 +380,21 @@ func (ss *ServiceSentinel) worker() {
 		} else {
 			ss.serviceStatusToday[mh.GetId()].Down++
 		}
-		// 写入当前数据
-		ss.serviceCurrentStatusData[mh.GetId()][ss.serviceCurrentStatusIndex[mh.GetId()]] = mh
-		ss.serviceCurrentStatusIndex[mh.GetId()]++
+
+		currentTime := time.Now()
+		if ss.serviceCurrentStatusIndex[mh.GetId()] == nil {
+			ss.serviceCurrentStatusIndex[mh.GetId()] = &indexStore{
+				t:     currentTime,
+				index: 0,
+			}
+		}
+
+		//写入当前数据
+		if ss.serviceCurrentStatusIndex[mh.GetId()].t.Before(currentTime) {
+			ss.serviceCurrentStatusIndex[mh.GetId()].t = currentTime.Add(30 * time.Second)
+			ss.serviceCurrentStatusData[mh.GetId()][ss.serviceCurrentStatusIndex[mh.GetId()].index] = mh
+			ss.serviceCurrentStatusIndex[mh.GetId()].index++
+		}
 
 		// 更新当前状态
 		ss.serviceResponseDataStoreCurrentUp[mh.GetId()] = 0
@@ -406,8 +421,11 @@ func (ss *ServiceSentinel) worker() {
 		stateCode := GetStatusCode(upPercent)
 
 		// 数据持久化
-		if ss.serviceCurrentStatusIndex[mh.GetId()] == _CurrentStatusSize {
-			ss.serviceCurrentStatusIndex[mh.GetId()] = 0
+		if ss.serviceCurrentStatusIndex[mh.GetId()].index == _CurrentStatusSize {
+			ss.serviceCurrentStatusIndex[mh.GetId()] = &indexStore{
+				index: 0,
+				t:     currentTime,
+			}
 			if err := DB.Create(&model.MonitorHistory{
 				MonitorID: mh.GetId(),
 				AvgDelay:  ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()],

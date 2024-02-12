@@ -13,7 +13,7 @@ var (
 	UserIDToApiTokenList = make(map[uint64][]string)
 	ApiLock              sync.RWMutex
 
-	ServerAPI  = &ServerAPIService{}
+	ServerAPI = &ServerAPIService{}
 	MonitorAPI = &MonitorAPIService{}
 
 	once = &sync.Once{}
