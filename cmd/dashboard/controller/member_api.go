@@ -201,38 +201,9 @@ func (ma *memberAPI) delete(c *gin.Context) {
 		if err == nil {
 			// 删除服务器
 			singleton.ServerLock.Lock()
-			tag := singleton.ServerList[id].Tag
-			delete(singleton.SecretToID, singleton.ServerList[id].Secret)
-			delete(singleton.ServerList, id)
 			onServerDelete(id)
-			index := -1
-			for i := 0; i < len(singleton.ServerTagToIDList[tag]); i++ {
-				if singleton.ServerTagToIDList[tag][i] == id {
-					index = i
-					break
-				}
-			}
-			if index > -1 {
-				// 删除旧 Tag-ID 绑定关系
-				singleton.ServerTagToIDList[tag] = append(singleton.ServerTagToIDList[tag][:index], singleton.ServerTagToIDList[tag][index+1:]...)
-				if len(singleton.ServerTagToIDList[tag]) == 0 {
-					delete(singleton.ServerTagToIDList, tag)
-				}
-			}
 			singleton.ServerLock.Unlock()
 			singleton.ReSortServer()
-			// 删除循环流量状态中的此服务器相关的记录
-			singleton.AlertsLock.Lock()
-			for i := 0; i < len(singleton.Alerts); i++ {
-				if singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID] != nil {
-					delete(singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID].ServerName, id)
-					delete(singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID].Transfer, id)
-					delete(singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID].NextUpdate, id)
-				}
-			}
-			singleton.AlertsLock.Unlock()
-			// 删除服务器相关循环流量记录
-			singleton.DB.Unscoped().Delete(&model.Transfer{}, "server_id = ?", id)
 		}
 	case "notification":
 		err = singleton.DB.Unscoped().Delete(&model.Notification{}, "id = ?", id).Error
@@ -469,9 +440,9 @@ func (ma *memberAPI) addOrEditMonitor(c *gin.Context) {
 			}
 		}
 		if m.Cover == 0 {
-			err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ? and server_id in (?)", m.ID, m.SkipServersRaw[1:len(m.SkipServersRaw)-1]).Error
+			err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ? and server_id in (?)", m.ID, strings.Split(m.SkipServersRaw[1:len(m.SkipServersRaw)-1], ",")).Error
 		} else {
-			err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ? and server_id not in (?)", m.ID, m.SkipServersRaw[1:len(m.SkipServersRaw)-1]).Error
+			err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ? and server_id not in (?)", m.ID, strings.Split(m.SkipServersRaw[1:len(m.SkipServersRaw)-1], ",")).Error
 		}
 	}
 	if err == nil {

@@ -64,6 +64,7 @@ func (mp *memberPage) cron(c *gin.Context) {
 		"Crons": crons,
 	}))
 }
+
 func (mp *memberPage) notification(c *gin.Context) {
 	var nf []model.Notification
 	singleton.DB.Find(&nf)

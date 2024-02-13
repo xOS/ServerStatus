@@ -25,7 +25,7 @@ func InitServer() {
 	ServerTagToIDList = make(map[string][]uint64)
 }
 
-//LoadServers 加载服务器列表并根据ID排序
+// LoadServers 加载服务器列表并根据ID排序
 func LoadServers() {
 	InitServer()
 	var servers []model.Server

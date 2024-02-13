@@ -15,8 +15,7 @@ import (
 )
 
 const (
-	_CurrentStatusSize    = 30 // 统计 15 分钟内的数据为当前状态
-	_CurrentTCPPingStatus = 2  // 统计 每一分钟的ping数据
+	_CurrentStatusSize = 30 // 统计 15 分钟内的数据为当前状态
 )
 
 var ServiceSentinelShared *ServiceSentinel
@@ -44,7 +43,7 @@ func NewServiceSentinel(serviceSentinelDispatchBus chan<- model.Monitor) {
 		serviceResponseDataStoreCurrentUp:       make(map[uint64]uint64),
 		serviceResponseDataStoreCurrentDown:     make(map[uint64]uint64),
 		serviceResponseDataStoreCurrentAvgDelay: make(map[uint64]float32),
-		serviceResponsePing:                  make(map[uint64]map[uint64]*pingStore),
+		serviceResponsePing:                     make(map[uint64]map[uint64]*pingStore),
 		monitors:                                make(map[uint64]*model.Monitor),
 		sslCertCache:                            make(map[uint64]string),
 		// 30天数据缓存
@@ -97,13 +96,13 @@ type ServiceSentinel struct {
 	dispatchBus chan<- model.Monitor
 
 	serviceResponseDataStoreLock            sync.RWMutex
-	serviceStatusToday                      map[uint64]*_TodayStatsOfMonitor    // [monitor_id] -> _TodayStatsOfMonitor
-	serviceCurrentStatusIndex               map[uint64]*indexStore                      // [monitor_id] -> 该监控ID对应的 serviceCurrentStatusData 的最新索引下标
-	serviceCurrentStatusData                map[uint64][]*pb.TaskResult         // [monitor_id] -> []model.MonitorHistory
-	serviceResponseDataStoreCurrentUp       map[uint64]uint64                   // [monitor_id] -> 当前服务在线计数
-	serviceResponseDataStoreCurrentDown     map[uint64]uint64                   // [monitor_id] -> 当前服务离线计数
-	serviceResponseDataStoreCurrentAvgDelay map[uint64]float32                  // [monitor_id] -> 当前服务离线计数
-	serviceResponsePing                  map[uint64]map[uint64]*pingStore // [monitor_id] -> ClientID -> delay
+	serviceStatusToday                      map[uint64]*_TodayStatsOfMonitor // [monitor_id] -> _TodayStatsOfMonitor
+	serviceCurrentStatusIndex               map[uint64]*indexStore           // [monitor_id] -> 该监控ID对应的 serviceCurrentStatusData 的最新索引下标
+	serviceCurrentStatusData                map[uint64][]*pb.TaskResult      // [monitor_id] -> []model.MonitorHistory
+	serviceResponseDataStoreCurrentUp       map[uint64]uint64                // [monitor_id] -> 当前服务在线计数
+	serviceResponseDataStoreCurrentDown     map[uint64]uint64                // [monitor_id] -> 当前服务离线计数
+	serviceResponseDataStoreCurrentAvgDelay map[uint64]float32               // [monitor_id] -> 当前服务离线计数
+	serviceResponsePing                     map[uint64]map[uint64]*pingStore // [monitor_id] -> ClientID -> delay
 	lastStatus                              map[uint64]int
 	sslCertCache                            map[uint64]string
 
@@ -368,7 +367,6 @@ func (ss *ServiceSentinel) worker() {
 			}
 			monitorTcpMap[r.Reporter] = ts
 		}
-
 		ss.serviceResponseDataStoreLock.Lock()
 		// 写入当天状态
 		if mh.Successful {
@@ -387,8 +385,7 @@ func (ss *ServiceSentinel) worker() {
 				index: 0,
 			}
 		}
-
-		//写入当前数据
+		// 写入当前数据
 		if ss.serviceCurrentStatusIndex[mh.GetId()].t.Before(currentTime) {
 			ss.serviceCurrentStatusIndex[mh.GetId()].t = currentTime.Add(30 * time.Second)
 			ss.serviceCurrentStatusData[mh.GetId()][ss.serviceCurrentStatusIndex[mh.GetId()].index] = mh

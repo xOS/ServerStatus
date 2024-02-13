@@ -60,7 +60,7 @@ type viewPasswordForm struct {
 	Password string
 }
 
-func (cp *commonPage) issueViewPassword(c *gin.Context) {
+func (p *commonPage) issueViewPassword(c *gin.Context) {
 	var vpf viewPasswordForm
 	err := c.ShouldBind(&vpf)
 	var hash []byte
@@ -85,7 +85,7 @@ func (cp *commonPage) issueViewPassword(c *gin.Context) {
 	c.Redirect(http.StatusFound, c.Request.Referer())
 }
 
-func (cp *commonPage) checkViewPassword(c *gin.Context) {
+func (p *commonPage) checkViewPassword(c *gin.Context) {
 	if singleton.Conf.Site.ViewPassword == "" {
 		c.Next()
 		return
@@ -110,8 +110,8 @@ func (cp *commonPage) checkViewPassword(c *gin.Context) {
 	c.Next()
 }
 
-func (cp *commonPage) service(c *gin.Context) {
-	res, _, _ := cp.requestGroup.Do("servicePage", func() (interface{}, error) {
+func (p *commonPage) service(c *gin.Context) {
+	res, _, _ := p.requestGroup.Do("servicePage", func() (interface{}, error) {
 		singleton.AlertsLock.RLock()
 		defer singleton.AlertsLock.RUnlock()
 		var stats map[uint64]model.ServiceItemResponse
@@ -133,7 +133,7 @@ func (cp *commonPage) service(c *gin.Context) {
 
 func (cp *commonPage) network(c *gin.Context) {
 	var (
-		monitorHistory       = &model.MonitorHistory{}
+		monitorHistory       *model.MonitorHistory
 		servers              []*model.Server
 		serverIdsWithMonitor []uint64
 		monitorInfos         = []byte("{}")
@@ -201,7 +201,7 @@ func (cp *commonPage) network(c *gin.Context) {
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
 			Code:  http.StatusForbidden,
 			Title: "请求失败",
-			Msg:   "请求参数有误：" + "no server id not found with monitor histories",
+			Msg:   "请求参数有误：" + "no server with monitor histories",
 			Link:  "/",
 			Btn:   "返回重试",
 		}, true)
@@ -409,9 +409,8 @@ func (cp *commonPage) terminal(c *gin.Context) {
 			}, true)
 			return
 		}
-
 		cloudflareCookies, _ := c.Cookie("CF_Authorization")
-		// CloudflareCookies合法性验证
+		// Cloudflare Cookies 合法性验证
 		// 其应该包含.分隔的三组BASE64-URL编码
 		if cloudflareCookies != "" {
 			encodedCookies := strings.Split(cloudflareCookies, ".")
@@ -432,7 +431,6 @@ func (cp *commonPage) terminal(c *gin.Context) {
 			Session: terminalID,
 			Cookie:  cloudflareCookies,
 		})
-
 		if err := server.TaskStream.Send(&proto.Task{
 			Type: model.TaskTypeTerminal,
 			Data: string(terminalData),

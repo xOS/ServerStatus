@@ -35,7 +35,6 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 			Link:  opt.Redirect,
 			Btn:   opt.Btn,
 		}
-
 		var isLogin bool
 
 		// 用户鉴权

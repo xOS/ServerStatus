@@ -61,12 +61,11 @@ type Monitor struct {
 	CronJobID   cron.EntryID    `gorm:"-" json:"-"`
 }
 
-func (m *Monitor) PB(serverId uint64) *pb.Task {
+func (m *Monitor) PB() *pb.Task {
 	return &pb.Task{
-		Id:       m.ID,
-		Type:     uint64(m.Type),
-		ServerId: serverId,
-		Data:     m.Target,
+		Id:   m.ID,
+		Type: uint64(m.Type),
+		Data: m.Target,
 	}
 }
 

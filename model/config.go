@@ -105,7 +105,7 @@ type Config struct {
 	v                              *viper.Viper
 	IgnoredIPNotificationServerIDs map[uint64]bool // [ServerID] -> bool(值为true代表当前ServerID在特定服务器列表内）
 	MaxTCPPingValue                int32
-	AvgPingCount                       int
+	AvgPingCount                   int
 }
 
 // Read 读取配置文件并应用

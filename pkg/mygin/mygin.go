@@ -13,6 +13,7 @@ import (
 
 var adminPage = map[string]bool{
 	"/server":       true,
+	"/monitor":      true,
 	"/setting":      true,
 	"/notification": true,
 	"/cron":         true,
@@ -41,6 +42,7 @@ func CommonEnvironment(c *gin.Context, data map[string]interface{}) gin.H {
 		"AlarmRule":    singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "AlarmRule"}),
 		"Notification": singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "NotificationMethod"}),
 		"Server":       singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Server"}),
+		"Monitor":      singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ServicesManagement"}),
 		"Cron":         singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ScheduledTasks"}),
 	}
 	return data

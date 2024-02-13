@@ -50,12 +50,12 @@ func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
 				continue
 			}
 			if task.Cover == model.MonitorCoverIgnoreAll && task.SkipServers[singleton.SortedServerList[workedServerIndex].ID] {
-				singleton.SortedServerList[workedServerIndex].TaskStream.Send(task.PB(singleton.SortedServerList[workedServerIndex].ID))
+				singleton.SortedServerList[workedServerIndex].TaskStream.Send(task.PB())
 				workedServerIndex++
 				continue
 			}
 			if task.Cover == model.MonitorCoverAll && !task.SkipServers[singleton.SortedServerList[workedServerIndex].ID] {
-				singleton.SortedServerList[workedServerIndex].TaskStream.Send(task.PB(singleton.SortedServerList[workedServerIndex].ID))
+				singleton.SortedServerList[workedServerIndex].TaskStream.Send(task.PB())
 				workedServerIndex++
 				continue
 			}

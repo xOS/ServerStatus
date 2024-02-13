@@ -349,7 +349,6 @@ func handleTcpPingTask(task *pb.Task, result *pb.TaskResult) {
 		conn.Close()
 		result.Delay = float32(time.Since(start).Microseconds()) / 1000.0
 		result.Successful = true
-		result.ServerId = task.ServerId
 	} else {
 		result.Data = err.Error()
 	}
@@ -370,7 +369,6 @@ func handleIcmpPingTask(task *pb.Task, result *pb.TaskResult) {
 		}
 		result.Delay = float32(stat.AvgRtt.Microseconds()) / 1000.0
 		result.Successful = true
-		result.ServerId = task.ServerId
 	} else {
 		result.Data = err.Error()
 	}
