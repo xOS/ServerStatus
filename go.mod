@@ -7,20 +7,19 @@ require (
 	code.gitea.io/sdk/gitea v0.16.0
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/BurntSushi/toml v1.3.2
-	github.com/go-ping/ping v1.1.0
 	github.com/artdarek/go-unzip v1.0.0
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/creack/pty v1.1.21
 	github.com/dean2021/goss v0.0.0-20230129073947-df90431348f1
 	github.com/gin-contrib/pprof v1.4.0
 	github.com/gin-gonic/gin v1.9.1
+	github.com/go-ping/ping v1.1.0
 	github.com/google/go-github/v47 v47.1.0
 	github.com/gorilla/websocket v1.5.1
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/iamacarpet/go-winpty v1.0.4
 	github.com/jinzhu/copier v0.4.0
 	github.com/json-iterator/go v1.1.12
-	github.com/nezhahq/agent v0.15.19
 	github.com/nezhahq/go-github-selfupdate v0.0.0-20240209130611-ee68e0684126
 	github.com/nicksnyder/go-i18n/v2 v2.2.2
 	github.com/ory/graceful v0.1.3
@@ -60,6 +59,7 @@ require (
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/go-github v17.0.0+incompatible // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
+	github.com/google/uuid v1.4.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.2 // indirect
 	github.com/hashicorp/go-version v1.6.0 // indirect
@@ -79,6 +79,8 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
+	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
+	github.com/onsi/gomega v1.27.6 // indirect
 	github.com/pelletier/go-toml/v2 v2.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
