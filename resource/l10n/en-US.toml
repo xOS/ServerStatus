@@ -637,10 +637,10 @@ other = "No display to visitors"
 other = "Detail"
 
 [NetworkStatus]
-other = "Network Fluctuation"
+other = "Network"
 
 [EnableTriggerTask]
-other = "Enable Trigger Task务"
+other = "Enable Trigger Task"
 
 [BatchDeleteServer]
 other = "Batch Delete Servers"
