@@ -644,3 +644,6 @@ other = "Enable Trigger Task"
 
 [BatchDeleteServer]
 other = "Batch Delete Servers"
+
+[EnableShowInService]
+other = "Enable Show in Service"

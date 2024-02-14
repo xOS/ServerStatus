@@ -63,11 +63,11 @@ func UpdateIP() {
 			continue
 		}
 		if ipv4.IP != "" && ipv6.IP == "" {
-			CachedIP = fmt.Sprintf("IPv4:%s", ipv4.IP)
+			CachedIP = fmt.Sprintf("%s", ipv4.IP)
 		} else if ipv4.IP == "" && ipv6.IP != "" {
-			CachedIP = fmt.Sprintf("IPv6:[%s]", ipv6.IP)
+			CachedIP = fmt.Sprintf("[%s]", ipv6.IP)
 		} else {
-			CachedIP = fmt.Sprintf("IPv4:%s/IPv6:[%s]", ipv4.IP, ipv6.IP)
+			CachedIP = fmt.Sprintf("%s/[%s]", ipv4.IP, ipv6.IP)
 		}
 		if ipv4.CountryCode != "" {
 			cachedCountry = ipv4.CountryCode

@@ -10,8 +10,8 @@
             <i class="fa-solid fa-sliders icon"></i>{{tr "Settings"}}
         </a>
         {{else}}
-        <a class="item" href="http://status.nange.cn/" target="_blank"><i class="server icon"></i>{{tr "Services"}}</a>
         <a class='item{{if eq .MatchedPath "/network"}} active{{end}}' href="/network"><i class="dot circle outline icon"></i>{{tr "NetworkStatus"}}</a>
+        <a class="item" href="http://status.nange.cn/" target="_blank"><i class="server icon"></i>{{tr "Services"}}</a>
         {{end}}
         <div class="right menu">
             <div class="item">

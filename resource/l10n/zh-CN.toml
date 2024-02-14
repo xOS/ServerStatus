@@ -644,3 +644,6 @@ other = "添加"
 
 [Edit]
 other = "修改"
+
+[EnableShowInService]
+other = "在服务中显示"
