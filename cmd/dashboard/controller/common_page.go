@@ -122,7 +122,7 @@ func (p *commonPage) service(c *gin.Context) {
 			if !service.Monitor.EnableShowInService {
 				delete(stats, k)
 			}
-		}		
+		}
 		return []interface {
 		}{
 			stats, statsStore,
