@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/service/singleton"
 )
@@ -15,18 +16,31 @@ type apiV1 struct {
 
 func (v *apiV1) serve() {
 	r := v.r.Group("")
-	// API
+	// 强制认证的 API
 	r.Use(mygin.Authorize(mygin.AuthorizeOption{
-		Member:   true,
-		IsPage:   false,
-		AllowAPI: true,
-		Msg:      "访问此接口需要认证",
-		Btn:      "点此登录",
-		Redirect: "/login",
+		MemberOnly: true,
+		AllowAPI:   true,
+		IsPage:     false,
+		Msg:        "访问此接口需要认证",
+		Btn:        "点此登录",
+		Redirect:   "/login",
 	}))
 	r.GET("/server/list", v.serverList)
 	r.GET("/server/details", v.serverDetails)
+	// 不强制认证的 API
 	mr := v.r.Group("monitor")
+	mr.Use(mygin.Authorize(mygin.AuthorizeOption{
+		MemberOnly: false,
+		IsPage:     false,
+		AllowAPI:   true,
+		Msg:        "访问此接口需要认证",
+		Btn:        "点此登录",
+		Redirect:   "/login",
+	}))
+	mr.Use(mygin.ValidateViewPassword(mygin.ValidateViewPasswordOption{
+		IsPage:        false,
+		AbortWhenFail: true,
+	}))
 	mr.GET("/:id", v.monitorHistoriesById)
 }
 
@@ -83,5 +97,15 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 		})
 		return
 	}
+
+	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
+	_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
+	authorized := isMember || isViewPasswordVerfied
+
+	if server.HideForGuest && !authorized {
+		c.AbortWithStatusJSON(403, gin.H{"code": 403, "message": "需要认证"})
+		return
+	}
+
 	c.JSON(200, singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": server.ID}))
 }

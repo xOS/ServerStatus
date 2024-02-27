@@ -3,6 +3,9 @@ package rpc
 import (
 	"context"
 	"fmt"
+	"github.com/xos/serverstatus/pkg/ddns"
+	"github.com/xos/serverstatus/pkg/utils"
+	"log"
 	"time"
 
 	"github.com/jinzhu/copier"
@@ -34,56 +37,18 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 			curServer := model.Server{}
 			copier.Copy(&curServer, singleton.ServerList[clientID])
 			if cr.PushSuccessful && r.GetSuccessful() {
-				singleton.SendNotification(cr.NotificationTag, fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s "+"\n"+"%s%s，%s\n%s",
-					singleton.Localizer.MustLocalize(
-						&i18n.LocalizeConfig{
-							MessageID: "Notify",
-						},
-					),
-					singleton.Localizer.MustLocalize(
-						&i18n.LocalizeConfig{
-							MessageID: "ScheduledTaskExecutedSuccessfully",
-						},
-					),
-					cr.Name,
-					singleton.Localizer.MustLocalize(
-						&i18n.LocalizeConfig{
-							MessageID: "TaskServer",
-						},
-					),
-					singleton.ServerList[clientID].Name,
-					singleton.Localizer.MustLocalize(
-						&i18n.LocalizeConfig{
-							MessageID: "TaskLog",
-						},
-					),
-					r.GetData()), nil, &curServer)
+				singleton.SendNotification(cr.NotificationTag, fmt.Sprintf("[%s] %s, %s\n%s", singleton.Localizer.MustLocalize(
+					&i18n.LocalizeConfig{
+						MessageID: "ScheduledTaskExecutedSuccessfully",
+					},
+				), cr.Name, singleton.ServerList[clientID].Name, r.GetData()), nil, &curServer)
 			}
 			if !r.GetSuccessful() {
-				singleton.SendNotification(cr.NotificationTag, fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s "+"\n"+"%s%s，%s\n%s",
-					singleton.Localizer.MustLocalize(
-						&i18n.LocalizeConfig{
-							MessageID: "Notify",
-						},
-					),
-					singleton.Localizer.MustLocalize(
-						&i18n.LocalizeConfig{
-							MessageID: "ScheduledTaskExecutedFailed",
-						},
-					),
-					cr.Name,
-					singleton.Localizer.MustLocalize(
-						&i18n.LocalizeConfig{
-							MessageID: "TaskServer",
-						},
-					),
-					singleton.ServerList[clientID].Name,
-					singleton.Localizer.MustLocalize(
-						&i18n.LocalizeConfig{
-							MessageID: "TaskLog",
-						},
-					),
-					r.GetData()), nil, &curServer)
+				singleton.SendNotification(cr.NotificationTag, fmt.Sprintf("[%s] %s, %s\n%s", singleton.Localizer.MustLocalize(
+					&i18n.LocalizeConfig{
+						MessageID: "ScheduledTaskExecutedFailed",
+					},
+				), cr.Name, singleton.ServerList[clientID].Name, r.GetData()), nil, &curServer)
 			}
 			singleton.DB.Model(cr).Updates(model.Cron{
 				LastExecutedAt: time.Now().Add(time.Second * -1 * time.Duration(r.GetDelay())),
@@ -147,6 +112,36 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	host := model.PB2Host(r)
 	singleton.ServerLock.RLock()
 	defer singleton.ServerLock.RUnlock()
+
+	// 检查并更新DDNS
+	if singleton.Conf.DDNS.Enable &&
+		singleton.ServerList[clientID].EnableDDNS &&
+		singleton.ServerList[clientID].Host != nil &&
+		host.IP != "" &&
+		singleton.ServerList[clientID].Host.IP != host.IP {
+
+		serverDomain := singleton.ServerList[clientID].DDNSDomain
+		provider, err := singleton.GetDDNSProviderFromString(singleton.Conf.DDNS.Provider)
+		if err == nil && serverDomain != "" {
+			ipv4, ipv6, _ := utils.SplitIPAddr(host.IP)
+			maxRetries := int(singleton.Conf.DDNS.MaxRetries)
+			config := &ddns.DomainConfig{
+				EnableIPv4: true,
+				EnableIpv6: true,
+				FullDomain: serverDomain,
+				Ipv4Addr:   ipv4,
+				Ipv6Addr:   ipv6,
+			}
+			go singleton.RetryableUpdateDomain(provider, config, maxRetries)
+
+		} else {
+			// 虽然会在启动时panic, 可以断言不会走这个分支, 但是考虑到动态加载配置或者其它情况, 这里输出一下方便检查奇奇怪怪的BUG
+			log.Printf("NG>> 未找到对应的DDNS提供者(%s), 请前往config.yml检查你的设置\n", singleton.Conf.DDNS.Provider)
+		}
+
+	}
+
+	// 发送IP变动通知
 	if singleton.Conf.EnableIPChangeNotification &&
 		((singleton.Conf.Cover == model.ConfigCoverAll && !singleton.Conf.IgnoredIPNotificationServerIDs[clientID]) ||
 			(singleton.Conf.Cover == model.ConfigCoverIgnoreAll && singleton.Conf.IgnoredIPNotificationServerIDs[clientID])) &&
@@ -154,24 +149,17 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		singleton.ServerList[clientID].Host.IP != "" &&
 		host.IP != "" &&
 		singleton.ServerList[clientID].Host.IP != host.IP {
-		singleton.SendNotification(singleton.Conf.IPChangeNotificationTag, fmt.Sprintf(
-			"#%s"+"\n"+"[%s]"+"\n"+"%s"+"\n"+"%s %s"+"\n"+"%s %s",
-			singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "Notify",
-			}),
-			singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "IPChanged",
-			}),
-			singleton.ServerList[clientID].Name,
-			singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "OldIP",
-			}),
-			singleton.IPDesensitize(singleton.ServerList[clientID].Host.IP),
-			singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "NewIP",
-			}),
-			singleton.IPDesensitize(host.IP),
-		), nil)
+
+		singleton.SendNotification(singleton.Conf.IPChangeNotificationTag,
+			fmt.Sprintf(
+				"[%s] %s, %s => %s",
+				singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
+					MessageID: "IPChanged",
+				}),
+				singleton.ServerList[clientID].Name, singleton.IPDesensitize(singleton.ServerList[clientID].Host.IP),
+				singleton.IPDesensitize(host.IP),
+			),
+			nil)
 	}
 
 	// 判断是否是机器重启，如果是机器重启要录入最后记录的流量里面

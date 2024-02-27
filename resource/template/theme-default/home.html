@@ -1,11 +1,14 @@
-{{define "theme-default/home"}} {{template "common/header" .}} {{if ts .CustomCode}} {{.CustomCode|safe}} {{end}}
-{{template "common/menu" .}}
+{{define "theme-default/home"}}
+{{template "theme-default/header" .}}
+{{if ts .CustomCode}} {{.CustomCode|safe}} {{end}}
+{{template "theme-default/menu" .}}
 <div class="nb-container">
-  <div class="ui container">
-    <div id="app">
+  <div class="ui container">  
+    <template v-if="groups">
       <div class="ui styled fluid accordion" v-for="group in groups">
         <div class="active title">
-          <i class="dropdown icon"></i>@#(group.Tag!==''?group.Tag:'{{tr "Default"}}')#@
+          <i class="dropdown icon"></i>
+          @#(group.Tag!==''?group.Tag:'{{tr "Default"}}')#@
         </div>
         <div class="active content">
           <div class="ui four stackable status cards">
@@ -19,6 +22,7 @@
                   <i v-if='server.Host.Platform == "openwrt"' class="fl-tux"></i>
                   <i v-if='server.Host.Platform == "linux"' class="fl-tux"></i>
                   <i v-if='server.Host.Platform == "amazon"' class="fl-redhat"></i>
+                  <i v-if='!server.Host.Platform' class="fl-tux"></i>
                   <i v-else-if='isWindowsPlatform(server.Host.Platform)' class="windows icon"></i>
                   <i v-else :class="'fl-' + getOsLogo(server.Host.Platform)"></i>
                   <!--<i :class="'fl-'+server.Host.OS"></i>-->
@@ -49,6 +53,7 @@
                     {{tr "BootTime"}}：@# formatTimestamp(server.Host.BootTime) #@<br />
                     {{tr "LastActive"}}：@# timeStamp(server.LastActive) #@<br />
                     {{tr "Version"}}：@#server.Host.Version#@<br />
+                    <div class="chartbox" :key="server.ID" :ref="`chart${server.ID}`" style="width: 100%; height: auto; margin-bottom: 2px;"></div>
                   </div>
                   <div class="ui divider" style="margin-bottom: 5px"></div>
                 </div>
@@ -87,6 +92,13 @@
                       <i class="fa-regular fa-up"></i>
                       @#formatByteSize(server.State.NetOutSpeed)#@/s
                     </div>
+                    <div class="three wide column">{{tr "NetTransfer"}}</div>
+                    <div class="thirteen wide column">
+                      <i class="fa-regular fa-down s"></i>
+                      @#formatByteSize(server.State.NetInTransfer)#@ | 
+                      <i class="fa-regular fa-up s"></i>
+                      @#formatByteSize(server.State.NetOutTransfer)#@
+                      </div>
                     <div class="three wide column">{{tr "DiskUsed"}}</div>
                     <div class="thirteen wide column">
                       <div :class="formatPercent(server.live,server.State.DiskUsed, server.Host.DiskTotal).class">
@@ -169,10 +181,10 @@
           </div>
         </div>
       </div>
-    </div>
+    </template>
   </div>
 </div>
-{{template "common/footer" .}}
+{{template "theme-default/footer" .}}
 <script>
   function specialOS(i) {
     if ((i.toString().toLowerCase().indexOf("windows")) != -1) {
@@ -355,25 +367,167 @@
     }
     return format;
   }
-  const initData = JSON.parse('{{.Servers}}').servers;
   var statusCards = new Vue({
     el: '#app',
     delimiters: ['@#', '#@'],
     data: {
-      data: initData,
+      page: 'index',
+      defaultTemplate: {{.Conf.Site.Theme}},
+      templates: {{.Themes}},
+      data: [],
       groups: [],
       cache: [],
+      chartDataList: [], 
+      activePopup: null,
+      
     },
+    mixins: [mixinsVue],
     created() {
+      this.data = JSON.parse('{{.Servers}}').servers;
       this.group()
     },
-    mounted() {
-      $('.server-primary-font.info.icon').popup({
-        popup: '.ui.content.popup',
-        exclusive: true,
-      });
-    },
     methods: {
+      togglePopup(event, id) {
+        // 切换弹出层的激活状态
+        this.activePopup = this.activePopup === id ? null : id;
+        this.showCharts(id);
+      },
+      isActive(id) {
+        // 检查弹出层是否处于激活状态
+        return this.activePopup === id;
+      },
+      closePopup(id) {
+        this.activePopup = null;
+      },
+      showCharts(id) {
+        // 发起数据请求
+        const url = `/api/v1/monitor/${id}`;
+        fetch(url)
+          .then(response => response.json())
+          .then(data => {
+              if (data.result) { // 数据请求成功，更新数据并渲染图表
+                this.chartDataList[id - 1] = data.result;
+                this.$nextTick(() => {
+                  this.renderCharts(id);
+                });
+              } else {
+                console.log('this agent (id:'+ id + ') has no monitor.');
+              }
+          })
+          .catch(error => {
+            console.error('Error fetching data:', error);
+          });
+      },
+      renderCharts(id) {
+        if (!this.chartDataList[id - 1]) return;
+        const MaxTCPPingValue = {{.MaxTCPPingValue}} ? {{.MaxTCPPingValue}} : 300;
+        const isMobile = this.checkIsMobile();
+        const fontSize = isMobile ? 10 : 9;
+        const itemGap = isMobile ? 5 : 2;
+        const itemWidth = isMobile ? 20 : 15;
+        const gridLeft = 25;
+        const gridRight = 12;
+        const fontColor = "rgba(0, 0, 0, 0.68)";
+        const backgroundColor = '';
+        const borderColor = "#ffffff";
+        const chartData = this.chartDataList[id - 1];
+        const chartContainer = this.$refs[`chart${id}`][0];
+        const chart = echarts.init(chartContainer, null, {
+            renderer: 'canvas',
+            useDirtyRect: false,
+            width: 'auto',
+            height: 120,
+        }); 
+        const xAxisData = chartData[0].created_at.map(time => new Date(time).toLocaleString());
+        const seriesData = chartData.map(item => {
+          let loss = 0;
+          const data = item.avg_delay.map((avgDelay, index) => {
+            if (avgDelay > 0.9 * MaxTCPPingValue) {
+              loss += 1;
+            }
+            return [new Date(item.created_at[index]).toLocaleString(), avgDelay];
+          });
+          const lossRate = ((loss / item.created_at.length) * 100).toFixed(1);
+          item.monitor_name = item.monitor_name + " " + lossRate + "%";
+          return {
+            name: item.monitor_name,
+            type: 'line',
+            smooth: true,
+            symbol: 'none',
+            data: data
+          };
+        });
+        const option = {
+          backgroundColor: backgroundColor,
+          title: {
+            show: false
+          },
+          tooltip: {
+            show: true,
+            trigger: 'axis',
+            textStyle: {
+              fontSize: fontSize,
+              color: fontColor
+            }
+          },
+          legend: {
+            data: chartData.map(item => item.monitor_name),
+            show: true,
+            textStyle: {
+              fontSize: fontSize,
+              color: fontColor
+            },
+            lineStyle: {
+              cap: 'butt'
+            },
+            top: 0,
+            bottom: 0,
+            itemGap: itemGap,
+            itemWidth: itemWidth,
+            padding: [5,0,5,0]
+          },
+          xAxis: {
+            type: 'time',
+            data: xAxisData,
+            axisLabel: {
+              textStyle: {
+                fontSize: fontSize
+              }
+            }
+          },
+          yAxis: {
+            type: 'value',
+            axisLabel: {
+              textStyle: {
+                fontSize: fontSize
+              }
+            }
+          },
+          dataZoom: [
+            {
+              show: false,
+              type: 'slider',
+              start: 0,
+              end: 100
+            }
+          ],
+          series: seriesData,
+          textStyle: {
+            fontSize: fontSize,
+            color: fontColor
+          },
+          grid: {
+            top: '40',
+            bottom: '20',
+            left: gridLeft,
+            right: gridRight
+          }
+        };
+        chart.setOption(option);
+      },
+      checkIsMobile() { // 检测设备类型,页面宽度小于768px认为是移动设备
+        return window.innerWidth <= 768;
+      },
       toFixed2(f) {
         return f.toFixed(2)
       },
@@ -488,8 +642,16 @@
         return new Date(t).format('yyyy年MM月dd日 HH:mm:ss')
       },
       formatByteSize(bs) {
-        const x = readableBytes(bs)
+        const x = this.readableBytes(bs)
         return x != "NaN undefined" ? x : '0B'
+      },
+      readableBytes(bytes) {
+        if (!bytes) {
+          return '0B'
+        }
+        const i = Math.floor(Math.log(bytes) / Math.log(1024)),
+          sizes = ["B", "K", "M", "G", "T", "P", "E", "Z", "Y"];
+        return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
       },
       getCoreAndGHz(str){
         if((str || []).hasOwnProperty(0) === false){
@@ -509,8 +671,13 @@
 	   
       },
       getK2Gb(bs){
-          bs = bs / 1024 /1024 /1024;
+        bs = bs / 1024 /1024 /1024;
+        if(bs>=1){
           return Math.ceil(bs.toFixed(2)) + 'GB';
+        }else{
+          bs = bs * 1024;
+          return Math.ceil(bs.toFixed(2)) + 'MB'; 
+        }
       },
       listTipsMouseenter(obj,strs,tipsNum=1){
           this.layerIndex = layer.tips(strs, '#'+obj,{tips: [tipsNum, 'rgb(0 0 0 / 85%)'],time:0});

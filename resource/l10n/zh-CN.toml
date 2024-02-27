@@ -647,3 +647,15 @@ other = "修改"
 
 [EnableShowInService]
 other = "在服务中显示"
+
+[EnableDDNS]
+other = "启用 DDNS"
+
+[DDNSDomain]
+other = "DDNS 域名"
+
+[Feature]
+other = "功能"
+
+[Template]
+other = "主题"

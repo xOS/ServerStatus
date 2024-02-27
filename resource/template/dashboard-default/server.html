@@ -6,6 +6,9 @@
                 <button class="ui right labeled server-primary-btn icon button" onclick="batchEditServerGroup()"><i
                         class="edit icon"></i> {{tr "BatchEditServerGroup"}}
                 </button>
+                <button class="ui right labeled server-primary-btn icon button" onclick="batchDeleteServer()"><i
+                        class="trash icon"></i> {{tr "BatchDeleteServer"}}
+                </button>
                 <button class="ui right labeled server-primary-btn icon button" onclick="addOrEditServer()"><i
                         class="add icon"></i> {{tr "AddServer"}}
                 </button>
@@ -24,6 +27,8 @@
                     <th>{{tr "IPAddress"}}</th>
                     <th>{{tr "VersionNumber"}}</th>
                     <th>{{tr "HideForGuest"}}</th>
+                    <th>{{tr "EnableDDNS"}}</th>
+                    <th>{{tr "DDNSDomain"}}</th>
                     <th>{{tr "CopySecret"}}</th>
                     <th>{{tr "OneKeyInstall"}}</th>
                     <th>{{tr "Note"}}</th>
@@ -40,6 +45,8 @@
                     <td>IP:{{$server.Host.IP}}</td>
                     <td>{{$server.Host.Version}}</td>
                     <td>{{$server.HideForGuest}}</td>
+                    <td>{{$server.EnableDDNS}}</td>
+                    <td>{{$server.DDNSDomain}}</td>
                     <td><button class="ui icon mini button" data-clipboard-text="{{$server.Secret}}" data-tooltip="{{tr "ClickToCopy"}}">
                             <i class="copy icon"></i>
                         </button>
@@ -77,7 +84,9 @@
     </div>
 </div>
 {{template "component/server" .}} {{template "common/footer" .}}
+<script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/clipboard.js/2.0.10/clipboard.min.js"></script>
 <script>
+	var clipboard = new ClipboardJS('.ui.icon.mini.button');
     const checkBoxList = document.querySelectorAll('tbody > tr > td > input.server-servers[type=checkbox]')
 
     function checkAllServer() {
@@ -182,6 +191,25 @@
                     position: 'top-center',
                 });
             })
+    }
+    function batchDeleteServer() {
+        const servers = []
+        checkBoxList.forEach(cb => {
+            if (cb.checked) {
+                servers.push(parseInt(cb.value))
+            }
+        })
+        if (servers.length == 0) {
+            $.suiAlert({
+                title: '{{tr "NoServerSelected"}}',
+                description: '',
+                type: 'warning',
+                time: '2',
+                position: 'top-center',
+            });
+            return
+        }
+        showConfirm('{{tr "DeleteServer"}}', '{{tr "ConfirmToDeleteServer"}}', () => postJson('/api/batch-delete-server', servers), '')
     }
 </script>
 {{end}}

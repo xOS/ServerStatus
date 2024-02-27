@@ -647,3 +647,15 @@ other = "Batch Delete Servers"
 
 [EnableShowInService]
 other = "Enable Show in Service"
+
+[EnableDDNS]
+other = "Enable DDNS"
+
+[DDNSDomain]
+other = "DDNS Domain"
+
+[Feature]
+other = "Feature"
+
+[Template]
+other = "Template"

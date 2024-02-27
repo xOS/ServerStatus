@@ -11,7 +11,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.13"
+VERSION="v0.1.14"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -236,7 +236,7 @@ install_agent() {
         chmod 777 -R $AGENT_PATH
     fi
     echo -e "正在下载探针"
-    wget -t 2 -T 10 -O server-agent_linux_${os_arch}.zip https://${GITHUB_RELEASE_URL}/${version}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
+    wget -t 2 -T 10 -O server-agent_linux_${os_arch}.zip https://${GITHUB_RELEASE_URL}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}Release 下载失败，请检查本机能否连接 ${GITHUB_URL}${plain}"
         return 0
@@ -283,7 +283,7 @@ update_agent() {
     fi
 
     echo -e "正在下载最新版探针"
-    wget -t 2 -T 10 -O server-agent_linux_${os_arch}.zip https://${GITHUB_RELEASE_URL}/${version}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
+    wget -t 2 -T 10 -O server-agent_linux_${os_arch}.zip https://${GITHUB_RELEASE_URL}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}Release 下载失败，请检查本机能否连接 ${GITHUB_URL}${plain}"
         return 0
