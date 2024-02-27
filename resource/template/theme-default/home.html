@@ -1,7 +1,7 @@
 {{define "theme-default/home"}}
-{{template "theme-default/header" .}}
+{{template "common/header" .}}
 {{if ts .CustomCode}} {{.CustomCode|safe}} {{end}}
-{{template "theme-default/menu" .}}
+{{template "common/menu" .}}
 <div class="nb-container">
   <div class="ui container">  
     <template v-if="groups">
@@ -184,7 +184,7 @@
     </template>
   </div>
 </div>
-{{template "theme-default/footer" .}}
+{{template "common/footer" .}}
 <script>
   function specialOS(i) {
     if ((i.toString().toLowerCase().indexOf("windows")) != -1) {

@@ -1,9 +1,9 @@
 {{define "theme-default/network"}}
-{{template "theme-default/header" .}}
+{{template "common/header" .}}
 {{if ts .CustomCode}}
 {{.CustomCode|safe}}
 {{end}}
-{{template "theme-default/menu" .}}
+{{template "common/menu" .}}
 <div class="nb-container">
     <div class="ui container">
         <div class="service-status">
@@ -26,9 +26,7 @@
     </div>
 </div>
 
-{{template "theme-default/footer" .}}
-<script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/echarts/5.3.0-rc.1/echarts.min.js"></script>
-
+{{template "common/footer" .}}
 <script>
     const monitorInfo =  JSON.parse('{{.MonitorInfos}}');
     const initData = JSON.parse('{{.Servers}}').servers;
@@ -218,7 +216,7 @@
                 this.myChart.setOption(this.option);
             },
             isWindowsPlatform(str) {
-                return str.includes('Windows')
+                return str.includes('indows')
             },
             renderChart() {
               this.myChart = echarts.init(this.$refs.chartDom);
