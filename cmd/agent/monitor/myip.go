@@ -3,6 +3,7 @@ package monitor
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -10,7 +11,7 @@ import (
 	"github.com/xos/serverstatus/pkg/utils"
 )
 
-const MacOSChromeUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+const MacOSChromeUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
 type geoIP struct {
 	CountryCode  string `json:"country_code,omitempty"`
@@ -52,14 +53,19 @@ var (
 	httpClientV6            = utils.NewSingleStackHTTPClient(time.Second*20, time.Second*5, time.Second*10, true)
 )
 
-// UpdateIP 每30分钟更新一次IP地址与国家码的缓存
-func UpdateIP() {
+// UpdateIP 按设置时间间隔更新IP地址与国家码的缓存
+func UpdateIP(period uint32) {
 	for {
+		log.Println("NG_AGENT>> 正在更新本地缓存IP信息")
 		ipv4 := fetchGeoIP(geoIPApiList, false)
 		ipv6 := fetchGeoIP(geoIPApiList, true)
 
 		if ipv4.IP == "" && ipv6.IP == "" {
-			time.Sleep(time.Minute)
+			if period > 60 {
+				time.Sleep(time.Minute)
+			} else {
+				time.Sleep(time.Second * time.Duration(period))
+			}
 			continue
 		}
 		if ipv4.IP != "" && ipv6.IP == "" {
@@ -74,7 +80,7 @@ func UpdateIP() {
 		} else if ipv6.CountryCode != "" {
 			cachedCountry = ipv6.CountryCode
 		}
-		time.Sleep(time.Minute * 30)
+		time.Sleep(time.Second * time.Duration(period))
 	}
 }
 
