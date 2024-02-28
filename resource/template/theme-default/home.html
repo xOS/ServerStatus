@@ -1,7 +1,7 @@
 {{define "theme-default/home"}}
-{{template "common/header" .}}
+{{template "theme-default/header" .}}
 {{if ts .CustomCode}} {{.CustomCode|safe}} {{end}}
-{{template "common/menu" .}}
+{{template "theme-default/menu" .}}
 <div class="nb-container">
   <div class="ui container">  
     <template v-if="groups">
@@ -379,7 +379,6 @@
       cache: [],
       chartDataList: [], 
       activePopup: null,
-      
     },
     mixins: [mixinsVue],
     created() {

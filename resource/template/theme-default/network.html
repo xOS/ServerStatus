@@ -1,9 +1,9 @@
 {{define "theme-default/network"}}
-{{template "common/header" .}}
+{{template "theme-default/header" .}}
 {{if ts .CustomCode}}
 {{.CustomCode|safe}}
 {{end}}
-{{template "common/menu" .}}
+{{template "theme-default/menu" .}}
 <div class="nb-container">
     <div class="ui container">
         <div class="service-status">
@@ -26,7 +26,8 @@
     </div>
 </div>
 
-{{template "common/footer" .}}
+{{template "theme-default/footer" .}}
+
 <script>
     const monitorInfo =  JSON.parse('{{.MonitorInfos}}');
     const initData = JSON.parse('{{.Servers}}').servers;

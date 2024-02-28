@@ -860,8 +860,9 @@ type settingForm struct {
 	GRPCPort                uint
 	Cover                   uint8
 
-	EnableIPChangeNotification  string
-	EnablePlainIPInNotification string
+	EnableIPChangeNotification      string
+	EnablePlainIPInNotification     string
+	DisableSwitchTemplateInFrontend string
 }
 
 func (ma *memberAPI) updateSetting(c *gin.Context) {
@@ -909,6 +910,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 	singleton.Conf.Language = sf.Language
 	singleton.Conf.EnableIPChangeNotification = sf.EnableIPChangeNotification == "on"
 	singleton.Conf.EnablePlainIPInNotification = sf.EnablePlainIPInNotification == "on"
+	singleton.Conf.DisableSwitchTemplateInFrontend = sf.DisableSwitchTemplateInFrontend == "on"
 	singleton.Conf.Cover = sf.Cover
 	singleton.Conf.GRPCHost = sf.GRPCHost
 	singleton.Conf.GRPCPort = sf.GRPCPort

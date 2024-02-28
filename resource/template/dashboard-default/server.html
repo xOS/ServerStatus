@@ -1,4 +1,6 @@
-{{define "dashboard-default/server"}} {{template "common/header" .}} {{template "common/menu" .}}
+{{define "dashboard-default/server"}}
+{{template "common/header" .}}
+{{template "common/menu" .}}
 <div class="nb-container">
     <div class="ui container">
         <div class="ui grid">
@@ -83,7 +85,8 @@
         </table>
     </div>
 </div>
-{{template "component/server" .}} {{template "common/footer" .}}
+{{template "component/server" .}}
+{{template "common/footer" .}}
 <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/clipboard.js/2.0.10/clipboard.min.js"></script>
 <script>
 	var clipboard = new ClipboardJS('.ui.icon.mini.button');
