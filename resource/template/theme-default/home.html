@@ -46,16 +46,12 @@
                     {{tr "ProcessCount"}}：@# server.State.ProcessCount #@ 个<br />
                     {{tr "ConnCount"}}：TCP @# server.State.TcpConnCount #@ 个 | UDP @# server.State.UdpConnCount #@ 个
                     <br />
-                    {{tr "NetTransfer"}}：<i
-                      class="fa-regular fa-down s"></i>@#formatByteSize(server.State.NetInTransfer)#@
-                    | <i
-                      class="fa-regular fa-up s"></i>@#formatByteSize(server.State.NetOutTransfer)#@<br />
                     {{tr "BootTime"}}：@# formatTimestamp(server.Host.BootTime) #@<br />
                     {{tr "LastActive"}}：@# timeStamp(server.LastActive) #@<br />
                     {{tr "Version"}}：@#server.Host.Version#@<br />
                     <div class="chartbox" :key="server.ID" :ref="`chart${server.ID}`" style="width: 100%; height: auto; margin-bottom: 2px;"></div>
                   </div>
-                  <div class="ui divider" style="margin-bottom: 5px"></div>
+                  <div class="ui divider" style="margin-bottom: 5px;border-bottom: 1px solid #d4d4d5 !important;"></div>
                 </div>
                 <div class="description">
                   <div class="ui grid">
@@ -77,11 +73,21 @@
                       </div>
                     </div>
                     <div class="three wide column">{{tr "SwapUsed"}}</div>
-                    <div class="thirteen wide column">
-                      <div :class="formatPercent(server.live,server.State.SwapUsed, server.Host.SwapTotal).class">
+                    <div v-if="server.Host.SwapTotal != 0" class="thirteen wide column">
+                     <div :class="formatPercent(server.live,server.State.SwapUsed, server.Host.SwapTotal).class">
                         <div class="bar"
                           :style="formatPercent(server.live,server.State.SwapUsed, server.Host.SwapTotal).style">
                           <small>@#parseInt(server.State?server.State.SwapUsed/server.Host.SwapTotal*100:0)#@%</small>
+                        </div>
+                      </div>
+                    </div>
+                    <div v-else class="thirteen wide column">{{tr "NoSwapTotal"}}</div>
+                    <div class="three wide column">{{tr "DiskUsed"}}</div>
+                    <div class="thirteen wide column">
+                      <div :class="formatPercent(server.live,server.State.DiskUsed, server.Host.DiskTotal).class">
+                        <div class="bar"
+                          :style="formatPercent(server.live,server.State.DiskUsed, server.Host.DiskTotal).style">
+                          <small>@#parseInt(server.State?server.State.DiskUsed/server.Host.DiskTotal*100:0)#@%</small>
                         </div>
                       </div>
                     </div>
@@ -99,15 +105,6 @@
                       <i class="fa-regular fa-up s"></i>
                       @#formatByteSize(server.State.NetOutTransfer)#@
                       </div>
-                    <div class="three wide column">{{tr "DiskUsed"}}</div>
-                    <div class="thirteen wide column">
-                      <div :class="formatPercent(server.live,server.State.DiskUsed, server.Host.DiskTotal).class">
-                        <div class="bar"
-                          :style="formatPercent(server.live,server.State.DiskUsed, server.Host.DiskTotal).style">
-                          <small>@#parseInt(server.State?server.State.DiskUsed/server.Host.DiskTotal*100:0)#@%</small>
-                        </div>
-                      </div>
-                    </div>
                     <div class="three wide column">{{tr "Detail"}}</div>
                     <div class="thirteen wide column">
                       <i class="fa-solid fa-microchip"></i> @#getCoreAndGHz(server.Host.CPU)#@ | 
@@ -384,6 +381,12 @@
     created() {
       this.data = JSON.parse('{{.Servers}}').servers;
       this.group()
+    },
+    mounted() {
+      $('.server-primary-font.info.icon').popup({
+        popup: '.ui.content.popup',
+        exclusive: true,
+      });
     },
     methods: {
       togglePopup(event, id) {
@@ -744,13 +747,5 @@
   connect();
 
   $('.ui.accordion').accordion({ "exclusive": false });
-</script>
-<script>
-  var statusList = document.getElementsByTagName('small')
-  for (i = 0; i < statusList.length; i++) {
-    if (statusList[i].innerText == 'NaN%') {
-      statusList[i].innerText = '无'
-    }
-  }    
 </script>
 {{end}}

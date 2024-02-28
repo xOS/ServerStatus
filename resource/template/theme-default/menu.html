@@ -1,45 +1,35 @@
 {{define "theme-default/menu"}}
 <div id="app">
-<div class="ui large top fixed menu nb-menu" style="z-index:9999999;">
+<div class="ui large top fixed menu nb-menu">
     <div class="ui container">
         <a class="item" href="/">
-            <img src="static/logo.svg?v20210804">
+            <img src="static/logo.svg?v20220602">
         </a>
-        <a class='item' href="/"><i class="home icon"></i>{{tr "Home"}}</a>
-        <template v-if="isMobile"> 
-            <div class="item ui simple dropdown">
-                <div class="text"><i class="bi bi-gear-wide-connected icon" style="margin-right:3px;"></i>{{tr "Feature" }}<i class="dropdown icon" style="margin-right:0px;"></i></div>
-                <div class="menu">
-                    <a href="/service" class="item"><i class="rss icon"></i>{{tr "Services" }}</a>
-                    <a href="/network" class="item"><i class="bi bi-hdd-network icon"></i>{{tr "NetworkStatus"}}</a>
-                </div>
-            </div>
+        <template v-if="isMobile">
+            <a href="/network" class="item"><i class="dot circle outline icon"></i>{{tr "NetworkStatus"}}</a> 
+            <a href="http://status.nange.cn/" class="item"><i class="server icon"></i>{{tr "Services" }}</a>
         </template>
         <template v-else>
-            <a href="/service" class='item'><i class="rss icon"></i>{{tr "Services" }}</a>
-            <a href="/network" class="item"><i class="bi bi-hdd-network icon"></i>{{tr "NetworkStatus"}}</a>
+            <a href="/network" class="item"><i class="dot circle outline icon"></i>{{tr "NetworkStatus"}}</a>
+            <a href="http://status.nange.cn/" class='item'><i class="server icon"></i>{{tr "Services" }}</a>
         </template>
-        <div class="item ui simple dropdown">
-            <div class="text"><i class="bi bi-incognito icon" style="margin-right:3px;"></i>{{tr "Template" }}<i class="dropdown icon" style="margin-right:0px;"></i></div>
-            <div class="menu">
-                <a v-for="(value, key) in templates" :key="key" @click="toggleTemplate(key)" class="item"><i class="th large icon"></i>@#value#@
-                    <i class="check icon" v-if="preferredTemplate === key"></i>
-                </a>
-            </div>
-        </div>
         {{if .Admin}}
         <div class="item right item-right ui simple dropdown">
             <div class="text">
-                <i class="user icon" style="margin-right:3px"></i>{{.Admin.Name}}
+                <img class="ui avatar image" src="{{.Admin.AvatarURL}}"> {{.Admin.Name}}
                 <i class="dropdown icon"></i>
             </div>
             <div class="menu">
-                <a class="item" href="/server"><i class="terminal icon"></i>{{tr "AdminPanel"}}</a>
+                <a class="item" href="/server"><i class="th icon"></i>{{tr "AdminPanel"}}</a>
                 <a class="item" @click="logOut({{.Admin.ID}})"><i class="logout icon"></i>{{tr "Logout"}}</a>
             </div>
         </div>
         {{else}}
-        <a href="/login" class="item right item-right" style="padding-right:1.2rem"><i class="sign-in icon"></i>{{tr "Login"}}</a>
+        <div class="right menu">
+            <div class="item">
+                <a href="/login" class="ui large positive server-primary-btn button"><i class="sign-in icon"></i>{{tr "Login"}}</a>
+            </div>
+        </div>
         {{end}}
     </div>
 </div>
