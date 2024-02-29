@@ -75,8 +75,7 @@
                             <button class="ui button" onclick="addOrEditServer({{$server.Marshal}})">
                                 <i class="edit icon"></i>
                             </button>
-                            <button class="ui button" onclick="showConfirm('{{tr "
-                                DeleteServer"}}'+'[{{$server.Name}}]','{{tr "ConfirmToDeleteThisServer"
+                            <button class="ui button" onclick="showConfirm('{{tr "DeleteServer"}}'+'[{{$server.Name}}]','{{tr "ConfirmToDeleteThisServer"
                                 }}',deleteRequest,'/api/server/'+{{$server.ID}})">
                                 <i class="trash alternate outline icon"></i>
                             </button>
