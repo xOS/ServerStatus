@@ -663,5 +663,5 @@ other = "主题"
 [DisableSwitchTemplateInFrontend]
 other = "禁止前台切换模板"
 
-[NoSwapTotal]
+[NoSwap]
 other = "无 Swap 分区"
