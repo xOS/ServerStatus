@@ -52,16 +52,16 @@
                     <td>{{$server.DDNSDomain}}</td>
                     <td>
                         <button class="ui icon mini button" data-clipboard-text="{{$server.Secret}}"
-                            data-tooltip="{{tr " ClickToCopy"}}">
+                            data-tooltip="{{tr "ClickToCopy"}}">
                             <i class="copy icon"></i>
                         </button>
                     </td>
                     <td>
                         <div class="ui mini icon buttons">
-                            <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}curl -L https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && ./server-status.sh install_agent {{$.Conf.GRPCHost}} {{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr " NoDomainAlert"}}{{end}}" data-tooltip="{{tr " ClickToCopy"}}">
+                            <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}curl -L https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && ./server-status.sh install_agent {{$.Conf.GRPCHost}} {{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}" data-tooltip="{{tr "ClickToCopy"}}">
                                 <i class="linux icon"></i>
                             </button>
-                            <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Ssl3 -bor [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12;set-ExecutionPolicy RemoteSigned;Invoke-WebRequest https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.ps1 -OutFile C:\server-status.ps1;powershell.exe C:\server-status.ps1 {{$.Conf.GRPCHost}}:{{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr " NoDomainAlert"}}{{end}}" data-tooltip="{{tr " ClickToCopy"}}">
+                            <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Ssl3 -bor [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12;set-ExecutionPolicy RemoteSigned;Invoke-WebRequest https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.ps1 -OutFile C:\server-status.ps1;powershell.exe C:\server-status.ps1 {{$.Conf.GRPCHost}}:{{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}" data-tooltip="{{tr "ClickToCopy"}}">
                                 <i class="windows icon"></i>
                             </button>
                         </div>
