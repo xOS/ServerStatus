@@ -32,7 +32,7 @@ const mixinsVue = {
             return cookieValue;
         },
         checkIsMobile() { // 检测设备类型,页面宽度小于768px认为是移动设备
-            return window.innerWidth <= 768;
+            return window.innerWidth < 768;
         },
         logOut(id) {
             $.ajax({
