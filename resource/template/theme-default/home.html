@@ -711,10 +711,10 @@
     getK2Gb(bs){
         bs = bs / 1024 / 1024 / 1024;
         if (bs >= 1) {
-            return Math.ceil(bs.toFixed(2)) + 'GB';
+            return Math.ceil(bs.toFixed(2)) + 'G';
         } else {
             bs = bs * 1024;
-            return Math.ceil(bs.toFixed(2)) + 'MB';
+            return Math.ceil(bs.toFixed(2)) + 'M';
         }
     },
     listTipsMouseenter(obj, strs, tipsNum = 1){
