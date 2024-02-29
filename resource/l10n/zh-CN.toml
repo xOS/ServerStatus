@@ -315,6 +315,9 @@ other = "删除主机"
 [ConfirmToDeleteThisServer]
 other = "确认删除此主机？"
 
+[ConfirmToDeleteServer]
+other = "确认删除主机？"
+
 [NoServerSelected]
 other = "当前没有选中的服务器"
 
