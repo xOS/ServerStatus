@@ -406,7 +406,7 @@
         data: {
             page: 'index',
             defaultTemplate: {{.Conf.Site.Theme }},
-    templates: { {.Themes } },
+    templates: {{.Themes }},
     data: [],
         groups: [],
             cache: [],
@@ -458,8 +458,7 @@
         },
         renderCharts(id) {
             if (!this.chartDataList[id - 1]) return;
-            const MaxTCPPingValue = {{.MaxTCPPingValue }
-        } ?{ {.MaxTCPPingValue } } : 300;
+            const MaxTCPPingValue = {{.MaxTCPPingValue }} ?{{.MaxTCPPingValue }} : 300;
         const isMobile = this.checkIsMobile();
         const fontSize = isMobile ? 10 : 9;
         const itemGap = isMobile ? 5 : 2;

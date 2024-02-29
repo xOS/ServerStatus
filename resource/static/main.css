@@ -1,6 +1,32 @@
 @media only screen and (min-width: 1390px) {
     .ui.container {
-    width: 77%;
+        width: 77%;
+    }
+}
+
+@media only screen and (min-width: 768px) {
+    .cpucontent {
+        display: inline-block;
+    }
+
+    .rollanimation {
+        animation: scroll 10s cubic-bezier(.2, 0, .8, 1) infinite;
+    }
+
+    @keyframes scroll {
+
+        0% {
+            transform: translateX(0%);
+        }
+
+        30% {
+            transform: translateX(0%);
+        }
+
+        100% {
+            transform: translateX(-100%);
+        }
+
     }
 }
 
@@ -8,19 +34,21 @@
 
     .ui.card>.content>.header:not(.ui),
     .ui.cards>.card>.content>.header:not(.ui) {
-    margin-top: 0.5em;
+        margin-top: 0.5em;
     }
+
     .cards {
-    justify-content: center;
+        justify-content: center;
     }
+
     .ui.four.cards>.card {
-    width: 250px;
+        width: 250px;
     }
 }
 
 td {
-  word-wrap: break-word;
-  word-break: break-all;
+    word-wrap: break-word;
+    word-break: break-all;
 }
 
 /**背景**/
@@ -884,4 +912,8 @@ i.s {
 
 .ui.button {
     background: rgb(250 250 250 / 75%) none;
+}
+
+.ui.menu .item:before {
+    width: 0px!important;
 }
