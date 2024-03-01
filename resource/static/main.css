@@ -725,6 +725,13 @@ i.home.icon {
     color: #03a9f4 !important;
 }
 
+i.trash.icon {
+    color: #f30606 !important;
+}
+i.add.icon {
+    color: #03a9f4 !important;
+}
+
 i.trash.alternate.outline.icon {
     color: #f30606 !important;
 }
