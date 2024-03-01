@@ -13,7 +13,7 @@
                 <div class="active content">
                     <div class="ui four stackable status cards">
                         <div v-for="server in group.data" :id="server.ID" class="ui card">
-                            <div class="content" v-if="server.Host" style="margin-top: 10px; padding-bottom: 5px">
+                            <div class="content" v-if="server.Host" style="padding-bottom: 5px">
                                 <div class="header">
                                     <i :class="'flag-icon flag-icon-'+server.Host.CountryCode"></i>
                                     <i v-if='server.Host.Platform == "darwin"' class="fl-apple"></i>
@@ -55,10 +55,39 @@
                                             style="width: 100%; height: auto; margin-bottom: 2px;"></div>
                                     </div>
                                     <div class="ui divider"
-                                        style="margin-bottom: 5px;border-bottom: 1px solid #d4d4d5 !important;"></div>
+                                        style="margin: .5rem 0 !important; border-bottom: 1px solid #d4d4d5 !important;"></div>
                                 </div>
                                 <div class="description">
                                     <div class="ui grid">
+                                        <div class="three wide column">{{tr "Detail"}}</div>
+                                        <div class="thirteen wide column"
+                                            style="white-space: nowrap;overflow: hidden;width: 75.25%!important;">
+                                            <div v-if="!isMobile">
+                                                <div class="cpucontent rollanimation">
+                                                    <i class="fa-solid fa-microchip"></i>
+                                                    @#getCoreAndGHz(server.Host.CPU)#@ |
+                                                    <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@
+                                                    |
+                                                    <i class="fa-solid fa-hard-drive"></i>
+                                                    @#getK2Gb(server.Host.DiskTotal)#@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                                                </div>
+                                                <div class="cpucontent rollanimation">
+                                                    <i class="fa-solid fa-microchip"></i>
+                                                    @#getCoreAndGHz(server.Host.CPU)#@ |
+                                                    <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@
+                                                    |
+                                                    <i class="fa-solid fa-hard-drive"></i>
+                                                    @#getK2Gb(server.Host.DiskTotal)#@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                                                </div>
+                                            </div>
+                                            <div v-else>
+                                                <i class="fa-solid fa-microchip"></i> @#getCoreAndGHz(server.Host.CPU)#@
+                                                |
+                                                <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@ |
+                                                <i class="fa-solid fa-hard-drive"></i>
+                                                @#getK2Gb(server.Host.DiskTotal)#@
+                                            </div>
+                                        </div>
                                         <div class="three wide column">CPU</div>
                                         <div class="thirteen wide column">
                                             <div :class="formatPercent(server.live,server.State.CPU, 100).class">
@@ -113,35 +142,7 @@
                                             <i class="fa-regular fa-up s"></i>
                                             @#formatByteSize(server.State.NetOutTransfer)#@
                                         </div>
-                                        <div class="three wide column">{{tr "Detail"}}</div>
-                                        <div class="thirteen wide column"
-                                            style="white-space: nowrap;overflow: hidden;width: 75.25%!important;">
-                                            <div v-if="!isMobile">
-                                                <div class="cpucontent rollanimation">
-                                                    <i class="fa-solid fa-microchip"></i>
-                                                    @#getCoreAndGHz(server.Host.CPU)#@ |
-                                                    <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@
-                                                    |
-                                                    <i class="fa-solid fa-hard-drive"></i>
-                                                    @#getK2Gb(server.Host.DiskTotal)#@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                                                </div>
-                                                <div class="cpucontent rollanimation">
-                                                    <i class="fa-solid fa-microchip"></i>
-                                                    @#getCoreAndGHz(server.Host.CPU)#@ |
-                                                    <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@
-                                                    |
-                                                    <i class="fa-solid fa-hard-drive"></i>
-                                                    @#getK2Gb(server.Host.DiskTotal)#@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                                                </div>
-                                            </div>
-                                            <div v-else>
-                                                <i class="fa-solid fa-microchip"></i> @#getCoreAndGHz(server.Host.CPU)#@
-                                                |
-                                                <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@ |
-                                                <i class="fa-solid fa-hard-drive"></i>
-                                                @#getK2Gb(server.Host.DiskTotal)#@
-                                            </div>
-                                        </div>
+                                        
                                         <div class="three wide column">{{tr "Uptime"}}</div>
                                         <div class="thirteen wide column">
                                             <i class="clock icon"></i>@#secondToDate(server.State.Uptime)#@
