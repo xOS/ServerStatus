@@ -44,9 +44,8 @@
                                         {{tr "Load"}}：@# toFixed2(server.State.Load1) #@ | @#
                                         toFixed2(server.State.Load5) #@ | @#
                                         toFixed2(server.State.Load15) #@<br />
-                                        {{tr "ProcessCount"}}：@# server.State.ProcessCount #@ 个<br />
-                                        {{tr "ConnCount"}}：TCP @# server.State.TcpConnCount #@ 个 | UDP @#
-                                        server.State.UdpConnCount #@ 个
+                                        {{tr "ConnCount"}}：TCP @# server.State.TcpConnCount #@ {{tr "Count"}} | UDP @#
+                                        server.State.UdpConnCount #@ {{tr "Count"}}
                                         <br />
                                         {{tr "BootTime"}}：@# formatTimestamp(server.Host.BootTime) #@<br />
                                         {{tr "LastActive"}}：@# timeStamp(server.LastActive) #@<br />
@@ -103,31 +102,10 @@
                                       <div class="three wide column">{{tr "Detail"}}</div>
                                         <div class="thirteen wide column"
                                             style="white-space: nowrap;overflow: hidden;width: 75.25%!important;">
-                                            <div v-if="!isMobile">
-                                                <div class="cpucontent rollanimation">
-                                                    <i class="fa-solid fa-microchip"></i>
-                                                    @#getCoreAndGHz(server.Host.CPU)#@ |
-                                                    <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@
-                                                    |
-                                                    <i class="fa-solid fa-hard-drive"></i>
-                                                    @#getK2Gb(server.Host.DiskTotal)#@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                                                </div>
-                                                <div class="cpucontent rollanimation">
-                                                    <i class="fa-solid fa-microchip"></i>
-                                                    @#getCoreAndGHz(server.Host.CPU)#@ |
-                                                    <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@
-                                                    |
-                                                    <i class="fa-solid fa-hard-drive"></i>
-                                                    @#getK2Gb(server.Host.DiskTotal)#@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                                                </div>
-                                            </div>
-                                            <div v-else>
-                                                <i class="fa-solid fa-microchip"></i> @#getCoreAndGHz(server.Host.CPU)#@
-                                                |
+                                                <i class="fa-solid fa-microchip"></i> @#getCoreAndGHz(server.Host.CPU)#@ |
                                                 <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@ |
                                                 <i class="fa-solid fa-hard-drive"></i>
                                                 @#getK2Gb(server.Host.DiskTotal)#@
-                                            </div>
                                         </div>
                                         <div class="three wide column">{{tr "NetSpeed"}}</div>
                                         <div class="thirteen wide column">
