@@ -55,40 +55,11 @@
                                             style="width: 100%; height: auto; margin-bottom: 2px;"></div>
                                     </div>
                                     <div class="ui divider"
-                                        style="margin: .5rem 0 !important; border-bottom: 1px solid #d4d4d5 !important;"></div>
+                                        style="margin: .5rem 0 !important; border-bottom: 1px solid rgba(34,36,38,.15) !important;"></div>
                                 </div>
                                 <div class="description">
-                                    <div class="ui grid">
-                                        <div class="three wide column">{{tr "Detail"}}</div>
-                                        <div class="thirteen wide column"
-                                            style="white-space: nowrap;overflow: hidden;width: 75.25%!important;">
-                                            <div v-if="!isMobile">
-                                                <div class="cpucontent rollanimation">
-                                                    <i class="fa-solid fa-microchip"></i>
-                                                    @#getCoreAndGHz(server.Host.CPU)#@ |
-                                                    <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@
-                                                    |
-                                                    <i class="fa-solid fa-hard-drive"></i>
-                                                    @#getK2Gb(server.Host.DiskTotal)#@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                                                </div>
-                                                <div class="cpucontent rollanimation">
-                                                    <i class="fa-solid fa-microchip"></i>
-                                                    @#getCoreAndGHz(server.Host.CPU)#@ |
-                                                    <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@
-                                                    |
-                                                    <i class="fa-solid fa-hard-drive"></i>
-                                                    @#getK2Gb(server.Host.DiskTotal)#@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                                                </div>
-                                            </div>
-                                            <div v-else>
-                                                <i class="fa-solid fa-microchip"></i> @#getCoreAndGHz(server.Host.CPU)#@
-                                                |
-                                                <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@ |
-                                                <i class="fa-solid fa-hard-drive"></i>
-                                                @#getK2Gb(server.Host.DiskTotal)#@
-                                            </div>
-                                        </div>
-                                        <div class="three wide column">CPU</div>
+                                    <div class="ui grid">                                   
+                                       <div class="three wide column">CPU</div>
                                         <div class="thirteen wide column">
                                             <div :class="formatPercent(server.live,server.State.CPU, 100).class">
                                                 <div class="bar"
@@ -117,7 +88,8 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        <div v-else class="thirteen wide column">{{tr "NoSwap"}}</div>
+                                        <div v-else class="thirteen wide column">
+                                            <i class="fa-solid fa-circle-exclamation" style="color: #f2711c;"></i> {{tr "NoSwap"}}</div>
                                         <div class="three wide column">{{tr "DiskUsed"}}</div>
                                         <div class="thirteen wide column">
                                             <div
@@ -126,6 +98,35 @@
                                                     :style="formatPercent(server.live,server.State.DiskUsed, server.Host.DiskTotal).style">
                                                     <small>@#parseInt(server.State?server.State.DiskUsed/server.Host.DiskTotal*100:0)#@%</small>
                                                 </div>
+                                            </div>
+                                        </div>
+                                      <div class="three wide column">{{tr "Detail"}}</div>
+                                        <div class="thirteen wide column"
+                                            style="white-space: nowrap;overflow: hidden;width: 75.25%!important;">
+                                            <div v-if="!isMobile">
+                                                <div class="cpucontent rollanimation">
+                                                    <i class="fa-solid fa-microchip"></i>
+                                                    @#getCoreAndGHz(server.Host.CPU)#@ |
+                                                    <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@
+                                                    |
+                                                    <i class="fa-solid fa-hard-drive"></i>
+                                                    @#getK2Gb(server.Host.DiskTotal)#@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                                                </div>
+                                                <div class="cpucontent rollanimation">
+                                                    <i class="fa-solid fa-microchip"></i>
+                                                    @#getCoreAndGHz(server.Host.CPU)#@ |
+                                                    <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@
+                                                    |
+                                                    <i class="fa-solid fa-hard-drive"></i>
+                                                    @#getK2Gb(server.Host.DiskTotal)#@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                                                </div>
+                                            </div>
+                                            <div v-else>
+                                                <i class="fa-solid fa-microchip"></i> @#getCoreAndGHz(server.Host.CPU)#@
+                                                |
+                                                <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@ |
+                                                <i class="fa-solid fa-hard-drive"></i>
+                                                @#getK2Gb(server.Host.DiskTotal)#@
                                             </div>
                                         </div>
                                         <div class="three wide column">{{tr "NetSpeed"}}</div>
@@ -137,12 +138,16 @@
                                         </div>
                                         <div class="three wide column">{{tr "NetTransfer"}}</div>
                                         <div class="thirteen wide column">
-                                            <i class="fa-regular fa-down s"></i>
+                                            <i class="fa-sharp fa-solid fa-down"></i>
                                             @#formatByteSize(server.State.NetInTransfer)#@ |
-                                            <i class="fa-regular fa-up s"></i>
+                                            <i class="fa-sharp fa-solid fa-up"></i>
                                             @#formatByteSize(server.State.NetOutTransfer)#@
                                         </div>
-                                        
+                                        <div class="three wide column">{{tr "ProcessCount"}}</div>
+                                        <div class="thirteen wide column">
+                                            <i class="fa-sharp fa-regular fa-bars-progress"></i> 
+                                            @# server.State.ProcessCount #@ {{tr "Count"}}
+                                        </div>
                                         <div class="three wide column">{{tr "Uptime"}}</div>
                                         <div class="thirteen wide column">
                                             <i class="clock icon"></i>@#secondToDate(server.State.Uptime)#@
@@ -408,7 +413,7 @@
             page: 'index',
             defaultTemplate: {{.Conf.Site.Theme }},
     templates: {{.Themes }},
-    data: [],
+    servers: [],
         groups: [],
             cache: [],
                 chartDataList: [],
@@ -416,7 +421,7 @@
     },
     mixins: [mixinsVue],
         created() {
-        this.data = JSON.parse('{{.Servers}}').servers;
+        this.servers = JSON.parse('{{.Servers}}').servers;
         this.group()
     },
     mounted() {
@@ -462,8 +467,9 @@
             const MaxTCPPingValue = {{.MaxTCPPingValue }} ?{{.MaxTCPPingValue }} : 300;
         const isMobile = this.checkIsMobile();
         const fontSize = isMobile ? 10 : 9;
-        const itemGap = isMobile ? 5 : 2;
-        const itemWidth = isMobile ? 20 : 15;
+        const itemGap = isMobile ? 6 : 6;
+        const itemWidth = isMobile ? 10 : 10;
+        const itemHeight = isMobile ? 10 : 10;
         const gridLeft = 25;
         const gridRight = 12;
         const fontColor = "rgba(0, 0, 0, 0.68)";
@@ -484,10 +490,10 @@
                 if (avgDelay > 0.9 * MaxTCPPingValue) {
                     loss += 1;
                 }
-                return [new Date(item.created_at[index]).toLocaleString(), avgDelay];
+                return [item.created_at[index], avgDelay];
             });
             const lossRate = ((loss / item.created_at.length) * 100).toFixed(1);
-            item.monitor_name = item.monitor_name + " " + lossRate + "%";
+            item.monitor_name = item.monitor_name.includes("%") ? item.monitor_name : `${item.monitor_name} ${lossRate}%`;
             return {
                 name: item.monitor_name,
                 type: 'line',
@@ -510,6 +516,7 @@
                 }
             },
             legend: {
+                icon: 'rect',
                 data: chartData.map(item => item.monitor_name),
                 show: true,
                 textStyle: {
@@ -523,6 +530,7 @@
                 bottom: 0,
                 itemGap: itemGap,
                 itemWidth: itemWidth,
+                itemHeight: itemHeight,
                 padding: [5, 0, 5, 0]
             },
             xAxis: {
@@ -556,7 +564,7 @@
                 color: fontColor
             },
             grid: {
-                top: '40',
+                top: '30',
                 bottom: '20',
                 left: gridLeft,
                 right: gridRight
@@ -631,7 +639,7 @@
         return '';
     },
     group() {
-        this.groups = groupingData(this.data, "Tag")
+        this.groups = groupingData(this.servers, "Tag")
     },
     formatPercent(live, used, total) {
         const percent = live ? (parseInt(used / total * 100) || 0) : -1

@@ -668,3 +668,6 @@ other = "禁止前台切换模板"
 
 [NoSwap]
 other = "无 Swap 分区"
+
+[Count]
+other = "个"

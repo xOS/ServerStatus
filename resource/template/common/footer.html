@@ -16,9 +16,10 @@
     if (def_bg) {
         Wallpaper.init(def_bg);
     Wallpaper.animate(true);
-    window.onfocus = function () {Wallpaper.update(); };
-		}
-    document.body.classList.remove('no_transition');
+    window.onfocus = function () {
+      Wallpaper.update(); 
+     };
+	}
 </script>
 <script>
     (function () {
