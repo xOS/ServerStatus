@@ -29,7 +29,7 @@
                                     <!--<i v-else :class="'fl-'+server.Host.Platform"></i>-->
                                     @#server.Name + (server.live?'':' [{{tr "Offline"}}]')#@
                                     <i class="server-primary-font info circle icon" style="height: 28px" ></i>
-                                    <div class="ui content popup" style="margin-bottom: 0;">
+                                    <div class="ui content popup">
                                         {{tr "Platform"}}：@#specialOS(server.Host.Platform)#@ <span
                                             v-if='!isWindowsPlatform(server.Host.Platform)'>@#server.Host.PlatformVersion#@
                                         </span> @#specialVir(server.Host.Virtualization)#@
