@@ -34,7 +34,7 @@
                                             v-if='!isWindowsPlatform(server.Host.Platform)'>@#server.Host.PlatformVersion#@
                                         </span> @#specialVir(server.Host.Virtualization)#@
                                         [@#server.Host.Arch#@]<br />
-                                        CPU：@#clearString(server.Host.CPU)#@<br />
+                                        
                                         {{tr "MemUsed"}}：@#formatByteSize(server.State.MemUsed)#@ /
                                         @#formatByteSize(server.Host.MemTotal)#@<br />
                                         {{tr "SwapUsed"}}：@#formatByteSize(server.State.SwapUsed)#@ /
@@ -56,6 +56,23 @@
                                     <div class="ui divider"
                                         style="margin: .5rem 0 !important; border-bottom: 1px solid rgba(34,36,38,.15) !important;"></div>
                                 </div>
+                                
+<div class="header header_info">
+<i class="fa-solid fa-microchip"></i>
+<div class="cpuroll" style="white-space: nowrap;;overflow: hidden;">
+    <div class="cpucontent rollanimation">
+        @#clearString(server.Host.CPU)#@ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+    </div>
+    <!--<div class="cpucontent rollanimation">-->
+    <!--    @#clearString(server.Host.CPU)#@ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-->
+    <!--</div>-->
+</div>
+<i class="fa-solid fa-memory"></i>
+ @#getK2Gb(server.Host.MemTotal)#@
+<i class="fa-solid fa-hard-drive"></i>
+ @#getK2Gb(server.Host.DiskTotal)#@
+</div>
+                                
                                 <div class="description">
                                     <div class="ui grid">                                   
                                        <div class="three wide column">CPU</div>
@@ -99,14 +116,14 @@
                                                 </div>
                                             </div>
                                         </div>
-                                      <div class="three wide column">{{tr "Detail"}}</div>
-                                        <div class="thirteen wide column"
-                                            style="white-space: nowrap;overflow: hidden;width: 75.25%!important;">
-                                                <i class="fa-solid fa-microchip"></i> @#getCoreAndGHz(server.Host.CPU)#@ |
-                                                <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@ |
-                                                <i class="fa-solid fa-hard-drive"></i>
-                                                @#getK2Gb(server.Host.DiskTotal)#@
-                                        </div>
+                                      <!--<div class="three wide column">{{tr "Detail"}}</div>-->
+                                      <!--  <div class="thirteen wide column"-->
+                                      <!--      style="white-space: nowrap;overflow: hidden;width: 75.25%!important;">-->
+                                      <!--          <i class="fa-solid fa-microchip"></i> @#getCoreAndGHz(server.Host.CPU)#@ |-->
+                                      <!--          <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@ |-->
+                                      <!--          <i class="fa-solid fa-hard-drive"></i>-->
+                                      <!--          @#getK2Gb(server.Host.DiskTotal)#@-->
+                                      <!--  </div>-->
                                         <div class="three wide column">{{tr "NetSpeed"}}</div>
                                         <div class="thirteen wide column">
                                             <i class="fa-regular fa-down"></i>
@@ -442,7 +459,7 @@
         },
         renderCharts(id) {
             if (!this.chartDataList[id - 1]) return;
-            const MaxTCPPingValue = {{.MaxTCPPingValue }} ?{{.MaxTCPPingValue }} : 300;
+            const MaxTCPPingValue = {{.Conf.MaxTCPPingValue}} ? {{.Conf.MaxTCPPingValue}} : 300;
         const isMobile = this.checkIsMobile();
         const fontSize = isMobile ? 10 : 9;
         const itemGap = isMobile ? 6 : 6;
@@ -464,12 +481,14 @@
         const xAxisData = chartData[0].created_at.map(time => new Date(time).toLocaleString());
         const seriesData = chartData.map(item => {
             let loss = 0;
-            const data = item.avg_delay.map((avgDelay, index) => {
-                if (avgDelay > 0.9 * MaxTCPPingValue) {
-                    loss += 1;
-                }
-                return [item.created_at[index], avgDelay];
-            });
+            const data = item.avg_delay.map((avgDelay, index) => {                        
+            if(avgDelay > 0 && avgDelay < MaxTCPPingValue){
+              loss += avgDelay > 0.9 * MaxTCPPingValue ? 1 : 0;
+              return [item.created_at[index], avgDelay];
+            }else{
+              loss += 1;
+            }
+          });
             const lossRate = ((loss / item.created_at.length) * 100).toFixed(1);
             item.monitor_name = item.monitor_name.includes("%") ? item.monitor_name : `${item.monitor_name} ${lossRate}%`;
             return {
@@ -477,7 +496,8 @@
                 type: 'line',
                 smooth: true,
                 symbol: 'none',
-                data: data
+                data: data,
+                connectNulls: true
             };
         });
         const option = {

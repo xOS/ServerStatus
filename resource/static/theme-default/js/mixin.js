@@ -2,7 +2,10 @@ const mixinsVue = {
     delimiters: ['@#', '#@'],
     data: {
         preferredTemplate: null,
-        isMobile: false
+        isMobile: false,
+        adaptedTemplates: [
+            { key: 'default', name: 'Default', icon: 'th large' }
+        ]
     },
     created() {
         this.isMobile = this.checkIsMobile();
