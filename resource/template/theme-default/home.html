@@ -28,13 +28,12 @@
                                     <!--<i :class="'fl-'+server.Host.OS"></i>-->
                                     <!--<i v-else :class="'fl-'+server.Host.Platform"></i>-->
                                     @#server.Name + (server.live?'':' [{{tr "Offline"}}]')#@
-                                    <i class="server-primary-font info circle icon" style="height: 28px"></i>
-                                    <div class="ui content popup" style="">
+                                    <i @mouseover="togglePopup($event, server.ID)" @mouseleave="closePopup($event, server.ID)" aria-expanded="false" class="server-primary-font info circle icon" style="height: 28px" ></i>
+                                    <div class="ui content popup" @mouseleave="closePopup($event, server.ID)" :class="{ 'visible': isActive(server.ID) }" style="margin-bottom: 0;">
                                         {{tr "Platform"}}：@#specialOS(server.Host.Platform)#@ <span
                                             v-if='!isWindowsPlatform(server.Host.Platform)'>@#server.Host.PlatformVersion#@
                                         </span> @#specialVir(server.Host.Virtualization)#@
                                         [@#server.Host.Arch#@]<br />
-                                        
                                         {{tr "MemUsed"}}：@#formatByteSize(server.State.MemUsed)#@ /
                                         @#formatByteSize(server.Host.MemTotal)#@<br />
                                         {{tr "SwapUsed"}}：@#formatByteSize(server.State.SwapUsed)#@ /

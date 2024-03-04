@@ -47,6 +47,8 @@
     align-items: center;
     padding-bottom: .3em;
     border-bottom: 1px solid rgba(34, 36, 38, 0.15) !important;
+    font-size: 12px !important;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 .ui.card>.content>.header+.description,
