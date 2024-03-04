@@ -28,8 +28,8 @@
                                     <!--<i :class="'fl-'+server.Host.OS"></i>-->
                                     <!--<i v-else :class="'fl-'+server.Host.Platform"></i>-->
                                     @#server.Name + (server.live?'':' [{{tr "Offline"}}]')#@
-                                    <i @mouseover="togglePopup($event, server.ID)" @mouseleave="closePopup($event, server.ID)" aria-expanded="false" class="server-primary-font info circle icon" style="height: 28px" ></i>
-                                    <div class="ui content popup" @mouseleave="closePopup($event, server.ID)" :class="{ 'visible': isActive(server.ID) }" style="margin-bottom: 0;">
+                                    <i class="server-primary-font info circle icon" style="height: 28px" ></i>
+                                    <div class="ui content popup" style="margin-bottom: 0;">
                                         {{tr "Platform"}}：@#specialOS(server.Host.Platform)#@ <span
                                             v-if='!isWindowsPlatform(server.Host.Platform)'>@#server.Host.PlatformVersion#@
                                         </span> @#specialVir(server.Host.Virtualization)#@
@@ -49,8 +49,7 @@
                                         {{tr "BootTime"}}：@# formatTimestamp(server.Host.BootTime) #@<br />
                                         {{tr "LastActive"}}：@# timeStamp(server.LastActive) #@<br />
                                         {{tr "Version"}}：@#server.Host.Version#@<br />
-                                        <div class="chartbox" :key="server.ID" :ref="`chart${server.ID}`"
-                                            style="width: 100%; height: auto; margin-bottom: 2px;"></div>
+                                        </div>
                                     </div>
                                     <div class="ui divider"
                                         style="margin: .5rem 0 !important; border-bottom: 1px solid rgba(34,36,38,.15) !important;"></div>
@@ -115,14 +114,6 @@
                                                 </div>
                                             </div>
                                         </div>
-                                      <!--<div class="three wide column">{{tr "Detail"}}</div>-->
-                                      <!--  <div class="thirteen wide column"-->
-                                      <!--      style="white-space: nowrap;overflow: hidden;width: 75.25%!important;">-->
-                                      <!--          <i class="fa-solid fa-microchip"></i> @#getCoreAndGHz(server.Host.CPU)#@ |-->
-                                      <!--          <i class="fa-solid fa-memory"></i> @#getK2Gb(server.Host.MemTotal)#@ |-->
-                                      <!--          <i class="fa-solid fa-hard-drive"></i>-->
-                                      <!--          @#getK2Gb(server.Host.DiskTotal)#@-->
-                                      <!--  </div>-->
                                         <div class="three wide column">{{tr "NetSpeed"}}</div>
                                         <div class="thirteen wide column">
                                             <i class="fa-regular fa-down"></i>
@@ -425,150 +416,6 @@
         });
     },
     methods: {
-        togglePopup(event, id) {
-            // 切换弹出层的激活状态
-            this.activePopup = this.activePopup === id ? null : id;
-            this.showCharts(id);
-        },
-        isActive(id) {
-            // 检查弹出层是否处于激活状态
-            return this.activePopup === id;
-        },
-        closePopup(id) {
-            this.activePopup = null;
-        },
-        showCharts(id) {
-            // 发起数据请求
-            const url = `/api/v1/monitor/${id}`;
-            fetch(url)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.result) { // 数据请求成功，更新数据并渲染图表
-                        this.chartDataList[id - 1] = data.result;
-                        this.$nextTick(() => {
-                            this.renderCharts(id);
-                        });
-                    } else {
-                        console.log('this agent (id:' + id + ') has no monitor.');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching data:', error);
-                });
-        },
-        renderCharts(id) {
-            if (!this.chartDataList[id - 1]) return;
-            const MaxTCPPingValue = {{.Conf.MaxTCPPingValue}} ? {{.Conf.MaxTCPPingValue}} : 300;
-        const isMobile = this.checkIsMobile();
-        const fontSize = isMobile ? 10 : 9;
-        const itemGap = isMobile ? 6 : 6;
-        const itemWidth = isMobile ? 10 : 10;
-        const itemHeight = isMobile ? 10 : 10;
-        const gridLeft = 25;
-        const gridRight = 12;
-        const fontColor = "rgba(0, 0, 0, 0.68)";
-        const backgroundColor = '';
-        const borderColor = "#ffffff";
-        const chartData = this.chartDataList[id - 1];
-        const chartContainer = this.$refs[`chart${id}`][0];
-        const chart = echarts.init(chartContainer, null, {
-            renderer: 'canvas',
-            useDirtyRect: false,
-            width: 'auto',
-            height: 120,
-        });
-        const xAxisData = chartData[0].created_at.map(time => new Date(time).toLocaleString());
-        const seriesData = chartData.map(item => {
-            let loss = 0;
-            const data = item.avg_delay.map((avgDelay, index) => {                        
-            if(avgDelay > 0 && avgDelay < MaxTCPPingValue){
-              loss += avgDelay > 0.9 * MaxTCPPingValue ? 1 : 0;
-              return [item.created_at[index], avgDelay];
-            }else{
-              loss += 1;
-            }
-          });
-            const lossRate = ((loss / item.created_at.length) * 100).toFixed(1);
-            item.monitor_name = item.monitor_name.includes("%") ? item.monitor_name : `${item.monitor_name} ${lossRate}%`;
-            return {
-                name: item.monitor_name,
-                type: 'line',
-                smooth: true,
-                symbol: 'none',
-                data: data,
-                connectNulls: true
-            };
-        });
-        const option = {
-            backgroundColor: backgroundColor,
-            title: {
-                show: false
-            },
-            tooltip: {
-                show: true,
-                trigger: 'axis',
-                textStyle: {
-                    fontSize: fontSize,
-                    color: fontColor
-                }
-            },
-            legend: {
-                icon: 'rect',
-                data: chartData.map(item => item.monitor_name),
-                show: true,
-                textStyle: {
-                    fontSize: fontSize,
-                    color: fontColor
-                },
-                lineStyle: {
-                    cap: 'butt'
-                },
-                top: 0,
-                bottom: 0,
-                itemGap: itemGap,
-                itemWidth: itemWidth,
-                itemHeight: itemHeight,
-                padding: [5, 0, 5, 0]
-            },
-            xAxis: {
-                type: 'time',
-                data: xAxisData,
-                axisLabel: {
-                    textStyle: {
-                        fontSize: fontSize
-                    }
-                }
-            },
-            yAxis: {
-                type: 'value',
-                axisLabel: {
-                    textStyle: {
-                        fontSize: fontSize
-                    }
-                }
-            },
-            dataZoom: [
-                {
-                    show: false,
-                    type: 'slider',
-                    start: 0,
-                    end: 100
-                }
-            ],
-            series: seriesData,
-            textStyle: {
-                fontSize: fontSize,
-                color: fontColor
-            },
-            grid: {
-                top: '30',
-                bottom: '20',
-                left: gridLeft,
-                right: gridRight
-            }
-        };
-        chart.setOption(option);
-    },
     checkIsMobile() { // 检测设备类型,页面宽度小于768px认为是移动设备
         return window.innerWidth < 768;
     },
