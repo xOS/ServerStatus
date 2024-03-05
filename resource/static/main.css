@@ -929,7 +929,6 @@ i.icon.outline {
 }
 
 .status.cards .ui.content.popup {
-    /*min-width: 292px;*/
     min-width: 16rem;
 }
 
