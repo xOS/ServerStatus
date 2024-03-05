@@ -37,13 +37,10 @@
 
 .ui.card>.content>.header_info,
 .ui.cards>.card>.content>.header_info {
-    font-size: 1rem !important;
     line-height: 1rem !important;
-    margin-top: .3rem !important;
     padding-right: .38rem !important;
-    padding-top: 2px;
     display: flex;
-    color: rgba(0, 0, 0, .85);
+    color: rgb(0 0 0 / 60%);
     align-items: center;
     padding-bottom: .3em;
     border-bottom: 1px solid rgba(34, 36, 38, 0.15) !important;
@@ -59,13 +56,12 @@
 .ui.card>.content>.header:not(.ui),
 .ui.cards>.card>.content>.header:not(.ui) {
     margin-top: 0.1em !important;
-    margin-bottom: -0.4em !important;
+    margin-bottom: -0.2em !important;
 }
 
 .header_info i {
-    margin-top: .25rem;
-    margin-right: .3rem;
-    margin-left: .3rem;
+    margin-right: .2rem;
+    margin-left: .2rem;
 }
 
 .cpucontent {
