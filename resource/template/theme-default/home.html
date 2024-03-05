@@ -64,10 +64,13 @@
         @#clearString(server.Host.CPU)#@ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
     </div>
 </div>
+<div style="display: flex; align-items: center;">
 <i class="fa-solid fa-memory"></i>
  @#getK2Gb(server.Host.MemTotal)#@
+ <span>&nbsp;&nbsp;</span>
 <i class="fa-solid fa-hard-drive"></i>
  @#getK2Gb(server.Host.DiskTotal)#@
+</div>
 </div>
                                 
                                 <div class="description">
