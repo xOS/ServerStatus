@@ -140,16 +140,3 @@ jobs:
           curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/main.js
           curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/semantic-ui-alerts.min.css
           curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/semantic-ui-alerts.min.js
-	  
-      - name: Trigger sync
-        if: ${{ env.SYNCED == 0 }}
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-            owner: 'xos',
-            repo: 'serverstatus',
-            workflow_id: 'sync-release.yml',
-            ref: 'master'
-            })  
