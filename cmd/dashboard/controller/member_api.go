@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -210,6 +211,11 @@ func (ma *memberAPI) delete(c *gin.Context) {
 		if err == nil {
 			singleton.OnDeleteNotification(id)
 		}
+	case "nat":
+		err = singleton.DB.Unscoped().Delete(&model.NAT{}, "id = ?", id).Error
+		if err == nil {
+			singleton.OnNATUpdate()
+		}
 	case "monitor":
 		err = singleton.DB.Unscoped().Delete(&model.Monitor{}, "id = ?", id).Error
 		if err == nil {
@@ -302,7 +308,10 @@ type serverForm struct {
 	Note         string
 	HideForGuest string
 	EnableDDNS   string
+	EnableIPv4   string
+	EnableIpv6   string
 	DDNSDomain   string
+	DDNSProfile  string
 }
 
 func (ma *memberAPI) addOrEditServer(c *gin.Context) {
@@ -319,7 +328,10 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 		s.Note = sf.Note
 		s.HideForGuest = sf.HideForGuest == "on"
 		s.EnableDDNS = sf.EnableDDNS == "on"
+		s.EnableIPv4 = sf.EnableIPv4 == "on"
+		s.EnableIpv6 = sf.EnableIpv6 == "on"
 		s.DDNSDomain = sf.DDNSDomain
+		s.DDNSProfile = sf.DDNSProfile
 		if s.ID == 0 {
 			s.Secret, err = utils.GenerateRandomString(18)
 			if err == nil {
@@ -373,6 +385,7 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 	} else {
 		s.Host = &model.Host{}
 		s.State = &model.HostState{}
+		s.TaskCloseLock = new(sync.Mutex)
 		singleton.ServerLock.Lock()
 		singleton.SecretToID[s.Secret] = s.ID
 		singleton.ServerList[s.ID] = &s
@@ -432,25 +445,23 @@ func (ma *memberAPI) addOrEditMonitor(c *gin.Context) {
 		if m.NotificationTag == "" {
 			m.NotificationTag = "default"
 		}
-		if err == nil {
-			err = utils.Json.Unmarshal([]byte(mf.FailTriggerTasksRaw), &m.FailTriggerTasks)
+		err = utils.Json.Unmarshal([]byte(mf.FailTriggerTasksRaw), &m.FailTriggerTasks)
+	}
+	if err == nil {
+		err = utils.Json.Unmarshal([]byte(mf.RecoverTriggerTasksRaw), &m.RecoverTriggerTasks)
+	}
+	if err == nil {
+		if m.ID == 0 {
+			err = singleton.DB.Create(&m).Error
+		} else {
+			err = singleton.DB.Save(&m).Error
 		}
-		if err == nil {
-			err = utils.Json.Unmarshal([]byte(mf.RecoverTriggerTasksRaw), &m.RecoverTriggerTasks)
-		}
-		if err == nil {
-			if m.ID == 0 {
-				err = singleton.DB.Create(&m).Error
-			} else {
-				err = singleton.DB.Save(&m).Error
-			}
-		}
-		if err == nil {
-			if m.Cover == 0 {
-				err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ? and server_id in (?)", m.ID, strings.Split(m.SkipServersRaw[1:len(m.SkipServersRaw)-1], ",")).Error
-			} else {
-				err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ? and server_id not in (?)", m.ID, strings.Split(m.SkipServersRaw[1:len(m.SkipServersRaw)-1], ",")).Error
-			}
+	}
+	if err == nil {
+		if m.Cover == 0 {
+			err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ? and server_id in (?)", m.ID, strings.Split(m.SkipServersRaw[1:len(m.SkipServersRaw)-1], ",")).Error
+		} else {
+			err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ? and server_id not in (?)", m.ID, strings.Split(m.SkipServersRaw[1:len(m.SkipServersRaw)-1], ",")).Error
 		}
 	}
 	if err == nil {
@@ -730,6 +741,45 @@ func (ma *memberAPI) addOrEditNotification(c *gin.Context) {
 	})
 }
 
+type natForm struct {
+	ID       uint64
+	Name     string
+	ServerID uint64
+	Host     string
+	Domain   string
+}
+
+func (ma *memberAPI) addOrEditNAT(c *gin.Context) {
+	var nf natForm
+	var n model.NAT
+	err := c.ShouldBindJSON(&nf)
+	if err == nil {
+		n.Name = nf.Name
+		n.ID = nf.ID
+		n.Domain = nf.Domain
+		n.Host = nf.Host
+		n.ServerID = nf.ServerID
+	}
+	if err == nil {
+		if n.ID == 0 {
+			err = singleton.DB.Create(&n).Error
+		} else {
+			err = singleton.DB.Save(&n).Error
+		}
+	}
+	if err != nil {
+		c.JSON(http.StatusOK, model.Response{
+			Code:    http.StatusBadRequest,
+			Message: fmt.Sprintf("请求错误：%s", err),
+		})
+		return
+	}
+	singleton.OnNATUpdate()
+	c.JSON(http.StatusOK, model.Response{
+		Code: http.StatusOK,
+	})
+}
+
 type alertRuleForm struct {
 	ID                     uint64
 	Name                   string
@@ -844,6 +894,11 @@ func (ma *memberAPI) logout(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
+
+	if oidcLogoutUrl := singleton.Conf.Oauth2.OidcLogoutURL; oidcLogoutUrl != "" {
+		// 重定向到 OIDC 退出登录地址。不知道为什么，这里的重定向不生效
+		c.Redirect(http.StatusOK, oidcLogoutUrl)
+	}
 }
 
 type settingForm struct {
@@ -853,6 +908,7 @@ type settingForm struct {
 	Theme                   string
 	DashboardTheme          string
 	CustomCode              string
+	CustomCodeDashboard     string
 	ViewPassword            string
 	IgnoredIPNotification   string
 	IPChangeNotificationTag string // IP变更提醒的通知组
@@ -920,6 +976,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 	singleton.Conf.Site.Theme = sf.Theme
 	singleton.Conf.Site.DashboardTheme = sf.DashboardTheme
 	singleton.Conf.Site.CustomCode = sf.CustomCode
+	singleton.Conf.Site.CustomCodeDashboard = sf.CustomCodeDashboard
 	singleton.Conf.Site.ViewPassword = sf.ViewPassword
 	singleton.Conf.Oauth2.Admin = sf.Admin
 	// 保证NotificationTag不为空

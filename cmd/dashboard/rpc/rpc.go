@@ -14,9 +14,8 @@ import (
 
 func ServeRPC(port uint) {
 	server := grpc.NewServer()
-	pb.RegisterServerServiceServer(server, &rpcService.ServerHandler{
-		Auth: &rpcService.AuthHandler{},
-	})
+	rpcService.ServerHandlerSingleton = rpcService.NewServerHandler()
+	pb.RegisterServerServiceServer(server, rpcService.ServerHandlerSingleton)
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		panic(err)

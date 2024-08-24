@@ -92,6 +92,7 @@ function showFormModal(modelSelector, formID, URL, getData) {
                 item.name.endsWith("_id") ||
                 item.name === "id" ||
                 item.name === "ID" ||
+                item.name === "ServerID" ||
                 item.name === "RequestType" ||
                 item.name === "RequestMethod" ||
                 item.name === "TriggerMode" ||
@@ -256,6 +257,28 @@ function addOrEditNotification(notification) {
   );
 }
 
+function addOrEditNAT(nat) {
+  const modal = $(".nat.modal");
+  modal.children(".header").text((nat ? LANG.Edit : LANG.Add));
+  modal
+    .find(".nezha-primary-btn.button")
+    .html(
+      nat
+        ? LANG.Edit + '<i class="edit icon"></i>'
+        : LANG.Add + '<i class="add icon"></i>'
+    );
+  modal.find("input[name=ID]").val(nat ? nat.ID : null);
+  modal.find("input[name=ServerID]").val(nat ? nat.ServerID : null);
+  modal.find("input[name=Name]").val(nat ? nat.Name : null);
+  modal.find("input[name=Host]").val(nat ? nat.Host : null);
+  modal.find("input[name=Domain]").val(nat ? nat.Domain : null);
+  showFormModal(
+    ".nat.modal",
+    "#natForm",
+    "/api/nat"
+  );
+}
+
 function connectToServer(id) {
   post('/terminal', { Host: window.location.host, Protocol: window.location.protocol, ID: id })
 }
@@ -304,6 +327,7 @@ function addOrEditServer(server, conf) {
   modal.find("input[name=name]").val(server ? server.Name : null);
   modal.find("input[name=Tag]").val(server ? server.Tag : null);
   modal.find("input[name=DDNSDomain]").val(server ? server.DDNSDomain : null);
+  modal.find("input[name=DDNSProfile]").val(server ? server.DDNSProfile : null);
   modal
     .find("input[name=DisplayIndex]")
     .val(server ? server.DisplayIndex : null);
@@ -327,6 +351,16 @@ function addOrEditServer(server, conf) {
     modal.find(".ui.enableddns.checkbox").checkbox("set checked");
   } else {
     modal.find(".ui.enableddns.checkbox").checkbox("set unchecked");
+  }
+  if (server && server.EnableIPv4) {
+    modal.find(".ui.enableipv4.checkbox").checkbox("set checked");
+  } else {
+    modal.find(".ui.enableipv4.checkbox").checkbox("set unchecked");
+  }
+  if (server && server.EnableIpv6) {
+    modal.find(".ui.enableipv6.checkbox").checkbox("set checked");
+  } else {
+    modal.find(".ui.enableipv6.checkbox").checkbox("set unchecked");
   }
   showFormModal(".server.modal", "#serverForm", "/api/server");
 }

@@ -21,8 +21,8 @@
             </table>
         </div>
     </div>
-    <div class="ui container" style="max-width: 95vw">
-        <div ref="chartDom" style="border-radius: 5px; margin-top: 15px;height: 520px;max-width: 1400px;overflow: hidden"></div>
+    <div class="ui container">
+        <div ref="chartDom" style="margin-top: 15px;height: 520px;overflow: hidden"></div>
     </div>
 </div>
 
@@ -69,8 +69,8 @@
                     }
                 },
                 grid: {
-                    left: '8%',
-                    right: '8%',
+                    left: this.isMobile ? '8%' : '3.8%',
+                    right: this.isMobile ? '8%' : '3.8%',
                 },
                 backgroundColor: 'rgba(255, 255, 255, 0.6)',
                 toolbox: {
@@ -247,8 +247,12 @@
                 return str.includes('indows')
             },
             renderChart() {
-              this.myChart = echarts.init(this.$refs.chartDom);
+              const chartTheme = $('html').attr('nz-theme') == "dark" ? "dark" : "";
+              this.myChart = echarts.init(this.$refs.chartDom,chartTheme);
               this.myChart.setOption(this.option);
+            },
+            resizeHandle () {
+              this.myChart.resize();
             },
         },
         beforeDestroy() {

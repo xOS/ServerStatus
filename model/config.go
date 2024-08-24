@@ -24,11 +24,13 @@ var DashboardThemes = map[string]string{
 }
 
 const (
-	ConfigTypeGitHub  = "github"
-	ConfigTypeGitee   = "gitee"
-	ConfigTypeGitlab  = "gitlab"
-	ConfigTypeJihulab = "jihulab"
-	ConfigTypeGitea   = "gitea"
+	ConfigTypeGitHub     = "github"
+	ConfigTypeGitee      = "gitee"
+	ConfigTypeGitlab     = "gitlab"
+	ConfigTypeJihulab    = "jihulab"
+	ConfigTypeGitea      = "gitea"
+	ConfigTypeCloudflare = "cloudflare"
+	ConfigTypeOidc       = "oidc"
 )
 
 const (
@@ -39,7 +41,6 @@ const (
 type AgentConfig struct {
 	HardDrivePartitionAllowlist []string
 	NICAllowlist                map[string]bool
-	DNS                         []string
 	v                           *viper.Viper
 }
 
@@ -63,7 +64,7 @@ func (c *AgentConfig) Save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(c.v.ConfigFileUsed(), data, os.ModePerm)
+	return os.WriteFile(c.v.ConfigFileUsed(), data, 0600)
 }
 
 // Config 站点配置
@@ -71,19 +72,30 @@ type Config struct {
 	Debug    bool   // debug模式开关
 	Language string // 系统语言，默认 zh-CN
 	Site     struct {
-		Brand          string // 站点名称
-		CookieName     string // 浏览器 Cookie 名称
-		Theme          string
-		DashboardTheme string
-		CustomCode     string
-		ViewPassword   string // 前台查看密码
+		Brand               string // 站点名称
+		CookieName          string // 浏览器 Cookie 名称
+		Theme               string
+		DashboardTheme      string
+		CustomCode          string
+		CustomCodeDashboard string
+		ViewPassword        string // 前台查看密码
 	}
 	Oauth2 struct {
-		Type         string
-		Admin        string // 管理员用户名列表
-		ClientID     string
-		ClientSecret string
-		Endpoint     string
+		Type            string
+		Admin           string // 管理员用户名列表
+		AdminGroups     string // 管理员用户组列表
+		ClientID        string
+		ClientSecret    string
+		Endpoint        string
+		OidcDisplayName string // for OIDC Display Name
+		OidcIssuer      string // for OIDC Issuer
+		OidcLogoutURL   string // for OIDC Logout URL
+		OidcRegisterURL string // for OIDC Register URL
+		OidcLoginClaim  string // for OIDC Claim
+		OidcGroupClaim  string // for OIDC Group Claim
+		OidcScopes      string // for OIDC Scopes
+		OidcAutoCreate  bool   // for OIDC Auto Create
+		OidcAutoLogin   bool   // for OIDC Auto Login
 	}
 	HTTPPort      uint
 	GRPCPort      uint
@@ -118,7 +130,18 @@ type Config struct {
 		WebhookRequestBody string
 		WebhookHeaders     string
 		MaxRetries         uint32
+		Profiles           map[string]DDNSProfile
 	}
+}
+
+type DDNSProfile struct {
+	Provider           string
+	AccessID           string
+	AccessSecret       string
+	WebhookURL         string
+	WebhookMethod      string
+	WebhookRequestBody string
+	WebhookHeaders     string
 }
 
 // Read 读取配置文件并应用
@@ -159,14 +182,20 @@ func (c *Config) Read(path string) error {
 	if c.AvgPingCount == 0 {
 		c.AvgPingCount = 2
 	}
-	if c.DDNS.Provider == "" {
-		c.DDNS.Provider = "webhook"
-	}
-	if c.DDNS.WebhookMethod == "" {
-		c.DDNS.WebhookMethod = "POST"
-	}
 	if c.DDNS.MaxRetries == 0 {
 		c.DDNS.MaxRetries = 3
+	}
+	if c.Oauth2.OidcScopes == "" {
+		c.Oauth2.OidcScopes = "openid,profile,email"
+	}
+	if c.Oauth2.OidcLoginClaim == "" {
+		c.Oauth2.OidcLoginClaim = "sub"
+	}
+	if c.Oauth2.OidcDisplayName == "" {
+		c.Oauth2.OidcDisplayName = "OIDC"
+	}
+	if c.Oauth2.OidcGroupClaim == "" {
+		c.Oauth2.OidcGroupClaim = "groups"
 	}
 
 	c.updateIgnoredIPNotificationID()
@@ -192,5 +221,5 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(c.v.ConfigFileUsed(), data, os.ModePerm)
+	return os.WriteFile(c.v.ConfigFileUsed(), data, 0600)
 }

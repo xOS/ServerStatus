@@ -9,6 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/xos/serverstatus/pkg/oidc/cloudflare"
+	myOidc "github.com/xos/serverstatus/pkg/oidc/general"
+
 	"code.gitea.io/sdk/gitea"
 	"github.com/gin-gonic/gin"
 	GitHubAPI "github.com/google/go-github/v47/github"
@@ -25,7 +29,8 @@ import (
 )
 
 type oauth2controller struct {
-	r gin.IRoutes
+	r            gin.IRoutes
+	oidcProvider *oidc.Provider
 }
 
 func (oa *oauth2controller) serve() {
@@ -74,6 +79,38 @@ func (oa *oauth2controller) getCommonOauth2Config(c *gin.Context) *oauth2.Config
 			},
 			RedirectURL: oa.getRedirectURL(c),
 		}
+	} else if singleton.Conf.Oauth2.Type == model.ConfigTypeCloudflare {
+		return &oauth2.Config{
+			ClientID:     singleton.Conf.Oauth2.ClientID,
+			ClientSecret: singleton.Conf.Oauth2.ClientSecret,
+			Scopes:       []string{"openid", "email", "profile", "groups"},
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  fmt.Sprintf("%s/cdn-cgi/access/sso/oidc/%s/authorization", singleton.Conf.Oauth2.Endpoint, singleton.Conf.Oauth2.ClientID),
+				TokenURL: fmt.Sprintf("%s/cdn-cgi/access/sso/oidc/%s/token", singleton.Conf.Oauth2.Endpoint, singleton.Conf.Oauth2.ClientID),
+			},
+			RedirectURL: oa.getRedirectURL(c),
+		}
+	} else if singleton.Conf.Oauth2.Type == model.ConfigTypeOidc {
+		var err error
+		oa.oidcProvider, err = oidc.NewProvider(c.Request.Context(), singleton.Conf.Oauth2.OidcIssuer)
+		if err != nil {
+			mygin.ShowErrorPage(c, mygin.ErrInfo{
+				Code:  http.StatusBadRequest,
+				Title: fmt.Sprintf("Cannot get OIDC infomaion from issuer from %s", singleton.Conf.Oauth2.OidcIssuer),
+				Msg:   err.Error(),
+			}, true)
+			return nil
+		}
+		scopes := strings.Split(singleton.Conf.Oauth2.OidcScopes, ",")
+		scopes = append(scopes, oidc.ScopeOpenID)
+		uniqueScopes := removeDuplicates(scopes)
+		return &oauth2.Config{
+			ClientID:     singleton.Conf.Oauth2.ClientID,
+			ClientSecret: singleton.Conf.Oauth2.ClientSecret,
+			Scopes:       uniqueScopes,
+			Endpoint:     oa.oidcProvider.Endpoint(),
+			RedirectURL:  oa.getRedirectURL(c),
+		}
 	} else {
 		return &oauth2.Config{
 			ClientID:     singleton.Conf.Oauth2.ClientID,
@@ -86,7 +123,8 @@ func (oa *oauth2controller) getCommonOauth2Config(c *gin.Context) *oauth2.Config
 
 func (oa *oauth2controller) getRedirectURL(c *gin.Context) string {
 	scheme := "http://"
-	if strings.HasPrefix(c.Request.Referer(), "https://") {
+	referer := c.Request.Referer()
+	if forwardedProto := c.Request.Header.Get("X-Forwarded-Proto"); forwardedProto == "https" || strings.HasPrefix(referer, "https://") {
 		scheme = "https://"
 	}
 	return scheme + c.Request.Host + "/oauth2/callback"
@@ -155,6 +193,28 @@ func (oa *oauth2controller) callback(c *gin.Context) {
 			if err == nil {
 				user = model.NewUserFromGitea(u)
 			}
+		} else if singleton.Conf.Oauth2.Type == model.ConfigTypeCloudflare {
+			client := oauth2Config.Client(context.Background(), otk)
+			resp, err := client.Get(fmt.Sprintf("%s/cdn-cgi/access/sso/oidc/%s/userinfo", singleton.Conf.Oauth2.Endpoint, singleton.Conf.Oauth2.ClientID))
+			if err == nil {
+				defer resp.Body.Close()
+				var cloudflareUserInfo *cloudflare.UserInfo
+				if err := utils.Json.NewDecoder(resp.Body).Decode(&cloudflareUserInfo); err == nil {
+					user = cloudflareUserInfo.MapToServerUser()
+				}
+			}
+		} else if singleton.Conf.Oauth2.Type == model.ConfigTypeOidc {
+			userInfo, err := oa.oidcProvider.UserInfo(c.Request.Context(), oauth2.StaticTokenSource(otk))
+			if err == nil {
+				loginClaim := singleton.Conf.Oauth2.OidcLoginClaim
+				groupClain := singleton.Conf.Oauth2.OidcGroupClaim
+				adminGroups := strings.Split(singleton.Conf.Oauth2.AdminGroups, ",")
+				autoCreate := singleton.Conf.Oauth2.OidcAutoCreate
+				var oidceUserInfo *myOidc.UserInfo
+				if err := userInfo.Claims(&oidceUserInfo); err == nil {
+					user = oidceUserInfo.MapToServerUser(loginClaim, groupClain, adminGroups, autoCreate)
+				}
+			}
 		} else {
 			var client *GitHubAPI.Client
 			oc := oauth2Config.Client(ctx, otk)
@@ -168,9 +228,7 @@ func (oa *oauth2controller) callback(c *gin.Context) {
 				client = GitHubAPI.NewClient(oc)
 			}
 			var gu *GitHubAPI.User
-			if err == nil {
-				gu, _, err = client.Users.Get(ctx, "")
-			}
+			gu, _, err = client.Users.Get(ctx, "")
 			if err == nil {
 				user = model.NewUserFromGitHub(gu)
 			}
@@ -190,10 +248,15 @@ func (oa *oauth2controller) callback(c *gin.Context) {
 		return
 	}
 	var isAdmin bool
-	for _, admin := range strings.Split(singleton.Conf.Oauth2.Admin, ",") {
-		if admin != "" && strings.EqualFold(user.Login, admin) {
-			isAdmin = true
-			break
+
+	if user.SuperAdmin {
+		isAdmin = true
+	} else {
+		for _, admin := range strings.Split(singleton.Conf.Oauth2.Admin, ",") {
+			if admin != "" && strings.EqualFold(user.Login, admin) {
+				isAdmin = true
+				break
+			}
 		}
 	}
 	if !isAdmin {
@@ -219,4 +282,17 @@ func (oa *oauth2controller) callback(c *gin.Context) {
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/redirect", mygin.CommonEnvironment(c, gin.H{
 		"URL": "/",
 	}))
+}
+
+func removeDuplicates(elements []string) []string {
+	encountered := map[string]bool{}
+	result := []string{}
+
+	for _, v := range elements {
+		if !encountered[v] {
+			encountered[v] = true
+			result = append(result, v)
+		}
+	}
+	return result
 }

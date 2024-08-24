@@ -34,10 +34,11 @@ func InitTimezoneAndCache() {
 
 // LoadSingleton 加载子服务并执行
 func LoadSingleton() {
-	LoadNotifications() // 加载通知服务
-	LoadServers()       // 加载服务器列表
-	LoadCronTasks()     // 加载定时任务
-	LoadAPI()
+	loadNotifications() // 加载通知服务
+	loadServers()       // 加载服务器列表
+	loadCronTasks()     // 加载定时任务
+	loadAPI()
+	initNAT()
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
@@ -47,17 +48,21 @@ func InitConfigFromPath(path string) {
 	if err != nil {
 		panic(err)
 	}
-	ValidateConfig()
+	validateConfig()
 }
 
-// ValidateConfig 验证配置文件有效性
-func ValidateConfig() {
-	// 如果DDNS启用则检查Provider是否存在, 不存在直接退出
+// validateConfig 验证配置文件有效性
+func validateConfig() {
+	var err error
+	if Conf.DDNS.Provider == "" {
+		err = ValidateDDNSProvidersFromProfiles()
+	} else {
+		_, err = GetDDNSProviderFromString(Conf.DDNS.Provider)
+	}
+	if err != nil {
+		panic(err)
+	}
 	if Conf.DDNS.Enable {
-		_, err := GetDDNSProviderFromString(Conf.DDNS.Provider)
-		if err != nil {
-			panic(err)
-		}
 		if Conf.DDNS.MaxRetries < 1 || Conf.DDNS.MaxRetries > 10 {
 			panic(fmt.Errorf("DDNS.MaxRetries值域为[1, 10]的整数, 当前为 %d", Conf.DDNS.MaxRetries))
 		}
@@ -78,7 +83,8 @@ func InitDBFromPath(path string) {
 	}
 	err = DB.AutoMigrate(model.Server{}, model.User{},
 		model.Notification{}, model.AlertRule{}, model.Monitor{},
-		model.MonitorHistory{}, model.Cron{}, model.Transfer{}, model.ApiToken{})
+		model.MonitorHistory{}, model.Cron{}, model.Transfer{},
+		model.ApiToken{}, model.NAT{})
 	if err != nil {
 		panic(err)
 	}
@@ -89,19 +95,19 @@ func RecordTransferHourlyUsage() {
 	ServerLock.Lock()
 	defer ServerLock.Unlock()
 	now := time.Now()
-	nowTrimSeconds := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, Loc)
+	nowTrimSeconds := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, now.Location())
 	var txs []model.Transfer
 	for id, server := range ServerList {
 		tx := model.Transfer{
 			ServerID: id,
-			In:       server.State.NetInTransfer - uint64(server.PrevHourlyTransferIn),
-			Out:      server.State.NetOutTransfer - uint64(server.PrevHourlyTransferOut),
+			In:       utils.Uint64SubInt64(server.State.NetInTransfer, server.PrevTransferInSnapshot),
+			Out:      utils.Uint64SubInt64(server.State.NetOutTransfer, server.PrevTransferOutSnapshot),
 		}
 		if tx.In == 0 && tx.Out == 0 {
 			continue
 		}
-		server.PrevHourlyTransferIn = int64(server.State.NetInTransfer)
-		server.PrevHourlyTransferOut = int64(server.State.NetOutTransfer)
+		server.PrevTransferInSnapshot = int64(server.State.NetInTransfer)
+		server.PrevTransferOutSnapshot = int64(server.State.NetOutTransfer)
 		tx.CreatedAt = nowTrimSeconds
 		txs = append(txs, tx)
 	}
@@ -132,7 +138,7 @@ func CleanMonitorHistory() {
 			if !rule.IsTransferDurationRule() {
 				continue
 			}
-			dataCouldRemoveBefore := rule.GetTransferDurationStart()
+			dataCouldRemoveBefore := rule.GetTransferDurationStart().UTC()
 			// 判断规则影响的机器范围
 			if rule.Cover == model.RuleCoverAll {
 				// 更新全局可以清理的数据点
@@ -151,12 +157,12 @@ func CleanMonitorHistory() {
 		}
 	}
 	for id, couldRemove := range specialServerKeep {
-		DB.Unscoped().Delete(&model.Transfer{}, "server_id = ? AND created_at < ?", id, couldRemove)
+		DB.Unscoped().Delete(&model.Transfer{}, "server_id = ? AND datetime(`created_at`) < datetime(?)", id, couldRemove)
 	}
 	if allServerKeep.IsZero() {
 		DB.Unscoped().Delete(&model.Transfer{}, "server_id NOT IN (?)", specialServerIDs)
 	} else {
-		DB.Unscoped().Delete(&model.Transfer{}, "server_id NOT IN (?) AND created_at < ?", specialServerIDs, allServerKeep)
+		DB.Unscoped().Delete(&model.Transfer{}, "server_id NOT IN (?) AND datetime(`created_at`) < datetime(?)", specialServerIDs, allServerKeep)
 	}
 }
 

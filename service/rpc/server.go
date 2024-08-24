@@ -3,20 +3,38 @@ package rpc
 import (
 	"context"
 	"fmt"
-	"github.com/xos/serverstatus/pkg/ddns"
-	"github.com/xos/serverstatus/pkg/utils"
 	"log"
+	"net"
+	"sync"
 	"time"
+
+	"github.com/xos/serverstatus/pkg/ddns"
+	"github.com/xos/serverstatus/pkg/geoip"
+	"github.com/xos/serverstatus/pkg/grpcx"
+	"github.com/xos/serverstatus/pkg/utils"
 
 	"github.com/jinzhu/copier"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
+
 	"github.com/xos/serverstatus/model"
 	pb "github.com/xos/serverstatus/proto"
 	"github.com/xos/serverstatus/service/singleton"
 )
 
+var ServerHandlerSingleton *ServerHandler
+
 type ServerHandler struct {
-	Auth *AuthHandler
+	Auth          *authHandler
+	ioStreams     map[string]*ioStreamContext
+	ioStreamMutex *sync.RWMutex
+}
+
+func NewServerHandler() *ServerHandler {
+	return &ServerHandler{
+		Auth:          &authHandler{},
+		ioStreamMutex: new(sync.RWMutex),
+		ioStreams:     make(map[string]*ioStreamContext),
+	}
 }
 
 func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Receipt, error) {
@@ -72,12 +90,14 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	}
 	closeCh := make(chan error)
 	singleton.ServerLock.RLock()
+	singleton.ServerList[clientID].TaskCloseLock.Lock()
 	// 修复不断的请求 task 但是没有 return 导致内存泄漏
 	if singleton.ServerList[clientID].TaskClose != nil {
 		close(singleton.ServerList[clientID].TaskClose)
 	}
 	singleton.ServerList[clientID].TaskStream = stream
 	singleton.ServerList[clientID].TaskClose = closeCh
+	singleton.ServerList[clientID].TaskCloseLock.Unlock()
 	singleton.ServerLock.RUnlock()
 	return <-closeCh
 }
@@ -94,10 +114,10 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	singleton.ServerList[clientID].LastActive = time.Now()
 	singleton.ServerList[clientID].State = &state
 
-	// 如果从未记录过，先打点，等到小时时间点时入库
-	if singleton.ServerList[clientID].PrevHourlyTransferIn == 0 || singleton.ServerList[clientID].PrevHourlyTransferOut == 0 {
-		singleton.ServerList[clientID].PrevHourlyTransferIn = int64(state.NetInTransfer)
-		singleton.ServerList[clientID].PrevHourlyTransferOut = int64(state.NetOutTransfer)
+	// 应对 dashboard 重启的情况，如果从未记录过，先打点，等到小时时间点时入库
+	if singleton.ServerList[clientID].PrevTransferInSnapshot == 0 || singleton.ServerList[clientID].PrevTransferOutSnapshot == 0 {
+		singleton.ServerList[clientID].PrevTransferInSnapshot = int64(state.NetInTransfer)
+		singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(state.NetOutTransfer)
 	}
 
 	return &pb.Receipt{Proced: true}, nil
@@ -105,6 +125,7 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 
 func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Receipt, error) {
 	var clientID uint64
+	var provider ddns.Provider
 	var err error
 	if clientID, err = s.Auth.Check(c); err != nil {
 		return nil, err
@@ -116,18 +137,20 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	// 检查并更新DDNS
 	if singleton.Conf.DDNS.Enable &&
 		singleton.ServerList[clientID].EnableDDNS &&
-		singleton.ServerList[clientID].Host != nil &&
 		host.IP != "" &&
-		singleton.ServerList[clientID].Host.IP != host.IP {
-
+		(singleton.ServerList[clientID].Host == nil || singleton.ServerList[clientID].Host.IP != host.IP) {
 		serverDomain := singleton.ServerList[clientID].DDNSDomain
-		provider, err := singleton.GetDDNSProviderFromString(singleton.Conf.DDNS.Provider)
+		if singleton.Conf.DDNS.Provider == "" {
+			provider, err = singleton.GetDDNSProviderFromProfile(singleton.ServerList[clientID].DDNSProfile)
+		} else {
+			provider, err = singleton.GetDDNSProviderFromString(singleton.Conf.DDNS.Provider)
+		}
 		if err == nil && serverDomain != "" {
 			ipv4, ipv6, _ := utils.SplitIPAddr(host.IP)
 			maxRetries := int(singleton.Conf.DDNS.MaxRetries)
 			config := &ddns.DomainConfig{
-				EnableIPv4: true,
-				EnableIpv6: true,
+				EnableIPv4: singleton.ServerList[clientID].EnableIPv4,
+				EnableIpv6: singleton.ServerList[clientID].EnableIpv6,
 				FullDomain: serverDomain,
 				Ipv4Addr:   ipv4,
 				Ipv6Addr:   ipv6,
@@ -136,16 +159,15 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 
 		} else {
 			// 虽然会在启动时panic, 可以断言不会走这个分支, 但是考虑到动态加载配置或者其它情况, 这里输出一下方便检查奇奇怪怪的BUG
-			log.Printf("NG>> 未找到对应的DDNS提供者(%s), 请前往config.yml检查你的设置\n", singleton.Conf.DDNS.Provider)
+			log.Printf("NG>> 未找到对应的DDNS配置(%s), 或者是provider填写不正确, 请前往config.yml检查你的设置", singleton.ServerList[clientID].DDNSProfile)
 		}
 
 	}
 
 	// 发送IP变动通知
-	if singleton.Conf.EnableIPChangeNotification &&
+	if singleton.ServerList[clientID].Host != nil && singleton.Conf.EnableIPChangeNotification &&
 		((singleton.Conf.Cover == model.ConfigCoverAll && !singleton.Conf.IgnoredIPNotificationServerIDs[clientID]) ||
 			(singleton.Conf.Cover == model.ConfigCoverIgnoreAll && singleton.Conf.IgnoredIPNotificationServerIDs[clientID])) &&
-		singleton.ServerList[clientID].Host != nil &&
 		singleton.ServerList[clientID].Host.IP != "" &&
 		host.IP != "" &&
 		singleton.ServerList[clientID].Host.IP != host.IP {
@@ -162,12 +184,73 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 			nil)
 	}
 
-	// 判断是否是机器重启，如果是机器重启要录入最后记录的流量里面
-	if singleton.ServerList[clientID].Host.BootTime < host.BootTime {
-		singleton.ServerList[clientID].PrevHourlyTransferIn = singleton.ServerList[clientID].PrevHourlyTransferIn - int64(singleton.ServerList[clientID].State.NetInTransfer)
-		singleton.ServerList[clientID].PrevHourlyTransferOut = singleton.ServerList[clientID].PrevHourlyTransferOut - int64(singleton.ServerList[clientID].State.NetOutTransfer)
+	/**
+	 * 这里的 singleton 中的数据都是关机前的旧数据
+	 * 当 agent 重启时，bootTime 变大，agent 端会先上报 host 信息，然后上报 state 信息
+	 * 这是可以借助上报顺序的空档，将停机前的流量统计数据标记下来，加到下一个小时的数据点上
+	 */
+	if singleton.ServerList[clientID].Host != nil && singleton.ServerList[clientID].Host.BootTime < host.BootTime {
+		singleton.ServerList[clientID].PrevTransferInSnapshot = singleton.ServerList[clientID].PrevTransferInSnapshot - int64(singleton.ServerList[clientID].State.NetInTransfer)
+		singleton.ServerList[clientID].PrevTransferOutSnapshot = singleton.ServerList[clientID].PrevTransferOutSnapshot - int64(singleton.ServerList[clientID].State.NetOutTransfer)
+	}
+
+	// 不要冲掉国家码
+	if singleton.ServerList[clientID].Host != nil {
+		host.CountryCode = singleton.ServerList[clientID].Host.CountryCode
 	}
 
 	singleton.ServerList[clientID].Host = &host
 	return &pb.Receipt{Proced: true}, nil
+}
+
+func (s *ServerHandler) IOStream(stream pb.ServerService_IOStreamServer) error {
+	if _, err := s.Auth.Check(stream.Context()); err != nil {
+		return err
+	}
+	id, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	if id == nil || len(id.Data) < 4 || (id.Data[0] != 0xff && id.Data[1] != 0x05 && id.Data[2] != 0xff && id.Data[3] == 0x05) {
+		return fmt.Errorf("invalid stream id")
+	}
+
+	streamId := string(id.Data[4:])
+
+	if _, err := s.GetStream(streamId); err != nil {
+		return err
+	}
+	iw := grpcx.NewIOStreamWrapper(stream)
+	if err := s.AgentConnected(streamId, iw); err != nil {
+		return err
+	}
+	iw.Wait()
+	return nil
+}
+
+func (s *ServerHandler) LookupGeoIP(c context.Context, r *pb.GeoIP) (*pb.GeoIP, error) {
+	var clientID uint64
+	var err error
+	if clientID, err = s.Auth.Check(c); err != nil {
+		return nil, err
+	}
+
+	// 根据内置数据库查询 IP 地理位置
+	record := &geoip.IPInfo{}
+	ip := r.GetIp()
+	netIP := net.ParseIP(ip)
+	location, err := geoip.Lookup(netIP, record)
+	if err != nil {
+		return nil, err
+	}
+
+	// 将地区码写入到 Host
+	singleton.ServerLock.RLock()
+	defer singleton.ServerLock.RUnlock()
+	if singleton.ServerList[clientID].Host == nil {
+		return nil, fmt.Errorf("host not found")
+	}
+	singleton.ServerList[clientID].Host.CountryCode = location
+
+	return &pb.GeoIP{Ip: ip, CountryCode: location}, nil
 }

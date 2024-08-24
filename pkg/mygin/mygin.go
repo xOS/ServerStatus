@@ -16,6 +16,7 @@ var adminPage = map[string]bool{
 	"/monitor":      true,
 	"/setting":      true,
 	"/notification": true,
+	"/nat":          true,
 	"/cron":         true,
 	"/api":          true,
 }
@@ -25,6 +26,8 @@ func CommonEnvironment(c *gin.Context, data map[string]interface{}) gin.H {
 	data["Version"] = singleton.Version
 	data["Conf"] = singleton.Conf
 	data["Themes"] = model.Themes
+	data["CustomCode"] = singleton.Conf.Site.CustomCode
+	data["CustomCodeDashboard"] = singleton.Conf.Site.CustomCodeDashboard
 	// 是否是管理页面
 	data["IsAdminPage"] = adminPage[data["MatchedPath"].(string)]
 	// 站点标题

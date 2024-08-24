@@ -2,12 +2,9 @@ package controller
 
 import (
 	"errors"
-	"log"
+	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,22 +20,13 @@ import (
 	"github.com/xos/serverstatus/pkg/utils"
 	"github.com/xos/serverstatus/pkg/websocketx"
 	"github.com/xos/serverstatus/proto"
+	"github.com/xos/serverstatus/service/rpc"
 	"github.com/xos/serverstatus/service/singleton"
 )
 
-type terminalContext struct {
-	agentConn *websocketx.Conn
-	userConn  *websocketx.Conn
-	serverID  uint64
-	host      string
-	useSSL    bool
-}
-
 type commonPage struct {
-	r             *gin.Engine
-	terminals     map[string]*terminalContext
-	terminalsLock *sync.Mutex
-	requestGroup  singleflight.Group
+	r            *gin.Engine
+	requestGroup singleflight.Group
 }
 
 func (cp *commonPage) serve() {
@@ -58,6 +46,8 @@ func (cp *commonPage) serve() {
 	cr.GET("/network", cp.network)
 	cr.GET("/ws", cp.ws)
 	cr.POST("/terminal", cp.createTerminal)
+	cr.GET("/file", cp.createFM)
+	cr.GET("/file/:id", cp.fm)
 }
 
 type viewPasswordForm struct {
@@ -67,7 +57,6 @@ type viewPasswordForm struct {
 func (p *commonPage) issueViewPassword(c *gin.Context) {
 	var vpf viewPasswordForm
 	err := c.ShouldBind(&vpf)
-	log.Println("bingo", vpf)
 	var hash []byte
 	if err == nil && vpf.Password != singleton.Conf.Site.ViewPassword {
 		err = errors.New(singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "WrongAccessPassword"}))
@@ -112,7 +101,6 @@ func (p *commonPage) service(c *gin.Context) {
 		"Title":              singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ServicesStatus"}),
 		"Services":           res.([]interface{})[0],
 		"CycleTransferStats": res.([]interface{})[1],
-		"CustomCode":         singleton.Conf.Site.CustomCode,
 	}))
 }
 
@@ -217,25 +205,30 @@ func (cp *commonPage) network(c *gin.Context) {
 	c.HTML(http.StatusOK, mygin.GetPreferredTheme(c, "/network"), mygin.CommonEnvironment(c, gin.H{
 		"Servers":         string(serversBytes),
 		"MonitorInfos":    string(monitorInfos),
-		"CustomCode":      singleton.Conf.Site.CustomCode,
 		"MaxTCPPingValue": singleton.Conf.MaxTCPPingValue,
 	}))
 }
 
 func (cp *commonPage) getServerStat(c *gin.Context) ([]byte, error) {
-	v, err, _ := cp.requestGroup.Do("serverStats", func() (any, error) {
+	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
+	_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
+	authorized := isMember || isViewPasswordVerfied
+	v, err, _ := cp.requestGroup.Do(fmt.Sprintf("serverStats::%t", authorized), func() (interface{}, error) {
 		singleton.SortedServerLock.RLock()
 		defer singleton.SortedServerLock.RUnlock()
 
-		_, isMember := c.Get(model.CtxKeyAuthorizedUser)
-		_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
-
 		var servers []*model.Server
 
-		if isMember || isViewPasswordVerfied {
+		if authorized {
 			servers = singleton.SortedServerList
 		} else {
-			servers = singleton.SortedServerListForGuest
+			filteredServers := make([]*model.Server, len(singleton.SortedServerListForGuest))
+			for i, server := range singleton.SortedServerListForGuest {
+				filteredServer := *server
+				filteredServer.DDNSDomain = "redacted"
+				filteredServers[i] = &filteredServer
+			}
+			servers = filteredServers
 		}
 
 		return utils.Json.Marshal(Data{
@@ -267,21 +260,18 @@ func (cp *commonPage) home(c *gin.Context) {
 	c.HTML(http.StatusOK, mygin.GetPreferredTheme(c, "/home"), mygin.CommonEnvironment(c, gin.H{
 		"Servers":            string(stat),
 		"CycleTransferStats": statsStore,
-		"CustomCode":         singleton.Conf.Site.CustomCode,
 	}))
 }
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+	ReadBufferSize:  32768,
+	WriteBufferSize: 32768,
 }
 
 type Data struct {
 	Now     int64           `json:"now,omitempty"`
 	Servers []*model.Server `json:"servers,omitempty"`
 }
-
-var cloudflareCookiesValidator = regexp.MustCompile("^[A-Za-z0-9-_]+$")
 
 func (cp *commonPage) ws(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -319,10 +309,8 @@ func (cp *commonPage) ws(c *gin.Context) {
 }
 
 func (cp *commonPage) terminal(c *gin.Context) {
-	terminalID := c.Param("id")
-	cp.terminalsLock.Lock()
-	if terminalID == "" || cp.terminals[terminalID] == nil {
-		cp.terminalsLock.Unlock()
+	streamId := c.Param("id")
+	if _, err := rpc.ServerHandlerSingleton.GetStream(streamId); err != nil {
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
 			Code:  http.StatusForbidden,
 			Title: "无权访问",
@@ -332,104 +320,7 @@ func (cp *commonPage) terminal(c *gin.Context) {
 		}, true)
 		return
 	}
-
-	terminal := cp.terminals[terminalID]
-	cp.terminalsLock.Unlock()
-
-	defer func() {
-		// 清理 context
-		cp.terminalsLock.Lock()
-		defer cp.terminalsLock.Unlock()
-		delete(cp.terminals, terminalID)
-	}()
-
-	var isAgent bool
-
-	if _, authorized := c.Get(model.CtxKeyAuthorizedUser); !authorized {
-		singleton.ServerLock.RLock()
-		_, hasID := singleton.SecretToID[c.Request.Header.Get("Secret")]
-		singleton.ServerLock.RUnlock()
-		if !hasID {
-			mygin.ShowErrorPage(c, mygin.ErrInfo{
-				Code:  http.StatusForbidden,
-				Title: "无权访问",
-				Msg:   "用户未登录或非法终端",
-				Link:  "/",
-				Btn:   "返回首页",
-			}, true)
-			return
-		}
-		if terminal.userConn == nil {
-			mygin.ShowErrorPage(c, mygin.ErrInfo{
-				Code:  http.StatusForbidden,
-				Title: "无权访问",
-				Msg:   "用户不在线",
-				Link:  "/",
-				Btn:   "返回首页",
-			}, true)
-			return
-		}
-		if terminal.agentConn != nil {
-			mygin.ShowErrorPage(c, mygin.ErrInfo{
-				Code:  http.StatusInternalServerError,
-				Title: "连接已存在",
-				Msg:   "Websocket协议切换失败",
-				Link:  "/",
-				Btn:   "返回首页",
-			}, true)
-			return
-		}
-		isAgent = true
-	} else {
-		singleton.ServerLock.RLock()
-		server := singleton.ServerList[terminal.serverID]
-		singleton.ServerLock.RUnlock()
-		if server == nil || server.TaskStream == nil {
-			mygin.ShowErrorPage(c, mygin.ErrInfo{
-				Code:  http.StatusForbidden,
-				Title: "请求失败",
-				Msg:   "服务器不存在或处于离线状态",
-				Link:  "/server",
-				Btn:   "返回重试",
-			}, true)
-			return
-		}
-		cloudflareCookies, _ := c.Cookie("CF_Authorization")
-		// Cloudflare Cookies 合法性验证
-		// 其应该包含.分隔的三组BASE64-URL编码
-		if cloudflareCookies != "" {
-			encodedCookies := strings.Split(cloudflareCookies, ".")
-			if len(encodedCookies) == 3 {
-				for i := 0; i < 3; i++ {
-					if !cloudflareCookiesValidator.MatchString(encodedCookies[i]) {
-						cloudflareCookies = ""
-						break
-					}
-				}
-			} else {
-				cloudflareCookies = ""
-			}
-		}
-		terminalData, _ := utils.Json.Marshal(&model.TerminalTask{
-			Host:    terminal.host,
-			UseSSL:  terminal.useSSL,
-			Session: terminalID,
-			Cookie:  cloudflareCookies,
-		})
-		if err := server.TaskStream.Send(&proto.Task{
-			Type: model.TaskTypeTerminal,
-			Data: string(terminalData),
-		}); err != nil {
-			mygin.ShowErrorPage(c, mygin.ErrInfo{
-				Code:  http.StatusForbidden,
-				Title: "请求失败",
-				Msg:   "Agent信令下发失败",
-				Link:  "/server",
-				Btn:   "返回重试",
-			}, true)
-			return
-		}
-	}
+	defer rpc.ServerHandlerSingleton.CloseStream(streamId)
 
 	wsConn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -445,36 +336,7 @@ func (cp *commonPage) terminal(c *gin.Context) {
 		return
 	}
 	defer wsConn.Close()
-	conn := &websocketx.Conn{Conn: wsConn}
-
-	log.Printf("NG>> terminal connected %t %q", isAgent, c.Request.URL)
-	defer log.Printf("NG>> terminal disconnected %t %q", isAgent, c.Request.URL)
-
-	if isAgent {
-		terminal.agentConn = conn
-		defer func() {
-			// Agent断开链接时断开用户连接
-			if terminal.userConn != nil {
-				terminal.userConn.Close()
-			}
-		}()
-	} else {
-		terminal.userConn = conn
-		defer func() {
-			// 用户断开链接时断开 Agent 连接
-			if terminal.agentConn != nil {
-				terminal.agentConn.Close()
-			}
-		}()
-	}
-
-	deadlineCh := make(chan interface{})
-	go func() {
-		// 对方连接超时
-		connectDeadline := time.NewTimer(time.Second * 15)
-		<-connectDeadline.C
-		deadlineCh <- struct{}{}
-	}()
+	conn := websocketx.NewConn(wsConn)
 
 	go func() {
 		// PING 保活
@@ -486,58 +348,11 @@ func (cp *commonPage) terminal(c *gin.Context) {
 		}
 	}()
 
-	dataCh := make(chan []byte)
-	errorCh := make(chan error)
-	go func() {
-		for {
-			msgType, data, err := conn.ReadMessage()
-			if err != nil {
-				errorCh <- err
-				return
-			}
-			// 将文本消息转换为命令输入
-			if msgType == websocket.TextMessage {
-				data = append([]byte{0}, data...)
-			}
-			dataCh <- data
-		}
-	}()
-
-	var dataBuffer [][]byte
-	var distConn *websocketx.Conn
-	checkDistConn := func() {
-		if distConn == nil {
-			if isAgent {
-				distConn = terminal.userConn
-			} else {
-				distConn = terminal.agentConn
-			}
-		}
+	if err = rpc.ServerHandlerSingleton.UserConnected(streamId, conn); err != nil {
+		return
 	}
 
-	for {
-		select {
-		case <-deadlineCh:
-			checkDistConn()
-			if distConn == nil {
-				return
-			}
-		case <-errorCh:
-			return
-		case data := <-dataCh:
-			dataBuffer = append(dataBuffer, data)
-			checkDistConn()
-			if distConn != nil {
-				for i := 0; i < len(dataBuffer); i++ {
-					err = distConn.WriteMessage(websocket.BinaryMessage, dataBuffer[i])
-					if err != nil {
-						return
-					}
-				}
-				dataBuffer = dataBuffer[:0]
-			}
-		}
-	}
+	rpc.ServerHandlerSingleton.StartStream(streamId, time.Second*10)
 }
 
 type createTerminalRequest struct {
@@ -569,7 +384,7 @@ func (cp *commonPage) createTerminal(c *gin.Context) {
 		return
 	}
 
-	id, err := uuid.GenerateUUID()
+	streamId, err := uuid.GenerateUUID()
 	if err != nil {
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
 			Code: http.StatusInternalServerError,
@@ -582,6 +397,8 @@ func (cp *commonPage) createTerminal(c *gin.Context) {
 		}, true)
 		return
 	}
+
+	rpc.ServerHandlerSingleton.CreateStream(streamId)
 
 	singleton.ServerLock.RLock()
 	server := singleton.ServerList[createTerminalReq.ID]
@@ -597,17 +414,150 @@ func (cp *commonPage) createTerminal(c *gin.Context) {
 		return
 	}
 
-	cp.terminalsLock.Lock()
-	defer cp.terminalsLock.Unlock()
-
-	cp.terminals[id] = &terminalContext{
-		serverID: createTerminalReq.ID,
-		host:     createTerminalReq.Host,
-		useSSL:   createTerminalReq.Protocol == "https:",
+	terminalData, _ := utils.Json.Marshal(&model.TerminalTask{
+		StreamID: streamId,
+	})
+	if err := server.TaskStream.Send(&proto.Task{
+		Type: model.TaskTypeTerminalGRPC,
+		Data: string(terminalData),
+	}); err != nil {
+		mygin.ShowErrorPage(c, mygin.ErrInfo{
+			Code:  http.StatusForbidden,
+			Title: "请求失败",
+			Msg:   "Agent信令下发失败",
+			Link:  "/server",
+			Btn:   "返回重试",
+		}, true)
+		return
 	}
 
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/terminal", mygin.CommonEnvironment(c, gin.H{
-		"SessionID":  id,
+		"SessionID":  streamId,
 		"ServerName": server.Name,
+		"ServerID":   server.ID,
+	}))
+}
+
+func (cp *commonPage) fm(c *gin.Context) {
+	streamId := c.Param("id")
+	if _, err := rpc.ServerHandlerSingleton.GetStream(streamId); err != nil {
+		mygin.ShowErrorPage(c, mygin.ErrInfo{
+			Code:  http.StatusForbidden,
+			Title: "无权访问",
+			Msg:   "FM会话不存在",
+			Link:  "/",
+			Btn:   "返回首页",
+		}, true)
+		return
+	}
+	defer rpc.ServerHandlerSingleton.CloseStream(streamId)
+
+	wsConn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		mygin.ShowErrorPage(c, mygin.ErrInfo{
+			Code: http.StatusInternalServerError,
+			Title: singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
+				MessageID: "NetworkError",
+			}),
+			Msg:  "Websocket协议切换失败",
+			Link: "/",
+			Btn:  "返回首页",
+		}, true)
+		return
+	}
+	defer wsConn.Close()
+	conn := websocketx.NewConn(wsConn)
+
+	go func() {
+		// PING 保活
+		for {
+			if err = conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+				return
+			}
+			time.Sleep(time.Second * 10)
+		}
+	}()
+
+	if err = rpc.ServerHandlerSingleton.UserConnected(streamId, conn); err != nil {
+		return
+	}
+
+	rpc.ServerHandlerSingleton.StartStream(streamId, time.Second*10)
+}
+
+func (cp *commonPage) createFM(c *gin.Context) {
+	IdString := c.Query("id")
+	if _, authorized := c.Get(model.CtxKeyAuthorizedUser); !authorized {
+		mygin.ShowErrorPage(c, mygin.ErrInfo{
+			Code:  http.StatusForbidden,
+			Title: "无权访问",
+			Msg:   "用户未登录",
+			Link:  "/login",
+			Btn:   "去登录",
+		}, true)
+		return
+	}
+
+	streamId, err := uuid.GenerateUUID()
+	if err != nil {
+		mygin.ShowErrorPage(c, mygin.ErrInfo{
+			Code: http.StatusInternalServerError,
+			Title: singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
+				MessageID: "SystemError",
+			}),
+			Msg:  "生成会话ID失败",
+			Link: "/server",
+			Btn:  "返回重试",
+		}, true)
+		return
+	}
+
+	rpc.ServerHandlerSingleton.CreateStream(streamId)
+
+	serverId, err := strconv.Atoi(IdString)
+	if err != nil {
+		mygin.ShowErrorPage(c, mygin.ErrInfo{
+			Code:  http.StatusForbidden,
+			Title: "请求失败",
+			Msg:   "请求参数有误：" + err.Error(),
+			Link:  "/server",
+			Btn:   "返回重试",
+		}, true)
+		return
+	}
+
+	singleton.ServerLock.RLock()
+	server := singleton.ServerList[uint64(serverId)]
+	singleton.ServerLock.RUnlock()
+	if server == nil {
+		mygin.ShowErrorPage(c, mygin.ErrInfo{
+			Code:  http.StatusForbidden,
+			Title: "请求失败",
+			Msg:   "服务器不存在或处于离线状态",
+			Link:  "/server",
+			Btn:   "返回重试",
+		}, true)
+		return
+	}
+
+	fmData, _ := utils.Json.Marshal(&model.TaskFM{
+		StreamID: streamId,
+	})
+	if err := server.TaskStream.Send(&proto.Task{
+		Type: model.TaskTypeFM,
+		Data: string(fmData),
+	}); err != nil {
+		mygin.ShowErrorPage(c, mygin.ErrInfo{
+			Code:  http.StatusForbidden,
+			Title: "请求失败",
+			Msg:   "Agent信令下发失败",
+			Link:  "/server",
+			Btn:   "返回重试",
+		}, true)
+		return
+	}
+
+	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/file", mygin.CommonEnvironment(c, gin.H{
+		"SessionID": streamId,
 	}))
 }

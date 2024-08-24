@@ -1,10 +1,13 @@
 package model
 
 import (
+	"slices"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/xos/serverstatus/pkg/utils"
 )
 
 const (
@@ -63,6 +66,8 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 	switch u.Type {
 	case "cpu":
 		src = float64(server.State.CPU)
+	case "gpu":
+		src = float64(server.State.GPU)
 	case "memory":
 		src = percentage(server.State.MemUsed, server.Host.MemTotal)
 	case "swap":
@@ -88,24 +93,24 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 			src = float64(server.LastActive.Unix())
 		}
 	case "transfer_in_cycle":
-		src = float64(server.State.NetInTransfer - uint64(server.PrevHourlyTransferIn))
+		src = float64(utils.Uint64SubInt64(server.State.NetInTransfer, server.PrevTransferInSnapshot))
 		if u.CycleInterval != 0 {
 			var res NResult
-			db.Model(&Transfer{}).Select("SUM(`in`) AS n").Where("created_at > ? AND server_id = ?", u.GetTransferDurationStart(), server.ID).Scan(&res)
+			db.Model(&Transfer{}).Select("SUM(`in`) AS n").Where("datetime(`created_at`) >= datetime(?) AND server_id = ?", u.GetTransferDurationStart().UTC(), server.ID).Scan(&res)
 			src += float64(res.N)
 		}
 	case "transfer_out_cycle":
-		src = float64(server.State.NetOutTransfer - uint64(server.PrevHourlyTransferOut))
+		src = float64(utils.Uint64SubInt64(server.State.NetOutTransfer, server.PrevTransferOutSnapshot))
 		if u.CycleInterval != 0 {
 			var res NResult
-			db.Model(&Transfer{}).Select("SUM(`out`) AS n").Where("created_at > ? AND server_id = ?", u.GetTransferDurationStart(), server.ID).Scan(&res)
+			db.Model(&Transfer{}).Select("SUM(`out`) AS n").Where("datetime(`created_at`) >= datetime(?) AND server_id = ?", u.GetTransferDurationStart().UTC(), server.ID).Scan(&res)
 			src += float64(res.N)
 		}
 	case "transfer_all_cycle":
-		src = float64(server.State.NetOutTransfer - uint64(server.PrevHourlyTransferOut) + server.State.NetInTransfer - uint64(server.PrevHourlyTransferIn))
+		src = float64(utils.Uint64SubInt64(server.State.NetOutTransfer, server.PrevTransferOutSnapshot) + utils.Uint64SubInt64(server.State.NetInTransfer, server.PrevTransferInSnapshot))
 		if u.CycleInterval != 0 {
 			var res NResult
-			db.Model(&Transfer{}).Select("SUM(`in`+`out`) AS n").Where("created_at > ?  AND server_id = ?", u.GetTransferDurationStart(), server.ID).Scan(&res)
+			db.Model(&Transfer{}).Select("SUM(`in`+`out`) AS n").Where("datetime(`created_at`) >= datetime(?) AND server_id = ?", u.GetTransferDurationStart().UTC(), server.ID).Scan(&res)
 			src += float64(res.N)
 		}
 	case "load1":
@@ -120,6 +125,16 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 		src = float64(server.State.UdpConnCount)
 	case "process_count":
 		src = float64(server.State.ProcessCount)
+	case "temperature_max":
+		var temp []float64
+		if server.State.Temperatures != nil {
+			for _, tempStat := range server.State.Temperatures {
+				if tempStat.Temperature != 0 {
+					temp = append(temp, tempStat.Temperature)
+				}
+			}
+			src = slices.Max(temp)
+		}
 	}
 
 	// 循环区间流量检测 · 更新下次需要检测时间

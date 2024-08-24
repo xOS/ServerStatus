@@ -9,19 +9,19 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type AuthHandler struct {
+type authHandler struct {
 	ClientSecret string
 }
 
-func (a *AuthHandler) GetRequestMetadata(ctx context.Context, uri ...string) (map[string]string, error) {
+func (a *authHandler) GetRequestMetadata(ctx context.Context, uri ...string) (map[string]string, error) {
 	return map[string]string{"client_secret": a.ClientSecret}, nil
 }
 
-func (a *AuthHandler) RequireTransportSecurity() bool {
+func (a *authHandler) RequireTransportSecurity() bool {
 	return false
 }
 
-func (a *AuthHandler) Check(ctx context.Context) (uint64, error) {
+func (a *authHandler) Check(ctx context.Context) (uint64, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return 0, status.Errorf(codes.Unauthenticated, "获取 metaData 失败")

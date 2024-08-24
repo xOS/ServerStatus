@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/ory/graceful"
 	flag "github.com/spf13/pflag"
 	"github.com/xos/serverstatus/cmd/dashboard/controller"
 	"github.com/xos/serverstatus/cmd/dashboard/rpc"
 	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/proto"
 	"github.com/xos/serverstatus/service/singleton"
 )
 
@@ -59,6 +61,7 @@ func main() {
 		return
 	}
 
+	// TODO 使用 cmux 在同一端口服务 HTTP 和 gRPC
 	singleton.CleanMonitorHistory()
 	go rpc.ServeRPC(singleton.Conf.GRPCPort)
 	serviceSentinelDispatchBus := make(chan model.Monitor) // 用于传递服务监控任务信息的channel
@@ -67,6 +70,7 @@ func main() {
 	go singleton.AlertSentinelStart()
 	singleton.NewServiceSentinel(serviceSentinelDispatchBus)
 	srv := controller.ServeWeb(singleton.Conf.HTTPPort)
+	go dispatchReportInfoTask()
 	if err := graceful.Graceful(func() error {
 		return srv.ListenAndServe()
 	}, func(c context.Context) error {
@@ -77,5 +81,20 @@ func main() {
 		return nil
 	}); err != nil {
 		log.Printf("NG>> ERROR: %v", err)
+	}
+}
+
+func dispatchReportInfoTask() {
+	time.Sleep(time.Second * 15)
+	singleton.ServerLock.RLock()
+	defer singleton.ServerLock.RUnlock()
+	for _, server := range singleton.ServerList {
+		if server == nil || server.TaskStream == nil {
+			continue
+		}
+		server.TaskStream.Send(&proto.Task{
+			Type: model.TaskTypeReportHostInfo,
+			Data: "",
+		})
 	}
 }

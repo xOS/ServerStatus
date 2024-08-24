@@ -11,7 +11,7 @@ other = "服务"
 other = "任务"
 
 [Notification]
-other = "报警"
+other = "告警"
 
 [Settings]
 other = "设置"
@@ -104,7 +104,7 @@ other = "秒 分 时 天 月 星期，详情见"
 other = "计划表达式格式"
 
 [IntroductionOfCommands]
-other = "命令：就像写 shell/bat 脚本一样，但是不推荐换行，多个命令使用 <code>&&</code>/<code>&</code> 连接，如果遇到 xxx 命令找不到，可能是<code>PATH</code> 环境变量的问题，<code>Linux</code> 主机在命令开头加入<code>source ~/.bashrc</code>或者使用绝对路径执行。"
+other = "命令说明：编写命令时类似于 shell/bat 脚本。建议不要换行，多个命令可用 <code>&&</code> 或 <code>&</code> 连接，若出现命令无法找到的情况，可能是由于 <code>PATH</code> 环境变量配置问题。在 <code>Linux</code> 服务器上，可在命令开头加入 <code>source ~/.bashrc</code>，或使用命令的绝对路径执行。"
 
 [AddMonitor]
 other = "添加监测项"
@@ -183,6 +183,9 @@ other = "始终触发"
 [ModeOnetimeTrigger]
 other = "单次触发"
 
+[EnableTriggerTask]
+other = "启用触发任务"
+
 [FailTriggerTasks]
 other = "故障时触发任务"
 
@@ -197,6 +200,9 @@ other = "添加服务器"
 
 [BatchEditServerGroup]
 other = "批量修改分组"
+
+[BatchDeleteServer]
+other = "批量删除服务器"
 
 [InputServerGroupName]
 other = "输入分组名称"
@@ -336,6 +342,9 @@ other = "主题"
 [CustomCodes]
 other = "自定义代码(style、script 都可以)"
 
+[CustomCodesDashboard]
+other = "自定义代码"
+
 [AccessPassword]
 other = "前台查看密码"
 
@@ -398,6 +407,12 @@ other = "硬盘"
 
 [MemUsed]
 other = "内存"
+
+[CpuUsed]
+other = "核心"
+
+[Virtualization]
+other = "虚拟化"
 
 [SwapUsed]
 other = "交换"
@@ -564,6 +579,12 @@ other = "此页面需要登录"
 [WrongAccessPassword]
 other = "查看密码错误"
 
+[Add]
+other = "添加"
+
+[Edit]
+other = "修改"
+
 [AlarmRule]
 other = "报警规则"
 
@@ -571,7 +592,7 @@ other = "报警规则"
 other = "通知方式"
 
 [Incident]
-other = "故障"
+other = "事件"
 
 [Resolved]
 other = "恢复"
@@ -583,7 +604,7 @@ other = "故障"
 other = "无数据"
 
 [StatusGood]
-other = "良好"
+other = "正常"
 
 [StatusLowAvailability]
 other = "低可用"
@@ -636,17 +657,6 @@ other = "配置"
 [NetworkStatus]
 other = "网络"
 
-[EnableTriggerTask]
-other = "启用触发任务"
-
-[BatchDeleteServer]
-other = "批量删除服务器"
-
-[Add]
-other = "添加"
-
-[Edit]
-other = "修改"
 
 [EnableShowInService]
 other = "在服务中显示"
@@ -654,14 +664,29 @@ other = "在服务中显示"
 [EnableDDNS]
 other = "启用 DDNS"
 
+[EnableIPv4]
+other = "启用DDNS IPv4"
+
+[EnableIpv6]
+other = "启用DDNS IPv6"
+
 [DDNSDomain]
 other = "DDNS 域名"
+
+[DDNSProfile]
+other = "DDNS配置名"
 
 [Feature]
 other = "功能"
 
 [Template]
 other = "主题"
+
+[Stat]
+other = "信息"
+
+[Temperature]
+other = "温度"
 
 [DisableSwitchTemplateInFrontend]
 other = "禁止前台切换模板"
@@ -671,3 +696,33 @@ other = "无 Swap 分区"
 
 [Count]
 other = "个"
+
+[ServersOnWorldMap]
+other = "服务器世界分布图"
+
+[NAT]
+other = "内网穿透"
+
+[NetworkSpiterList]
+other = "网络监控"
+
+[Refresh]
+other = "刷新"
+
+[CopyPath]
+other = "复制路径"
+
+[Goto]
+other = "跳往"
+
+[GotoHeadline]
+other = "跳转文件夹"
+
+[GotoGo]
+other = "确认"
+
+[GotoClose]
+other = "取消"
+
+[FMError]
+other = "Agent 返回了错误，请查看控制台获取详细信息。要建立新连接，请重新打开 FM。"

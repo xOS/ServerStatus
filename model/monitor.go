@@ -18,17 +18,23 @@ const (
 	TaskTypeTerminal
 	TaskTypeUpgrade
 	TaskTypeKeepalive
+	TaskTypeTerminalGRPC
+	TaskTypeNAT
+	TaskTypeReportHostInfo
+	TaskTypeFM
 )
 
 type TerminalTask struct {
-	// websocket 主机名
-	Host string `json:"host,omitempty"`
-	// 是否启用 SSL
-	UseSSL bool `json:"use_ssl,omitempty"`
-	// 会话标识
-	Session string `json:"session,omitempty"`
-	// Agent在连接Server时需要的额外Cookie信息
-	Cookie string `json:"cookie,omitempty"`
+	StreamID string
+}
+
+type TaskNAT struct {
+	StreamID string
+	Host     string
+}
+
+type TaskFM struct {
+	StreamID string
 }
 
 const (
@@ -118,7 +124,7 @@ func (m *Monitor) AfterFind(tx *gorm.DB) error {
 
 // IsServiceSentinelNeeded 判断该任务类型是否需要进行服务监控 需要则返回true
 func IsServiceSentinelNeeded(t uint64) bool {
-	return t != TaskTypeCommand && t != TaskTypeTerminal && t != TaskTypeUpgrade
+	return t != TaskTypeCommand && t != TaskTypeTerminalGRPC && t != TaskTypeUpgrade
 }
 
 func (m *Monitor) InitSkipServers() error {

@@ -19,6 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fetch IPInfo GeoIP Database
+        env: 
+          IPINFO_TOKEN: ${{ secrets.IPINFO_TOKEN }}
+        run: |
+          rm pkg/geoip/geoip.db
+          wget -O pkg/geoip/geoip.db https://ipinfo.io/data/free/country.mmdb?token=${IPINFO_TOKEN}
+
       - name: Extract branch name
         run: |
           export BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})
@@ -33,7 +40,7 @@ jobs:
         uses: crazy-max/ghaction-xgo@v2
         with:
           xgo_version: latest
-          go_version: 1.21
+          go_version: 1.21.x
           dest: dist
           pkg: cmd/dashboard
           prefix: dashboard
@@ -41,11 +48,13 @@ jobs:
           v: true
           x: false
           race: false
-          ldflags: -s -w --extldflags '-static -fpic' -X github.com/xos/serverstatus/service/singleton.Version=${{ steps.extract_branch.outputs.tag }}
+          tags: timetzdata
+          ldflags: -s -w --extldflags '-static -fpic' -X github.com/naiba/nezha/service/singleton.Version=${{ steps.extract_branch.outputs.tag }}
           buildmode: default
 
       - name: fix dist
         run: |
+          ls -al dist/
           mv dist/dashboard-linux-arm-7 dist/dashboard-linux-arm
 
       - name: Log in to the GHCR
@@ -61,20 +70,20 @@ jobs:
           username: ${{ secrets.DOC_USER }}
           password: ${{ secrets.DOC_PAT }}    
 
-      - name: Log In To The AliyunCS
+      - name: Log in to the AliyunCS
         uses: docker/login-action@master
         with:
           registry: registry.cn-shanghai.aliyuncs.com
           username: ${{ secrets.ALI_USER }}
           password: ${{ secrets.ALI_PAT }}
       
-      - name: Set Up QEMU
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         
-      - name: Set Up Docker Buildx
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       
-      - name: Set Up Image Name
+      - name: Set up image name
         run: |
           GHRC_IMAGE_NAME=$(echo "ghcr.io/${{ github.repository_owner }}/server-dash" | tr '[:upper:]' '[:lower:]')
           DOC_IMAGE_NAME=$(echo "nangle/server-dash" | tr '[:upper:]' '[:lower:]')
@@ -107,7 +116,13 @@ jobs:
             fi
           done
 
-      - name: Purge Jsdelivr Cache
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "dist/*.zip"
+          generateReleaseNotes: true
+
+      - name: Purge jsdelivr cache
         run: |
           curl -s https://purge.jsdelivr.net/gh/${{ github.repository_owner }}/serverstatus@master/script/server-status.sh
           curl -s https://purge.jsdelivr.net/gh/${{ github.repository_owner }}/serverstatus@master/script/server-agent.service
@@ -125,3 +140,16 @@ jobs:
           curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/main.js
           curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/semantic-ui-alerts.min.css
           curl -s https://purge.jsdelivr.net/gh/$LOWER_USERNAME/serverstatus@master/resource/static/semantic-ui-alerts.min.js
+	  
+      - name: Trigger sync
+        if: ${{ env.SYNCED == 0 }}
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+            owner: 'xos',
+            repo: 'serverstatus',
+            workflow_id: 'sync-release.yml',
+            ref: 'master'
+            })  
