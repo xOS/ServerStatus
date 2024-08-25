@@ -15,7 +15,7 @@ RUN export DEBIAN_FRONTEND="noninteractive" && \
     chmod +x /entrypoint.sh
 WORKDIR /dashboard
 COPY ./resource ./resource
-COPY dist/dashboard-${TARGETOS}-${TARGETARCH} ./app
+COPY dist/dash-${TARGETOS}-${TARGETARCH} ./app
 
 VOLUME ["/dashboard/data"]
 EXPOSE 80 2222
