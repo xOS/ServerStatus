@@ -41,7 +41,7 @@ jobs:
           go_version: 1.21.x
           dest: dist
           pkg: cmd/dashboard
-          prefix: dashboard
+          prefix: dash
           targets: linux/amd64,linux/arm64,linux/arm-7,linux/s390x,linux/riscv64,windows/amd64,windows/386,windows/arm64 # linux/386,
           v: true
           x: false
@@ -49,6 +49,11 @@ jobs:
           tags: timetzdata
           ldflags: -s -w --extldflags '-static -fpic' -X github.com/xos/serverstatus/service/singleton.Version=${{ steps.extract_branch.outputs.tag }}
           buildmode: default
+
+      - name: fix dist
+        run: |
+          ls -al dist/
+          mv dist/dash-linux-arm-7 dist/dash-linux-arm
 
       - name: Log in to the GHCR
         uses: docker/login-action@master
@@ -83,11 +88,6 @@ jobs:
           echo "::set-output name=DOC_IMAGE_NAME::$DOC_IMAGE_NAME"
         id: image-name
 
-      - name: fix dist
-        run: |
-          ls -al dist/
-          mv dist/dashboard-linux-arm-7 dist/dashboard-linux-arm
-        
       - name: Build Dasbboard Image And Push
         uses: docker/build-push-action@v5
         with:
