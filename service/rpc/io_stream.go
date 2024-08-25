@@ -14,7 +14,7 @@ type ioStreamContext struct {
 	agentIoConnectCh chan struct{}
 }
 
-func (s *SeverHandler) CreateStream(streamId string) {
+func (s *ServerHandler) CreateStream(streamId string) {
 	s.ioStreamMutex.Lock()
 	defer s.ioStreamMutex.Unlock()
 
@@ -24,7 +24,7 @@ func (s *SeverHandler) CreateStream(streamId string) {
 	}
 }
 
-func (s *SeverHandler) GetStream(streamId string) (*ioStreamContext, error) {
+func (s *ServerHandler) GetStream(streamId string) (*ioStreamContext, error) {
 	s.ioStreamMutex.RLock()
 	defer s.ioStreamMutex.RUnlock()
 
@@ -35,7 +35,7 @@ func (s *SeverHandler) GetStream(streamId string) (*ioStreamContext, error) {
 	return nil, errors.New("stream not found")
 }
 
-func (s *SeverHandler) CloseStream(streamId string) error {
+func (s *ServerHandler) CloseStream(streamId string) error {
 	s.ioStreamMutex.Lock()
 	defer s.ioStreamMutex.Unlock()
 
@@ -52,7 +52,7 @@ func (s *SeverHandler) CloseStream(streamId string) error {
 	return nil
 }
 
-func (s *SeverHandler) UserConnected(streamId string, userIo io.ReadWriteCloser) error {
+func (s *ServerHandler) UserConnected(streamId string, userIo io.ReadWriteCloser) error {
 	stream, err := s.GetStream(streamId)
 	if err != nil {
 		return err
@@ -64,7 +64,7 @@ func (s *SeverHandler) UserConnected(streamId string, userIo io.ReadWriteCloser)
 	return nil
 }
 
-func (s *SeverHandler) AgentConnected(streamId string, agentIo io.ReadWriteCloser) error {
+func (s *ServerHandler) AgentConnected(streamId string, agentIo io.ReadWriteCloser) error {
 	stream, err := s.GetStream(streamId)
 	if err != nil {
 		return err
@@ -76,7 +76,7 @@ func (s *SeverHandler) AgentConnected(streamId string, agentIo io.ReadWriteClose
 	return nil
 }
 
-func (s *SeverHandler) StartStream(streamId string, timeout time.Duration) error {
+func (s *ServerHandler) StartStream(streamId string, timeout time.Duration) error {
 	stream, err := s.GetStream(streamId)
 	if err != nil {
 		return err
