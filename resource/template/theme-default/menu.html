@@ -7,11 +7,11 @@
         </a>
         <template v-if="isMobile">
             <a href="/network" class="item"><i class="dot circle outline icon"></i>{{tr "NetworkStatus"}}</a> 
-            <a href="http://status.nange.cn/" class="item"><i class="server icon"></i>{{tr "Services" }}</a>
+            <a href="http://status.nange.cn/" target="_blank" class="item"><i class="server icon"></i>{{tr "Services" }}</a>
         </template>
         <template v-else>
             <a href="/network" class="item"><i class="dot circle outline icon"></i>{{tr "NetworkStatus"}}</a>
-            <a href="http://status.nange.cn/" class='item'><i class="server icon"></i>{{tr "Services" }}</a>
+            <a href="http://status.nange.cn/" target="_blank" class='item'><i class="server icon"></i>{{tr "Services" }}</a>
         </template>
         <!-- {{ if not .Conf.DisableSwitchTemplateInFrontend }}        
             <div class="item ui simple dropdown">

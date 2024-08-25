@@ -24,5 +24,10 @@
     <link rel="shortcut icon" type="image/png" href="static/logo.svg?v20220602"/>
 </head>
 {{if ts .CustomCodeDashboard}} {{.CustomCodeDashboard|safe}} {{end}}
-<body>
+<body id="bg">
+    <div class="def_background_wrap">
+		<canvas id="def_background" class="def_background default" width="50" height="50"
+			data-colors="ffdbff,c177ff,d3c8ff,2fb5ff"></canvas>
+		<div class="def_background_pattern default"></div>
+  </div>
 {{end}}
