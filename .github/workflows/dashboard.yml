@@ -3,6 +3,8 @@ name: Build Dashboard Image And Push
 on:
   workflow_dispatch:
   push:
+    tags:
+      - "v*"
     branches:
       - "master"
     paths-ignore:
@@ -28,12 +30,8 @@ jobs:
 
       - name: Extract branch name
         run: |
-          export BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})
-          echo "##[set-output name=branch;]$BRANCH_NAME"
-          if [ $BRANCH_NAME = "main" ] || [ $BRANCH_NAME = "master" ]
-            then echo "##[set-output name=tag;]latest"
-            else echo "##[set-output name=tag;]$BRANCH_NAME"
-          fi
+          export TAG_NAME=$(echo ${GITHUB_REF#refs/tags/})
+          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
         id: extract_branch
 
       - name: xgo build
@@ -51,6 +49,11 @@ jobs:
           tags: timetzdata
           ldflags: -s -w --extldflags '-static -fpic' -X github.com/xos/serverstatus/service/singleton.Version=${{ steps.extract_branch.outputs.tag }}
           buildmode: default
+
+      - name: fix dist
+        run: |
+          ls -al dist/
+          mv dist/dashboard-linux-arm-7 dist/dashboard-linux-arm
 
       - name: Log in to the GHCR
         uses: docker/login-action@master
@@ -99,10 +102,11 @@ jobs:
           platforms: linux/amd64,linux/arm64,linux/arm,linux/s390x,linux/riscv64 # linux/386,
           push: true
           tags: |
-            ${{ steps.image-name.outputs.ALI_IMAGE_NAME }}:${{ steps.extract_branch.outputs.tag }}
-            ${{ steps.image-name.outputs.DOC_IMAGE_NAME }}:${{ steps.extract_branch.outputs.tag }}
+            ${{ steps.image-name.outputs.GHRC_IMAGE_NAME }}:latest
             ${{ steps.image-name.outputs.GHRC_IMAGE_NAME }}:${{ steps.extract_branch.outputs.tag }}
-      
+            ${{ steps.image-name.outputs.ALI_IMAGE_NAME }}:latest
+            ${{ steps.image-name.outputs.ALI_IMAGE_NAME }}:${{ steps.extract_branch.outputs.tag }}
+
       - name: Compress dist files
         run: |
           for file in dist/*; do
