@@ -50,23 +50,12 @@ jobs:
           ldflags: -s -w --extldflags '-static -fpic' -X github.com/xos/serverstatus/service/singleton.Version=${{ steps.extract_branch.outputs.tag }}
           buildmode: default
 
-      - name: fix dist
-        run: |
-          ls -al dist/
-          mv dist/dashboard-linux-arm-7 dist/dashboard-linux-arm
-
       - name: Log in to the GHCR
         uses: docker/login-action@master
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login To Docker Hub
-        uses: docker/login-action@master
-        with:
-          username: ${{ secrets.DOC_USER }}
-          password: ${{ secrets.DOC_PAT }}    
+          password: ${{ secrets.GITHUB_TOKEN }} 
 
       - name: Log in to the AliyunCS
         uses: docker/login-action@master
@@ -93,6 +82,11 @@ jobs:
           echo "::set-output name=ALI_IMAGE_NAME::$ALI_IMAGE_NAME"
           echo "::set-output name=DOC_IMAGE_NAME::$DOC_IMAGE_NAME"
         id: image-name
+
+      - name: fix dist
+        run: |
+          ls -al dist/
+          mv dist/dashboard-linux-arm-7 dist/dashboard-linux-arm
         
       - name: Build Dasbboard Image And Push
         uses: docker/build-push-action@v5
