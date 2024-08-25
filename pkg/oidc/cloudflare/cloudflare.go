@@ -12,7 +12,7 @@ type UserInfo struct {
 	Groups []string `json:"groups"`
 }
 
-func (u UserInfo) MapToNezhaUser() model.User {
+func (u UserInfo) MapToServerUser() model.User {
 	var user model.User
 	singleton.DB.Where("login = ?", u.Sub).First(&user)
 	user.Login = u.Sub

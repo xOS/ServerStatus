@@ -14,7 +14,7 @@ type UserInfo struct {
 	Roles    []string `json:"roles,omitempty"`
 }
 
-func (u UserInfo) MapToNezhaUser(loginClaim string, groupClaim string, adminGroups []string, autoCreate bool) model.User {
+func (u UserInfo) MapToServerUser(loginClaim string, groupClaim string, adminGroups []string, autoCreate bool) model.User {
 	var user model.User
 	var login string
 	var groups []string
