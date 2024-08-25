@@ -1,4 +1,4 @@
-name: Build Dashboard Image And Push
+name: Release
 
 on:
   workflow_dispatch:
@@ -9,14 +9,12 @@ on:
       - "master"
     paths-ignore:
       - "cmd/playground/**"
-      - "cmd/agent/**"
       - "script/**"
       - "*.md"
       - ".*"
-      - ".github/workflows/agent.yml"
 
 jobs:
-  deploy:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +58,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }} 
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to the AliyunCS
         uses: docker/login-action@master
@@ -68,27 +66,25 @@ jobs:
           registry: registry.cn-shanghai.aliyuncs.com
           username: ${{ secrets.ALI_USER }}
           password: ${{ secrets.ALI_PAT }}
-      
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-        
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       - name: Set up image name
         run: |
           GHRC_IMAGE_NAME=$(echo "ghcr.io/${{ github.repository_owner }}/server-dash" | tr '[:upper:]' '[:lower:]')
-          DOC_IMAGE_NAME=$(echo "nangle/server-dash" | tr '[:upper:]' '[:lower:]')
-          if [ ${{ github.repository_owner }} = "xOS" ]
+          if [ ${{ github.repository_owner }} = "xos" ]
             then ALI_IMAGE_NAME=$(echo "registry.cn-shanghai.aliyuncs.com/dns/server-dash")
             else ALI_IMAGE_NAME=$(echo "registry.cn-shanghai.aliyuncs.com/${{ github.repository_owner }}/server-dash" | tr '[:upper:]' '[:lower:]')
           fi
           echo "::set-output name=GHRC_IMAGE_NAME::$GHRC_IMAGE_NAME"
           echo "::set-output name=ALI_IMAGE_NAME::$ALI_IMAGE_NAME"
-          echo "::set-output name=DOC_IMAGE_NAME::$DOC_IMAGE_NAME"
         id: image-name
 
-      - name: Build Dasbboard Image And Push
+      - name: Build dasbboard image And Push
         uses: docker/build-push-action@v5
         with:
           context: .
