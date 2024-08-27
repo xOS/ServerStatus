@@ -37,7 +37,7 @@
             <td>{{if eq $monitor.Cover 0}}{{tr "CoverAll"}}{{else}}{{tr "IgnoreAll"}}{{end}}</td>
             <td>{{$monitor.SkipServersRaw}}</td>
             <td>
-            {{if eq $monitor.Type 1}}ICMP Ping {{else if eq $monitor.Type 2}} {{tr "TCPPort"}} {{end}}
+            {{if eq $monitor.Type 2}}ICMP Ping {{else if eq $monitor.Type 3}} {{tr "TCPPort"}} {{end}}
             </td>
             <td>{{$monitor.Duration}} {{tr "Seconds"}}</td>
             <td>{{$monitor.NotificationTag}}</td>
