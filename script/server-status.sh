@@ -11,7 +11,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.14"
+VERSION="v0.1.15"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -71,14 +71,14 @@ pre_check() {
         Get_Docker_URL="get.docker.com"
         Get_Docker_Argu=" "
         Docker_IMG="ghcr.io\/xos\/server-dash"
-        GITHUB_RELEASE_URL="github.com/xos/serverstatus/releases/latest/download"
+        GITHUB_RELEASE_URL="github.com/xos/serveragent/releases/latest/download"
     else
         GITHUB_RAW_URL="fastly.jsdelivr.net/gh/xos/serverstatus@master"
         GITHUB_URL="dn-dao-github-mirror.daocloud.io"
         Get_Docker_URL="get.daocloud.io/docker"
         Get_Docker_Argu=" -s docker --mirror Aliyun"
         Docker_IMG="registry.cn-shanghai.aliyuncs.com\/dns\/server-dash"
-        GITHUB_RELEASE_URL="hub.fgit.cf/xos/serverstatus/releases/latest/download"
+        GITHUB_RELEASE_URL="hub.fgit.cf/xos/serveragent/releases/latest/download"
         curl -s https://purge.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh > /dev/null 2>&1
     fi
 }
@@ -215,16 +215,16 @@ install_agent() {
 
     echo -e "正在获取探针版本号"
 
-    local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serverstatus/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
+    local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serveragent/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
     if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "https://fastly.jsdelivr.net/gh/xos/serverstatus/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serverstatus@/v/g')
+        version=$(curl -m 10 -sL "https://fastly.jsdelivr.net/gh/xos/serveragent/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serveragent@/v/g')
     fi
     if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "https://gcore.jsdelivr.net/gh/xos/serverstatus/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serverstatus@/v/g')
+        version=$(curl -m 10 -sL "https://gcore.jsdelivr.net/gh/xos/serveragent/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serveragent@/v/g')
     fi
 
     if [ ! -n "$version" ]; then
-        echo -e "获取版本号失败，请检查本机能否链接 https://api.github.com/repos/xos/serverstatus/releases/latest"
+        echo -e "获取版本号失败，请检查本机能否链接 https://api.github.com/repos/xos/serveragent/releases/latest"
         return 0
     else
         echo -e "当前最新版本为: ${version}"
@@ -261,16 +261,16 @@ update_agent() {
 
     echo -e "正在获取探针版本号"
 
-    local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serverstatus/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
+    local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serveragent/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
     if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "https://fastly.jsdelivr.net/gh/xos/serverstatus/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serverstatus@/v/g')
+        version=$(curl -m 10 -sL "https://fastly.jsdelivr.net/gh/xos/serveragent/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serveragent@/v/g')
     fi
     if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "https://gcore.jsdelivr.net/gh/xos/serverstatus/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serverstatus@/v/g')
+        version=$(curl -m 10 -sL "https://gcore.jsdelivr.net/gh/xos/serveragent/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serveragent@/v/g')
     fi
 
     if [ ! -n "$version" ]; then
-        echo -e "获取版本号失败，请检查本机能否链接 https://api.github.com/repos/xos/serverstatus/releases/latest"
+        echo -e "获取版本号失败，请检查本机能否链接 https://api.github.com/repos/xos/serveragent/releases/latest"
         return 0
     else
         echo -e "当前最新版本为: ${version}"
