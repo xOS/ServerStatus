@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/ory/graceful"
 	flag "github.com/spf13/pflag"
