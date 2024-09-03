@@ -30,7 +30,7 @@ jobs:
     outputs:
       tag_name: ${{ steps.extract_branch.outputs.tag }}
     steps:
-      - run: git config --global --add safe.directory /__w/xos/serverstatus
+      - run: git config --global --add safe.directory /__w/xOS/ServerStatus
       - uses: actions/checkout@v4
 
       - name: Fetch IPInfo GeoIP Database
