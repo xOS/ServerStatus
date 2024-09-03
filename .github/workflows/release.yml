@@ -5,11 +5,6 @@ on:
   push:
     tags:
       - "v*"
-    paths-ignore:
-      - "cmd/playground/**"
-      - "script/**"
-      - "*.md"
-      - ".*"
 
 jobs:
   build:
