@@ -13,9 +13,9 @@
                 <div class="active content">
                     <div class="ui four stackable status cards">
                         <div v-for="server in group.data" :id="server.ID" class="ui card">
-                            <div class="content" v-if="server.Host" style="margin-top: 10px; padding-bottom: 5px">
+                            <div class="content" v-if="server.Host" style="padding-bottom: 5px">
                                 <div class="header">
-                                    <i style="width: 22px;border-radius: 4px;" :class="'fi fi-' + server.Host.CountryCode"></i>                                    
+                                 <i :class="'flag-icon flag-icon-'+server.Host.CountryCode"></i>
                                     <i v-if='isWindowsPlatform(server.Host.Platform)' class="windows icon"></i>
                                     <i v-else-if='getFontLogoClass(server.Host.Platform) == "" && server.State.Uptime > 0' class="fl-tux"></i>
                                     <i v-else :class="'fl-' + getFontLogoClass(server.Host.Platform)"></i>

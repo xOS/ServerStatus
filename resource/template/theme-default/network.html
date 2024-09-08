@@ -12,13 +12,17 @@
                         v-for="server in servers"
                         style="margin-top: 3px"
                         @click="redirectNetwork(server.ID)">
-                    @#server.Name#@ &nbsp;<i :class="server.Host.CountryCode + ' flag'"></i>
+                         <i :class="'flag-icon flag-icon-'+server.Host.CountryCode"></i>&nbsp;<i
+                    v-if='server.Host.Platform == "darwin"' class="apple icon"></i><i
+                    v-else-if='isWindowsPlatform(server.Host.Platform)' class="windows icon"></i><i
+                    v-else :class="'fl-' + getFontLogoClass(server.Host.Platform)"></i>
+                    @#server.Name#@ &nbsp;
                 </button>
             </table>
         </div>
     </div>
     <div class="ui container">
-        <div ref="chartDom" style="margin-top: 15px;height: 520px;overflow: hidden"></div>
+        <div ref="chartDom" style="margin-top: 15px;height: 600px;overflow: hidden"></div>
     </div>
 </div>
 
@@ -72,7 +76,7 @@
                     left: this.isMobile ? '8%' : '3.8%',
                     right: this.isMobile ? '8%' : '3.8%',
                 },
-                backgroundColor: '',
+                backgroundColor: 'rgba(255, 255, 255, 0.6)',
                 dataZoom: [
                     {
                         type: 'slider',
