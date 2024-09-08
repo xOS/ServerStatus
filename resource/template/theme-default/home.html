@@ -13,20 +13,12 @@
                 <div class="active content">
                     <div class="ui four stackable status cards">
                         <div v-for="server in group.data" :id="server.ID" class="ui card">
-                            <div class="content" v-if="server.Host" style="padding-bottom: 5px">
+                            <div class="content" v-if="server.Host" style="margin-top: 10px; padding-bottom: 5px">
                                 <div class="header">
-                                    <i :class="'flag-icon flag-icon-'+server.Host.CountryCode"></i>
-                                    <i v-if='server.Host.Platform == "darwin"' class="fl-apple"></i>
-                                    <i v-if='server.Host.Platform == "suse"' class="fl-opensuse"></i>
-                                    <i v-if='server.Host.Platform == "opensuse"' class="fl-opensuse"></i>
-                                    <i v-if='server.Host.Platform == "openwrt"' class="fl-tux"></i>
-                                    <i v-if='server.Host.Platform == "linux"' class="fl-tux"></i>
-                                    <i v-if='server.Host.Platform == "amazon"' class="fl-redhat"></i>
-                                    <i v-if='!server.Host.Platform' class="fl-tux"></i>
-                                    <i v-else-if='isWindowsPlatform(server.Host.Platform)' class="windows icon"></i>
-                                    <i v-else :class="'fl-' + getOsLogo(server.Host.Platform)"></i>
-                                    <!--<i :class="'fl-'+server.Host.OS"></i>-->
-                                    <!--<i v-else :class="'fl-'+server.Host.Platform"></i>-->
+                                    <i style="width: 22px;border-radius: 4px;" :class="'fi fi-' + server.Host.CountryCode"></i>                                    
+                                    <i v-if='isWindowsPlatform(server.Host.Platform)' class="windows icon"></i>
+                                    <i v-else-if='getFontLogoClass(server.Host.Platform) == "" && server.State.Uptime > 0' class="fl-tux"></i>
+                                    <i v-else :class="'fl-' + getFontLogoClass(server.Host.Platform)"></i>
                                     @#server.Name + (server.live?'':' [{{tr "Offline"}}]')#@
                                     <i class="server-primary-font info circle icon" style="height: 28px" ></i>
                                     <div class="ui content popup">
@@ -210,7 +202,7 @@
         </template>
     </div>
 </div>
-{{template "common/footer" .}}
+{{template "theme-default/footer" .}}
 <script>
     function specialOS(i) {
         if ((i.toString().toLowerCase().indexOf("windows")) != -1) {
@@ -427,7 +419,7 @@
     isWindowsPlatform(str) {
         return str.includes('indows')
     },
-    getOsLogo(str) {
+            getFontLogoClass(str) {
         if (["almalinux",
             "alpine",
             "aosc",
@@ -473,6 +465,9 @@
             > -1) {
             return str;
         }
+                if (str == 'darwin') {
+                    return 'apple';
+                }
         if (['openwrt', 'linux'].indexOf(str) > -1) {
             return 'tux';
         }
@@ -481,6 +476,9 @@
         }
         if (str == 'arch') {
             return 'archlinux';
+                }
+                if (str.toLowerCase().includes('opensuse')) {
+                    return 'opensuse';
         }
         return '';
     },
@@ -505,6 +503,9 @@
             if (percent < 0) {
                 this.cache[percent].style['background-color'] = 'slategray'
                 this.cache[percent].class.offline = true
+                        if (!live) {
+                            this.cache[percent].percent = 0
+                        }
             } else if (percent < 60) {
                 this.cache[percent].style['background-color'] = 'rgb(76,175,80)'
                 this.cache[percent].class.fine = true
@@ -533,35 +534,36 @@
     },
     timeStamp(t) {
         return new Date(t).format('yyyy年MM月dd日 HH:mm:ss')
-    },
-    formatByteSize(bs) {
-        const x = this.readableBytes(bs)
-        return x != "NaN undefined" ? x : '0B'
-    },
-    readableBytes(bytes) {
-        if (!bytes) {
-            return '0B'
-        }
-        const i = Math.floor(Math.log(bytes) / Math.log(1024)),
-            sizes = ["B", "K", "M", "G", "T", "P", "E", "Z", "Y"];
-        return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
-    },
-    getCoreAndGHz(str){
-        if ((str || []).hasOwnProperty(0) === false) {
-            return '';
-        }
-        str = str[0];
-        let GHz = str.match(/(\d|\.)+GHz/g);
-        let Core = str.match(/(\d|\.)+ Physical/g);
-        GHz = GHz !== null ? GHz.hasOwnProperty(0) === false ? '' : GHz[0] : ''
-        Core = Core !== null ? Core.hasOwnProperty(0) === false ? '?' : Core[0] : '?'
-        if (Core === '?') {
-            let Core = str.match(/(\d|\.)+ Virtual/g);
-            Core = Core !== null ? Core.hasOwnProperty(0) === false ? '?' : Core[0] : '?'
-            return Core.replace('Virtual', 'Core').replace(/\s*/g, "");
-        }
-        return Core.replace('Physical', 'Core').replace(/\s*/g, "");
-
+            },
+            formatByteSize(bs) {
+                const x = this.readableBytes(bs)
+                return x != "NaN undefined" ? x : '0B'
+            },
+            readableBytes(bytes) {
+                if (!bytes) {
+                    return '0B'
+                }
+                const i = Math.floor(Math.log(bytes) / Math.log(1024));
+                const sizes = ["B", "K", "M", "G", "T", "P", "E", "Z", "Y"];
+                return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
+            },
+            getCoreAndGHz(arr) {
+                if ((arr || []).length === 0) {
+                    return '';
+                }
+                let totalCores = 0;
+                arr.forEach(str => {
+                    let coreMatch = str.match(/(\d+(\.\d+)?) Physical/g);
+                    let coreCount = 0;
+                    if (coreMatch) {
+                        coreCount = parseFloat(coreMatch[0]);
+                    } else {
+                        let coreMatch = str.match(/(\d+(\.\d+)?) Virtual/g);
+                        coreCount = coreMatch ? parseFloat(coreMatch[0]) : 0;
+                    }
+                    totalCores += coreCount;
+                });
+                return `${totalCores} Cores`;
     },
     getK2Gb(bs){
         bs = bs / 1024 / 1024 / 1024;
@@ -613,8 +615,9 @@
             statusCards.servers = data.servers
             for (let i = 0; i < statusCards.servers.length; i++) {
                 const ns = statusCards.servers[i];
-                if (!ns.Host) ns.live = false
-                else {
+                if (!ns.Host) {
+                    ns.live = false
+                } else {
                     const lastActive = new Date(ns.LastActive).getTime()
                     if (data.now - lastActive > 10 * 1000) {
                         ns.live = false
