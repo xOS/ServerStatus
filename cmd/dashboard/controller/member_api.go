@@ -47,6 +47,7 @@ func (ma *memberAPI) serve() {
 	mr.POST("/batch-update-server-group", ma.batchUpdateServerGroup)
 	mr.POST("/batch-delete-server", ma.batchDeleteServer)
 	mr.POST("/notification", ma.addOrEditNotification)
+	mr.POST("/nat", ma.addOrEditNAT)
 	mr.POST("/alert-rule", ma.addOrEditAlertRule)
 	mr.POST("/setting", ma.updateSetting)
 	mr.DELETE("/:model/:id", ma.delete)
@@ -306,6 +307,7 @@ type serverForm struct {
 	Secret       string
 	Tag          string
 	Note         string
+	PublicNote   string
 	HideForGuest string
 	EnableDDNS   string
 	EnableIPv4   string
@@ -326,6 +328,7 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 		s.ID = sf.ID
 		s.Tag = sf.Tag
 		s.Note = sf.Note
+		s.PublicNote = sf.PublicNote
 		s.HideForGuest = sf.HideForGuest == "on"
 		s.EnableDDNS = sf.EnableDDNS == "on"
 		s.EnableIPv4 = sf.EnableIPv4 == "on"

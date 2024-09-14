@@ -867,6 +867,14 @@ i.icon.outline {
     color: #ff5722 !important;
 }
 
+i.clipboard.icon {
+    color: #21ba45 !important;
+}
+
+i.note.icon {
+    color: #03a9f4 !important;
+}
+
 .nb-container {
     padding-top: 75px;
     min-height: 100vh;

@@ -228,6 +228,9 @@ other="复制密钥"
 [Note]
 other = "备注"
 
+[PublicNote]
+other = "公开备注"
+
 [LinuxOneKeyInstall]
 other = "Linux 一键安装"
 
@@ -487,7 +490,7 @@ other = "起始"
 other = "结束"
 
 [NextCheck]
-other = "下次检查"
+other = "下一次检测"
 
 [CurrentUsage]
 other = "当前用量"
@@ -499,19 +502,22 @@ other = "总流量"
 other = "验证查看密码"
 
 [LightMode]
-other = "白昼模式"
+other = "亮色模式"
 
 [DarkMode]
-other = "暗黑模式"
+other = "暗色模式"
+
+[FollowSystem]
+other = "跟随系统"
 
 [GridLayout]
-other = "网格视图"
+other = "网格布局"
 
 [ListLayout]
-other = "列表视图"
+other = "列表布局"
 
 [EnterPassword]
-other = "输入密码"
+other = "请输入密码"
 
 [Location]
 other = "地区"
@@ -535,7 +541,7 @@ other = "总下行"
 other = "密码错误"
 
 [AnErrorEccurred]
-other = "出现错误"
+other = "发生错误"
 
 [SystemError]
 other = "系统错误"
@@ -577,7 +583,7 @@ other="确认删除密钥？"
 other = "此页面需要登录"
 
 [WrongAccessPassword]
-other = "查看密码错误"
+other = "访问密码错误"
 
 [Add]
 other = "添加"
@@ -586,7 +592,7 @@ other = "添加"
 other = "修改"
 
 [AlarmRule]
-other = "报警规则"
+other = "告警规则"
 
 [NotificationMethod]
 other = "通知方式"
@@ -610,10 +616,10 @@ other = "正常"
 other = "低可用"
 
 [ScheduledTaskExecutedSuccessfully]
-other = "任务成功"
+other = "任务执行成功"
 
 [ScheduledTaskExecutedFailed]
-other = "任务失败"
+other = "任务执行失败"
 
 [IPAddress]
 other = "IP 地址"
@@ -643,10 +649,13 @@ other = "日志："
 other = "流量"
 
 [Transleft]
-other = "流量剩余"
+other = "剩余流量"
 
 [DashboardTheme]
 other = "管理后台主题"
+
+[Info]
+other = "信息"
 
 [HideForGuest]
 other = "仅管理可见"
@@ -735,3 +744,18 @@ other = "取消"
 
 [FMError]
 other = "Agent 返回了错误，请查看控制台获取详细信息。要建立新连接，请重新打开 FM。"
+
+[Remaining]
+other = "剩余"
+
+[Lifetime]
+other = "永续"
+
+[Price]
+other = "价格"
+
+[Expired]
+other = "已到期"
+
+[Days]
+other = "天"

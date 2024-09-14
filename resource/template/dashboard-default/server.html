@@ -31,12 +31,10 @@
                     <th>{{tr "VersionNumber"}}</th>
                     <th>{{tr "HideForGuest"}}</th>
                     <th>{{tr "EnableDDNS"}}</th>
-                    <th>{{tr "EnableIPv4"}}</th>
-                    <th>{{tr "EnableIpv6"}}</th>
-                    <th>{{tr "DDNSDomain"}}</th>
                     <th>{{tr "CopySecret"}}</th>
                     <th>{{tr "OneKeyInstall"}}</th>
                     <th>{{tr "Note"}}</th>
+                    <th>{{tr "PublicNote"}}</th>
                     <th>{{tr "Administration"}}</th>
                 </tr>
             </thead>
@@ -51,9 +49,6 @@
                     <td>{{$server.Host.Version}}</td>
                     <td>{{$server.HideForGuest}}</td>
                     <td>{{$server.EnableDDNS}}</td>
-                    <td>{{$server.EnableIPv4}}</td>
-                    <td>{{$server.EnableIpv6}}</td>
-                    <td>{{$server.DDNSDomain}}</td>
                     <td>
                         <button class="ui icon mini button" data-clipboard-text="{{$server.Secret}}"
                             data-tooltip="{{tr "ClickToCopy"}}">
@@ -70,13 +65,23 @@
                             </button>
                         </div>
                     </td>
-                    <td style="word-break: break-word; white-space: pre-wrap;">{{$server.Note}}</td>
+                    <!-- <td style="word-break: break-word; white-space: pre-wrap;">{{$server.Note}}</td> -->
+                    <td>
+                        {{if $server.Note}}
+                            <button class="ui icon mini button" title="{{ $server.Note }}" onclick="addOrEditServer({{$server.MarshalForDashboard}})"><i class="sticky note icon"></i></button>
+                        {{end}}
+                    </td>
+                    <td>
+                        {{if $server.PublicNote}}
+                            <button class="ui icon mini button" title="{{$server.PublicNote}}" onclick="addOrEditServer({{$server.MarshalForDashboard}})"><i class="sticky clipboard icon"></i></button>
+                        {{end}}
+                    </td>
                     <td>
                         <div class="ui mini icon buttons">
                             <button class="ui button" onclick="connectToServer({{$server.ID}})">
                                 <i class="terminal icon"></i>
                             </button>
-                            <button class="ui button" onclick="addOrEditServer({{$server.Marshal}})">
+                            <button class="ui button" onclick="addOrEditServer({{$server.MarshalForDashboard}})">
                                 <i class="edit icon"></i>
                             </button>
                             <button class="ui button" onclick="showConfirm('{{tr "DeleteServer"}}'+'[{{$server.Name}}]','{{tr "ConfirmToDeleteThisServer"
@@ -152,8 +157,8 @@
     }
     function batchEditServerGroup() {
         let groupName = prompt('{{tr "InputServerGroupName"}}')
-        if (!groupName) {
-            return;
+        if (groupName === null) {
+            return
         }
         const servers = []
         checkBoxList.forEach(cb => {

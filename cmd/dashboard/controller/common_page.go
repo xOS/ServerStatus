@@ -209,7 +209,7 @@ func (cp *commonPage) network(c *gin.Context) {
 	}))
 }
 
-func (cp *commonPage) getServerStat(c *gin.Context) ([]byte, error) {
+func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte, error) {
 	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
 	_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
 	authorized := isMember || isViewPasswordVerfied
@@ -217,18 +217,20 @@ func (cp *commonPage) getServerStat(c *gin.Context) ([]byte, error) {
 		singleton.SortedServerLock.RLock()
 		defer singleton.SortedServerLock.RUnlock()
 
-		var servers []*model.Server
-
+		var serverList []*model.Server
 		if authorized {
-			servers = singleton.SortedServerList
+			serverList = singleton.SortedServerList
 		} else {
-			filteredServers := make([]*model.Server, len(singleton.SortedServerListForGuest))
-			for i, server := range singleton.SortedServerListForGuest {
-				filteredServer := *server
-				filteredServer.DDNSDomain = "redacted"
-				filteredServers[i] = &filteredServer
+			serverList = singleton.SortedServerListForGuest
+		}
+
+		var servers []*model.Server
+		for _, server := range serverList {
+			item := *server
+			if !withPublicNote {
+				item.PublicNote = ""
 			}
-			servers = filteredServers
+			servers = append(servers, &item)
 		}
 
 		return utils.Json.Marshal(Data{
@@ -240,7 +242,7 @@ func (cp *commonPage) getServerStat(c *gin.Context) ([]byte, error) {
 }
 
 func (cp *commonPage) home(c *gin.Context) {
-	stat, err := cp.getServerStat(c)
+	stat, err := cp.getServerStat(c, true)
 	singleton.AlertsLock.RLock()
 	defer singleton.AlertsLock.RUnlock()
 	var statsStore map[uint64]model.CycleTransferStats
@@ -290,7 +292,7 @@ func (cp *commonPage) ws(c *gin.Context) {
 	defer conn.Close()
 	count := 0
 	for {
-		stat, err := cp.getServerStat(c)
+		stat, err := cp.getServerStat(c, false)
 		if err != nil {
 			continue
 		}
