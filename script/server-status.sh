@@ -1,5 +1,4 @@
 #!/bin/bash
-
 #========================================================
 #   System Required: CentOS 7+ / Debian 8+ / Ubuntu 16+ /
 #   Arch 未测试
@@ -11,7 +10,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.1.15"
+VERSION="v0.1.16"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -20,34 +19,72 @@ plain='\033[0m'
 export PATH=$PATH:/usr/local/bin
 
 os_arch=""
-[ -e /etc/os-release ] && cat /etc/os-release | grep -i "PRETTY_NAME" | grep -qi "alpine" && os_alpine='1'
+[ -e /etc/os-release ] && grep -i "PRETTY_NAME" /etc/os-release | grep -qi "alpine" && os_alpine='1'
+
+sudo() {
+    myEUID=$(id -ru)
+    if [ "$myEUID" -ne 0 ]; then
+        if command -v sudo > /dev/null 2>&1; then
+            command sudo "$@"
+        else
+            err "错误: 您的系统未安装 sudo，因此无法进行该项操作。"
+            exit 1
+        fi
+    else
+        "$@"
+    fi
+}
+
+check_systemd() {
+    if [ "$os_alpine" != 1 ] && ! command -v systemctl >/dev/null 2>&1; then
+        echo "不支持此系统：未找到 systemctl 命令"
+        exit 1
+    fi
+}
+
+err() {
+    printf "${red}$*${plain}\n" >&2
+}
+
+geo_check() {
+    api_list="https://blog.cloudflare.com/cdn-cgi/trace https://dash.cloudflare.com/cdn-cgi/trace https://cf-ns.com/cdn-cgi/trace"
+    ua="Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0"
+    set -- $api_list
+    for url in $api_list; do
+        text="$(curl -A "$ua" -m 10 -s $url)"
+        endpoint="$(echo $text | sed -n 's/.*h=\([^ ]*\).*/\1/p')"
+        if echo $text | grep -qw 'CN'; then
+            isCN=true
+            break
+        elif echo $url | grep -q $endpoint; then
+            break
+        fi
+    done
+}
 
 pre_check() {
-    [ "$os_alpine" != 1 ] && ! command -v systemctl >/dev/null 2>&1 && echo "不支持此系统：未找到 systemctl 命令" && exit 1
-    
-    # check root
-    [[ $EUID -ne 0 ]] && echo -e "${red}错误: ${plain} 必须使用root用户运行此脚本！\n" && exit 1
-
     ## os_arch
-    if [[ $(uname -m | grep 'x86_64') != "" ]]; then
+    if uname -m | grep -q 'x86_64'; then
         os_arch="amd64"
-    elif [[ $(uname -m | grep 'i386\|i686') != "" ]]; then
+    elif uname -m | grep -q 'i386\|i686'; then
         os_arch="386"
-    elif [[ $(uname -m | grep 'aarch64\|armv8b\|armv8l') != "" ]]; then
+    elif uname -m | grep -q 'aarch64\|armv8b\|armv8l'; then
         os_arch="arm64"
-    elif [[ $(uname -m | grep 'arm') != "" ]]; then
+    elif uname -m | grep -q 'arm'; then
         os_arch="arm"
-    elif [[ $(uname -m | grep 's390x') != "" ]]; then
+    elif uname -m | grep -q 's390x'; then
         os_arch="s390x"
-    elif [[ $(uname -m | grep 'riscv64') != "" ]]; then
+    elif uname -m | grep -q 'riscv64'; then
         os_arch="riscv64"
     fi
 
     ## China_IP
-    if [[ -z "${CN}" ]]; then
-        if [[ $(curl -m 10 -s https://ipapi.co/json | grep 'China') != "" ]]; then
-            echo "根据 ipapi.co 提供的信息，当前服务器可能在中国"
-            read -e -r -p "是否选用中国镜像完成安装? [Y/n] " input
+    if [ -z "$CN" ]; then
+        geo_check
+        if [ ! -z "$isCN" ]; then
+            echo "根据geoip api提供的信息，当前IP可能在中国"
+            printf "是否选用中国镜像完成安装? [Y/n] :"
+            read -r input
             case $input in
             [yY][eE][sS] | [yY])
                 echo "使用中国镜像"
@@ -65,7 +102,7 @@ pre_check() {
         fi
     fi
 
-    if [[ -z "${CN}" ]]; then
+        if [ -z "$CN" ]; then
         GITHUB_RAW_URL="raw.githubusercontent.com/xos/serverstatus/master"
         GITHUB_URL="github.com"
         Get_Docker_URL="get.docker.com"
@@ -74,11 +111,11 @@ pre_check() {
         GITHUB_RELEASE_URL="github.com/xos/serveragent/releases/latest/download"
     else
         GITHUB_RAW_URL="fastly.jsdelivr.net/gh/xos/serverstatus@master"
-        GITHUB_URL="dn-dao-github-mirror.daocloud.io"
-        Get_Docker_URL="get.daocloud.io/docker"
+            GITHUB_URL="gitee.com"
+            Get_Docker_URL="get.docker.com"
         Get_Docker_Argu=" -s docker --mirror Aliyun"
         Docker_IMG="registry.cn-shanghai.aliyuncs.com\/dns\/server-dash"
-        GITHUB_RELEASE_URL="hub.fgit.cf/xos/serveragent/releases/latest/download"
+        
         curl -s https://purge.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh > /dev/null 2>&1
     fi
 }
@@ -137,6 +174,7 @@ install_soft() {
 }
 
 install_dashboard() {
+    check_systemd
     install_base
 
     echo -e "> 安装探针面板"
@@ -146,7 +184,8 @@ install_dashboard() {
         mkdir -p $DASHBOARD_PATH
 	else
         echo "您可能已经安装过面板端，重复安装会覆盖数据，请注意备份。"
-        read -e -r -p "是否退出安装? [Y/n] " input
+        printf "是否退出安装? [Y/n] "
+        read -r input
         case $input in
         [yY][eE][sS] | [yY])
             echo "退出安装"
@@ -196,14 +235,17 @@ install_dashboard() {
     fi
 }
 
-selinux(){
+selinux() {
     #判断当前的状态
-    getenforce | grep '[Ee]nfor'
-    if [ $? -eq 0 ];then
-        echo -e "SELinux是开启状态，正在关闭！" 
-        setenforce 0 &>/dev/null
-        find_key="SELINUX="
-        sed -ri "/^$find_key/c${find_key}disabled" /etc/selinux/config
+    command -v getenforce >/dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        getenforce | grep '[Ee]nfor'
+        if [ $? -eq 0 ]; then
+            echo "SELinux是开启状态，正在关闭！"
+            sudo setenforce 0 &>/dev/null
+            find_key="SELINUX="
+            sudo sed -ri "/^$find_key/c${find_key}disabled" /etc/selinux/config
+        fi
     fi
 }
 
@@ -217,7 +259,10 @@ install_agent() {
 
     local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serveragent/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
     if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "https://fastly.jsdelivr.net/gh/xos/serveragent/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serveragent@/v/g')
+        version=$(curl -m 10 -sL "https://gitee.com/api/v5/repos/Ten/ServerAgent/releases/latest" | awk -F '"' '{for(i=1;i<=NF;i++){if($i=="tag_name"){print $(i+2)}}}')
+    fi
+    if [ ! -n "$version" ]; then
+        version=$(curl -m 10 -sL "https://fastly.jsdelivr.net/gh/xos/serveragent/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/nezhahq\/agent@/v/g')
     fi
     if [ ! -n "$version" ]; then
         version=$(curl -m 10 -sL "https://gcore.jsdelivr.net/gh/xos/serveragent/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serveragent@/v/g')
@@ -235,11 +280,17 @@ install_agent() {
         mkdir -p $AGENT_PATH
         chmod 777 -R $AGENT_PATH
     fi
+    echo "正在下载监控端"
+    if [ -z "$CN" ]; then
+        AGENT_URL="https://${GITHUB_URL}/xos/serveragent/releases/download/${version}/server-agent_linux_${os_arch}.zip"
+    else
+        AGENT_URL="https://${GITHUB_URL}/Ten/ServerAgent/releases/download/${version}/server-agent_linux_${os_arch}.zip"
+    fi
     echo -e "正在下载探针"
-    wget -t 2 -T 10 -O server-agent_linux_${os_arch}.zip https://${GITHUB_RELEASE_URL}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
-    if [[ $? != 0 ]]; then
-        echo -e "${red}Release 下载失败，请检查本机能否连接 ${GITHUB_URL}${plain}"
-        return 0
+    wget -t 2 -T 60 -O server-agent_linux_${os_arch}.zip $AGENT_URL >/dev/null 2>&1
+    if [ $? != 0 ]; then
+        err "Release 下载失败，请检查本机能否连接 ${GITHUB_URL}"
+        return 1
     fi
     unzip -qo server-agent_linux_${os_arch}.zip &&
         mv server-agent $AGENT_PATH &&
@@ -251,7 +302,7 @@ install_agent() {
         modify_agent_config 0
     fi
 
-    if [[ $# == 0 ]]; then
+    if [ $# = 0 ]; then
         before_show_menu
     fi
 }
@@ -262,6 +313,9 @@ update_agent() {
     echo -e "正在获取探针版本号"
 
     local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serveragent/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
+	if [ ! -n "$version" ]; then
+        version=$(curl -m 10 -sL "https://gitee.com/api/v5/repos/Ten/ServerAgent/releases/latest" | awk -F '"' '{for(i=1;i<=NF;i++){if($i=="tag_name"){print $(i+2)}}}')
+    fi
     if [ ! -n "$version" ]; then
         version=$(curl -m 10 -sL "https://fastly.jsdelivr.net/gh/xos/serveragent/" | grep "option\.value" | awk -F "'" '{print $2}' | sed 's/xos\/serveragent@/v/g')
     fi
@@ -282,11 +336,17 @@ update_agent() {
         chmod 777 -R $AGENT_PATH
     fi
 
-    echo -e "正在下载最新版探针"
-    wget -t 2 -T 10 -O server-agent_linux_${os_arch}.zip https://${GITHUB_RELEASE_URL}/server-agent_linux_${os_arch}.zip >/dev/null 2>&1
-    if [[ $? != 0 ]]; then
-        echo -e "${red}Release 下载失败，请检查本机能否连接 ${GITHUB_URL}${plain}"
-        return 0
+    echo "正在下载监控端"
+    if [ -z "$CN" ]; then
+        AGENT_URL="https://${GITHUB_URL}/xos/serveragent/releases/download/${version}/server-agent_linux_${os_arch}.zip"
+    else
+        AGENT_URL="https://${GITHUB_URL}/Ten/ServerAgent/releases/download/${version}/server-agent_linux_${os_arch}.zip"
+    fi
+    echo -e "正在下载探针"
+    wget -t 2 -T 60 -O server-agent_linux_${os_arch}.zip $AGENT_URL >/dev/null 2>&1
+    if [ $? != 0 ]; then
+        err "Release 下载失败，请检查本机能否连接 ${GITHUB_URL}"
+        return 1
     fi
     unzip -qo server-agent_linux_${os_arch}.zip &&
         chmod +x server-agent &&
