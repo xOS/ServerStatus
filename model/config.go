@@ -1,12 +1,16 @@
 package model
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"strings"
 
-	"github.com/spf13/viper"
-	"sigs.k8s.io/yaml"
+	kyaml "github.com/knadh/koanf/parsers/yaml"
+	"github.com/knadh/koanf/providers/env"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/v2"
+	"gopkg.in/yaml.v3"
 )
 
 var Languages = map[string]string{
@@ -37,35 +41,6 @@ const (
 	ConfigCoverAll = iota
 	ConfigCoverIgnoreAll
 )
-
-type AgentConfig struct {
-	HardDrivePartitionAllowlist []string
-	NICAllowlist                map[string]bool
-	v                           *viper.Viper
-}
-
-// Read 从给定的文件目录加载配置文件
-func (c *AgentConfig) Read(path string) error {
-	c.v = viper.New()
-	c.v.SetConfigFile(path)
-	err := c.v.ReadInConfig()
-	if err != nil {
-		return err
-	}
-	err = c.v.Unmarshal(c)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *AgentConfig) Save() error {
-	data, err := yaml.Marshal(c)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(c.v.ConfigFileUsed(), data, 0600)
-}
 
 // Config 站点配置
 type Config struct {
@@ -114,50 +89,52 @@ type Config struct {
 
 	Location string // 时区，默认为 Asia/Shanghai
 
-	v                              *viper.Viper
 	IgnoredIPNotificationServerIDs map[uint64]bool // [ServerID] -> bool(值为true代表当前ServerID在特定服务器列表内）
 	MaxTCPPingValue                int32
 	AvgPingCount                   int
 
-	// 动态域名解析更新
-	DDNS struct {
-		Enable             bool
-		Provider           string
-		AccessID           string
-		AccessSecret       string
-		WebhookURL         string
-		WebhookMethod      string
-		WebhookRequestBody string
-		WebhookHeaders     string
-		MaxRetries         uint32
-		Profiles           map[string]DDNSProfile
-	}
-}
+	DNSServers string
 
-type DDNSProfile struct {
-	Provider           string
-	AccessID           string
-	AccessSecret       string
-	WebhookURL         string
-	WebhookMethod      string
-	WebhookRequestBody string
-	WebhookHeaders     string
+	k        *koanf.Koanf
+	filePath string
 }
 
 // Read 读取配置文件并应用
 func (c *Config) Read(path string) error {
-	c.v = viper.New()
-	c.v.SetConfigFile(path)
-	err := c.v.ReadInConfig()
+	c.k = koanf.New(".")
+	c.filePath = path
+
+	// 先读取环境变量，然后读取配置文件；后者可以覆盖前者，因为哪吒支持在线修改配置
+
+	err := c.k.Load(env.Provider("NZ_", ".", func(s string) string {
+		return strings.Replace(strings.ToLower(strings.TrimPrefix(s, "NZ_")), "_", ".", -1)
+	}), nil)
 	if err != nil {
 		return err
 	}
 
-	err = c.v.Unmarshal(c)
+	if _, err := os.Stat(path); err == nil {
+		err = c.k.Load(file.Provider(path), kyaml.Parser())
+		if err != nil {
+			return err
+		}
+	}
+
+	err = c.k.Unmarshal("", c)
 	if err != nil {
 		return err
 	}
 
+	if c.Oauth2.Type == "" || c.Oauth2.Admin == "" || c.Oauth2.ClientID == "" || c.Oauth2.ClientSecret == "" {
+		return errors.New("missing oauth2 config")
+	}
+
+	if c.Site.Brand == "" {
+		c.Site.Brand = "Nezha Monitoring"
+	}
+	if c.Site.CookieName == "" {
+		c.Site.CookieName = "nezha-dashboard"
+	}
 	if c.Site.Theme == "" {
 		c.Site.Theme = "default"
 	}
@@ -166,6 +143,9 @@ func (c *Config) Read(path string) error {
 	}
 	if c.Language == "" {
 		c.Language = "zh-CN"
+	}
+	if c.HTTPPort == 0 {
+		c.HTTPPort = 80
 	}
 	if c.GRPCPort == 0 {
 		c.GRPCPort = 2222
@@ -181,9 +161,6 @@ func (c *Config) Read(path string) error {
 	}
 	if c.AvgPingCount == 0 {
 		c.AvgPingCount = 2
-	}
-	if c.DDNS.MaxRetries == 0 {
-		c.DDNS.MaxRetries = 3
 	}
 	if c.Oauth2.OidcScopes == "" {
 		c.Oauth2.OidcScopes = "openid,profile,email"
@@ -221,5 +198,5 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(c.v.ConfigFileUsed(), data, 0600)
+	return os.WriteFile(c.filePath, data, 0600)
 }

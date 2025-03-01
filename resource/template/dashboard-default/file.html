@@ -221,7 +221,7 @@
 
             const checkCompletion = setInterval(() => {
                 if (isUpCompleted) {
-                    clearInterval(checkCompletion); // 任务完成后停止检查
+                    clearInterval(checkCompletion);
                     hideUpdModal();
                     resetUpdState();
                     listFile();

@@ -391,14 +391,31 @@
         data: {
             page: 'index',
             defaultTemplate: {{.Conf.Site.Theme }},
-    templates: {{.Themes }},
-    servers: [],
-        groups: [],
+            templates: {{.Themes }},
+            servers: [],
+            groups: [],
             cache: [],
-                chartDataList: [],
-                    activePopup: null,
-    },
-    mixins: [mixinsVue],
+            chartDataList: [],
+            activePopup: null,
+            sensorList: [
+                'TC0D', //CPU Die 温度，代表 CPU 内部的温度
+                'TC0H', //CPU Heatsink 温度，代表 CPU 散热器的温度
+                'TC0P', //CPU Proximity 温度，代表 CPU 附近的温度
+                'k10temp', //AMD K10（Phenom、Athlon、Sempron 等）系列处理器的温度监测
+                'k10temp_tctl', //AMD K10 (Athlon II、Phenom II 等）系列处理器的温度监测
+                'coretemp_package_id_0', //整个封装处理器温度
+                'cpu_thermal_zone', //全志
+                'cpu-thermal', //树莓派(博通)
+                'soc_thermal', //新瑞芯微
+                'cpu_thermal', //老瑞芯微
+                'ACPI\\ThermalZone\\TZ0__0', //Windows
+                'ACPI\\ThermalZone\\CPUZ_0', //Windows
+                'ACPI\\ThermalZone\\TZ00_0', //Windows
+                'ACPI\\ThermalZone\\TZ001_0', //Windows
+                'ACPI\\ThermalZone\\THM0_0' //Windows
+            ]
+        },
+        mixins: [mixinsVue],
         created() {
         this.servers = JSON.parse('{{.Servers}}').servers;
         this.group()
