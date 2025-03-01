@@ -677,7 +677,7 @@ other = "在服务中显示"
 other = "动态 DNS"
 
 [DDNSProfiles]
-other = "DDNS配置"
+other = "DDNS 配置"
 
 [AddDDNSProfile]
 other = "新配置"
