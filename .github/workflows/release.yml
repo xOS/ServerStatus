@@ -29,7 +29,7 @@ jobs:
     outputs:
       tag_name: ${{ steps.extract_branch.outputs.tag }}
     steps:
-      - run: git config --global --add safe.directory /__w/xOS/ServerStatus
+      - run: git config --global --add safe.directory /__w/xos/serverstatus
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Ensure full repository is checked out
