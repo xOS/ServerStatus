@@ -11,7 +11,7 @@ COPY ./script/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 WORKDIR /dashboard
-COPY dist/dash-${TARGETOS}-${TARGETARCH} ./app
+COPY dist/server-dash-${TARGETOS}-${TARGETARCH} ./app
 
 VOLUME ["/dashboard/data"]
 EXPOSE 80 2222
