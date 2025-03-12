@@ -62,7 +62,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dash-${{ env.GOOS }}-${{ env.GOARCH }}
+          name: server-dash-${{ env.GOOS }}-${{ env.GOARCH }}
           path: |
             ./dist/*/*
 
