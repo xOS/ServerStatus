@@ -13,4 +13,4 @@ jobs:
         with:
           destination_repository: git@gitee.com:Ten/ServerStatus.git
           destination_branch_name: master
-          destination_ssh_key: ${{ secrets.GITLAB_SSH_KEY }}
+          destination_ssh_key: ${{ secrets.GITEE_SSH_KEY }}
