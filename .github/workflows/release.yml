@@ -34,10 +34,10 @@ jobs:
         with:
           fetch-depth: 0  # Ensure full repository is checked out
 
-      - run: git config --global --add safe.directory /__w/xos/serverstatus
+      - run: git config --global --add safe.directory /__w/ServerStatus/ServerStatus
       
       - name: Set working directory
-        run: cd /__w/xos/serverstatus
+        run: cd /__w/ServerStatus/ServerStatus
 
       - name: Fetch IPInfo GeoIP Database
         if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
