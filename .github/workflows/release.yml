@@ -21,7 +21,7 @@ jobs:
     name: Build artifacts
     runs-on: ubuntu-latest
     container:
-      image: goreleaser/goreleaser-cross:v1.21
+      image: goreleaser/goreleaser-cross:v1.23
     env:
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
@@ -31,6 +31,8 @@ jobs:
     steps:
       - run: git config --global --add safe.directory /__w/xOS/ServerStatus
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Ensure full repository is checked out
 
       - name: Fetch IPInfo GeoIP Database
         if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
@@ -43,7 +45,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.21.x"
+          go-version: "1.23.x"
 
       - name: Build
         uses: goreleaser/goreleaser-action@v6
