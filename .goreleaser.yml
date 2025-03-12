@@ -18,7 +18,7 @@ builds:
     goarch:
       - arm64
     main: ./cmd/dashboard
-    binary: dash-{{ .Os }}-{{ .Arch }}
+    binary: server-dash-{{ .Os }}-{{ .Arch }}
   - id: linux_amd64
     env:
       - CGO_ENABLED=1
@@ -34,7 +34,7 @@ builds:
     goarch:
       - amd64
     main: ./cmd/dashboard
-    binary: dash-{{ .Os }}-{{ .Arch }}
+    binary: server-dash-{{ .Os }}-{{ .Arch }}
   - id: linux_s390x
     env:
       - CGO_ENABLED=1
@@ -50,7 +50,7 @@ builds:
     goarch:
       - s390x
     main: ./cmd/dashboard
-    binary: dash-{{ .Os }}-{{ .Arch }}
+    binary: server-dash-{{ .Os }}-{{ .Arch }}
   - id: windows_amd64
     env:
       - CGO_ENABLED=1
@@ -66,6 +66,6 @@ builds:
     goarch:
       - amd64
     main: ./cmd/dashboard
-    binary: dash-{{ .Os }}-{{ .Arch }}
+    binary: server-dash-{{ .Os }}-{{ .Arch }}
 snapshot:
   version_template: "dashboard"
