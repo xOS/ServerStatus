@@ -10,7 +10,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.2.0"
+VERSION="v0.2.1"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -445,6 +445,72 @@ clean_all() {
     fi
 }
 
+update_dashboard() {
+    echo -e "> 更新探针面板"
+
+    echo -e "正在获取探针面板版本号"
+
+    local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serverstatus/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
+    if [ ! -n "$version" ]; then
+        version=$(curl -m 10 -sL "https://gitee.com/api/v5/repos/ten/ServerStatus/releases/latest" | awk -F '"' '{for(i=1;i<=NF;i++){if($i=="tag_name"){print $(i+2)}}}')
+    fi
+
+    if [ ! -n "$version" ]; then
+        echo -e "获取版本号失败！"
+        return 0
+    else
+        echo -e "当前最新版本为: ${version}"
+    fi
+
+    # 探针面板文件夹
+    if [ ! -z "${DASHBOARD_PATH}" ]; then
+        mkdir -p $DASHBOARD_PATH
+        chmod 777 -R $DASHBOARD_PATH
+    fi
+    echo "正在获取探针面板"
+    if [ -z "$CN" ]; then
+        DASHBOARD_URL="https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-dash-linux-${os_arch}.zip"
+    else
+        DASHBOARD_URL="https://${GITHUB_URL}/ten/ServerStatus/releases/download/${version}/server-dash-linux-${os_arch}.zip"
+    fi
+    echo -e "正在下载探针面板"
+    wget -t 2 -T 60 -O server-dash-linux-${os_arch}.zip $DASHBOARD_URL >/dev/null 2>&1
+    if [ $? != 0 ]; then
+        err "Release 下载失败，请检查本机能否连接 ${GITHUB_URL}"
+        return 1
+    fi
+    unzip -qo server-dash-linux-${os_arch}.zip &&
+        mv server-dash-linux-${os_arch} server-dash &&
+        mv server-dash $DASHBOARD_PATH &&
+        rm -rf server-dash-linux-${os_arch}.zip
+        systemctl restart server-dash.service
+
+    if [[ $# == 0 ]]; then
+        echo -e "更新完毕！"
+        before_show_menu
+    fi
+}
+
+restart_dashboard() {
+    echo -e "> 重启探针面板"
+
+    systemctl restart server-dash.service
+
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
+}
+
+show_dashboard_log() {
+    echo -e "> 获取探针面板日志"
+
+    journalctl -xf -u server-dash.service
+
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
+}
+
 show_usage() {
     echo "探针 管理脚本使用方法: "
     echo "--------------------------------------------------------"
@@ -456,6 +522,9 @@ show_usage() {
     echo "./server-status.sh uninstall_agent            - 卸载探针"
     echo "./server-status.sh restart_agent              - 重启探针"
     echo "./server-status.sh update_script              - 更新脚本"
+    echo "./server-status.sh update_dashboard           - 更新探针面板"
+    echo "./server-status.sh restart_dashboard          - 重启探针面板"
+    echo "./server-status.sh show_dashboard_log         - 查看探针面板日志"
     echo "--------------------------------------------------------"
 }
 
@@ -472,11 +541,15 @@ show_menu() {
     ${green}5.${plain} 重启 探针
     ${green}6.${plain} 修改探针配置
     —————————————————————————
+    ${green}7.${plain} 更新探针面板
+    ${green}8.${plain} 重启探针面板
+    ${green}9.${plain} 查看探针面板日志
+    —————————————————————————
     ${green}0.${plain} 更新脚本
     ${green}00.${plain} 退出脚本
     =========================
     "
-    echo && read -ep "请输入选择 [0-6]: " num
+    echo && read -ep "请输入选择 [0-9]: " num
 
     case "${num}" in
     00)
@@ -500,11 +573,20 @@ show_menu() {
     6)
         set_agent
         ;;
+    7)
+        update_dashboard
+        ;;
+    8)
+        restart_dashboard
+        ;;
+    9)
+        show_dashboard_log
+        ;;
     0)
         update_script
         ;;
     *)
-        echo -e "${red}请输入正确的数字 [0-6]${plain}"
+        echo -e "${red}请输入正确的数字 [0-9]${plain}"
         ;;
     esac
 }
@@ -559,6 +641,15 @@ if [[ $# > 0 ]]; then
         ;;
     "update_script")
         update_script 0
+        ;;
+    "update_dashboard")
+        update_dashboard 0
+        ;;
+    "restart_dashboard")
+        restart_dashboard 0
+        ;;
+    "show_dashboard_log")
+        show_dashboard_log 0
         ;;
     *) show_usage ;;
     esac
