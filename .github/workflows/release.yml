@@ -162,3 +162,10 @@ jobs:
             ${{ steps.image-name.outputs.GHCR_IMAGE_NAME }}:${{ steps.extract_branch.outputs.tag }}
             ${{ steps.image-name.outputs.ALI_IMAGE_NAME }}:latest
             ${{ steps.image-name.outputs.ALI_IMAGE_NAME }}:${{ steps.extract_branch.outputs.tag }}
+      - name: Trigger sync
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          GH_DEBUG: api
+        run: |
+          gh workflow run sync-release.yml
