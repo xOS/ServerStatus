@@ -23,9 +23,14 @@
 ![后台截图](https://i.nange.cn/views/2022/05/25/fd1b7d.png)
 
 ## 安装脚本
-
+###默认
 ```shell
 curl -L https://raw.githubusercontent.com/xos/serverstatus/master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh
+sudo ./server-status.sh
+```
+###国内
+```shell
+curl -L https://gitee.com/ten/ServerStatus/raw/master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh
 sudo ./server-status.sh
 ```
 
