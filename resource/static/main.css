@@ -936,8 +936,12 @@ i.note.icon {
     margin-top: 0.5rem !important;
 }
 
-.status.cards .description {
-    padding-bottom: 1rem !important;
+/*.status.cards .description {*/
+/*    padding-bottom: 1rem !important;*/
+/*}*/
+
+.ui.grid {
+    margin-bottom: -0.5rem!important;
 }
 
 .status.cards .ui.content.popup {
