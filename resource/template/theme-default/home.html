@@ -107,14 +107,14 @@
                                         </div>
                                         <div class="three wide column">{{tr "NetTransfer"}}</div>
                                         <div class="thirteen wide column">
-                                            <i class="fa-sharp fa-solid fa-down"></i>
+                                            <i class="fa-solid fa-down"></i>
                                             @#formatByteSize(server.State.NetInTransfer)#@ |
-                                            <i class="fa-sharp fa-solid fa-up"></i>
+                                            <i class="fa-solid fa-up"></i>
                                             @#formatByteSize(server.State.NetOutTransfer)#@
                                         </div>
                                         <div class="three wide column">{{tr "ProcessCount"}}</div>
                                         <div class="thirteen wide column">
-                                            <i class="fa-sharp fa-regular fa-bars-progress"></i> 
+                                            <i class="fa-regular fa-bars-progress"></i> 
                                             @# server.State.ProcessCount #@ {{tr "Count"}}
                                         </div>
                                         <div class="three wide column">{{tr "Uptime"}}</div>
