@@ -64,19 +64,54 @@ geo_check() {
 
 pre_check() {
     ## os_arch
-    if uname -m | grep -q 'x86_64'; then
-        os_arch="amd64"
-    elif uname -m | grep -q 'i386\|i686'; then
-        os_arch="386"
-    elif uname -m | grep -q 'aarch64\|armv8b\|armv8l'; then
-        os_arch="arm64"
-    elif uname -m | grep -q 'arm'; then
-        os_arch="arm"
-    elif uname -m | grep -q 's390x'; then
-        os_arch="s390x"
-    elif uname -m | grep -q 'riscv64'; then
-        os_arch="riscv64"
-    fi
+    mach=$(uname -m)
+    case "$mach" in
+        amd64|x86_64)
+            os_arch="amd64"
+            ;;
+        i386|i686)
+            os_arch="386"
+            ;;
+        aarch64|arm64)
+            os_arch="arm64"
+            ;;
+        *arm*)
+            os_arch="arm"
+            ;;
+        s390x)
+            os_arch="s390x"
+            ;;
+        riscv64)
+            os_arch="riscv64"
+            ;;
+        mips)
+            os_arch="mips"
+            ;;
+        mipsel|mipsle)
+            os_arch="mipsle"
+            ;;
+        *)
+            err "Unknown architecture: $uname"
+            exit 1
+            ;;
+    esac
+
+    system=$(uname)
+    case "$system" in
+        *Linux*)
+            os="linux"
+            ;;
+        *Darwin*)
+            os="darwin"
+            ;;
+        *FreeBSD*)
+            os="freebsd"
+            ;;
+        *)
+            err "Unknown architecture: $system"
+            exit 1
+            ;;
+    esac
 
     ## China_IP
     if [ -z "$CN" ]; then
