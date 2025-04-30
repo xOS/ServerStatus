@@ -10,7 +10,7 @@ BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
 AGENT_PATH="${BASE_PATH}/agent"
 AGENT_SERVICE="/etc/systemd/system/server-agent.service"
-VERSION="v0.2.3"
+VERSION="v0.2.4"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -348,7 +348,7 @@ set_agent(){
 		set_host
         grpc_host=${grpc_host}
         sed -i "s/${host}/${grpc_host}/" ${AGENT_SERVICE}
-        echo -e "探针域名 ${green}修改成功，请稍等重启生效${plain}"
+        echo -e "探针域名 ${green}修改成功，请稍等探针重启生效${plain}"
         systemctl daemon-reload
         systemctl enable server-agent
         systemctl restart server-agent
@@ -360,7 +360,7 @@ set_agent(){
 		set_port
         grpc_port=${grpc_port}
         sed -i "s/${port}/${grpc_port}/" ${AGENT_SERVICE}
-        echo -e "探针端口${green} 修改成功，请稍等重启生效${plain}"
+        echo -e "探针端口${green} 修改成功，请稍等探针重启生效${plain}"
         systemctl daemon-reload
         systemctl enable server-agent
         systemctl restart server-agent
@@ -372,7 +372,7 @@ set_agent(){
 		set_secret
         client_secret=${client_secret}
         sed -i "s/${secret}/${client_secret}/" ${AGENT_SERVICE}
-        echo -e "探针密钥${green} 修改成功，请稍等重启生效${plain}"
+        echo -e "探针密钥${green} 修改成功，请稍等探针重启生效${plain}"
         systemctl daemon-reload
         systemctl enable server-agent
         systemctl restart server-agent
@@ -426,7 +426,7 @@ modify_agent_config() {
         sed -i "/ExecStart/ s/$/${args}/" ${AGENT_SERVICE}
     fi
 
-    echo -e "探针配置 ${green}修改成功，请稍等重启生效${plain}"
+    echo -e "探针配置 ${green}修改成功，请稍等探针重启生效${plain}"
 
     systemctl daemon-reload
     systemctl enable server-agent

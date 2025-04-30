@@ -735,6 +735,10 @@ i.server.icon {
     color: #079a0d !important;
 }
 
+i.globe.icon {
+    color: #03a9f4 !important
+}
+
 i.rss.icon {
     color: #ffc107 !important;
 }
