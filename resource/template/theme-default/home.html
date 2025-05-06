@@ -195,156 +195,77 @@
 {{template "theme-default/footer" .}}
 <script>
     function specialOS(i) {
-        if ((i.toString().toLowerCase().indexOf("windows")) != -1) {
-            var i = i.replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", "");
-            return i;
+        // 处理Windows平台
+        if (i && i.toString().toLowerCase().includes('windows')) {
+            return i.replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", "");
         }
-        i = i.toString().toLowerCase();
-        switch (i) {
-            case "ubuntu":
-                return "Ubuntu";
-                break;
-            case "debian":
-                return "Debian";
-                break;
-            case "centos":
-                return "CentOS";
-                break;
-            case "darwin":
-                return "MacOS";
-                break;
-            case "redhat":
-                return "RedHat";
-                break;
-            case "archlinux":
-                return "Archlinux";
-                break;
-            case "coreos":
-                return "Coreos";
-                break;
-            case "deepin":
-                return "Deepin";
-                break;
-            case "fedora":
-                return "Fedora";
-                break;
-            case "alpine":
-                return "Alpine";
-                break;
-            case "tux":
-                return "Tux";
-                break;
-            case "linuxmint":
-                return "LinuxMint";
-                break;
-            case "oracle":
-                return "Oracle";
-                break;
-            case "slackware":
-                return "SlackWare";
-                break;
-            case "raspbian":
-                return "Raspbian";
-                break;
-            case "gentoo":
-                return "GenToo";
-                break;
-            case "arch":
-                return "Arch";
-                break;
-            case "amazon":
-                return "Amazon";
-                break;
-            case "xenserver":
-                return "XenServer";
-                break;
-            case "scientific":
-                return "ScientificSL";
-                break;
-            case "rhel":
-                return "Rhel";
-                break;
-            case "rawhide":
-                return "RawHide";
-                break;
-            case "cloudlinux":
-                return "CloudLinux";
-                break;
-            case "ibm_powerkvm":
-                return "IBM";
-                break;
-            case "almalinux":
-                return "Almalinux";
-                break;
-            case "suse":
-                return "Suse";
-                break;
-            case "opensuse":
-                return "OpenSuse";
-                break;
-            case "opensuse-leap":
-                return "OpenSuse";
-                break;
-            case "opensuse-tumbleweed":
-                return "OpenSuse";
-                break;
-            case "opensuse-tumbleweed-kubic":
-                return "OpenSuse";
-                break;
-            case "sles":
-                return "Sles";
-                break;
-            case "sled":
-                return "Sled";
-                break;
-            case "caasp":
-                return "Caasp";
-                break;
-            case "exherbo":
-                return "ExherBo";
-                break;
-            case "solus":
-                return "Solus";
-                break;
-            default:
-                return i;
-        }
+        
+        // 确保i是字符串并转为小写
+        i = (i || "").toString().toLowerCase();
+        
+        // 使用对象映射代替switch语句
+        const osMapping = {
+            "ubuntu": "Ubuntu",
+            "debian": "Debian",
+            "centos": "CentOS",
+            "darwin": "MacOS",
+            "redhat": "RedHat",
+            "archlinux": "Archlinux",
+            "coreos": "Coreos",
+            "deepin": "Deepin",
+            "fedora": "Fedora",
+            "alpine": "Alpine",
+            "tux": "Tux",
+            "linuxmint": "LinuxMint",
+            "oracle": "Oracle",
+            "slackware": "SlackWare",
+            "raspbian": "Raspbian",
+            "gentoo": "GenToo",
+            "arch": "Arch",
+            "amazon": "Amazon",
+            "xenserver": "XenServer",
+            "scientific": "ScientificSL",
+            "rhel": "Rhel",
+            "rawhide": "RawHide",
+            "cloudlinux": "CloudLinux",
+            "ibm_powerkvm": "IBM",
+            "almalinux": "Almalinux",
+            "suse": "Suse",
+            "opensuse": "OpenSuse",
+            "opensuse-leap": "OpenSuse",
+            "opensuse-tumbleweed": "OpenSuse",
+            "opensuse-tumbleweed-kubic": "OpenSuse",
+            "sles": "Sles",
+            "sled": "Sled",
+            "caasp": "Caasp",
+            "exherbo": "ExherBo",
+            "solus": "Solus"
+        };
+        
+        // 如果在映射中找到匹配项，返回对应的值，否则返回原始输入
+        return osMapping[i] || i;
     }
+    
     function specialVir(i) {
-        i = i.toString().toLowerCase();
-        switch (i) {
-            case "kvm":
-                return "KVM";
-                break;
-            case "openvz":
-                return "OpenVZ";
-                break;
-            case "lxc":
-                return "LXC";
-                break;
-            case "xen":
-                return "Xen";
-                break;
-            case "vbox":
-                return "VBox";
-                break;
-            case "rkt":
-                return "RKT";
-                break;
-            case "docker":
-                return "Docker";
-                break;
-            case "vmware":
-                return "VMware";
-                break;
-            case "linux-vserver":
-                return "VServer";
-                break;
-            case "hyperv":
-                return "Hyperv";
-            default:
-                return i;
-        }
+        // 确保i是字符串并转为小写
+        i = (i || "").toString().toLowerCase();
+        
+        // 使用对象映射代替switch语句
+        const virMapping = {
+            "kvm": "KVM",
+            "openvz": "OpenVZ",
+            "lxc": "LXC",
+            "xen": "Xen",
+            "vbox": "vBox",
+            "rkt": "RKT",
+            "docker": "Docker",
+            "vmware": "VMware",
+            "linux-vserver": "VServer",
+            "hyperv": "Hyperv"
+        };
+        
+        // 如果在映射中找到匹配项，返回对应的值，否则返回原始输入
+        return virMapping[i] || i;
     }
     function clearString(i) {
         if (i != null && i != "") {
