@@ -7,8 +7,10 @@ import (
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"golang.org/x/text/language"
 
+	"os"
+	"path/filepath"
+
 	"github.com/xos/serverstatus/model"
-	"github.com/xos/serverstatus/resource"
 )
 
 var Localizer *i18n.Localizer
@@ -21,13 +23,15 @@ func InitLocalizer() {
 		log.Println("NG>> language not exists:", Conf.Language)
 		Conf.Language = "zh-CN"
 	} else {
-		_, err := bundle.LoadMessageFileFS(resource.I18nFS, "l10n/"+Conf.Language+".toml")
-		if err != nil {
+		langPath := filepath.Join("resource", "l10n", Conf.Language+".toml")
+		_, err := bundle.LoadMessageFile(langPath)
+		if err != nil && !os.IsNotExist(err) {
 			panic(err)
 		}
 	}
 
-	if _, err := bundle.LoadMessageFileFS(resource.I18nFS, "l10n/zh-CN.toml"); err != nil {
+	zhPath := filepath.Join("resource", "l10n", "zh-CN.toml")
+	if _, err := bundle.LoadMessageFile(zhPath); err != nil {
 		panic(err)
 	}
 	Localizer = i18n.NewLocalizer(bundle, Conf.Language)
