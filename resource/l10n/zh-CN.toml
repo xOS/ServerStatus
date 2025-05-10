@@ -1,6 +1,9 @@
 [ServerMonitoring]
 other = "服务器"
 
+[All]
+other = "全部"
+
 [Server]
 other = "主机"
 
