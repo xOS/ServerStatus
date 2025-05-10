@@ -21,7 +21,6 @@ import (
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
 	"github.com/xos/serverstatus/proto"
-	"github.com/xos/serverstatus/resource"
 	"github.com/xos/serverstatus/service/rpc"
 	"github.com/xos/serverstatus/service/singleton"
 )
@@ -36,14 +35,16 @@ func ServeWeb(port uint) *http.Server {
 	r.Use(natGateway)
 	tmpl := template.New("").Funcs(funcMap)
 	var err error
-	tmpl, err = tmpl.ParseFS(resource.TemplateFS, "template/**/*.html")
+	// 直接用本地模板目录
+	tmpl, err = tmpl.ParseGlob("resource/template/**/*.html")
 	if err != nil {
 		panic(err)
 	}
 	tmpl = loadThirdPartyTemplates(tmpl)
 	r.SetHTMLTemplate(tmpl)
 	r.Use(mygin.RecordPath)
-	r.StaticFS("/static", http.FS(resource.StaticFS))
+	// 直接用本地静态资源目录
+	r.Static("/static", "resource/static")
 	routers(r)
 	page404 := func(c *gin.Context) {
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
