@@ -1,27 +1,29 @@
 package resource
 
 import (
-    "net/http"
-    "os"
-
-    "github.com/xos/serverstatus/pkg/utils"
+	"github.com/xos/serverstatus/pkg/utils"
 )
 
 var StaticFS *utils.HybridFS
 
+// 不再 embed 静态资源
+// var staticFS embed.FS
+
+// 不再 embed 模板和本地化文件
+// var TemplateFS embed.FS
+// var I18nFS embed.FS
+
 func init() {
-    var err error
-    localStaticPath := "./static" // 静态资源的本地路径
-    if _, err := os.Stat(localStaticPath); os.IsNotExist(err) {
-        panic("Static files directory does not exist: " + localStaticPath)
-    }
-
-    StaticFS, err = utils.NewHybridFS(nil, localStaticPath)
-    if err != nil {
-        panic(err)
-    }
+	var err error
+	// 只用本地目录，不用 embed.FS
+	StaticFS, err = utils.NewHybridFS(nil, "", "resource/static/custom")
+	if err != nil {
+		panic(err)
+	}
 }
 
-func ServeStaticFiles() http.Handler {
-    return http.FileServer(http.Dir("./static"))
-}
+// 如果需要模板和本地化文件，也请用本地文件系统方式加载
+// func IsTemplateFileExist(name string) bool {
+// 	_, err := os.Open("resource/template/" + name)
+// 	return err == nil
+// }
