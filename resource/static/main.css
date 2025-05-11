@@ -147,7 +147,7 @@
 
 .ui.card>.content>.header:not(.ui),
 .ui.cards>.card>.content>.header:not(.ui) {
-    margin-top: 0.1em !important;
+    /*margin-top: 0.1em !important;*/
     margin-bottom: -0.2em !important;
 }
 
@@ -845,7 +845,7 @@ i.note.icon {
 }
 
 .ui.grid {
-    margin-bottom: -0.5rem!important;
+    margin-bottom: -0.3rem!important;
 }
 
 .status.cards .outline.icon {
