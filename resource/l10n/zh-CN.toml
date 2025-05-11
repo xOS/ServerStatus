@@ -4,6 +4,21 @@ other = "服务器"
 [All]
 other = "全部"
 
+[Connecting]
+other = "连接中"
+
+[NoServers]
+other = "没有服务器"
+
+[NoServersDesc]
+other = "没有具体服务器描述"
+
+[NoServersForTagH]
+other = "没有服务器标签"
+
+[NoServersForTagP]
+other = "没有具体服务器标签"
+
 [Server]
 other = "主机"
 
@@ -677,7 +692,7 @@ other = "网络"
 other = "在服务中显示"
 
 [DDNS]
-other = "动态 DNS"
+other = "DDNS"
 
 [DDNSProfiles]
 other = "DDNS 配置"
