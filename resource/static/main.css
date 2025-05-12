@@ -22,13 +22,13 @@
 
 .custom-tabs-container {
     overflow-x: auto;
-    width: 100%;
+    width: fit-content;
+    max-width: 100%;
     white-space: nowrap;
     position: relative;
     background-color: #fbfbfb26;
     border-radius: 50px;
     padding: 5px;
-    display: inline-flex;
     margin-bottom: 20px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.10);
     -webkit-overflow-scrolling: touch;
@@ -39,8 +39,19 @@
     display: none;
 }
 
+.tabs-wrapper {
+    display: flex;
+    justify-content: center;
+}
+
+.tabs-content-area {
+    display: inline-flex;
+    /*gap: 0.5em;*/
+    /*padding: 0.2em 0;*/
+}
+
 .custom-tab {
-    padding: 8px 20px;
+    padding: 8px 15px;
     margin: 0 3px;
     cursor: pointer;
     color: #777;
@@ -791,7 +802,7 @@ i.note.icon {
 }
 
 #app .ui.fluid.accordion {
-    border-radius: 10px;
+    border-radius: 20px;
     margin-bottom: 1rem;
     background-color: #fbfbfb26;
     -webkit-transition: all .3s ease;

@@ -5,21 +5,36 @@
 
 <div class="nb-container">
     <div class="ui container">
-        <div v-if="servers && servers.length > 0" class="custom-tabs-container" ref="tabsContainer">
-    <div class="custom-tab"
-         :class="{ active: activeTag === '' }"
-         @click="handleTabClick('', $event)"
-         ref="allTab"> {{tr "All"}}
-    </div>
-    <div v-for="(tag, index) in uniqueTags.slice().reverse()"
-         :key="tag"
-         class="custom-tab"
-         :class="{ active: activeTag === tag }"
-         @click="handleTabClick(tag, $event)"
-         :ref="'tagTab' + index"> @#tag#@ <!-- index here is from the reversed array -->
-    </div>
-    <div class="tab-slider" ref="tabSlider"></div>
-</div>
+        <div style="display: flex; justify-content: center;">
+            <div v-if="servers && servers.length > 0" 
+                 class="custom-tabs-container" 
+                 ref="tabsContainer" 
+                 style="width: fit-content;
+                        max-width: 100%;
+                        overflow-x: auto;
+                        position: relative;
+                        white-space: nowrap;
+                        ">
+                <div style="display: inline-flex;
+                            gap: 0.5em;
+                            padding: 0.2em 0;
+                            ">
+                    <div class="custom-tab"
+                        :class="{ active: activeTag === '' }"
+                        @click="handleTabClick('', $event)"
+                        ref="allTab"> {{tr "All"}}
+                    </div>
+                    <div v-for="(tag, index) in uniqueTags.slice().reverse()"
+                        :key="tag"
+                        class="custom-tab"
+                        :class="{ active: activeTag === tag }"
+                        @click="handleTabClick(tag, $event)"
+                        :ref="'tagTab' + index"> @#tag#@
+                    </div>
+                </div>
+                <div class="tab-slider" ref="tabSlider"></div>
+            </div>
+        </div>
 
         <template v-if="filteredServers && filteredServers.length > 0">
             <div class="ui four stackable status cards">
@@ -532,7 +547,7 @@
                     return '0B'
                 }
                 const i = Math.floor(Math.log(bytes) / Math.log(1024));
-                const sizes = ["B", "K", "M", "G", "T", "P", "E", "Z", "Y"];
+                const sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
                 return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
             },
             getCoreAndGHz(arr) {
@@ -559,7 +574,7 @@
                     return Math.ceil(bs.toFixed(2)) + 'G';
                 } else {
                     bs = bs * 1024;
-                    return Math.ceil(bs.toFixed(2)) + 'M';
+                    return Math.ceil(bs.toFixed(2)) + 'MB';
                 }
             },
             listTipsMouseenter(obj, strs, tipsNum = 1){
