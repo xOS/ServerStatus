@@ -5,20 +5,11 @@
 
 <div class="nb-container">
     <div class="ui container">
-        <div style="display: flex; justify-content: center;">
+        <div class="tabs-wrapper">
             <div v-if="servers && servers.length > 0" 
                  class="custom-tabs-container" 
-                 ref="tabsContainer" 
-                 style="width: fit-content;
-                        max-width: 100%;
-                        overflow-x: auto;
-                        position: relative;
-                        white-space: nowrap;
-                        ">
-                <div style="display: inline-flex;
-                            gap: 0.5em;
-                            padding: 0.2em 0;
-                            ">
+                 ref="tabsContainer">
+                <div class="tabs-content-area">
                     <div class="custom-tab"
                         :class="{ active: activeTag === '' }"
                         @click="handleTabClick('', $event)"

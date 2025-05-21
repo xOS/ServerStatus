@@ -27,8 +27,8 @@
     white-space: nowrap;
     position: relative;
     background-color: #fbfbfb26;
-    border-radius: 50px;
-    padding: 5px;
+    border-radius: 22px;
+    padding: 5px 3px;
     margin-bottom: 20px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.10);
     -webkit-overflow-scrolling: touch;
@@ -46,29 +46,31 @@
 
 .tabs-content-area {
     display: inline-flex;
-    /*gap: 0.5em;*/
-    /*padding: 0.2em 0;*/
+    align-items: center;
 }
 
 .custom-tab {
-    padding: 8px 15px;
+    padding: 6px 18px;
     margin: 0 3px;
     cursor: pointer;
     color: #777;
-    font-weight: 500;
-    border-radius: 50px;
-    transition: color 0.3s ease;
+    border-radius: 17px;
+    transition: color 0.2s ease;
     font-size: 15px;
     position: relative;
     z-index: 2;
     background-color: transparent;
+    font-weight: normal;
     display: inline-block;
+    line-height: 1.5;
     -webkit-tap-highlight-color: transparent;
 }
 
 .custom-tab.active {
-    color: #000000;
+  color: #333;
+  font-weight: bold;
 }
+
 .custom-tab:not(.active):hover {
     color: #333;
 }
@@ -79,7 +81,7 @@
     bottom: 5px;
     height: calc(100% - 10px);
     background-color: #fafafaa3;
-    border-radius: 50px;
+    border-radius: 17px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     z-index: 1;
     transition: left 0.3s ease, width 0.3s ease;
@@ -802,7 +804,7 @@ i.note.icon {
 }
 
 #app .ui.fluid.accordion {
-    border-radius: 20px;
+    border-radius: 19px;
     margin-bottom: 1rem;
     background-color: #fbfbfb26;
     -webkit-transition: all .3s ease;
