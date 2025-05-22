@@ -172,47 +172,30 @@
             </div>
         </template>
 
-        <!-- 隐藏的数据区域，用于流量统计 -->
-        <div style="display: none;" id="hiddenTrafficData">
-            {{if .CycleTransferStats}}
-            <table class="ui celled table">
-                <thead>
-                    <tr>
-                        <th class="ui center aligned">ID</th>
-                        <th class="ui center aligned">{{tr "Rules"}}</th>
-                        <th class="ui center aligned">{{tr "Server"}}</th>
-                        <th class="ui center aligned">{{tr "From"}}</th>
-                        <th class="ui center aligned">{{tr "To"}}</th>
-                        <th class="ui center aligned">{{tr "NextCheck"}}</th>
-                        <th class="ui center aligned">{{tr "TrafficTotal"}}</th>
-                        <th class="ui center aligned">{{tr "CurrentUsage"}}</th>
-                        <th class='ui center aligned'>{{tr "Transleft"}}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{range $id, $stats := .CycleTransferStats}}
-                    {{range $innerId, $transfer := $stats.Transfer}}
-                    {{$TransLeftPercent := TransLeftPercent (UintToFloat $transfer) (UintToFloat $stats.Max)}}
-                    <tr>
-                        <td class="ui center aligned">{{$id}}</td>
-                        <td class="ui center aligned">{{$stats.Name}}</td>
-                        <td class="ui center aligned">{{index $stats.ServerName $innerId}}</td>
-                        <td class="ui center aligned">{{$stats.From|tf}}</td>
-                        <td class="ui center aligned">{{$stats.To|tf}}</td>
-                        <td class="ui center aligned">{{(index $stats.NextUpdate $innerId)|sft}}</td>
-                        <td class="ui center aligned">{{$stats.Max|bf}}</td>
-                        <td class="ui center aligned">{{$transfer|bf}}</td>
-                        <td class="ui center aligned">{{TransLeft $stats.Max $transfer}} | {{$TransLeftPercent}}%</td>
-                    </tr>
-                    {{end}}
-                    {{end}}
-                </tbody>
-            </table>
-            {{end}}
-        </div>
+        <!-- JS数据区域，直接将流量数据嵌入为JavaScript变量 -->
+        <script>
+            // 将流量数据直接嵌入页面
+            window.serverTrafficRawData = [
+                {{if .CycleTransferStats}}
+                {{range $id, $stats := .CycleTransferStats}}
+                {{range $innerId, $transfer := $stats.Transfer}}
+                {{$TransLeftPercent := TransLeftPercent (UintToFloat $transfer) (UintToFloat $stats.Max)}}
+                {
+                    "id": "{{$id}}",
+                    "name": "{{$stats.Name}}",
+                    "serverName": "{{index $stats.ServerName $innerId}}",
+                    "max": "{{$stats.Max|bf}}",
+                    "used": "{{$transfer|bf}}",
+                    "percent": {{$TransLeftPercent}}
+                },
+                {{end}}
+                {{end}}
+                {{end}}
+            ];
+        </script>
 
         <!-- 添加页脚上方的间距 -->
-        <div style="margin-bottom: 30px;"></div>
+        <!--<div style="margin-bottom: 30px;"></div>-->
 
         {{template "theme-default/footer" .}}
     </div>
@@ -220,149 +203,133 @@
 
 {{template "theme-default/footer" .}}
 <script>
-    // Initialize global variable for traffic data and tracking
-    window.serverTrafficData = {};
-    window.lastTrafficUpdateTime = 0;
-    
-    // Function to extract traffic data from accordion section
-    function extractTrafficData() {
-        try {
-            // 现在从隐藏的数据区域获取流量表格数据
-            const trafficRows = document.querySelectorAll('#hiddenTrafficData table tbody tr');
-            if (!trafficRows || trafficRows.length === 0) {
-                return;
+    // 确保流量提取函数可用（备用逻辑）
+    if (!window.trafficFunctionsReady) {
+        // 标记函数已准备就绪，不显示警告
+        window.trafficFunctionsReady = true;
+        
+        // 初始化全局变量
+        window.serverTrafficData = window.serverTrafficData || {};
+        window.lastTrafficUpdateTime = window.lastTrafficUpdateTime || 0;
+        
+        // 解析流量字节数
+        window.parseTrafficToBytes = function(trafficStr) {
+            if (!trafficStr) return 0;
+            const cleanStr = trafficStr.replace(/\s+/g, '').toUpperCase();
+            let match = cleanStr.match(/^([\d.,]+)([KMGTPEZY]?B)$/i);
+            if (!match) {
+                match = cleanStr.match(/^([\d.,]+)([KMGTPEZY])$/i);
+                if (match) match[2] = match[2] + 'B';
             }
-            
-            const newTrafficData = {};
-            
-            // 处理每一行
-            trafficRows.forEach(row => {
-                const cells = row.querySelectorAll('td');
-                if (cells.length >= 9) {
-                    const rawServerId = cells[0].innerText.trim();
-                    const serverName = cells[2].innerText.trim();
-                    
-                    let matchingServer = null;
-                    if (statusCards && statusCards.servers) {
-                        matchingServer = statusCards.servers.find(s => s.Name === serverName);
-                    }
-                    
-                    const serverId = matchingServer ? matchingServer.ID : rawServerId;
-                    
-                    // 解析最大流量和已使用流量
-                    const maxTrafficText = cells[6].innerText.trim();
-                    const usedTrafficText = cells[7].innerText.trim();
-                    
-                    // 规范化单位格式
-                    const standardMaxTraffic = formatTrafficUnit(maxTrafficText);
-                    const standardUsedTraffic = formatTrafficUnit(usedTrafficText);
-                    
-                    // 将流量数据转换为字节数进行准确计算
-                    const maxTrafficBytes = parseTrafficToBytes(maxTrafficText);
-                    const usedTrafficBytes = parseTrafficToBytes(usedTrafficText);
-                    
-                    // 获取表格中显示的原始百分比
-                    let originalPercent = 0;
-                    const percentText = cells[8].innerText.trim();
-                    const percentMatch = percentText.match(/(\d+)%/);
-                    if (percentMatch) {
-                        originalPercent = parseInt(percentMatch[1]);
-                    }
-                    
-                    // 计算实际百分比
-                    let calculatedPercent = 0;
-                    if (maxTrafficBytes > 0) {
-                        calculatedPercent = Math.round((usedTrafficBytes / maxTrafficBytes) * 100);
-                        if (calculatedPercent > 100) calculatedPercent = 100; // 防止超过100%
-                    }
-                    
-                    newTrafficData[serverId] = {
-                        max: standardMaxTraffic,
-                        used: standardUsedTraffic,
-                        percent: calculatedPercent,
-                        maxBytes: maxTrafficBytes,
-                        usedBytes: usedTrafficBytes,
-                        originalPercent: originalPercent
-                    };
-                    
-                    if (serverId !== rawServerId) {
-                        newTrafficData[rawServerId] = {
+            if (!match) return 0;
+            const value = parseFloat(match[1].replace(/,/g, ''));
+            const unit = match[2].toUpperCase();
+            const units = {
+                'B': 1, 'KB': 1024, 'MB': 1024 * 1024, 'GB': 1024 * 1024 * 1024,
+                'TB': 1024 * 1024 * 1024 * 1024, 'PB': 1024 * 1024 * 1024 * 1024 * 1024
+            };
+            return value * (units[unit] || 1);
+        };
+        
+        // 格式化流量单位
+        window.formatTrafficUnit = function(trafficStr) {
+            if (!trafficStr) return '0B';
+            if (/^[\d.,]+\s*[KMGTPEZY]B$/i.test(trafficStr)) return trafficStr;
+            const match = trafficStr.match(/^([\d.,]+)\s*([KMGTPEZY])$/i);
+            if (match) return `${match[1]}${match[2].toUpperCase()}B`;
+            const bytes = window.parseTrafficToBytes(trafficStr);
+            if (bytes > 0) {
+                const i = Math.floor(Math.log(bytes) / Math.log(1024));
+                const sizes = ["B", "KB", "MB", "GB", "TB", "PB"];
+                return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
+            }
+            return trafficStr;
+        };
+        
+        // 提取流量数据的函数
+        window.extractTrafficData = function() {
+            try {
+                // 直接从全局变量获取数据，不再从DOM元素中读取
+                const trafficItems = window.serverTrafficRawData || [];
+                if (!trafficItems || trafficItems.length === 0) return;
+                
+                const newTrafficData = {};
+                trafficItems.forEach(item => {
+                    if (item) {
+                        const rawServerId = item.id;
+                        const serverName = item.serverName;
+                        const maxTrafficText = item.max;
+                        const usedTrafficText = item.used;
+                        const percentStr = String(item.percent);
+                        // 先尝试从percent获取百分比值
+                        let rawPercent = parseInt(percentStr) || 0;
+                        
+                        let matchingServer = null;
+                        if (window.statusCards && window.statusCards.servers) {
+                            matchingServer = window.statusCards.servers.find(s => s.Name === serverName);
+                        }
+                        
+                        const serverId = matchingServer ? matchingServer.ID : rawServerId;
+                        const standardMaxTraffic = window.formatTrafficUnit(maxTrafficText);
+                        const standardUsedTraffic = window.formatTrafficUnit(usedTrafficText);
+                        const maxTrafficBytes = window.parseTrafficToBytes(maxTrafficText);
+                        const usedTrafficBytes = window.parseTrafficToBytes(usedTrafficText);
+                        
+                        // 重新计算百分比，确保数值正确
+                        let calculatedPercent = 0;
+                        if (maxTrafficBytes > 0) {
+                            calculatedPercent = Math.min(100, Math.max(0, Math.round((usedTrafficBytes / maxTrafficBytes) * 100)));
+                        } else if (rawPercent >= 0 && rawPercent <= 100) {
+                            calculatedPercent = rawPercent;
+                        }
+                        
+                        // 输出调试信息
+                        // console.log(`服务器 ${serverId}/${serverName} 流量：${standardUsedTraffic}/${standardMaxTraffic}, 百分比: ${calculatedPercent}%`);
+                        
+                        newTrafficData[serverId] = {
                             max: standardMaxTraffic,
                             used: standardUsedTraffic,
                             percent: calculatedPercent,
                             maxBytes: maxTrafficBytes,
-                            usedBytes: usedTrafficBytes,
-                            originalPercent: originalPercent
+                            usedBytes: usedTrafficBytes
                         };
+                        
+                        if (serverId !== rawServerId) {
+                            newTrafficData[rawServerId] = {
+                                max: standardMaxTraffic,
+                                used: standardUsedTraffic,
+                                percent: calculatedPercent,
+                                maxBytes: maxTrafficBytes,
+                                usedBytes: usedTrafficBytes
+                            };
+                        }
                     }
+                });
+                
+                window.serverTrafficData = newTrafficData;
+                window.lastTrafficUpdateTime = Date.now();
+                
+                if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
+                    window.statusCards.updateTrafficData();
                 }
-            });
-            
-            window.serverTrafficData = newTrafficData;
-            window.lastTrafficUpdateTime = Date.now();
-            
-            if (statusCards && typeof statusCards.updateTrafficData === 'function') {
-                statusCards.updateTrafficData();
+            } catch (e) {
+                console.error('提取流量数据时出错:', e);
             }
-        } catch (e) {
-            console.error('Error extracting traffic data:', e);
-        }
-    }
-    
-    // 添加流量单位转换为字节的辅助函数
-    function parseTrafficToBytes(trafficStr) {
-        if (!trafficStr) return 0;
-        
-        // 去掉所有空格并转换为大写以便统一处理
-        const cleanStr = trafficStr.replace(/\s+/g, '').toUpperCase();
-        
-        // 匹配标准格式 数字+单位
-        let match = cleanStr.match(/^([\d.,]+)([KMGTPEZY]?B)$/i);
-        
-        // 如果没找到匹配，尝试匹配省略B的格式
-        if (!match) {
-            match = cleanStr.match(/^([\d.,]+)([KMGTPEZY])$/i);
-            if (match) {
-                match[2] = match[2] + 'B'; // 添加缺失的B单位
-            }
-        }
-        
-        // 如果还是没找到匹配，直接返回0
-        if (!match) {
-            console.warn('无法解析流量字符串:', trafficStr);
-            return 0;
-        }
-        
-        // 处理可能包含的千位分隔符
-        const value = parseFloat(match[1].replace(/,/g, ''));
-        const unit = match[2].toUpperCase();
-        
-        // 单位转换为字节数
-        const units = {
-            'B': 1,
-            'KB': 1024,
-            'MB': 1024 * 1024,
-            'GB': 1024 * 1024 * 1024,
-            'TB': 1024 * 1024 * 1024 * 1024,
-            'PB': 1024 * 1024 * 1024 * 1024 * 1024,
-            'EB': 1024 * 1024 * 1024 * 1024 * 1024 * 1024,
-            'ZB': 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024,
-            'YB': 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024
         };
         
-        return value * (units[unit] || 1);
+        // 立即提取数据
+        setTimeout(function() {
+            window.extractTrafficData();
+        }, 1000);
+        
+        // 定期更新
+        setInterval(function() {
+            window.extractTrafficData();
+        }, 30000);
     }
     
-    // Call extraction when page loads and whenever accordion opens
-    $(document).ready(function() {
-        // 立即提取数据
-        setTimeout(extractTrafficData, 500);
-        
-        // 设置定时器定期更新数据
-        setInterval(function() {
-            extractTrafficData();
-        }, 30000); // 每30秒更新一次
-    });
+    // Note: Traffic data extraction functionality has been moved to main.js
+    // The global variables and functions are now available from main.js
     
     function specialOS(i) {
         // 处理Windows平台
@@ -466,6 +433,7 @@
         return format;
     };
 
+    // Assign Vue instance to both local and window scope for global access
     var statusCards = new Vue({
         el: '#app',
         delimiters: ['@#', '#@'],
@@ -508,7 +476,7 @@
             
             // 立即尝试提取流量数据 - 无需使用折叠面板
             setTimeout(() => {
-                extractTrafficData();
+                window.extractTrafficData();
             }, 500);
         },
         mounted() {
@@ -555,7 +523,7 @@
                     // Fall back to global variable
                     if (!window.serverTrafficData || Object.keys(window.serverTrafficData).length === 0) {
                         // Try to get data if not already loaded
-                        setTimeout(extractTrafficData, 100);
+                        setTimeout(window.extractTrafficData, 100);
                         return null;
                     }
                     
@@ -997,67 +965,47 @@
         }
     })
 
-function connect() {
+    // Make the Vue instance available globally
+    window.statusCards = statusCards;
+
+// WebSocket连接，用于实时更新服务器数据
+(function() {
     const wsProtocol = window.location.protocol == "https:" ? "wss" : "ws";
     const wsUrl = wsProtocol + '://' + window.location.host + '/ws';
-    const ws = new WebSocket(wsUrl);
-
-    ws.onopen = function () {
-    };
-
-    ws.onmessage = function (evt) {
-        try {
-            const data = JSON.parse(evt.data);
-            if (data && Array.isArray(data.servers)) {
-                statusCards.servers = data.servers;
-                statusCards.updateServerLiveStatus(data);
+    
+    function initWebSocket() {
+        const ws = new WebSocket(wsUrl);
+        
+        ws.onmessage = function(evt) {
+            try {
+                const data = JSON.parse(evt.data);
+                if (data && Array.isArray(data.servers)) {
+                    statusCards.servers = data.servers;
+                    statusCards.updateServerLiveStatus(data);
+                }
+            } catch (e) {
+                console.error("处理WebSocket消息时出错:", e);
             }
-        } catch (e) {
-            console.error("Error processing WebSocket message:", e);
-        }
-    };
-
-    ws.onclose = function () {
-        setTimeout(function () {
-            connect();
-        }, 3000);
-    };
-
-    ws.onerror = function (err) {
-        console.error("WebSocket error:", err);
-    };
-}
-
-    connect();
+        };
+        
+        ws.onclose = function() {
+            // 连接关闭后3秒重连
+            setTimeout(initWebSocket, 3000);
+        };
+        
+        ws.onerror = function(err) {
+            console.error("WebSocket错误:", err);
+        };
+    }
+    
+    // 初始化WebSocket连接
+    initWebSocket();
+})();
 
     $(document).ready(function() {
         $('.ui.accordion').accordion({ "exclusive": false });
     });
 
-    // 添加一个专门的流量格式化函数，确保单位格式一致
-    function formatTrafficUnit(trafficStr) {
-        if (!trafficStr) return '0B';
-        
-        // 如果已经是标准格式，直接返回
-        if (/^[\d.,]+\s*[KMGTPEZY]B$/i.test(trafficStr)) {
-            return trafficStr;
-        }
-        
-        // 处理可能省略B的情况
-        const match = trafficStr.match(/^([\d.,]+)\s*([KMGTPEZY])$/i);
-        if (match) {
-            return `${match[1]}${match[2].toUpperCase()}B`;
-        }
-        
-        // 尝试解析为字节数并重新格式化
-        const bytes = parseTrafficToBytes(trafficStr);
-        if (bytes > 0) {
-            const i = Math.floor(Math.log(bytes) / Math.log(1024));
-            const sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-            return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
-        }
-        
-        return trafficStr; // 如果无法识别，返回原始字符串
-    }
+    // Note: Traffic formatting function has been moved to main.js
 </script>
 {{end}}
