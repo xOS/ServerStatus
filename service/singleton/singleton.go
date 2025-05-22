@@ -152,6 +152,10 @@ func CleanMonitorHistory() {
 	// server_id = 0 的数据会用于/service页面的可用性展示
 	DB.Unscoped().Delete(&model.MonitorHistory{}, "(created_at < ? AND server_id != 0) OR monitor_id NOT IN (SELECT `id` FROM monitors)", time.Now().AddDate(0, 0, -1))
 	DB.Unscoped().Delete(&model.Transfer{}, "server_id NOT IN (SELECT `id` FROM servers)")
+
+	// 清理过期的累计流量数据（保留30天）
+	cleanCumulativeTransferData(30)
+
 	// 计算可清理流量记录的时长
 	var allServerKeep time.Time
 	specialServerKeep := make(map[uint64]time.Time)
@@ -189,6 +193,77 @@ func CleanMonitorHistory() {
 		DB.Unscoped().Delete(&model.Transfer{}, "server_id NOT IN (?)", specialServerIDs)
 	} else {
 		DB.Unscoped().Delete(&model.Transfer{}, "server_id NOT IN (?) AND datetime(`created_at`) < datetime(?)", specialServerIDs, allServerKeep)
+	}
+}
+
+// cleanCumulativeTransferData 清理超过指定天数的累计流量数据
+func cleanCumulativeTransferData(days int) {
+	// 获取保留期限的开始时间点
+	retentionStart := time.Now().AddDate(0, 0, -days)
+	log.Println("NG>> 开始清理", days, "天前的累计流量数据")
+
+	// 从Transfer表中查询保留期内最早的有效数据日期
+	var oldestValidTransfers []model.Transfer
+	if err := DB.Where("datetime(`created_at`) >= datetime(?)", retentionStart).Order("created_at ASC").Limit(10).Find(&oldestValidTransfers).Error; err != nil {
+		log.Println("NG>> 查询保留期内流量记录失败:", err)
+		return
+	}
+
+	if len(oldestValidTransfers) == 0 {
+		log.Println("NG>> 未找到保留期内的有效流量记录")
+		return
+	}
+
+	// 计算每个服务器在保留期内的总流量
+	serverFlows := make(map[uint64]struct {
+		In  uint64
+		Out uint64
+	})
+
+	// 查询所有在保留期内的流量记录
+	var transfers []model.Transfer
+	if err := DB.Where("datetime(`created_at`) >= datetime(?)", retentionStart).Find(&transfers).Error; err != nil {
+		log.Println("NG>> 查询流量记录失败:", err)
+		return
+	}
+
+	// 计算每个服务器在保留期内的总流量
+	for _, transfer := range transfers {
+		flow := serverFlows[transfer.ServerID]
+		flow.In += transfer.In
+		flow.Out += transfer.Out
+		serverFlows[transfer.ServerID] = flow
+	}
+
+	// 更新每个服务器的累计流量为保留期内的总流量
+	ServerLock.Lock()
+	defer ServerLock.Unlock()
+
+	var serversToUpdate []model.Server
+	for id, flow := range serverFlows {
+		if server, ok := ServerList[id]; ok {
+			// 重置服务器的累计流量为保留期内的总流量
+			server.CumulativeNetInTransfer = flow.In
+			server.CumulativeNetOutTransfer = flow.Out
+
+			// 添加到待更新列表
+			serversToUpdate = append(serversToUpdate, model.Server{
+				Common:                   model.Common{ID: id},
+				CumulativeNetInTransfer:  flow.In,
+				CumulativeNetOutTransfer: flow.Out,
+			})
+		}
+	}
+
+	// 批量更新数据库中的累计流量值
+	if len(serversToUpdate) > 0 {
+		for i := range serversToUpdate {
+			DB.Model(&serversToUpdate[i]).Updates(map[string]interface{}{
+				"cumulative_net_in_transfer":  serversToUpdate[i].CumulativeNetInTransfer,
+				"cumulative_net_out_transfer": serversToUpdate[i].CumulativeNetOutTransfer,
+			})
+		}
+		log.Println("NG>> 已更新", len(serversToUpdate), "个服务器的累计流量数据")
 	}
 }
 
