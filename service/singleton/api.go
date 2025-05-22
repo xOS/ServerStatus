@@ -1,6 +1,7 @@
 package singleton
 
 import (
+	"log"
 	"sync"
 	"time"
 
@@ -119,11 +120,19 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 		if host == nil || host.MemTotal == 0 || len(host.CPU) == 0 {
 			var hostJSON []byte
 			if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", server.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
-				tempHost := &model.Host{}
+				tempHost := &model.Host{
+					CPU: []string{},
+					GPU: []string{},
+				}
 				if err := utils.Json.Unmarshal(hostJSON, tempHost); err == nil {
 					// 不再填充默认数据，只使用实际数据
+					if Conf.Debug {
+						log.Printf("NG>> API - 服务器 %s (ID: %d) 成功加载Host数据", server.Name, server.ID)
+					}
 					host = tempHost
 					server.Host = tempHost // 更新内存中的数据
+				} else if Conf.Debug {
+					log.Printf("NG>> API - 服务器 %s (ID: %d) 解析Host数据失败: %v", server.Name, server.ID, err)
 				}
 			}
 		}
@@ -187,11 +196,19 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 		if host == nil || host.MemTotal == 0 || len(host.CPU) == 0 {
 			var hostJSON []byte
 			if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", v.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
-				tempHost := &model.Host{}
+				tempHost := &model.Host{
+					CPU: []string{},
+					GPU: []string{},
+				}
 				if err := utils.Json.Unmarshal(hostJSON, tempHost); err == nil {
 					// 不再填充默认数据，只使用实际数据
+					if Conf.Debug {
+						log.Printf("NG>> API - 服务器 %s (ID: %d) 成功加载Host数据", v.Name, v.ID)
+					}
 					host = tempHost
 					v.Host = tempHost // 更新内存中的数据
+				} else if Conf.Debug {
+					log.Printf("NG>> API - 服务器 %s (ID: %d) 解析Host数据失败: %v", v.Name, v.ID, err)
 				}
 			}
 		}

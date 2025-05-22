@@ -96,20 +96,20 @@ func PB2State(s *pb.State) HostState {
 }
 
 type Host struct {
-	OS              string
-	Platform        string
-	PlatformVersion string
-	CPU             []string
-	MemTotal        uint64
-	DiskTotal       uint64
-	SwapTotal       uint64
-	Arch            string
-	Virtualization  string
-	BootTime        uint64
-	IP              string `json:"-"`
-	CountryCode     string
-	Version         string
-	GPU             []string
+	OS              string   `json:"OS"`
+	Platform        string   `json:"Platform"`
+	PlatformVersion string   `json:"PlatformVersion"`
+	CPU             []string `json:"CPU"`
+	MemTotal        uint64   `json:"MemTotal"`
+	DiskTotal       uint64   `json:"DiskTotal"`
+	SwapTotal       uint64   `json:"SwapTotal"`
+	Arch            string   `json:"Arch"`
+	Virtualization  string   `json:"Virtualization"`
+	BootTime        uint64   `json:"BootTime"`
+	IP              string   `json:"-"`
+	CountryCode     string   `json:"CountryCode"`
+	Version         string   `json:"Version"`
+	GPU             []string `json:"GPU"`
 }
 
 func (h *Host) PB() *pb.Host {
