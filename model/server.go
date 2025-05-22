@@ -26,16 +26,22 @@ type Server struct {
 
 	DDNSProfilesRaw string `gorm:"default:'[]';column:ddns_profiles_raw" json:"-"`
 
-	Host       *Host      `gorm:"-"`
-	State      *HostState `gorm:"-"`
-	LastActive time.Time  `gorm:"-"`
+	Host                   *Host      `gorm:"-"`
+	State                  *HostState `gorm:"-"`
+	LastActive             time.Time  `gorm:"-"`
+	LastStateBeforeOffline *HostState `gorm:"-" json:"-"`         // 离线前最后一次状态
+	IsOnline               bool       `gorm:"-" json:"is_online"` // 是否在线
 
-	TaskClose     chan error                        `gorm:"-" json:"-"`
-	TaskCloseLock *sync.Mutex                       `gorm:"-" json:"-"`
+	TaskClose     chan error                         `gorm:"-" json:"-"`
+	TaskCloseLock *sync.Mutex                        `gorm:"-" json:"-"`
 	TaskStream    pb.ServerService_RequestTaskServer `gorm:"-" json:"-"`
 
 	PrevTransferInSnapshot  int64 `gorm:"-" json:"-"` // 上次数据点时的入站使用量
 	PrevTransferOutSnapshot int64 `gorm:"-" json:"-"` // 上次数据点时的出站使用量
+
+	// 累计流量数据
+	CumulativeNetInTransfer  uint64 `gorm:"default:0" json:"cumulative_net_in_transfer"`  // 累计入站使用量
+	CumulativeNetOutTransfer uint64 `gorm:"default:0" json:"cumulative_net_out_transfer"` // 累计出站使用量
 }
 
 func (s *Server) CopyFromRunningServer(old *Server) {
@@ -47,6 +53,10 @@ func (s *Server) CopyFromRunningServer(old *Server) {
 	s.TaskStream = old.TaskStream
 	s.PrevTransferInSnapshot = old.PrevTransferInSnapshot
 	s.PrevTransferOutSnapshot = old.PrevTransferOutSnapshot
+	s.LastStateBeforeOffline = old.LastStateBeforeOffline
+	s.IsOnline = old.IsOnline
+	s.CumulativeNetInTransfer = old.CumulativeNetInTransfer
+	s.CumulativeNetOutTransfer = old.CumulativeNetOutTransfer
 }
 
 func (s *Server) AfterFind(tx *gorm.DB) error {

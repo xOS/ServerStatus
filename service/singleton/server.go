@@ -34,6 +34,8 @@ func loadServers() {
 		innerS := s
 		innerS.Host = &model.Host{}
 		innerS.State = &model.HostState{}
+		innerS.LastStateBeforeOffline = nil
+		innerS.IsOnline = false // 初始状态为离线，等待agent报告
 		innerS.TaskCloseLock = new(sync.Mutex)
 		ServerList[innerS.ID] = &innerS
 		SecretToID[innerS.Secret] = innerS.ID

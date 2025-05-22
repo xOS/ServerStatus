@@ -8,6 +8,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/jinzhu/copier"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/utils"
 )
@@ -39,6 +40,9 @@ func LoadSingleton() {
 	loadAPI()
 	initNAT()
 	initDDNS()
+
+	// 添加定时检查在线状态的任务，每分钟检查一次
+	Cron.AddFunc("*/1 * * * *", CheckServerOnlineStatus)
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
@@ -69,6 +73,21 @@ func InitDBFromPath(path string) {
 	if err != nil {
 		panic(err)
 	}
+
+	// 检查并添加新字段
+	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {
+		err = DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_in_transfer")
+		if err != nil {
+			log.Println("NG>> 添加cumulative_net_in_transfer字段失败:", err)
+		}
+	}
+
+	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_out_transfer") {
+		err = DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_out_transfer")
+		if err != nil {
+			log.Println("NG>> 添加cumulative_net_out_transfer字段失败:", err)
+		}
+	}
 }
 
 // RecordTransferHourlyUsage 对流量记录进行打点
@@ -78,7 +97,13 @@ func RecordTransferHourlyUsage() {
 	now := time.Now()
 	nowTrimSeconds := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, now.Location())
 	var txs []model.Transfer
+	var serversToUpdate []model.Server
+
 	for id, server := range ServerList {
+		if server.State == nil {
+			continue
+		}
+
 		tx := model.Transfer{
 			ServerID: id,
 			In:       utils.Uint64SubInt64(server.State.NetInTransfer, server.PrevTransferInSnapshot),
@@ -89,13 +114,33 @@ func RecordTransferHourlyUsage() {
 		}
 		server.PrevTransferInSnapshot = int64(server.State.NetInTransfer)
 		server.PrevTransferOutSnapshot = int64(server.State.NetOutTransfer)
+
+		// 每次记录时更新累计流量到数据库
+		if server.State.NetInTransfer > 0 || server.State.NetOutTransfer > 0 {
+			serversToUpdate = append(serversToUpdate, model.Server{
+				Common:                   model.Common{ID: id},
+				CumulativeNetInTransfer:  server.State.NetInTransfer,
+				CumulativeNetOutTransfer: server.State.NetOutTransfer,
+			})
+		}
+
 		tx.CreatedAt = nowTrimSeconds
 		txs = append(txs, tx)
 	}
-	if len(txs) == 0 {
-		return
+
+	if len(txs) > 0 {
+		log.Println("NG>> Cron 流量统计入库", len(txs), DB.Create(txs).Error)
 	}
-	log.Println("NG>> Cron 流量统计入库", len(txs), DB.Create(txs).Error)
+
+	// 批量更新累计流量数据
+	if len(serversToUpdate) > 0 {
+		for _, server := range serversToUpdate {
+			DB.Model(&server).Updates(map[string]interface{}{
+				"cumulative_net_in_transfer":  server.CumulativeNetInTransfer,
+				"cumulative_net_out_transfer": server.CumulativeNetOutTransfer,
+			})
+		}
+	}
 }
 
 // CleanMonitorHistory 清理无效或过时的 监控记录 和 流量记录
@@ -153,4 +198,36 @@ func IPDesensitize(ip string) string {
 		return ip
 	}
 	return utils.IPDesensitize(ip)
+}
+
+// CheckServerOnlineStatus 检查服务器在线状态，将超时未上报的服务器标记为离线
+func CheckServerOnlineStatus() {
+	ServerLock.Lock()
+	defer ServerLock.Unlock()
+
+	now := time.Now()
+	offlineTimeout := time.Minute * 2 // 2分钟无心跳视为离线
+
+	for _, server := range ServerList {
+		// 已经标记为在线且长时间未活动，标记为离线
+		if server.IsOnline && now.Sub(server.LastActive) > offlineTimeout {
+			server.IsOnline = false
+
+			// 如果还没有保存离线前状态，保存当前状态
+			if server.LastStateBeforeOffline == nil && server.State != nil {
+				lastState := model.HostState{}
+				if err := copier.Copy(&lastState, server.State); err == nil {
+					server.LastStateBeforeOffline = &lastState
+				}
+			}
+
+			// 离线前保存累计流量数据到数据库
+			if server.State != nil {
+				DB.Model(server).Updates(map[string]interface{}{
+					"cumulative_net_in_transfer":  server.State.NetInTransfer,
+					"cumulative_net_out_transfer": server.State.NetOutTransfer,
+				})
+			}
+		}
+	}
 }

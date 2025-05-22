@@ -26,17 +26,16 @@ type CommonResponse struct {
 }
 
 type RegisterServer struct {
-	Name		 string
-	Tag			 string
-	Note		 string
+	Name         string
+	Tag          string
+	Note         string
 	HideForGuest string
 }
 
 type ServerRegisterResponse struct {
 	CommonResponse
-	Secret 			string `json:"secret"`
+	Secret string `json:"secret"`
 }
-
 
 type CommonServerInfo struct {
 	ID           uint64 `json:"id"`
@@ -116,19 +115,34 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 		}
 		ipv4, ipv6, validIP := utils.SplitIPAddr(server.Host.IP)
 		info := CommonServerInfo{
-			ID:         server.ID,
-			Name:       server.Name,
-			Tag:        server.Tag,
-			LastActive: server.LastActive.Unix(),
-			IPV4:       ipv4,
-			IPV6:       ipv6,
-			ValidIP:    validIP,
+			ID:           server.ID,
+			Name:         server.Name,
+			Tag:          server.Tag,
+			LastActive:   server.LastActive.Unix(),
+			IPV4:         ipv4,
+			IPV6:         ipv6,
+			ValidIP:      validIP,
+			DisplayIndex: server.DisplayIndex,
+			HideForGuest: server.HideForGuest,
 		}
-		res.Result = append(res.Result, &StatusResponse{
-			CommonServerInfo: info,
-			Host:             server.Host,
-			Status:           server.State,
-		})
+
+		// 如果服务器离线但有最后状态，使用最后状态
+		var statusData *StatusResponse
+		if !server.IsOnline && server.LastStateBeforeOffline != nil {
+			statusData = &StatusResponse{
+				CommonServerInfo: info,
+				Host:             server.Host,
+				Status:           server.LastStateBeforeOffline,
+			}
+		} else {
+			statusData = &StatusResponse{
+				CommonServerInfo: info,
+				Host:             server.Host,
+				Status:           server.State,
+			}
+		}
+
+		res.Result = append(res.Result, statusData)
 	}
 	res.CommonResponse = CommonResponse{
 		Code:    0,
@@ -166,10 +180,19 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 			DisplayIndex: v.DisplayIndex,
 			HideForGuest: v.HideForGuest,
 		}
+
+		// 如果服务器离线但有最后状态，使用最后状态
+		var status *model.HostState
+		if !v.IsOnline && v.LastStateBeforeOffline != nil {
+			status = v.LastStateBeforeOffline
+		} else {
+			status = v.State
+		}
+
 		res.Result = append(res.Result, &StatusResponse{
 			CommonServerInfo: info,
 			Host:             v.Host,
-			Status:           v.State,
+			Status:           status,
 		})
 	}
 	res.CommonResponse = CommonResponse{
