@@ -116,22 +116,48 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	singleton.ServerList[clientID].IsOnline = true
 	singleton.ServerList[clientID].LastActive = time.Now()
 
-	// 将当前状态与以前累计的流量合并
+	// 更新当前上报的流量为累计值
+	// 将状态中的流量与数据库中存储的累计流量合并
+	if singleton.ServerList[clientID].CumulativeNetInTransfer > 0 {
+		log.Printf("NG>> 服务器 %s 开始累计流量: 入站累计 %d + 当前 %d",
+			singleton.ServerList[clientID].Name,
+			singleton.ServerList[clientID].CumulativeNetInTransfer,
+			state.NetInTransfer)
+	}
+
+	// 原始报告流量保存用于增量计算
+	originalNetInTransfer := state.NetInTransfer
+	originalNetOutTransfer := state.NetOutTransfer
+
+	// 将当前状态与数据库中累计的流量合并
 	state.NetInTransfer += singleton.ServerList[clientID].CumulativeNetInTransfer
 	state.NetOutTransfer += singleton.ServerList[clientID].CumulativeNetOutTransfer
 
 	// 保存当前状态
 	singleton.ServerList[clientID].State = &state
 
-	// 备份当前状态，用于离线后显示
+	// 保存最后状态，用于离线后显示
 	lastState := model.HostState{}
 	copier.Copy(&lastState, &state)
 	singleton.ServerList[clientID].LastStateBeforeOffline = &lastState
 
+	// 也将当前状态保存到数据库中的LastStateJSON字段，用于面板重启后恢复离线机器状态
+	lastStateJSON, err := utils.Json.Marshal(lastState)
+	if err == nil {
+		singleton.ServerList[clientID].LastStateJSON = string(lastStateJSON)
+		singleton.ServerList[clientID].LastOnline = singleton.ServerList[clientID].LastActive
+
+		// 立即更新到数据库
+		singleton.DB.Model(singleton.ServerList[clientID]).Updates(map[string]interface{}{
+			"last_state_json": singleton.ServerList[clientID].LastStateJSON,
+			"last_online":     singleton.ServerList[clientID].LastOnline,
+		})
+	}
+
 	// 应对 dashboard 重启的情况，如果从未记录过，先打点，等到小时时间点时入库
 	if singleton.ServerList[clientID].PrevTransferInSnapshot == 0 || singleton.ServerList[clientID].PrevTransferOutSnapshot == 0 {
-		singleton.ServerList[clientID].PrevTransferInSnapshot = int64(state.NetInTransfer)
-		singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(state.NetOutTransfer)
+		singleton.ServerList[clientID].PrevTransferInSnapshot = int64(originalNetInTransfer)
+		singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(originalNetOutTransfer)
 	}
 
 	return &pb.Receipt{Proced: true}, nil
@@ -189,21 +215,33 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	 * 这是可以借助上报顺序的空档，将停机前的流量统计数据标记下来，加到下一个小时的数据点上
 	 */
 	if singleton.ServerList[clientID].Host != nil && singleton.ServerList[clientID].Host.BootTime < host.BootTime {
+		log.Printf("NG>> 检测到服务器 %s 重启，更新累计流量", singleton.ServerList[clientID].Name)
+
 		// 服务器重启了，将当前的流量数据保存到累计数据中
 		if singleton.ServerList[clientID].State != nil {
-			// 更新累计流量
-			singleton.ServerList[clientID].CumulativeNetInTransfer = singleton.ServerList[clientID].State.NetInTransfer
-			singleton.ServerList[clientID].CumulativeNetOutTransfer = singleton.ServerList[clientID].State.NetOutTransfer
+			// 计算累计流量数据
+			newCumulativeIn := singleton.ServerList[clientID].State.NetInTransfer
+			newCumulativeOut := singleton.ServerList[clientID].State.NetOutTransfer
 
-			// 保存累计流量到数据库
+			log.Printf("NG>> 服务器 %s 重启前累计流量: 入站 %d / 出站 %d",
+				singleton.ServerList[clientID].Name,
+				newCumulativeIn, newCumulativeOut)
+
+			// 更新内存中累计流量
+			singleton.ServerList[clientID].CumulativeNetInTransfer = newCumulativeIn
+			singleton.ServerList[clientID].CumulativeNetOutTransfer = newCumulativeOut
+
+			// 立即保存累计流量到数据库
 			singleton.DB.Model(singleton.ServerList[clientID]).Updates(map[string]interface{}{
-				"cumulative_net_in_transfer":  singleton.ServerList[clientID].CumulativeNetInTransfer,
-				"cumulative_net_out_transfer": singleton.ServerList[clientID].CumulativeNetOutTransfer,
+				"cumulative_net_in_transfer":  newCumulativeIn,
+				"cumulative_net_out_transfer": newCumulativeOut,
 			})
+
+			log.Printf("NG>> 服务器 %s 累计流量已更新并保存到数据库", singleton.ServerList[clientID].Name)
 		}
 
-		singleton.ServerList[clientID].PrevTransferInSnapshot = singleton.ServerList[clientID].PrevTransferInSnapshot - int64(singleton.ServerList[clientID].State.NetInTransfer)
-		singleton.ServerList[clientID].PrevTransferOutSnapshot = singleton.ServerList[clientID].PrevTransferOutSnapshot - int64(singleton.ServerList[clientID].State.NetOutTransfer)
+		singleton.ServerList[clientID].PrevTransferInSnapshot = 0
+		singleton.ServerList[clientID].PrevTransferOutSnapshot = 0
 	}
 
 	// 不要冲掉国家码

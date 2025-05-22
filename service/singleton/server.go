@@ -1,10 +1,12 @@
 package singleton
 
 import (
+	"log"
 	"sort"
 	"sync"
 
 	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/pkg/utils"
 )
 
 var (
@@ -36,6 +38,26 @@ func loadServers() {
 		innerS.State = &model.HostState{}
 		innerS.LastStateBeforeOffline = nil
 		innerS.IsOnline = false // 初始状态为离线，等待agent报告
+
+		// 加载离线前的最后状态
+		if innerS.LastStateJSON != "" {
+			lastState := &model.HostState{}
+			if err := utils.Json.Unmarshal([]byte(innerS.LastStateJSON), lastState); err == nil {
+				innerS.LastStateBeforeOffline = lastState
+
+				// 将保存的流量数据初始化到State中，确保显示流量数据
+				if innerS.State != nil {
+					innerS.State.NetInTransfer = innerS.CumulativeNetInTransfer
+					innerS.State.NetOutTransfer = innerS.CumulativeNetOutTransfer
+				}
+
+				log.Printf("NG>> 服务器 %s 加载了离线前的最后状态，累计流量入站: %d, 出站: %d",
+					innerS.Name, innerS.CumulativeNetInTransfer, innerS.CumulativeNetOutTransfer)
+			} else {
+				log.Printf("NG>> 解析服务器 %s 的最后状态失败: %v", innerS.Name, err)
+			}
+		}
+
 		innerS.TaskCloseLock = new(sync.Mutex)
 		ServerList[innerS.ID] = &innerS
 		SecretToID[innerS.Secret] = innerS.ID

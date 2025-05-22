@@ -88,6 +88,20 @@ func InitDBFromPath(path string) {
 			log.Println("NG>> 添加cumulative_net_out_transfer字段失败:", err)
 		}
 	}
+
+	if !DB.Migrator().HasColumn(&model.Server{}, "last_state_json") {
+		err = DB.Migrator().AddColumn(&model.Server{}, "last_state_json")
+		if err != nil {
+			log.Println("NG>> 添加last_state_json字段失败:", err)
+		}
+	}
+
+	if !DB.Migrator().HasColumn(&model.Server{}, "last_online") {
+		err = DB.Migrator().AddColumn(&model.Server{}, "last_online")
+		if err != nil {
+			log.Println("NG>> 添加last_online字段失败:", err)
+		}
+	}
 }
 
 // RecordTransferHourlyUsage 对流量记录进行打点
@@ -104,19 +118,29 @@ func RecordTransferHourlyUsage() {
 			continue
 		}
 
+		// 增量流量
+		incrementalIn := utils.Uint64SubInt64(server.State.NetInTransfer, server.PrevTransferInSnapshot)
+		incrementalOut := utils.Uint64SubInt64(server.State.NetOutTransfer, server.PrevTransferOutSnapshot)
+
 		tx := model.Transfer{
 			ServerID: id,
-			In:       utils.Uint64SubInt64(server.State.NetInTransfer, server.PrevTransferInSnapshot),
-			Out:      utils.Uint64SubInt64(server.State.NetOutTransfer, server.PrevTransferOutSnapshot),
+			In:       incrementalIn,
+			Out:      incrementalOut,
 		}
+
 		if tx.In == 0 && tx.Out == 0 {
 			continue
 		}
+
+		// 记录本次计算后的数据点，用于下次增量计算
 		server.PrevTransferInSnapshot = int64(server.State.NetInTransfer)
 		server.PrevTransferOutSnapshot = int64(server.State.NetOutTransfer)
 
 		// 每次记录时更新累计流量到数据库
 		if server.State.NetInTransfer > 0 || server.State.NetOutTransfer > 0 {
+			log.Printf("NG>> 服务器 %s 保存当前累计流量: 入站 %d / 出站 %d",
+				server.Name, server.State.NetInTransfer, server.State.NetOutTransfer)
+
 			serversToUpdate = append(serversToUpdate, model.Server{
 				Common:                   model.Common{ID: id},
 				CumulativeNetInTransfer:  server.State.NetInTransfer,
@@ -129,17 +153,26 @@ func RecordTransferHourlyUsage() {
 	}
 
 	if len(txs) > 0 {
-		log.Println("NG>> Cron 流量统计入库", len(txs), DB.Create(txs).Error)
+		log.Printf("NG>> Cron 流量统计入库: %d 条记录", len(txs))
+		err := DB.Create(txs).Error
+		if err != nil {
+			log.Printf("NG>> Cron 流量统计入库失败: %v", err)
+		}
 	}
 
 	// 批量更新累计流量数据
 	if len(serversToUpdate) > 0 {
 		for i := range serversToUpdate {
-			DB.Model(&serversToUpdate[i]).Updates(map[string]interface{}{
+			err := DB.Model(&serversToUpdate[i]).Updates(map[string]interface{}{
 				"cumulative_net_in_transfer":  serversToUpdate[i].CumulativeNetInTransfer,
 				"cumulative_net_out_transfer": serversToUpdate[i].CumulativeNetOutTransfer,
-			})
+			}).Error
+
+			if err != nil {
+				log.Printf("NG>> 更新服务器 ID %d 累计流量失败: %v", serversToUpdate[i].ID, err)
+			}
 		}
+		log.Printf("NG>> 已更新 %d 个服务器的累计流量数据", len(serversToUpdate))
 	}
 }
 
@@ -293,6 +326,23 @@ func CheckServerOnlineStatus() {
 				lastState := model.HostState{}
 				if err := copier.Copy(&lastState, server.State); err == nil {
 					server.LastStateBeforeOffline = &lastState
+
+					// 将最后状态序列化为JSON并保存到数据库
+					lastStateJSON, err := utils.Json.Marshal(lastState)
+					if err == nil {
+						server.LastStateJSON = string(lastStateJSON)
+						server.LastOnline = server.LastActive
+
+						// 更新数据库
+						DB.Model(server).Updates(map[string]interface{}{
+							"last_state_json": server.LastStateJSON,
+							"last_online":     server.LastOnline,
+						})
+
+						log.Printf("NG>> 服务器 %s 离线，已保存最后状态", server.Name)
+					} else {
+						log.Printf("NG>> 序列化服务器 %s 的最后状态失败: %v", server.Name, err)
+					}
 				}
 			}
 

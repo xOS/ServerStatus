@@ -32,6 +32,10 @@ type Server struct {
 	LastStateBeforeOffline *HostState `gorm:"-" json:"-"`         // 离线前最后一次状态
 	IsOnline               bool       `gorm:"-" json:"is_online"` // 是否在线
 
+	// 持久化保存的最后状态
+	LastStateJSON string    `gorm:"type:text" json:"-"` // 最后一次状态的JSON格式
+	LastOnline    time.Time // 最后一次在线时间
+
 	TaskClose     chan error                         `gorm:"-" json:"-"`
 	TaskCloseLock *sync.Mutex                        `gorm:"-" json:"-"`
 	TaskStream    pb.ServerService_RequestTaskServer `gorm:"-" json:"-"`
