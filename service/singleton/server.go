@@ -44,16 +44,17 @@ func loadServers() {
 		var hostJSON []byte
 		if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", innerS.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
 			if err := utils.Json.Unmarshal(hostJSON, innerS.Host); err != nil {
-				log.Printf("NG>> 解析服务器 %s 的Host数据失败: %v", innerS.Name, err)
-			} else if Conf.Debug {
-				log.Printf("NG>> 服务器 %s 成功加载Host数据: CPU=%v, MemTotal=%v",
-					innerS.Name, len(innerS.Host.CPU) > 0, innerS.Host.MemTotal > 0)
-			}
-		} else if Conf.Debug {
-			if err != nil {
-				log.Printf("NG>> 服务器 %s 从数据库加载Host数据失败: %v", innerS.Name, err)
+				log.Printf("警告: 解析服务器 %s 的Host数据失败: %v", innerS.Name, err)
 			} else {
-				log.Printf("NG>> 服务器 %s 的Host数据在数据库中不存在或为空", innerS.Name)
+				// 记录Host数据不完整的情况，但不添加假数据
+				if len(innerS.Host.CPU) == 0 || innerS.Host.MemTotal == 0 {
+					log.Printf("警告: 服务器 %s 的Host数据不完整: CPU=%v, MemTotal=%v, Platform=%v",
+						innerS.Name, len(innerS.Host.CPU) > 0, innerS.Host.MemTotal > 0, innerS.Host.Platform != "")
+				}
+			}
+		} else {
+			if err != nil {
+				log.Printf("警告: 服务器 %s 从数据库加载Host数据失败: %v", innerS.Name, err)
 			}
 		}
 
@@ -101,11 +102,6 @@ func loadServers() {
 		ServerTagToIDList[innerS.Tag] = append(ServerTagToIDList[innerS.Tag], innerS.ID)
 	}
 	ReSortServer()
-
-	// 仅在Debug模式下输出详细信息
-	if Conf.Debug {
-		printServerLoadSummary()
-	}
 }
 
 // ReSortServer 根据服务器ID 对服务器列表进行排序（ID越大越靠前）
@@ -138,20 +134,30 @@ func ReSortServer() {
 		}
 		return SortedServerListForGuest[i].DisplayIndex > SortedServerListForGuest[j].DisplayIndex
 	})
+
+	// 总是执行，不再限制在Debug模式下
+	printServerLoadSummary()
 }
 
 // printServerLoadSummary 输出服务器状态加载情况的摘要信息
 func printServerLoadSummary() {
-	log.Println("NG>> 服务器状态加载情况:")
-
 	// 统计信息
 	loaded := 0
 	withState := 0
 	withHost := 0
+	incompleteHost := 0
+	noHost := 0
 
 	for _, server := range ServerList {
-		if server.Host != nil && server.Host.MemTotal > 0 {
-			withHost++
+		if server.Host != nil {
+			if server.Host.MemTotal > 0 && len(server.Host.CPU) > 0 {
+				withHost++
+			} else {
+				incompleteHost++
+				// 仅记录不完整的Host对象，但不输出详细信息
+			}
+		} else {
+			noHost++
 		}
 
 		if server.State != nil &&
@@ -166,6 +172,7 @@ func printServerLoadSummary() {
 		}
 	}
 
-	log.Printf("NG>> 总共加载了 %d 台服务器: 有Host信息=%d, 有State信息=%d, 有离线前状态=%d",
-		len(ServerList), withHost, withState, loaded)
+	// 只输出一次总体摘要
+	log.Printf("警告: 服务器状态统计 - 总计=%d, 有完整Host=%d, Host不完整=%d, 无Host=%d, 有State=%d, 有离线前状态=%d",
+		len(ServerList), withHost, incompleteHost, noHost, withState, loaded)
 }

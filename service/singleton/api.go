@@ -121,6 +121,7 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 			if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", server.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
 				tempHost := &model.Host{}
 				if err := utils.Json.Unmarshal(hostJSON, tempHost); err == nil {
+					// 不再填充默认数据，只使用实际数据
 					host = tempHost
 					server.Host = tempHost // 更新内存中的数据
 				}
@@ -188,6 +189,7 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 			if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", v.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
 				tempHost := &model.Host{}
 				if err := utils.Json.Unmarshal(hostJSON, tempHost); err == nil {
+					// 不再填充默认数据，只使用实际数据
 					host = tempHost
 					v.Host = tempHost // 更新内存中的数据
 				}
