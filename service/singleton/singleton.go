@@ -36,11 +36,7 @@ func InitTimezoneAndCache() {
 func LoadSingleton() {
 	loadNotifications() // 加载通知服务
 	loadServers()       // 加载服务器列表
-
-	// 打印调试信息
-	debugServersStatus()
-
-	loadCronTasks() // 加载定时任务
+	loadCronTasks()     // 加载定时任务
 	loadAPI()
 	initNAT()
 	initDDNS()
@@ -179,8 +175,7 @@ func RecordTransferHourlyUsage() {
 
 		// 避免重启后的异常大值
 		if incrementalIn > server.State.NetInTransfer || incrementalOut > server.State.NetOutTransfer {
-			log.Printf("NG>> 服务器 %s 流量增量异常，可能是重启导致: 入站 %d / 出站 %d，使用原始值代替",
-				server.Name, incrementalIn, incrementalOut)
+			log.Printf("NG>> 服务器 %s 流量增量异常，可能是重启导致", server.Name)
 
 			incrementalIn = server.State.NetInTransfer - server.CumulativeNetInTransfer
 			incrementalOut = server.State.NetOutTransfer - server.CumulativeNetOutTransfer
@@ -203,9 +198,6 @@ func RecordTransferHourlyUsage() {
 			continue
 		}
 
-		log.Printf("NG>> 服务器 %s 本小时流量增量: 入站 %d / 出站 %d",
-			server.Name, incrementalIn, incrementalOut)
-
 		// 记录本次计算后的数据点，用于下次增量计算
 		server.PrevTransferInSnapshot = int64(server.State.NetInTransfer - server.CumulativeNetInTransfer)
 		server.PrevTransferOutSnapshot = int64(server.State.NetOutTransfer - server.CumulativeNetOutTransfer)
@@ -215,10 +207,10 @@ func RecordTransferHourlyUsage() {
 	}
 
 	if len(txs) > 0 {
-		log.Printf("NG>> Cron 流量统计入库: %d 条记录", len(txs))
+		log.Printf("NG>> 流量统计入库: %d 条记录", len(txs))
 		err := DB.Create(txs).Error
 		if err != nil {
-			log.Printf("NG>> Cron 流量统计入库失败: %v", err)
+			log.Printf("NG>> 流量统计入库失败: %v", err)
 		}
 	}
 }
@@ -280,7 +272,7 @@ func CleanMonitorHistory() {
 func cleanCumulativeTransferData(days int) {
 	// 获取保留期限的开始时间点
 	retentionStart := time.Now().AddDate(0, 0, -days)
-	log.Println("NG>> 开始清理", days, "天前的累计流量数据")
+	log.Println("NG>> 清理流量数据，保留", days, "天内的数据")
 
 	// 从Transfer表中查询保留期内最早的有效数据日期
 	var oldestValidTransfers []model.Transfer
@@ -343,7 +335,7 @@ func cleanCumulativeTransferData(days int) {
 				"cumulative_net_out_transfer": serversToUpdate[i].CumulativeNetOutTransfer,
 			})
 		}
-		log.Println("NG>> 已更新", len(serversToUpdate), "个服务器的累计流量数据")
+		log.Println("NG>> 已清理过期流量数据，保留", days, "天内的累计流量")
 	}
 }
 
@@ -389,7 +381,27 @@ func CheckServerOnlineStatus() {
 							"last_online":     server.LastOnline,
 						})
 
-						log.Printf("NG>> 服务器 %s 离线，已保存最后状态", server.Name)
+						log.Printf("NG>> 服务器 %s 离线", server.Name)
+
+						// 确保Host信息也已保存
+						if server.Host != nil {
+							// 检查是否已存在Host信息
+							var count int64
+							DB.Raw("SELECT COUNT(*) FROM last_reported_host WHERE server_id = ?", server.ID).Scan(&count)
+
+							if count == 0 {
+								// 如果不存在，保存当前Host信息
+								hostJSON, hostErr := utils.Json.Marshal(server.Host)
+								if hostErr == nil && len(hostJSON) > 0 {
+									DB.Exec(`
+										INSERT INTO last_reported_host (server_id, host_json) 
+										VALUES (?, ?)
+										ON CONFLICT(server_id) 
+										DO UPDATE SET host_json = ?
+									`, server.ID, string(hostJSON), string(hostJSON))
+								}
+							}
+						}
 					} else {
 						log.Printf("NG>> 序列化服务器 %s 的最后状态失败: %v", server.Name, err)
 					}
@@ -407,8 +419,10 @@ func CheckServerOnlineStatus() {
 
 		// 如果需要重置累计流量，则重置服务器的累计流量
 		if shouldResetTransferStats {
-			log.Printf("NG>> 服务器 %s 流量统计周期结束，重置累计流量 (入站: %d, 出站: %d)",
-				server.Name, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+			// 只对流量有变化的服务器打印日志
+			if server.CumulativeNetInTransfer > 0 || server.CumulativeNetOutTransfer > 0 {
+				log.Printf("NG>> 重置服务器 %s 的累计流量", server.Name)
+			}
 
 			server.CumulativeNetInTransfer = 0
 			server.CumulativeNetOutTransfer = 0
@@ -435,9 +449,7 @@ func checkShouldResetTransferStats() bool {
 
 		// 如果当前时间已经超过了周期结束时间，说明需要重置流量
 		if !cycleStats.To.IsZero() && now.After(cycleStats.To) {
-			log.Printf("NG>> 流量统计周期已结束 (%s 到 %s)，重置所有服务器的累计流量",
-				cycleStats.From.Format("2006-01-02 15:04:05"),
-				cycleStats.To.Format("2006-01-02 15:04:05"))
+			log.Printf("NG>> 流量统计周期已结束，重置所有服务器的累计流量")
 			return true
 		}
 	}

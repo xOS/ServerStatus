@@ -116,16 +116,6 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	singleton.ServerList[clientID].IsOnline = true
 	singleton.ServerList[clientID].LastActive = time.Now()
 
-	// 输出完整状态数据，用于调试
-	log.Printf("NG>> 服务器 %s 状态上报: CPU:%.2f%% 内存:%d 硬盘:%d 进程:%d 原始流量:入站 %d / 出站 %d",
-		singleton.ServerList[clientID].Name,
-		state.CPU,
-		state.MemUsed,
-		state.DiskUsed,
-		state.ProcessCount,
-		state.NetInTransfer,
-		state.NetOutTransfer)
-
 	// 保存原始流量数据用于增量计算
 	originalNetInTransfer := state.NetInTransfer
 	originalNetOutTransfer := state.NetOutTransfer
@@ -134,12 +124,6 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	// 这确保了我们只累加当前会话的流量，不会重复累加历史数据
 	state.NetInTransfer += singleton.ServerList[clientID].CumulativeNetInTransfer
 	state.NetOutTransfer += singleton.ServerList[clientID].CumulativeNetOutTransfer
-
-	// 记录实际展示的流量值
-	log.Printf("NG>> 服务器 %s 实际展示流量: 入站 %d / 出站 %d",
-		singleton.ServerList[clientID].Name,
-		state.NetInTransfer,
-		state.NetOutTransfer)
 
 	// 保存当前状态
 	singleton.ServerList[clientID].State = &state
@@ -161,7 +145,25 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			"last_online":     singleton.ServerList[clientID].LastOnline,
 		})
 
-		log.Printf("NG>> 服务器 %s 最后状态已保存到数据库", singleton.ServerList[clientID].Name)
+		// 确认Host信息是否已保存，如果该服务器尚未保存Host信息，尝试保存当前内存中的信息
+		if singleton.ServerList[clientID].Host != nil {
+			var count int64
+			singleton.DB.Raw("SELECT COUNT(*) FROM last_reported_host WHERE server_id = ?", clientID).Scan(&count)
+
+			if count == 0 {
+				hostJSON, hostErr := utils.Json.Marshal(singleton.ServerList[clientID].Host)
+				if hostErr == nil && len(hostJSON) > 0 {
+					singleton.DB.Exec(`
+						INSERT INTO last_reported_host (server_id, host_json) 
+						VALUES (?, ?)
+						ON CONFLICT(server_id) 
+						DO UPDATE SET host_json = ?
+					`, clientID, string(hostJSON), string(hostJSON))
+				}
+			}
+		}
+	} else {
+		log.Printf("NG>> 序列化服务器 %s 的最后状态失败: %v", singleton.ServerList[clientID].Name, err)
 	}
 
 	// 确保PrevTransferSnapshot值被正确初始化
@@ -169,10 +171,6 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	if singleton.ServerList[clientID].PrevTransferInSnapshot == 0 || singleton.ServerList[clientID].PrevTransferOutSnapshot == 0 {
 		singleton.ServerList[clientID].PrevTransferInSnapshot = int64(originalNetInTransfer)
 		singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(originalNetOutTransfer)
-		log.Printf("NG>> 服务器 %s 初始化流量基准点: 入站 %d / 出站 %d",
-			singleton.ServerList[clientID].Name,
-			singleton.ServerList[clientID].PrevTransferInSnapshot,
-			singleton.ServerList[clientID].PrevTransferOutSnapshot)
 	}
 
 	return &pb.Receipt{Proced: true}, nil
@@ -235,11 +233,6 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		// 服务器重启时保持累计流量不变，只重置上次记录点
 		singleton.ServerList[clientID].PrevTransferInSnapshot = 0
 		singleton.ServerList[clientID].PrevTransferOutSnapshot = 0
-
-		log.Printf("NG>> 服务器 %s 重置了流量计数点，累计流量保持不变: 入站 %d / 出站 %d",
-			singleton.ServerList[clientID].Name,
-			singleton.ServerList[clientID].CumulativeNetInTransfer,
-			singleton.ServerList[clientID].CumulativeNetOutTransfer)
 	}
 
 	// 不要冲掉国家码
@@ -257,8 +250,8 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 			ON CONFLICT(server_id) 
 			DO UPDATE SET host_json = ?
 		`, clientID, string(hostJSON), string(hostJSON))
-
-		log.Printf("NG>> 服务器 %s Host信息已保存到数据库", singleton.ServerList[clientID].Name)
+	} else {
+		log.Printf("NG>> 序列化服务器 %s 的Host信息失败: %v", singleton.ServerList[clientID].Name, err)
 	}
 
 	singleton.ServerList[clientID].Host = &host

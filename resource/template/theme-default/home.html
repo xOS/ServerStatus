@@ -49,8 +49,15 @@
                                         @#formatByteSize(server.Host.SwapTotal)#@<br />
                                 {{tr "DiskUsed"}}：@#formatByteSize(server.State.DiskUsed)#@ /
                                 @#formatByteSize(server.Host.DiskTotal)#@<br />
-                                
+                                <template v-if="getTrafficTooltip(server.ID)">
                                 {{tr "TrafficTotal"}}：@#getTrafficTooltip(server.ID)#@<br />
+                                </template>
+                                <template v-if="server.Host.GPU">
+                                    {{tr "GPU"}}：@#server.Host.GPU#@<br />
+                                </template>
+                                <template v-if="hasTemperature(server.State.Temperatures, sensorList)">
+                                    {{tr "Temperature"}}：@#getTemperature(server.State.Temperatures, sensorList)#@°C<br />
+                                </template>
 
                                 {{tr "Load"}}：@#toFixed2(server.State.Load1)#@ | @#toFixed2(server.State.Load5)#@ | @#toFixed2(server.State.Load15)#@<br />
                                 {{tr "ConnCount"}}：TCP @#server.State.TcpConnCount#@ {{tr "Count"}} | UDP @#server.State.UdpConnCount#@ {{tr "Count"}}
@@ -923,6 +930,48 @@
                 // Force Vue to recognize the data change
                 this.$forceUpdate();
             },
+            hasTemperature(temperatureList, sensorList) {
+                // 如果没有温度数据，返回false
+                if (!temperatureList || !Array.isArray(temperatureList) || temperatureList.length === 0) {
+                    return false;
+                }
+                
+                // 检查是否存在任何非零温度数据
+                return temperatureList.some(item => item.Temperature !== 0);
+            },
+            getTemperature(temperatureList, sensorList) {
+                // 如果没有温度数据，返回空字符串
+                if (!temperatureList || !Array.isArray(temperatureList) || temperatureList.length === 0) {
+                    return '';
+                }
+                
+                // 将 sensorList 中的所有项转换为小写
+                const lowerCaseSensorList = sensorList.map(sensor => sensor.toLowerCase());
+
+                // 合并过滤逻辑：过滤出 Temperature 不为 0 且 Name 在 sensorList 中的元素（忽略大小写）
+                const filtered = temperatureList.filter(item => item.Temperature !== 0 && lowerCaseSensorList.includes(item.Name.toLowerCase()));
+                
+                // 如果有匹配的元素，则计算这些元素的 Temperature 的最大值
+                if (filtered.length > 0) {
+                    const maxTemp = filtered.reduce((max, current) => {
+                        return current.Temperature > max ? current.Temperature : max;
+                    }, filtered[0].Temperature);
+                    return maxTemp.toFixed(1);
+                }
+
+                // 如果没有匹配的元素，则计算 temperatureList 中所有 Temperature 不为 0 的元素的最大值
+                const nonZeroTemps = temperatureList.filter(item => item.Temperature !== 0);
+
+                if (nonZeroTemps.length > 0) {
+                    const maxTemp = nonZeroTemps.reduce((max, current) => {
+                        return current.Temperature > max ? current.Temperature : max;
+                    }, nonZeroTemps[0].Temperature);
+                    return maxTemp.toFixed(1);
+                }
+
+                // 如果所有元素的 Temperature 都为 0，则返回空字符串
+                return '';
+            },
             initTrafficDataWatcher() {
                 this.trafficWatcherInterval = setInterval(() => {
                     if (window.serverTrafficData && 
@@ -1005,7 +1054,5 @@
     $(document).ready(function() {
         $('.ui.accordion').accordion({ "exclusive": false });
     });
-
-    // Note: Traffic formatting function has been moved to main.js
 </script>
 {{end}}

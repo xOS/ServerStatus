@@ -45,11 +45,7 @@ func loadServers() {
 		if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", innerS.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
 			if err := utils.Json.Unmarshal(hostJSON, innerS.Host); err != nil {
 				log.Printf("NG>> 解析服务器 %s 的Host数据失败: %v", innerS.Name, err)
-			} else {
-				log.Printf("NG>> 服务器 %s 加载了Host数据", innerS.Name)
 			}
-		} else {
-			log.Printf("NG>> 服务器 %s 没有找到历史Host数据", innerS.Name)
 		}
 
 		// 加载离线前的最后状态
@@ -85,14 +81,6 @@ func loadServers() {
 				// 将保存的流量数据初始化到State中，确保显示流量数据
 				innerS.State.NetInTransfer = innerS.CumulativeNetInTransfer
 				innerS.State.NetOutTransfer = innerS.CumulativeNetOutTransfer
-
-				log.Printf("NG>> 服务器 %s 加载了离线前的最后状态，CPU:%.2f%% 内存:%d 硬盘:%d 流量入站:%d 出站:%d",
-					innerS.Name,
-					innerS.State.CPU,
-					innerS.State.MemUsed,
-					innerS.State.DiskUsed,
-					innerS.CumulativeNetInTransfer,
-					innerS.CumulativeNetOutTransfer)
 			} else {
 				log.Printf("NG>> 解析服务器 %s 的最后状态失败: %v", innerS.Name, err)
 			}
@@ -104,6 +92,11 @@ func loadServers() {
 		ServerTagToIDList[innerS.Tag] = append(ServerTagToIDList[innerS.Tag], innerS.ID)
 	}
 	ReSortServer()
+
+	// 仅在Debug模式下输出详细信息
+	if Conf.Debug {
+		printServerLoadSummary()
+	}
 }
 
 // ReSortServer 根据服务器ID 对服务器列表进行排序（ID越大越靠前）
@@ -136,4 +129,34 @@ func ReSortServer() {
 		}
 		return SortedServerListForGuest[i].DisplayIndex > SortedServerListForGuest[j].DisplayIndex
 	})
+}
+
+// printServerLoadSummary 输出服务器状态加载情况的摘要信息
+func printServerLoadSummary() {
+	log.Println("NG>> 服务器状态加载情况:")
+
+	// 统计信息
+	loaded := 0
+	withState := 0
+	withHost := 0
+
+	for _, server := range ServerList {
+		if server.Host != nil && server.Host.MemTotal > 0 {
+			withHost++
+		}
+
+		if server.State != nil &&
+			(server.State.CPU > 0 ||
+				server.State.MemUsed > 0 ||
+				server.State.NetInTransfer > 0) {
+			withState++
+		}
+
+		if server.LastStateBeforeOffline != nil {
+			loaded++
+		}
+	}
+
+	log.Printf("NG>> 总共加载了 %d 台服务器: 有Host信息=%d, 有State信息=%d, 有离线前状态=%d",
+		len(ServerList), withHost, withState, loaded)
 }
