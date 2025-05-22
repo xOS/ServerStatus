@@ -134,10 +134,10 @@ func RecordTransferHourlyUsage() {
 
 	// 批量更新累计流量数据
 	if len(serversToUpdate) > 0 {
-		for _, server := range serversToUpdate {
-			DB.Model(&server).Updates(map[string]interface{}{
-				"cumulative_net_in_transfer":  server.CumulativeNetInTransfer,
-				"cumulative_net_out_transfer": server.CumulativeNetOutTransfer,
+		for i := range serversToUpdate {
+			DB.Model(&serversToUpdate[i]).Updates(map[string]interface{}{
+				"cumulative_net_in_transfer":  serversToUpdate[i].CumulativeNetInTransfer,
+				"cumulative_net_out_transfer": serversToUpdate[i].CumulativeNetOutTransfer,
 			})
 		}
 	}
