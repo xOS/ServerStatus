@@ -1,7 +1,6 @@
 package singleton
 
 import (
-	"log"
 	"sync"
 	"time"
 
@@ -115,12 +114,31 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 			continue
 		}
 
-		// 确保host不为空
-		if server.Host == nil {
+		// 尝试从数据库加载Host信息
+		host := server.Host
+		if host == nil || host.MemTotal == 0 || len(host.CPU) == 0 {
+			var hostJSON []byte
+			if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", server.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
+				tempHost := &model.Host{}
+				if err := utils.Json.Unmarshal(hostJSON, tempHost); err == nil {
+					host = tempHost
+					server.Host = tempHost // 更新内存中的数据
+				}
+			}
+		}
+
+		// 获取状态数据，优先使用当前状态，没有则使用离线前保存的最后状态
+		state := server.State
+		if state == nil && server.LastStateBeforeOffline != nil {
+			state = server.LastStateBeforeOffline
+		}
+
+		// 如果没有有效的Host或状态数据，跳过该服务器
+		if host == nil {
 			continue
 		}
 
-		ipv4, ipv6, validIP := utils.SplitIPAddr(server.Host.IP)
+		ipv4, ipv6, validIP := utils.SplitIPAddr(host.IP)
 		info := CommonServerInfo{
 			ID:           server.ID,
 			Name:         server.Name,
@@ -133,22 +151,11 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 			HideForGuest: server.HideForGuest,
 		}
 
-		// 确保状态数据不为空
-		if server.State == nil {
-			// 如果状态为空但有历史状态，使用历史状态
-			if server.LastStateBeforeOffline != nil {
-				server.State = server.LastStateBeforeOffline
-				log.Printf("NG>> 服务器 %s API返回使用了历史状态数据", server.Name)
-			} else {
-				continue
-			}
-		}
-
 		// 构建状态响应
 		statusData := &StatusResponse{
 			CommonServerInfo: info,
-			Host:             server.Host,
-			Status:           server.State,
+			Host:             host,
+			Status:           state,
 		}
 
 		res.Result = append(res.Result, statusData)
@@ -173,22 +180,28 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 	defer ServerLock.RUnlock()
 
 	for _, v := range ServerList {
-		// 确保host不为空
+		// 尝试从数据库加载Host信息
 		host := v.Host
+		if host == nil || host.MemTotal == 0 || len(host.CPU) == 0 {
+			var hostJSON []byte
+			if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", v.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
+				tempHost := &model.Host{}
+				if err := utils.Json.Unmarshal(hostJSON, tempHost); err == nil {
+					host = tempHost
+					v.Host = tempHost // 更新内存中的数据
+				}
+			}
+		}
+
+		// 如果Host信息不可用，跳过此服务器
 		if host == nil {
 			continue
 		}
 
-		// 确保状态数据不为空
+		// 获取状态数据，优先使用当前状态，没有则使用离线前保存的最后状态
 		state := v.State
-		if state == nil {
-			// 如果状态为空但有历史状态，使用历史状态
-			if v.LastStateBeforeOffline != nil {
-				state = v.LastStateBeforeOffline
-				log.Printf("NG>> 服务器 %s GetAllStatus使用了历史状态数据", v.Name)
-			} else {
-				continue
-			}
+		if state == nil && v.LastStateBeforeOffline != nil {
+			state = v.LastStateBeforeOffline
 		}
 
 		ipv4, ipv6, validIP := utils.SplitIPAddr(host.IP)
@@ -204,12 +217,16 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 			HideForGuest: v.HideForGuest,
 		}
 
-		res.Result = append(res.Result, &StatusResponse{
+		// 构建状态响应
+		statusData := &StatusResponse{
 			CommonServerInfo: info,
-			Host:             v.Host,
+			Host:             host,
 			Status:           state,
-		})
+		}
+
+		res.Result = append(res.Result, statusData)
 	}
+
 	res.CommonResponse = CommonResponse{
 		Code:    0,
 		Message: "success",
