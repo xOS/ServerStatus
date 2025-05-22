@@ -116,30 +116,30 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	singleton.ServerList[clientID].IsOnline = true
 	singleton.ServerList[clientID].LastActive = time.Now()
 
-	// 更新当前上报的流量为累计值
-	// 将状态中的流量与数据库中存储的累计流量合并
-	if singleton.ServerList[clientID].CumulativeNetInTransfer > 0 {
-		log.Printf("NG>> 服务器 %s 开始累计流量: 入站累计 %d + 当前 %d",
-			singleton.ServerList[clientID].Name,
-			singleton.ServerList[clientID].CumulativeNetInTransfer,
-			state.NetInTransfer)
-	}
-
 	// 输出完整状态数据，用于调试
-	log.Printf("NG>> 服务器 %s 状态上报: CPU:%.2f%% 内存:%d 硬盘:%d 进程:%d",
+	log.Printf("NG>> 服务器 %s 状态上报: CPU:%.2f%% 内存:%d 硬盘:%d 进程:%d 原始流量:入站 %d / 出站 %d",
 		singleton.ServerList[clientID].Name,
 		state.CPU,
 		state.MemUsed,
 		state.DiskUsed,
-		state.ProcessCount)
+		state.ProcessCount,
+		state.NetInTransfer,
+		state.NetOutTransfer)
 
-	// 原始报告流量保存用于增量计算
+	// 保存原始流量数据用于增量计算
 	originalNetInTransfer := state.NetInTransfer
 	originalNetOutTransfer := state.NetOutTransfer
 
-	// 将当前状态与数据库中累计的流量合并
+	// 更新状态中的累计流量 = 当前会话的原始流量 + 数据库中保存的累计流量
+	// 这确保了我们只累加当前会话的流量，不会重复累加历史数据
 	state.NetInTransfer += singleton.ServerList[clientID].CumulativeNetInTransfer
 	state.NetOutTransfer += singleton.ServerList[clientID].CumulativeNetOutTransfer
+
+	// 记录实际展示的流量值
+	log.Printf("NG>> 服务器 %s 实际展示流量: 入站 %d / 出站 %d",
+		singleton.ServerList[clientID].Name,
+		state.NetInTransfer,
+		state.NetOutTransfer)
 
 	// 保存当前状态
 	singleton.ServerList[clientID].State = &state
@@ -164,10 +164,15 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		log.Printf("NG>> 服务器 %s 最后状态已保存到数据库", singleton.ServerList[clientID].Name)
 	}
 
-	// 应对 dashboard 重启的情况，如果从未记录过，先打点，等到小时时间点时入库
+	// 确保PrevTransferSnapshot值被正确初始化
+	// 这些值用于计算每小时的增量流量
 	if singleton.ServerList[clientID].PrevTransferInSnapshot == 0 || singleton.ServerList[clientID].PrevTransferOutSnapshot == 0 {
 		singleton.ServerList[clientID].PrevTransferInSnapshot = int64(originalNetInTransfer)
 		singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(originalNetOutTransfer)
+		log.Printf("NG>> 服务器 %s 初始化流量基准点: 入站 %d / 出站 %d",
+			singleton.ServerList[clientID].Name,
+			singleton.ServerList[clientID].PrevTransferInSnapshot,
+			singleton.ServerList[clientID].PrevTransferOutSnapshot)
 	}
 
 	return &pb.Receipt{Proced: true}, nil
@@ -222,36 +227,19 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	/**
 	 * 这里的 singleton 中的数据都是关机前的旧数据
 	 * 当 agent 重启时，bootTime 变大，agent 端会先上报 host 信息，然后上报 state 信息
-	 * 这是可以借助上报顺序的空档，将停机前的流量统计数据标记下来，加到下一个小时的数据点上
+	 * 这是可以借助上报顺序的空档，标记服务器为重启状态，表示从该节点开始累计流量
 	 */
 	if singleton.ServerList[clientID].Host != nil && singleton.ServerList[clientID].Host.BootTime < host.BootTime {
-		log.Printf("NG>> 检测到服务器 %s 重启，更新累计流量", singleton.ServerList[clientID].Name)
+		log.Printf("NG>> 检测到服务器 %s 重启，重置流量计数", singleton.ServerList[clientID].Name)
 
-		// 服务器重启了，将当前的流量数据保存到累计数据中
-		if singleton.ServerList[clientID].State != nil {
-			// 计算累计流量数据
-			newCumulativeIn := singleton.ServerList[clientID].State.NetInTransfer
-			newCumulativeOut := singleton.ServerList[clientID].State.NetOutTransfer
-
-			log.Printf("NG>> 服务器 %s 重启前累计流量: 入站 %d / 出站 %d",
-				singleton.ServerList[clientID].Name,
-				newCumulativeIn, newCumulativeOut)
-
-			// 更新内存中累计流量
-			singleton.ServerList[clientID].CumulativeNetInTransfer = newCumulativeIn
-			singleton.ServerList[clientID].CumulativeNetOutTransfer = newCumulativeOut
-
-			// 立即保存累计流量到数据库
-			singleton.DB.Model(singleton.ServerList[clientID]).Updates(map[string]interface{}{
-				"cumulative_net_in_transfer":  newCumulativeIn,
-				"cumulative_net_out_transfer": newCumulativeOut,
-			})
-
-			log.Printf("NG>> 服务器 %s 累计流量已更新并保存到数据库", singleton.ServerList[clientID].Name)
-		}
-
+		// 服务器重启时保持累计流量不变，只重置上次记录点
 		singleton.ServerList[clientID].PrevTransferInSnapshot = 0
 		singleton.ServerList[clientID].PrevTransferOutSnapshot = 0
+
+		log.Printf("NG>> 服务器 %s 重置了流量计数点，累计流量保持不变: 入站 %d / 出站 %d",
+			singleton.ServerList[clientID].Name,
+			singleton.ServerList[clientID].CumulativeNetInTransfer,
+			singleton.ServerList[clientID].CumulativeNetOutTransfer)
 	}
 
 	// 不要冲掉国家码

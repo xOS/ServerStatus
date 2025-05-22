@@ -46,16 +46,10 @@ func loadServers() {
 			if err := utils.Json.Unmarshal(hostJSON, innerS.Host); err != nil {
 				log.Printf("NG>> 解析服务器 %s 的Host数据失败: %v", innerS.Name, err)
 			} else {
-				log.Printf("NG>> 服务器 %s 加载了Host数据，内存总量: %d", innerS.Name, innerS.Host.MemTotal)
+				log.Printf("NG>> 服务器 %s 加载了Host数据", innerS.Name)
 			}
 		} else {
-			// 如果没有保存的Host信息，设置默认值防止页面显示不正确
-			innerS.Host.MemTotal = 1024 * 1024 * 1024       // 1GB
-			innerS.Host.DiskTotal = 10 * 1024 * 1024 * 1024 // 10GB
-			innerS.Host.SwapTotal = 512 * 1024 * 1024       // 512MB
-			innerS.Host.OS = "Unknown"
-			innerS.Host.Platform = "Unknown"
-			innerS.Host.CPU = []string{"Unknown CPU"}
+			log.Printf("NG>> 服务器 %s 没有找到历史Host数据", innerS.Name)
 		}
 
 		// 加载离线前的最后状态
