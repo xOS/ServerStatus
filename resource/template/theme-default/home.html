@@ -4,7 +4,7 @@
 {{template "theme-default/menu" .}}
 
 <div class="nb-container">
-    <div class="ui container">
+    <div class="ui container" style="padding-bottom: 30px;">
         <div class="tabs-wrapper">
             <div v-if="servers && servers.length > 0" 
                  class="custom-tabs-container" 
@@ -49,6 +49,9 @@
                                         @#formatByteSize(server.Host.SwapTotal)#@<br />
                                 {{tr "DiskUsed"}}：@#formatByteSize(server.State.DiskUsed)#@ /
                                 @#formatByteSize(server.Host.DiskTotal)#@<br />
+                                
+                                {{tr "TrafficTotal"}}：@#getTrafficTooltip(server.ID)#@<br />
+
                                 {{tr "Load"}}：@#toFixed2(server.State.Load1)#@ | @#toFixed2(server.State.Load5)#@ | @#toFixed2(server.State.Load15)#@<br />
                                 {{tr "ConnCount"}}：TCP @#server.State.TcpConnCount#@ {{tr "Count"}} | UDP @#server.State.UdpConnCount#@ {{tr "Count"}}
                                 <br />
@@ -110,6 +113,16 @@
                                         </div>
                                     </div>
                                 </div>
+                                
+                                <div class="three wide column">{{tr "TrafficTotal"}}</div>
+                                <div class="thirteen wide column">
+                                    <div :class="getTrafficProgressClass(server.ID)">
+                                        <div class="bar" :style="getTrafficProgressStyle(server.ID)">
+                                            <small>@# getTrafficDisplay(server.ID) #@</small>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="three wide column">{{tr "NetSpeed"}}</div>
                                 <div class="thirteen wide column">
                                     <i class="fa-regular fa-down"></i>
@@ -159,67 +172,198 @@
             </div>
         </template>
 
-        <div class="ui styled fluid accordion">
-            <div class="title"><i class="dropdown icon"></i>{{tr "CycleTransferStats"}}
-            </div>
-            <div class="content">
-                <div id="traffic" style="margin: 0.1em 0.15em;"
-                    class="ui four stackable status cards transition hidden">
-                    {{if .CycleTransferStats}}
-                    <table class="ui celled table">
-                        <thead style="background: rgb(255 255 255 / 50%);"> <tr>
-                                <th class="ui center aligned">ID</th>
-                                <th class="ui center aligned">{{tr "Rules"}}</th>
-                                <th class="ui center aligned">{{tr "Server"}}</th>
-                                <th class="ui center aligned">{{tr "From"}}</th>
-                                <th class="ui center aligned">{{tr "To"}}</th>
-                                <th class="ui center aligned">{{tr "NextCheck"}}</th>
-                                <th class="ui center aligned">{{tr "TrafficTotal"}}</th>
-                                <th class="ui center aligned">{{tr "CurrentUsage"}}</th>
-                                <th class='ui center aligned' style='padding: 0px 31px 0px 31px;'>{{tr "Transleft"}}
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {{range $id, $stats := .CycleTransferStats}}
-                            {{range $innerId, $transfer := $stats.Transfer}}
-                            {{$TransLeftPercent := TransLeftPercent (UintToFloat $transfer) (UintToFloat $stats.Max)}}
-                            <tr>
-                                <td class="ui center aligned">{{$id}}</td>
-                                <td class="ui center aligned">{{$stats.Name}}</td>
-                                <td class="ui center aligned">{{index $stats.ServerName $innerId}}</td>
-                                <td class="ui center aligned">{{$stats.From|tf}}</td>
-                                <td class="ui center aligned">{{$stats.To|tf}}</td>
-                                <td class="ui center aligned">{{(index $stats.NextUpdate $innerId)|sft}}</td>
-                                <td class="ui center aligned">{{$stats.Max|bf}}</td>
-                                <td class="ui center aligned">{{$transfer|bf}}</td>
-                                <td class="ui center aligned"
-                                    style="padding: 10px 10px 0px 10px; position: relative;">
-                                    <div class="thirteen wide column" style="margin: 1.5em 0em;">
-                                        <div class="ui progress {{TransClassName $TransLeftPercent}}"
-                                            style=" background: rgba(0,0,0,.1); background-color: rgba(0,0,0,.1)!important; height: 25px;">
-                                            <div class="bar"
-                                                style="transition-duration: 300ms; width: {{$TransLeftPercent}}% !important;">
-                                            </div><small style="position: relative; top: -2em; margin-left: -20px; line-height: 1.75em;color: rgba(255, 255, 255, 0.7);font-weight: 700;">{{TransLeft $stats.Max $transfer}} | {{$TransLeftPercent}}%</small>
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            {{end}}
-                            {{end}}
-                        </tbody>
-                    </table>
+        <!-- 隐藏的数据区域，用于流量统计 -->
+        <div style="display: none;" id="hiddenTrafficData">
+            {{if .CycleTransferStats}}
+            <table class="ui celled table">
+                <thead>
+                    <tr>
+                        <th class="ui center aligned">ID</th>
+                        <th class="ui center aligned">{{tr "Rules"}}</th>
+                        <th class="ui center aligned">{{tr "Server"}}</th>
+                        <th class="ui center aligned">{{tr "From"}}</th>
+                        <th class="ui center aligned">{{tr "To"}}</th>
+                        <th class="ui center aligned">{{tr "NextCheck"}}</th>
+                        <th class="ui center aligned">{{tr "TrafficTotal"}}</th>
+                        <th class="ui center aligned">{{tr "CurrentUsage"}}</th>
+                        <th class='ui center aligned'>{{tr "Transleft"}}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range $id, $stats := .CycleTransferStats}}
+                    {{range $innerId, $transfer := $stats.Transfer}}
+                    {{$TransLeftPercent := TransLeftPercent (UintToFloat $transfer) (UintToFloat $stats.Max)}}
+                    <tr>
+                        <td class="ui center aligned">{{$id}}</td>
+                        <td class="ui center aligned">{{$stats.Name}}</td>
+                        <td class="ui center aligned">{{index $stats.ServerName $innerId}}</td>
+                        <td class="ui center aligned">{{$stats.From|tf}}</td>
+                        <td class="ui center aligned">{{$stats.To|tf}}</td>
+                        <td class="ui center aligned">{{(index $stats.NextUpdate $innerId)|sft}}</td>
+                        <td class="ui center aligned">{{$stats.Max|bf}}</td>
+                        <td class="ui center aligned">{{$transfer|bf}}</td>
+                        <td class="ui center aligned">{{TransLeft $stats.Max $transfer}} | {{$TransLeftPercent}}%</td>
+                    </tr>
                     {{end}}
-                </div>
-            </div>
+                    {{end}}
+                </tbody>
+            </table>
+            {{end}}
         </div>
+
+        <!-- 添加页脚上方的间距 -->
+        <div style="margin-bottom: 30px;"></div>
+
+        {{template "theme-default/footer" .}}
     </div>
 </div>
 
 {{template "theme-default/footer" .}}
 <script>
-    // Date.prototype.format and other utility functions (specialOS, specialVir, clearString) remain the same
-    // ... (keep existing utility functions) ...
+    // Initialize global variable for traffic data and tracking
+    window.serverTrafficData = {};
+    window.lastTrafficUpdateTime = 0;
+    
+    // Function to extract traffic data from accordion section
+    function extractTrafficData() {
+        try {
+            // 现在从隐藏的数据区域获取流量表格数据
+            const trafficRows = document.querySelectorAll('#hiddenTrafficData table tbody tr');
+            if (!trafficRows || trafficRows.length === 0) {
+                return;
+            }
+            
+            const newTrafficData = {};
+            
+            // 处理每一行
+            trafficRows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 9) {
+                    const rawServerId = cells[0].innerText.trim();
+                    const serverName = cells[2].innerText.trim();
+                    
+                    let matchingServer = null;
+                    if (statusCards && statusCards.servers) {
+                        matchingServer = statusCards.servers.find(s => s.Name === serverName);
+                    }
+                    
+                    const serverId = matchingServer ? matchingServer.ID : rawServerId;
+                    
+                    // 解析最大流量和已使用流量
+                    const maxTrafficText = cells[6].innerText.trim();
+                    const usedTrafficText = cells[7].innerText.trim();
+                    
+                    // 规范化单位格式
+                    const standardMaxTraffic = formatTrafficUnit(maxTrafficText);
+                    const standardUsedTraffic = formatTrafficUnit(usedTrafficText);
+                    
+                    // 将流量数据转换为字节数进行准确计算
+                    const maxTrafficBytes = parseTrafficToBytes(maxTrafficText);
+                    const usedTrafficBytes = parseTrafficToBytes(usedTrafficText);
+                    
+                    // 获取表格中显示的原始百分比
+                    let originalPercent = 0;
+                    const percentText = cells[8].innerText.trim();
+                    const percentMatch = percentText.match(/(\d+)%/);
+                    if (percentMatch) {
+                        originalPercent = parseInt(percentMatch[1]);
+                    }
+                    
+                    // 计算实际百分比
+                    let calculatedPercent = 0;
+                    if (maxTrafficBytes > 0) {
+                        calculatedPercent = Math.round((usedTrafficBytes / maxTrafficBytes) * 100);
+                        if (calculatedPercent > 100) calculatedPercent = 100; // 防止超过100%
+                    }
+                    
+                    newTrafficData[serverId] = {
+                        max: standardMaxTraffic,
+                        used: standardUsedTraffic,
+                        percent: calculatedPercent,
+                        maxBytes: maxTrafficBytes,
+                        usedBytes: usedTrafficBytes,
+                        originalPercent: originalPercent
+                    };
+                    
+                    if (serverId !== rawServerId) {
+                        newTrafficData[rawServerId] = {
+                            max: standardMaxTraffic,
+                            used: standardUsedTraffic,
+                            percent: calculatedPercent,
+                            maxBytes: maxTrafficBytes,
+                            usedBytes: usedTrafficBytes,
+                            originalPercent: originalPercent
+                        };
+                    }
+                }
+            });
+            
+            window.serverTrafficData = newTrafficData;
+            window.lastTrafficUpdateTime = Date.now();
+            
+            if (statusCards && typeof statusCards.updateTrafficData === 'function') {
+                statusCards.updateTrafficData();
+            }
+        } catch (e) {
+            console.error('Error extracting traffic data:', e);
+        }
+    }
+    
+    // 添加流量单位转换为字节的辅助函数
+    function parseTrafficToBytes(trafficStr) {
+        if (!trafficStr) return 0;
+        
+        // 去掉所有空格并转换为大写以便统一处理
+        const cleanStr = trafficStr.replace(/\s+/g, '').toUpperCase();
+        
+        // 匹配标准格式 数字+单位
+        let match = cleanStr.match(/^([\d.,]+)([KMGTPEZY]?B)$/i);
+        
+        // 如果没找到匹配，尝试匹配省略B的格式
+        if (!match) {
+            match = cleanStr.match(/^([\d.,]+)([KMGTPEZY])$/i);
+            if (match) {
+                match[2] = match[2] + 'B'; // 添加缺失的B单位
+            }
+        }
+        
+        // 如果还是没找到匹配，直接返回0
+        if (!match) {
+            console.warn('无法解析流量字符串:', trafficStr);
+            return 0;
+        }
+        
+        // 处理可能包含的千位分隔符
+        const value = parseFloat(match[1].replace(/,/g, ''));
+        const unit = match[2].toUpperCase();
+        
+        // 单位转换为字节数
+        const units = {
+            'B': 1,
+            'KB': 1024,
+            'MB': 1024 * 1024,
+            'GB': 1024 * 1024 * 1024,
+            'TB': 1024 * 1024 * 1024 * 1024,
+            'PB': 1024 * 1024 * 1024 * 1024 * 1024,
+            'EB': 1024 * 1024 * 1024 * 1024 * 1024 * 1024,
+            'ZB': 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024,
+            'YB': 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024
+        };
+        
+        return value * (units[unit] || 1);
+    }
+    
+    // Call extraction when page loads and whenever accordion opens
+    $(document).ready(function() {
+        // 立即提取数据
+        setTimeout(extractTrafficData, 500);
+        
+        // 设置定时器定期更新数据
+        setInterval(function() {
+            extractTrafficData();
+        }, 30000); // 每30秒更新一次
+    });
+    
     function specialOS(i) {
         // 处理Windows平台
         if (i && i.toString().toLowerCase().includes('windows')) {
@@ -333,6 +477,7 @@
             cache: [],
             chartDataList: [],
             activePopup: null,
+            trafficData: {}, // Add local copy for Vue reactivity
             sensorList: [
                 'TC0D', //CPU Die 温度，代表 CPU 内部的温度
                 'TC0H', //CPU Heatsink 温度，代表 CPU 散热器的温度
@@ -351,18 +496,28 @@
                 'ACPI\\ThermalZone\\THM0_0' //Windows
             ],
             activeTag: '',
-            uniqueTags: []
+            uniqueTags: [],
+            _lastKnownUpdateTime: 0
         },
         mixins: [mixinsVue],
         created() {
             this.servers = JSON.parse('{{.Servers}}').servers;
             this.generateUniqueTags();
             this.updateServerLiveStatus();
+            this.initTrafficDataWatcher();
+            
+            // 立即尝试提取流量数据 - 无需使用折叠面板
+            setTimeout(() => {
+                extractTrafficData();
+            }, 500);
         },
         mounted() {
             this.$nextTick(() => {
                 this.initializePopups();
                 this.updateSliderPosition(); // Initial position for slider
+                
+                // 确保折叠面板中的数据可用
+                $('.ui.accordion').accordion();
             });
         },
         computed: {
@@ -377,6 +532,53 @@
         methods: {
             checkIsMobile() {
                 return window.innerWidth < 768;
+            },
+            getServerTrafficData(serverId) {
+                try {
+                    // Try local cache first for reactivity
+                    if (this.trafficData) {
+                        const serverIdStr = String(serverId).trim();
+                        
+                        if (this.trafficData[serverIdStr]) {
+                            return this.trafficData[serverIdStr];
+                        }
+                        
+                        // Try numeric match
+                        const keys = Object.keys(this.trafficData);
+                        for (const key of keys) {
+                            if (parseInt(key) === parseInt(serverIdStr)) {
+                                return this.trafficData[key]; 
+                            }
+                        }
+                    }
+                    
+                    // Fall back to global variable
+                    if (!window.serverTrafficData || Object.keys(window.serverTrafficData).length === 0) {
+                        // Try to get data if not already loaded
+                        setTimeout(extractTrafficData, 100);
+                        return null;
+                    }
+                    
+                    // Ensure serverId is treated as string for comparison
+                    const serverIdStr = String(serverId).trim();
+                    
+                    // Check direct match first
+                    if (window.serverTrafficData && window.serverTrafficData[serverIdStr]) {
+                        return window.serverTrafficData[serverIdStr];
+                    }
+                    
+                    // Try to find by numeric value if direct match fails
+                    const keys = Object.keys(window.serverTrafficData || {});
+                    for (const key of keys) {
+                        if (parseInt(key) === parseInt(serverIdStr)) {
+                            return window.serverTrafficData[key];
+                        }
+                    }
+                    
+                    return null;
+                } catch (e) {
+                    return null;
+                }
             },
             formatPlatformVersion(version) {
                 if (!version) return '';
@@ -685,6 +887,86 @@
                         }
                     });
                 }
+            },
+            getTrafficProgressClass(serverId) {
+                const trafficData = this.getServerTrafficData(serverId);
+                if (!trafficData) {
+                    return 'ui progress offline';
+                }
+                const percent = trafficData.percent || 0;
+                
+                let classObject = { ui: true, progress: true };
+                if (percent < 60) {
+                    classObject.fine = true;
+                } else if (percent < 90) {
+                    classObject.warning = true;
+                } else {
+                    classObject.error = true;
+                }
+                
+                return Object.keys(classObject).join(' ');
+            },
+            getTrafficProgressStyle(serverId) {
+                const trafficData = this.getServerTrafficData(serverId);
+                if (!trafficData) {
+                    return {
+                        'transition-duration': '300ms',
+                        'width': '0%'
+                    };
+                }
+                
+                const percent = trafficData.percent || 0;
+                let bgColor = null;
+                
+                // 使用与formatPercent方法一致的颜色逻辑
+                if (percent < 60) {
+                    bgColor = 'rgb(76,175,80)';
+                } else if (percent < 90) {
+                    bgColor = '#ff9800';
+                } else {
+                    bgColor = '#f44336';
+                }
+                
+                return {
+                    'transition-duration': '300ms',
+                    'width': percent + '%',
+                    'background-color': bgColor
+                };
+            },
+            getTrafficDisplay(serverId) {
+                const trafficData = this.getServerTrafficData(serverId);
+                if (!trafficData) {
+                    return '无';
+                }
+                
+                // 只显示百分比，与硬盘显示保持一致
+                return `${trafficData.percent}%`;
+            },
+            getTrafficTooltip(serverId) {
+                const trafficData = this.getServerTrafficData(serverId);
+                if (!trafficData || !trafficData.used || !trafficData.max) {
+                    return '无数据';
+                }
+                
+                // 使用与硬盘显示一致的格式，确保单位正确
+                return `${trafficData.used} / ${trafficData.max}`;
+            },
+            updateTrafficData() {
+                // Force Vue to recognize the data change
+                this.$forceUpdate();
+            },
+            initTrafficDataWatcher() {
+                this.trafficWatcherInterval = setInterval(() => {
+                    if (window.serverTrafficData && 
+                        Object.keys(window.serverTrafficData).length > 0 && 
+                        window.lastTrafficUpdateTime !== this._lastKnownUpdateTime) {
+                        
+                        // 复制到本地对象以激活Vue的响应式系统
+                        this.trafficData = JSON.parse(JSON.stringify(window.serverTrafficData));
+                        this._lastKnownUpdateTime = window.lastTrafficUpdateTime;
+                        this.$forceUpdate();
+                    }
+                }, 1000);
             }
         },
         watch: {
@@ -751,5 +1033,31 @@ function connect() {
     $(document).ready(function() {
         $('.ui.accordion').accordion({ "exclusive": false });
     });
+
+    // 添加一个专门的流量格式化函数，确保单位格式一致
+    function formatTrafficUnit(trafficStr) {
+        if (!trafficStr) return '0B';
+        
+        // 如果已经是标准格式，直接返回
+        if (/^[\d.,]+\s*[KMGTPEZY]B$/i.test(trafficStr)) {
+            return trafficStr;
+        }
+        
+        // 处理可能省略B的情况
+        const match = trafficStr.match(/^([\d.,]+)\s*([KMGTPEZY])$/i);
+        if (match) {
+            return `${match[1]}${match[2].toUpperCase()}B`;
+        }
+        
+        // 尝试解析为字节数并重新格式化
+        const bytes = parseTrafficToBytes(trafficStr);
+        if (bytes > 0) {
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            const sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+            return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
+        }
+        
+        return trafficStr; // 如果无法识别，返回原始字符串
+    }
 </script>
 {{end}}

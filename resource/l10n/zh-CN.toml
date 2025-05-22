@@ -4,6 +4,9 @@ other = "服务器"
 [All]
 other = "全部"
 
+[ID]
+other = "标识号"
+
 [Connecting]
 other = "连接中"
 
@@ -439,7 +442,7 @@ other = "虚拟化"
 other = "交换"
 
 [NetTransfer]
-other = "流量"
+other = "传输"
 
 [Load]
 other = "负载"
@@ -460,7 +463,7 @@ other = "活动"
 other = "版本"
 
 [NetSpeed]
-other = "网络"
+other = "网速"
 
 [Uptime]
 other = "在线"
@@ -514,7 +517,7 @@ other = "下一次检测"
 other = "当前用量"
 
 [TrafficTotal]
-other = "总流量"
+other = "流量"
 
 [VerifyPassword]
 other = "验证查看密码"
@@ -662,6 +665,9 @@ other = "服务器："
 
 [TaskLog]
 other = "日志："
+
+[NoTrafficData]
+other = "无数据"
 
 [Traffic]
 other = "流量"
