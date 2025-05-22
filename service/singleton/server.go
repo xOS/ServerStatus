@@ -45,6 +45,15 @@ func loadServers() {
 		if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", innerS.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
 			if err := utils.Json.Unmarshal(hostJSON, innerS.Host); err != nil {
 				log.Printf("NG>> 解析服务器 %s 的Host数据失败: %v", innerS.Name, err)
+			} else if Conf.Debug {
+				log.Printf("NG>> 服务器 %s 成功加载Host数据: CPU=%v, MemTotal=%v",
+					innerS.Name, len(innerS.Host.CPU) > 0, innerS.Host.MemTotal > 0)
+			}
+		} else if Conf.Debug {
+			if err != nil {
+				log.Printf("NG>> 服务器 %s 从数据库加载Host数据失败: %v", innerS.Name, err)
+			} else {
+				log.Printf("NG>> 服务器 %s 的Host数据在数据库中不存在或为空", innerS.Name)
 			}
 		}
 

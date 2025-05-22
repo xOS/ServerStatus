@@ -135,7 +135,8 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 
 		// 如果没有有效的Host或状态数据，跳过该服务器
 		if host == nil {
-			continue
+			// 确保至少有一个空的Host对象，避免前端报错
+			host = &model.Host{}
 		}
 
 		ipv4, ipv6, validIP := utils.SplitIPAddr(host.IP)
@@ -193,9 +194,9 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 			}
 		}
 
-		// 如果Host信息不可用，跳过此服务器
+		// 如果Host信息不可用，创建一个空对象而不是跳过
 		if host == nil {
-			continue
+			host = &model.Host{}
 		}
 
 		// 获取状态数据，优先使用当前状态，没有则使用离线前保存的最后状态
@@ -244,7 +245,8 @@ func (s *ServerAPIService) GetListByTag(tag string) *ServerInfoResponse {
 	for _, v := range ServerTagToIDList[tag] {
 		host := ServerList[v].Host
 		if host == nil {
-			continue
+			// 使用空对象而不是跳过
+			host = &model.Host{}
 		}
 		ipv4, ipv6, validIP := utils.SplitIPAddr(host.IP)
 		info := &CommonServerInfo{
@@ -275,7 +277,8 @@ func (s *ServerAPIService) GetAllList() *ServerInfoResponse {
 	for _, v := range ServerList {
 		host := v.Host
 		if host == nil {
-			continue
+			// 使用空对象而不是跳过
+			host = &model.Host{}
 		}
 		ipv4, ipv6, validIP := utils.SplitIPAddr(host.IP)
 		info := &CommonServerInfo{
