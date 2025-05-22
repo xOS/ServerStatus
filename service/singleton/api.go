@@ -125,6 +125,11 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 					GPU: []string{},
 				}
 				if err := utils.Json.Unmarshal(hostJSON, tempHost); err == nil {
+					// 仅为特定问题服务器添加日志（ID为39）
+					if server.ID == 39 {
+						log.Printf("NG>> [API] 离线服务器ID:39 (%s) Host数据: %s", server.Name, string(hostJSON))
+					}
+
 					// 不再填充默认数据，只使用实际数据
 					if Conf.Debug {
 						log.Printf("NG>> API - 服务器 %s (ID: %d) 成功加载Host数据", server.Name, server.ID)
@@ -201,6 +206,11 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 					GPU: []string{},
 				}
 				if err := utils.Json.Unmarshal(hostJSON, tempHost); err == nil {
+					// 仅为特定问题服务器添加日志（ID为39）
+					if v.ID == 39 {
+						log.Printf("NG>> [API] 离线服务器ID:39 (%s) Host数据: %s", v.Name, string(hostJSON))
+					}
+
 					// 不再填充默认数据，只使用实际数据
 					if Conf.Debug {
 						log.Printf("NG>> API - 服务器 %s (ID: %d) 成功加载Host数据", v.Name, v.ID)

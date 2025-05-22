@@ -244,12 +244,17 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	hostJSON, err := utils.Json.Marshal(host)
 	if err == nil {
 		// 使用Replace语法，如果记录不存在则插入，存在则更新
-		singleton.DB.Exec(`
+		if err := singleton.DB.Exec(`
 			INSERT INTO last_reported_host (server_id, host_json) 
 			VALUES (?, ?)
 			ON CONFLICT(server_id) 
 			DO UPDATE SET host_json = ?
-		`, clientID, string(hostJSON), string(hostJSON))
+		`, clientID, string(hostJSON), string(hostJSON)).Error; err != nil {
+			log.Printf("NG>> [RPC] 保存服务器ID:%d (%s) 的Host配置失败: %v", clientID, singleton.ServerList[clientID].Name, err)
+		} else if singleton.Conf.Debug {
+			log.Printf("NG>> [RPC] 保存服务器ID:%d (%s) 的Host配置成功, CPU=%v",
+				clientID, singleton.ServerList[clientID].Name, len(host.CPU) > 0)
+		}
 	} else {
 		log.Printf("NG>> 序列化服务器 %s 的Host信息失败: %v", singleton.ServerList[clientID].Name, err)
 	}

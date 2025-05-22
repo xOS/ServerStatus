@@ -47,22 +47,24 @@ func loadServers() {
 		// 从数据库加载最后一次上报的Host信息
 		var hostJSON []byte
 		if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", innerS.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
-			if Conf.Debug {
+			// 只记录特定离线服务器的信息（ID为39）
+			if innerS.ID == 39 {
+				log.Printf("NG>> [服务启动] 离线服务器ID:39 (%s) 加载Host数据: %s",
+					innerS.Name, string(hostJSON))
+			} else if Conf.Debug {
 				log.Printf("NG>> 服务器 %s (ID: %d) 加载Host数据: %d字节", innerS.Name, innerS.ID, len(hostJSON))
 			}
+
 			if err := utils.Json.Unmarshal(hostJSON, innerS.Host); err != nil {
 				log.Printf("NG>> 解析服务器 %s 的Host数据失败: %v", innerS.Name, err)
-			} else if Conf.Debug {
-				// 记录Host数据不完整的情况，但不添加假数据
-				if len(innerS.Host.CPU) == 0 || innerS.Host.MemTotal == 0 {
-					log.Printf("NG>> 服务器 %s 的Host数据不完整: CPU=%v, MemTotal=%v, Platform=%v",
-						innerS.Name, len(innerS.Host.CPU) > 0, innerS.Host.MemTotal > 0, innerS.Host.Platform != "")
-				}
+			} else if innerS.ID == 39 {
+				// 只记录特定离线服务器的信息
+				log.Printf("NG>> [服务启动] 离线服务器ID:39 (%s) 解析后数据: CPU=%v, MEM=%v",
+					innerS.Name, innerS.Host.CPU, innerS.Host.MemTotal)
 			}
-		} else {
-			if err != nil && Conf.Debug {
-				log.Printf("NG>> 服务器 %s 从数据库加载Host数据失败: %v", innerS.Name, err)
-			}
+		} else if err != nil && innerS.ID == 39 {
+			// 只记录特定离线服务器的错误
+			log.Printf("NG>> 服务器 %s (ID: %d) 从数据库加载Host数据失败: %v", innerS.Name, innerS.ID, err)
 		}
 
 		// 加载离线前的最后状态
