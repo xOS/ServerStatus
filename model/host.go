@@ -96,23 +96,34 @@ func PB2State(s *pb.State) HostState {
 }
 
 type Host struct {
-	OS              string   `json:"OS"`
-	Platform        string   `json:"Platform"`
-	PlatformVersion string   `json:"PlatformVersion"`
+	OS              string   `json:"OS,omitempty"`
+	Platform        string   `json:"Platform,omitempty"`
+	PlatformVersion string   `json:"PlatformVersion,omitempty"`
 	CPU             []string `json:"CPU"`
 	MemTotal        uint64   `json:"MemTotal"`
 	DiskTotal       uint64   `json:"DiskTotal"`
 	SwapTotal       uint64   `json:"SwapTotal"`
-	Arch            string   `json:"Arch"`
-	Virtualization  string   `json:"Virtualization"`
+	Arch            string   `json:"Arch,omitempty"`
+	Virtualization  string   `json:"Virtualization,omitempty"`
 	BootTime        uint64   `json:"BootTime"`
 	IP              string   `json:"-"`
-	CountryCode     string   `json:"CountryCode"`
-	Version         string   `json:"Version"`
+	CountryCode     string   `json:"CountryCode,omitempty"`
+	Version         string   `json:"Version,omitempty"`
 	GPU             []string `json:"GPU"`
 }
 
+func (h *Host) Initialize() {
+	if h.CPU == nil {
+		h.CPU = []string{}
+	}
+	if h.GPU == nil {
+		h.GPU = []string{}
+	}
+}
+
 func (h *Host) PB() *pb.Host {
+	h.Initialize()
+
 	return &pb.Host{
 		Os:              h.OS,
 		Platform:        h.Platform,
@@ -132,7 +143,7 @@ func (h *Host) PB() *pb.Host {
 }
 
 func PB2Host(h *pb.Host) Host {
-	return Host{
+	host := Host{
 		OS:              h.GetOs(),
 		Platform:        h.GetPlatform(),
 		PlatformVersion: h.GetPlatformVersion(),
@@ -148,4 +159,8 @@ func PB2Host(h *pb.Host) Host {
 		Version:         h.GetVersion(),
 		GPU:             h.GetGpu(),
 	}
+
+	host.Initialize()
+
+	return host
 }

@@ -744,6 +744,100 @@ function fetchTrafficData(serverId) {
   });
 }
 
+/**
+ * 调试并修复离线服务器的配置显示问题
+ * 确保即使某些字段为空，前端也能正常显示离线服务器信息
+ */
+function debugOfflineServersConfig() {
+  // 检查全局状态数据是否存在
+  if (!window.statusCards || !window.statusCards.servers) {
+    console.log("状态数据尚未加载，稍后再试");
+    return;
+  }
+  
+  // 遍历所有服务器，检查并修复离线服务器的配置数据
+  window.statusCards.servers.forEach(server => {
+    // 重点关注ID为39的服务器
+    const isTargetServer = server.ID === 39;
+    
+    if (!server.IsOnline) {
+      if (isTargetServer) {
+        console.log(`服务器: ${server.Name} (ID: ${server.ID})`, server);
+        console.log("Host 配置信息:", server.Host);
+      }
+      
+      // 确保Host对象存在
+      if (!server.Host) {
+        server.Host = {};
+        if (isTargetServer) console.log("创建空Host对象");
+      }
+      
+      // 确保CPU数组存在且不为null
+      if (!server.Host.CPU || !Array.isArray(server.Host.CPU)) {
+        server.Host.CPU = [];
+        if (isTargetServer) console.log("CPU信息为空");
+      }
+      
+      // 确保GPU数组存在且不为null
+      if (!server.Host.GPU || !Array.isArray(server.Host.GPU)) {
+        server.Host.GPU = [];
+        if (isTargetServer) console.log("GPU信息为空");
+      }
+      
+      // 确保其他必要的属性存在
+      if (!server.Host.MemTotal) {
+        server.Host.MemTotal = 0;
+        if (isTargetServer) console.log("内存信息为空");
+      }
+      
+      if (!server.Host.Platform) {
+        server.Host.Platform = "";
+        if (isTargetServer) console.log("平台信息为空");
+      }
+      
+      if (!server.Host.PlatformVersion) {
+        server.Host.PlatformVersion = "";
+        if (isTargetServer) console.log("平台版本信息为空");
+      }
+      
+      if (!server.Host.Virtualization) {
+        server.Host.Virtualization = "";
+        if (isTargetServer) console.log("虚拟化信息为空");
+      }
+      
+      if (!server.Host.Arch) {
+        server.Host.Arch = "";
+        if (isTargetServer) console.log("架构信息为空");
+      }
+      
+      // 更新原始对象，确保Vue能检测到变化
+      if (isTargetServer) {
+        console.log("修复后的Host对象:", server.Host);
+      }
+    }
+  });
+  
+  // 触发Vue更新
+  if (typeof window.statusCards.updateServerData === 'function') {
+    window.statusCards.updateServerData();
+  }
+}
+
+// 在页面加载完成后运行调试函数
+$(document).ready(function() {
+  // 等待状态数据加载完成后再运行调试
+  setTimeout(function() {
+    debugOfflineServersConfig();
+  }, 1000);
+  
+  // 每30秒检查一次，确保数据始终正确
+  setInterval(debugOfflineServersConfig, 30000);
+  
+  // 原有的流量数据提取
+  setTimeout(window.extractTrafficData, 500);
+  setInterval(window.extractTrafficData, 30000);
+});
+
 // 初始化全局流量数据变量
 window.serverTrafficData = {};
 window.lastTrafficUpdateTime = 0;
@@ -901,14 +995,3 @@ window.formatTrafficUnit = function(trafficStr) {
   
   return trafficStr; // 无法识别时返回原始字符串
 };
-
-/**
- * 初始化流量数据提取和更新
- */
-$(document).ready(function() {
-  // 立即提取数据
-  setTimeout(window.extractTrafficData, 500);
-  
-  // 设置定期更新数据的间隔（每30秒）
-  setInterval(window.extractTrafficData, 30000);
-});

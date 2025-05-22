@@ -40,6 +40,9 @@ func loadServers() {
 			CPU: []string{},
 			GPU: []string{},
 		}
+		// 显式调用初始化方法，确保数组正确
+		innerS.Host.Initialize()
+
 		innerS.State = &model.HostState{}
 		innerS.LastStateBeforeOffline = nil
 		innerS.IsOnline = false // 初始状态为离线，等待agent报告

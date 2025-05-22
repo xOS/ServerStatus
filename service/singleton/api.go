@@ -152,6 +152,11 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 		if host == nil {
 			// 确保至少有一个空的Host对象，避免前端报错
 			host = &model.Host{}
+			// 确保初始化数组
+			host.Initialize()
+		} else {
+			// 确保已有的Host对象数组已初始化
+			host.Initialize()
 		}
 
 		ipv4, ipv6, validIP := utils.SplitIPAddr(host.IP)
@@ -232,6 +237,17 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 		state := v.State
 		if state == nil && v.LastStateBeforeOffline != nil {
 			state = v.LastStateBeforeOffline
+		}
+
+		// 如果没有有效的Host或状态数据，跳过该服务器
+		if host == nil {
+			// 确保至少有一个空的Host对象，避免前端报错
+			host = &model.Host{}
+			// 确保初始化数组
+			host.Initialize()
+		} else {
+			// 确保已有的Host对象数组已初始化
+			host.Initialize()
 		}
 
 		ipv4, ipv6, validIP := utils.SplitIPAddr(host.IP)
