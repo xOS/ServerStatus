@@ -125,6 +125,14 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			state.NetInTransfer)
 	}
 
+	// 输出完整状态数据，用于调试
+	log.Printf("NG>> 服务器 %s 状态上报: CPU:%.2f%% 内存:%d 硬盘:%d 进程:%d",
+		singleton.ServerList[clientID].Name,
+		state.CPU,
+		state.MemUsed,
+		state.DiskUsed,
+		state.ProcessCount)
+
 	// 原始报告流量保存用于增量计算
 	originalNetInTransfer := state.NetInTransfer
 	originalNetOutTransfer := state.NetOutTransfer
@@ -152,6 +160,8 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			"last_state_json": singleton.ServerList[clientID].LastStateJSON,
 			"last_online":     singleton.ServerList[clientID].LastOnline,
 		})
+
+		log.Printf("NG>> 服务器 %s 最后状态已保存到数据库", singleton.ServerList[clientID].Name)
 	}
 
 	// 应对 dashboard 重启的情况，如果从未记录过，先打点，等到小时时间点时入库
@@ -247,6 +257,20 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	// 不要冲掉国家码
 	if singleton.ServerList[clientID].Host != nil {
 		host.CountryCode = singleton.ServerList[clientID].Host.CountryCode
+	}
+
+	// 保存完整Host信息到数据库，用于重启后恢复
+	hostJSON, err := utils.Json.Marshal(host)
+	if err == nil {
+		// 使用Replace语法，如果记录不存在则插入，存在则更新
+		singleton.DB.Exec(`
+			INSERT INTO last_reported_host (server_id, host_json) 
+			VALUES (?, ?)
+			ON CONFLICT(server_id) 
+			DO UPDATE SET host_json = ?
+		`, clientID, string(hostJSON), string(hostJSON))
+
+		log.Printf("NG>> 服务器 %s Host信息已保存到数据库", singleton.ServerList[clientID].Name)
 	}
 
 	singleton.ServerList[clientID].Host = &host

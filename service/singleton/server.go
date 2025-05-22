@@ -40,6 +40,24 @@ func loadServers() {
 		innerS.LastStateBeforeOffline = nil
 		innerS.IsOnline = false // 初始状态为离线，等待agent报告
 
+		// 从数据库加载最后一次上报的Host信息
+		var hostJSON []byte
+		if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", innerS.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
+			if err := utils.Json.Unmarshal(hostJSON, innerS.Host); err != nil {
+				log.Printf("NG>> 解析服务器 %s 的Host数据失败: %v", innerS.Name, err)
+			} else {
+				log.Printf("NG>> 服务器 %s 加载了Host数据，内存总量: %d", innerS.Name, innerS.Host.MemTotal)
+			}
+		} else {
+			// 如果没有保存的Host信息，设置默认值防止页面显示不正确
+			innerS.Host.MemTotal = 1024 * 1024 * 1024       // 1GB
+			innerS.Host.DiskTotal = 10 * 1024 * 1024 * 1024 // 10GB
+			innerS.Host.SwapTotal = 512 * 1024 * 1024       // 512MB
+			innerS.Host.OS = "Unknown"
+			innerS.Host.Platform = "Unknown"
+			innerS.Host.CPU = []string{"Unknown CPU"}
+		}
+
 		// 加载离线前的最后状态
 		if innerS.LastStateJSON != "" {
 			lastState := &model.HostState{}
@@ -52,6 +70,20 @@ func loadServers() {
 				stateCopy := &model.HostState{}
 				if copyErr := copier.Copy(stateCopy, lastState); copyErr == nil {
 					innerS.State = stateCopy
+
+					// 确保状态中的数据不为零
+					if innerS.State.ProcessCount == 0 && lastState.ProcessCount > 0 {
+						innerS.State.ProcessCount = lastState.ProcessCount
+					}
+					if innerS.State.CPU == 0 && lastState.CPU > 0 {
+						innerS.State.CPU = lastState.CPU
+					}
+					if innerS.State.MemUsed == 0 && lastState.MemUsed > 0 {
+						innerS.State.MemUsed = lastState.MemUsed
+					}
+					if innerS.State.DiskUsed == 0 && lastState.DiskUsed > 0 {
+						innerS.State.DiskUsed = lastState.DiskUsed
+					}
 				} else {
 					log.Printf("NG>> 复制服务器 %s 的状态数据失败: %v", innerS.Name, copyErr)
 				}
@@ -60,8 +92,13 @@ func loadServers() {
 				innerS.State.NetInTransfer = innerS.CumulativeNetInTransfer
 				innerS.State.NetOutTransfer = innerS.CumulativeNetOutTransfer
 
-				log.Printf("NG>> 服务器 %s 加载了离线前的最后状态，累计流量入站: %d, 出站: %d",
-					innerS.Name, innerS.CumulativeNetInTransfer, innerS.CumulativeNetOutTransfer)
+				log.Printf("NG>> 服务器 %s 加载了离线前的最后状态，CPU:%.2f%% 内存:%d 硬盘:%d 流量入站:%d 出站:%d",
+					innerS.Name,
+					innerS.State.CPU,
+					innerS.State.MemUsed,
+					innerS.State.DiskUsed,
+					innerS.CumulativeNetInTransfer,
+					innerS.CumulativeNetOutTransfer)
 			} else {
 				log.Printf("NG>> 解析服务器 %s 的最后状态失败: %v", innerS.Name, err)
 			}

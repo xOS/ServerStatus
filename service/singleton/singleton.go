@@ -142,6 +142,22 @@ func InitDBFromPath(path string) {
 			log.Println("NG>> 添加last_online字段失败:", err)
 		}
 	}
+
+	// 创建存储Host信息的表
+	err = DB.Exec(`
+		CREATE TABLE IF NOT EXISTS last_reported_host (
+			server_id INTEGER PRIMARY KEY,
+			host_json TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`).Error
+
+	if err != nil {
+		log.Println("NG>> 创建last_reported_host表失败:", err)
+	} else {
+		log.Println("NG>> last_reported_host表检查/创建成功")
+	}
 }
 
 // RecordTransferHourlyUsage 对流量记录进行打点
