@@ -1,6 +1,7 @@
 package singleton
 
 import (
+	"log"
 	"sync"
 	"time"
 
@@ -113,6 +114,12 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 		if server == nil {
 			continue
 		}
+
+		// 确保host不为空
+		if server.Host == nil {
+			continue
+		}
+
 		ipv4, ipv6, validIP := utils.SplitIPAddr(server.Host.IP)
 		info := CommonServerInfo{
 			ID:           server.ID,
@@ -126,20 +133,22 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 			HideForGuest: server.HideForGuest,
 		}
 
-		// 如果服务器离线但有最后状态，使用最后状态
-		var statusData *StatusResponse
-		if !server.IsOnline && server.LastStateBeforeOffline != nil {
-			statusData = &StatusResponse{
-				CommonServerInfo: info,
-				Host:             server.Host,
-				Status:           server.LastStateBeforeOffline,
+		// 确保状态数据不为空
+		if server.State == nil {
+			// 如果状态为空但有历史状态，使用历史状态
+			if server.LastStateBeforeOffline != nil {
+				server.State = server.LastStateBeforeOffline
+				log.Printf("NG>> 服务器 %s API返回使用了历史状态数据", server.Name)
+			} else {
+				continue
 			}
-		} else {
-			statusData = &StatusResponse{
-				CommonServerInfo: info,
-				Host:             server.Host,
-				Status:           server.State,
-			}
+		}
+
+		// 构建状态响应
+		statusData := &StatusResponse{
+			CommonServerInfo: info,
+			Host:             server.Host,
+			Status:           server.State,
 		}
 
 		res.Result = append(res.Result, statusData)
@@ -162,12 +171,26 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 	res.Result = make([]*StatusResponse, 0)
 	ServerLock.RLock()
 	defer ServerLock.RUnlock()
+
 	for _, v := range ServerList {
+		// 确保host不为空
 		host := v.Host
-		state := v.State
-		if host == nil || state == nil {
+		if host == nil {
 			continue
 		}
+
+		// 确保状态数据不为空
+		state := v.State
+		if state == nil {
+			// 如果状态为空但有历史状态，使用历史状态
+			if v.LastStateBeforeOffline != nil {
+				state = v.LastStateBeforeOffline
+				log.Printf("NG>> 服务器 %s GetAllStatus使用了历史状态数据", v.Name)
+			} else {
+				continue
+			}
+		}
+
 		ipv4, ipv6, validIP := utils.SplitIPAddr(host.IP)
 		info := CommonServerInfo{
 			ID:           v.ID,
@@ -181,18 +204,10 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 			HideForGuest: v.HideForGuest,
 		}
 
-		// 如果服务器离线但有最后状态，使用最后状态
-		var status *model.HostState
-		if !v.IsOnline && v.LastStateBeforeOffline != nil {
-			status = v.LastStateBeforeOffline
-		} else {
-			status = v.State
-		}
-
 		res.Result = append(res.Result, &StatusResponse{
 			CommonServerInfo: info,
 			Host:             v.Host,
-			Status:           status,
+			Status:           state,
 		})
 	}
 	res.CommonResponse = CommonResponse{

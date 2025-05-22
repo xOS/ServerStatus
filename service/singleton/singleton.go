@@ -36,13 +36,53 @@ func InitTimezoneAndCache() {
 func LoadSingleton() {
 	loadNotifications() // 加载通知服务
 	loadServers()       // 加载服务器列表
-	loadCronTasks()     // 加载定时任务
+
+	// 打印调试信息
+	debugServersStatus()
+
+	loadCronTasks() // 加载定时任务
 	loadAPI()
 	initNAT()
 	initDDNS()
 
 	// 添加定时检查在线状态的任务，每分钟检查一次
 	Cron.AddFunc("*/1 * * * *", CheckServerOnlineStatus)
+}
+
+// debugServersStatus 输出服务器状态加载情况的调试信息
+func debugServersStatus() {
+	log.Println("NG>> ==================== 服务器状态加载情况 ====================")
+	for id, server := range ServerList {
+		log.Printf("NG>> 服务器 #%d [%s] 状态:", id, server.Name)
+		log.Printf("NG>>   - IsOnline: %v", server.IsOnline)
+
+		if server.LastStateBeforeOffline != nil {
+			log.Printf("NG>>   - LastStateBeforeOffline: 有")
+			log.Printf("NG>>     - CPU: %.2f%%", server.LastStateBeforeOffline.CPU)
+			log.Printf("NG>>     - 内存: %d/%d", server.LastStateBeforeOffline.MemUsed, server.Host.MemTotal)
+			log.Printf("NG>>     - 流量统计: 入站 %d / 出站 %d",
+				server.LastStateBeforeOffline.NetInTransfer,
+				server.LastStateBeforeOffline.NetOutTransfer)
+		} else {
+			log.Printf("NG>>   - LastStateBeforeOffline: 无")
+		}
+
+		if server.State != nil {
+			log.Printf("NG>>   - State: 有")
+			log.Printf("NG>>     - CPU: %.2f%%", server.State.CPU)
+			log.Printf("NG>>     - 内存: %d/%d", server.State.MemUsed, server.Host.MemTotal)
+			log.Printf("NG>>     - 流量统计: 入站 %d / 出站 %d",
+				server.State.NetInTransfer,
+				server.State.NetOutTransfer)
+		} else {
+			log.Printf("NG>>   - State: 无")
+		}
+
+		log.Printf("NG>>   - 累计流量: 入站 %d / 出站 %d",
+			server.CumulativeNetInTransfer,
+			server.CumulativeNetOutTransfer)
+	}
+	log.Println("NG>> ==========================================================")
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置

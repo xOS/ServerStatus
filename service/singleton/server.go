@@ -5,6 +5,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/jinzhu/copier"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/utils"
 )
@@ -43,13 +44,21 @@ func loadServers() {
 		if innerS.LastStateJSON != "" {
 			lastState := &model.HostState{}
 			if err := utils.Json.Unmarshal([]byte(innerS.LastStateJSON), lastState); err == nil {
+				// 设置离线前的最后状态
 				innerS.LastStateBeforeOffline = lastState
 
-				// 将保存的流量数据初始化到State中，确保显示流量数据
-				if innerS.State != nil {
-					innerS.State.NetInTransfer = innerS.CumulativeNetInTransfer
-					innerS.State.NetOutTransfer = innerS.CumulativeNetOutTransfer
+				// 重要：同时设置当前状态为离线前的最后状态，确保API返回正确数据
+				// 深拷贝lastState到State，避免引用同一个对象
+				stateCopy := &model.HostState{}
+				if copyErr := copier.Copy(stateCopy, lastState); copyErr == nil {
+					innerS.State = stateCopy
+				} else {
+					log.Printf("NG>> 复制服务器 %s 的状态数据失败: %v", innerS.Name, copyErr)
 				}
+
+				// 将保存的流量数据初始化到State中，确保显示流量数据
+				innerS.State.NetInTransfer = innerS.CumulativeNetInTransfer
+				innerS.State.NetOutTransfer = innerS.CumulativeNetOutTransfer
 
 				log.Printf("NG>> 服务器 %s 加载了离线前的最后状态，累计流量入站: %d, 出站: %d",
 					innerS.Name, innerS.CumulativeNetInTransfer, innerS.CumulativeNetOutTransfer)
