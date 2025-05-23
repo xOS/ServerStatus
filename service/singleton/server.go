@@ -4,6 +4,7 @@ import (
 	"log"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/jinzhu/copier"
 	"github.com/xos/serverstatus/model"
@@ -40,6 +41,14 @@ func loadServers() {
 		innerS.State = &model.HostState{}
 		innerS.LastStateBeforeOffline = nil
 		innerS.IsOnline = false // 初始状态为离线，等待agent报告
+
+		// 从数据库恢复LastActive时间，使用LastOnline字段
+		if !innerS.LastOnline.IsZero() {
+			innerS.LastActive = innerS.LastOnline
+		} else {
+			// 如果没有LastOnline记录，设置为当前时间减去一个较大的值，表示很久没有活动
+			innerS.LastActive = time.Now().Add(-24 * time.Hour)
+		}
 
 		// 从数据库加载Host信息
 		var hostJSONStr string
