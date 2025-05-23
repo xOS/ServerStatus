@@ -184,14 +184,12 @@
                   });
             },
             parseMonitorInfo(monitorInfo) {
-                console.log('Monitor Info:', monitorInfo); // 调试日志
                 let tSeries = [];
                 let tLegendData = [];
                 var lcolors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc'];
                 
                 // 检查数据有效性
                 if (!monitorInfo || !monitorInfo.result || monitorInfo.result.length === 0) {
-                    console.warn('No monitor data available');
                     this.option.title.text = "No Data Available";
                     this.myChart.clear();
                     this.myChart.setOption(this.option);
@@ -206,20 +204,12 @@
                     let data = [];
                     let datal = [];
                     
-                    // 调试时间戳数据
-                    if (i === 0 && monitorInfo.result[i].created_at && monitorInfo.result[i].created_at.length > 0) {
-                        console.log('First timestamp:', monitorInfo.result[i].created_at[0]);
-                        console.log('Timestamp type:', typeof monitorInfo.result[i].created_at[0]);
-                        console.log('Date from timestamp:', new Date(monitorInfo.result[i].created_at[0]));
-                    }
-                    
                     for (let j = 0; j < monitorInfo.result[i].created_at.length; j++) {
                         avgDelay = Math.round(monitorInfo.result[i].avg_delay[j]);
                         let timestamp = monitorInfo.result[i].created_at[j];
                         
                         // 确保时间戳是有效的数字
                         if (typeof timestamp !== 'number' || isNaN(timestamp)) {
-                            console.warn('Invalid timestamp:', timestamp);
                             continue;
                         }
                         
