@@ -387,11 +387,35 @@ func (m *MonitorAPIService) GetMonitorHistories(query map[string]any) *MonitorIn
 		for _, history := range monitorHistories {
 			infos, ok := resultMap[history.MonitorID]
 			if !ok {
+				// 安全检查：确保monitor和server存在
+				var monitorName string
+				var serverName string
+
+				// 检查ServiceSentinelShared和monitors是否存在
+				if ServiceSentinelShared != nil && ServiceSentinelShared.monitors != nil {
+					if monitor, exists := ServiceSentinelShared.monitors[history.MonitorID]; exists && monitor != nil {
+						monitorName = monitor.Name
+					} else {
+						monitorName = "Unknown Monitor"
+					}
+				} else {
+					monitorName = "Unknown Monitor"
+				}
+
+				// 检查ServerList中是否存在该服务器
+				ServerLock.RLock()
+				if server, exists := ServerList[history.ServerID]; exists && server != nil {
+					serverName = server.Name
+				} else {
+					serverName = "Unknown Server"
+				}
+				ServerLock.RUnlock()
+
 				infos = &MonitorInfo{
 					MonitorID:   history.MonitorID,
 					ServerID:    history.ServerID,
-					MonitorName: ServiceSentinelShared.monitors[history.MonitorID].Name,
-					ServerName:  ServerList[history.ServerID].Name,
+					MonitorName: monitorName,
+					ServerName:  serverName,
 				}
 				resultMap[history.MonitorID] = infos
 				sortedMonitorIDs = append(sortedMonitorIDs, history.MonitorID)

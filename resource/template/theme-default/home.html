@@ -385,22 +385,40 @@
         // 确保i是字符串并转为小写
         i = (i || "").toString().toLowerCase();
         
-        // 使用对象映射代替switch语句
+        // 使用对象映射代替switch语句，包含更多虚拟化平台的优雅显示
         const virMapping = {
             "kvm": "KVM",
-            "openvz": "OpenVZ",
+            "openvz": "OpenVZ", 
             "lxc": "LXC",
             "xen": "Xen",
-            "vbox": "vBox",
+            "vbox": "VirtualBox",
+            "virtualbox": "VirtualBox",
             "rkt": "RKT",
             "docker": "Docker",
             "vmware": "VMware",
+            "vmware-esxi": "VMware ESXi",
             "linux-vserver": "VServer",
-            "hyperv": "Hyperv"
+            "hyperv": "Hyper-V",
+            "hyper-v": "Hyper-V",
+            "microsoft": "Hyper-V",
+            "qemu": "QEMU",
+            "parallels": "Parallels",
+            "bhyve": "bhyve",
+            "jail": "FreeBSD Jail",
+            "zone": "Solaris Zone",
+            "wsl": "WSL",
+            "podman": "Podman",
+            "containerd": "containerd",
+            "systemd-nspawn": "systemd-nspawn"
         };
         
-        // 如果在映射中找到匹配项，返回对应的值，否则返回原始输入
-        return virMapping[i] || i;
+        // 如果在映射中找到匹配项，返回对应的值，否则返回首字母大写的原始输入
+        if (virMapping[i]) {
+            return virMapping[i];
+        }
+        
+        // 如果没有找到映射，将首字母大写返回
+        return i.charAt(0).toUpperCase() + i.slice(1);
     }
     function clearString(i) {
         if (i != null && i != "") {
