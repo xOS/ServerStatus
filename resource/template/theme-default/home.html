@@ -200,10 +200,6 @@
                 {{end}}
             ];
         </script>
-
-        <!--{{template "common/footer" .}}-->
-        <!--{{template "theme-default/footer" .}}-->
-    </div>
 </div>
 {{template "common/footer" .}}
 <!--{{template "theme-default/footer" .}}-->
@@ -471,7 +467,20 @@
         },
         mixins: [mixinsVue],
         created() {
-            this.servers = JSON.parse('{{.Servers}}').servers;
+            try {
+                const serverData = JSON.parse('{{.Servers}}');
+                // 确保serverData存在且包含servers数组
+                if (serverData && serverData.servers && Array.isArray(serverData.servers)) {
+                    this.servers = serverData.servers;
+                } else {
+                    console.warn('服务器数据格式不正确，使用空数组');
+                    this.servers = [];
+                }
+            } catch (e) {
+                console.error('解析服务器数据失败:', e);
+                this.servers = [];
+            }
+            
             this.generateUniqueTags();
             this.updateServerLiveStatus();
             this.initTrafficDataWatcher();
@@ -492,6 +501,11 @@
         },
         computed: {
             filteredServers() {
+                // 添加安全检查，确保this.servers是数组
+                if (!this.servers || !Array.isArray(this.servers)) {
+                    return [];
+                }
+                
                 const displayableServers = this.servers.filter(server => server.Host);
                 if (this.activeTag === '') {
                     return displayableServers;
@@ -1032,9 +1046,14 @@
         ws.onmessage = function(evt) {
             try {
                 const data = JSON.parse(evt.data);
-                if (data && Array.isArray(data.servers)) {
-                    statusCards.servers = data.servers;
-                    statusCards.updateServerLiveStatus(data);
+                if (data && data.servers && Array.isArray(data.servers)) {
+                    // 确保statusCards实例存在
+                    if (window.statusCards) {
+                        statusCards.servers = data.servers;
+                        statusCards.updateServerLiveStatus(data);
+                    }
+                } else {
+                    console.warn("WebSocket接收到无效的服务器数据格式");
                 }
             } catch (e) {
                 console.error("处理WebSocket消息时出错:", e);
