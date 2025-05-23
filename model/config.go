@@ -18,8 +18,8 @@ var Languages = map[string]string{
 }
 
 var Themes = map[string]string{
-	"default":       "Default",
-	"custom":        "Custom(local)",
+	"default": "Default",
+	"custom":  "Custom(local)",
 }
 
 var DashboardThemes = map[string]string{
@@ -130,10 +130,10 @@ func (c *Config) Read(path string) error {
 	}
 
 	if c.Site.Brand == "" {
-		c.Site.Brand = "Nezha Monitoring"
+		c.Site.Brand = "ServerStatus"
 	}
 	if c.Site.CookieName == "" {
-		c.Site.CookieName = "nezha-dashboard"
+		c.Site.CookieName = "server-dash"
 	}
 	if c.Site.Theme == "" {
 		c.Site.Theme = "default"

@@ -45,42 +45,6 @@ func LoadSingleton() {
 	Cron.AddFunc("*/1 * * * *", CheckServerOnlineStatus)
 }
 
-// debugServersStatus 输出服务器状态加载情况的调试信息
-func debugServersStatus() {
-	log.Println("NG>> ==================== 服务器状态加载情况 ====================")
-	for id, server := range ServerList {
-		log.Printf("NG>> 服务器 #%d [%s] 状态:", id, server.Name)
-		log.Printf("NG>>   - IsOnline: %v", server.IsOnline)
-
-		if server.LastStateBeforeOffline != nil {
-			log.Printf("NG>>   - LastStateBeforeOffline: 有")
-			log.Printf("NG>>     - CPU: %.2f%%", server.LastStateBeforeOffline.CPU)
-			log.Printf("NG>>     - 内存: %d/%d", server.LastStateBeforeOffline.MemUsed, server.Host.MemTotal)
-			log.Printf("NG>>     - 流量统计: 入站 %d / 出站 %d",
-				server.LastStateBeforeOffline.NetInTransfer,
-				server.LastStateBeforeOffline.NetOutTransfer)
-		} else {
-			log.Printf("NG>>   - LastStateBeforeOffline: 无")
-		}
-
-		if server.State != nil {
-			log.Printf("NG>>   - State: 有")
-			log.Printf("NG>>     - CPU: %.2f%%", server.State.CPU)
-			log.Printf("NG>>     - 内存: %d/%d", server.State.MemUsed, server.Host.MemTotal)
-			log.Printf("NG>>     - 流量统计: 入站 %d / 出站 %d",
-				server.State.NetInTransfer,
-				server.State.NetOutTransfer)
-		} else {
-			log.Printf("NG>>   - State: 无")
-		}
-
-		log.Printf("NG>>   - 累计流量: 入站 %d / 出站 %d",
-			server.CumulativeNetInTransfer,
-			server.CumulativeNetOutTransfer)
-	}
-	log.Println("NG>> ==========================================================")
-}
-
 // InitConfigFromPath 从给出的文件路径中加载配置
 func InitConfigFromPath(path string) {
 	Conf = &model.Config{}
@@ -114,28 +78,28 @@ func InitDBFromPath(path string) {
 	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {
 		err = DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_in_transfer")
 		if err != nil {
-			log.Println("NG>> 添加cumulative_net_in_transfer字段失败:", err)
+			log.Println("添加cumulative_net_in_transfer字段失败:", err)
 		}
 	}
 
 	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_out_transfer") {
 		err = DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_out_transfer")
 		if err != nil {
-			log.Println("NG>> 添加cumulative_net_out_transfer字段失败:", err)
+			log.Println("添加cumulative_net_out_transfer字段失败:", err)
 		}
 	}
 
 	if !DB.Migrator().HasColumn(&model.Server{}, "last_state_json") {
 		err = DB.Migrator().AddColumn(&model.Server{}, "last_state_json")
 		if err != nil {
-			log.Println("NG>> 添加last_state_json字段失败:", err)
+			log.Println("添加last_state_json字段失败:", err)
 		}
 	}
 
 	if !DB.Migrator().HasColumn(&model.Server{}, "last_online") {
 		err = DB.Migrator().AddColumn(&model.Server{}, "last_online")
 		if err != nil {
-			log.Println("NG>> 添加last_online字段失败:", err)
+			log.Println("添加last_online字段失败:", err)
 		}
 	}
 
@@ -143,16 +107,14 @@ func InitDBFromPath(path string) {
 	if !DB.Migrator().HasColumn(&model.Server{}, "host_json") {
 		err = DB.Migrator().AddColumn(&model.Server{}, "host_json")
 		if err != nil {
-			log.Println("NG>> 添加host_json字段失败:", err)
-		} else {
-			log.Println("NG>> 添加host_json字段成功")
+			log.Println("添加host_json字段失败:", err)
 		}
 	}
 
 	// 检查是否需要从last_reported_host表迁移数据到servers表
 	var hasLegacyTable bool
 	if err := DB.Raw("SELECT 1 FROM sqlite_master WHERE type='table' AND name='last_reported_host'").Scan(&hasLegacyTable).Error; err == nil && hasLegacyTable {
-		log.Println("NG>> 检测到旧的last_reported_host表，开始迁移数据...")
+		log.Println("检测到旧的last_reported_host表，开始迁移数据...")
 
 		// 迁移数据
 		if err := DB.Exec(`
@@ -164,15 +126,15 @@ func InitDBFromPath(path string) {
 			)
 			WHERE id IN (SELECT server_id FROM last_reported_host)
 		`).Error; err != nil {
-			log.Println("NG>> 迁移host_json数据失败:", err)
+			log.Println("迁移host_json数据失败:", err)
 		} else {
-			log.Println("NG>> 迁移host_json数据成功")
+			log.Println("迁移host_json数据成功")
 
 			// 删除旧表
 			if err := DB.Exec("DROP TABLE last_reported_host").Error; err != nil {
-				log.Println("NG>> 删除last_reported_host表失败:", err)
+				log.Println("删除last_reported_host表失败:", err)
 			} else {
-				log.Println("NG>> 删除last_reported_host表成功")
+				log.Println("删除last_reported_host表成功")
 			}
 		}
 	}
@@ -197,7 +159,7 @@ func RecordTransferHourlyUsage() {
 
 		// 避免重启后的异常大值
 		if incrementalIn > server.State.NetInTransfer || incrementalOut > server.State.NetOutTransfer {
-			log.Printf("NG>> 服务器 %s 流量增量异常，可能是重启导致", server.Name)
+			log.Printf("服务器 %s 流量增量异常，可能是重启导致", server.Name)
 
 			incrementalIn = server.State.NetInTransfer - server.CumulativeNetInTransfer
 			incrementalOut = server.State.NetOutTransfer - server.CumulativeNetOutTransfer
@@ -229,10 +191,9 @@ func RecordTransferHourlyUsage() {
 	}
 
 	if len(txs) > 0 {
-		log.Printf("NG>> 流量统计入库: %d 条记录", len(txs))
 		err := DB.Create(txs).Error
 		if err != nil {
-			log.Printf("NG>> 流量统计入库失败: %v", err)
+			log.Printf("流量统计入库失败: %v", err)
 		}
 	}
 }
@@ -294,17 +255,15 @@ func CleanMonitorHistory() {
 func cleanCumulativeTransferData(days int) {
 	// 获取保留期限的开始时间点
 	retentionStart := time.Now().AddDate(0, 0, -days)
-	log.Println("NG>> 清理流量数据，保留", days, "天内的数据")
 
 	// 从Transfer表中查询保留期内最早的有效数据日期
 	var oldestValidTransfers []model.Transfer
 	if err := DB.Where("datetime(`created_at`) >= datetime(?)", retentionStart).Order("created_at ASC").Limit(10).Find(&oldestValidTransfers).Error; err != nil {
-		log.Println("NG>> 查询保留期内流量记录失败:", err)
+		log.Println("查询保留期内流量记录失败:", err)
 		return
 	}
 
 	if len(oldestValidTransfers) == 0 {
-		log.Println("NG>> 未找到保留期内的有效流量记录")
 		return
 	}
 
@@ -317,7 +276,7 @@ func cleanCumulativeTransferData(days int) {
 	// 查询所有在保留期内的流量记录
 	var transfers []model.Transfer
 	if err := DB.Where("datetime(`created_at`) >= datetime(?)", retentionStart).Find(&transfers).Error; err != nil {
-		log.Println("NG>> 查询流量记录失败:", err)
+		log.Println("查询流量记录失败:", err)
 		return
 	}
 
@@ -357,7 +316,7 @@ func cleanCumulativeTransferData(days int) {
 				"cumulative_net_out_transfer": serversToUpdate[i].CumulativeNetOutTransfer,
 			})
 		}
-		log.Println("NG>> 已清理过期流量数据，保留", days, "天内的累计流量")
+		log.Println("已清理过期流量数据，保留", days, "天内的累计流量")
 	}
 }
 
@@ -403,7 +362,7 @@ func CheckServerOnlineStatus() {
 							"last_online":     server.LastOnline,
 						})
 
-						log.Printf("NG>> 服务器 %s 离线", server.Name)
+						log.Printf("服务器 %s 离线", server.Name)
 
 						// 确保Host信息也已保存
 						if server.Host != nil {
@@ -414,16 +373,11 @@ func CheckServerOnlineStatus() {
 								if hostErr == nil && len(hostJSON) > 0 {
 									DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
 										string(hostJSON), server.ID)
-
-									if Conf.Debug {
-										log.Printf("NG>> 服务器 %s (ID: %d) 离线前保存Host信息成功",
-											server.Name, server.ID)
-									}
 								}
 							}
 						}
 					} else {
-						log.Printf("NG>> 序列化服务器 %s 的最后状态失败: %v", server.Name, err)
+						log.Printf("序列化服务器 %s 的最后状态失败: %v", server.Name, err)
 					}
 				}
 			}
@@ -441,7 +395,7 @@ func CheckServerOnlineStatus() {
 		if shouldResetTransferStats {
 			// 只对流量有变化的服务器打印日志
 			if server.CumulativeNetInTransfer > 0 || server.CumulativeNetOutTransfer > 0 {
-				log.Printf("NG>> 重置服务器 %s 的累计流量", server.Name)
+				log.Printf("重置服务器 %s 的累计流量", server.Name)
 			}
 
 			server.CumulativeNetInTransfer = 0
@@ -469,7 +423,7 @@ func checkShouldResetTransferStats() bool {
 
 		// 如果当前时间已经超过了周期结束时间，说明需要重置流量
 		if !cycleStats.To.IsZero() && now.After(cycleStats.To) {
-			log.Printf("NG>> 流量统计周期已结束，重置所有服务器的累计流量")
+			log.Printf("流量统计周期已结束，重置所有服务器的累计流量")
 			return true
 		}
 	}
@@ -496,7 +450,7 @@ func checkShouldResetTransferStats() bool {
 				}
 
 				if now.After(nextCycleStart) && now.Sub(lastResetTime) > 12*time.Hour {
-					log.Printf("NG>> 检测到新的流量统计周期开始，重置所有服务器的累计流量")
+					log.Printf("检测到新的流量统计周期开始，重置所有服务器的累计流量")
 					Cache.Set(lastResetKey, now, cache.DefaultExpiration)
 					return true
 				}

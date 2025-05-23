@@ -279,7 +279,7 @@ function addOrEditDDNS(ddns) {
   const modal = $(".ddns.modal");
   modal.children(".header").text((ddns ? LANG.Edit : LANG.Add));
   modal
-    .find(".nezha-primary-btn.button")
+    .find(".server-primary-btn.button")
     .html(
       ddns
         ? LANG.Edit + '<i class="edit icon"></i>'
@@ -328,7 +328,7 @@ function addOrEditNAT(nat) {
   const modal = $(".nat.modal");
   modal.children(".header").text((nat ? LANG.Edit : LANG.Add));
   modal
-    .find(".nezha-primary-btn.button")
+    .find(".server-primary-btn.button")
     .html(
       nat
         ? LANG.Edit + '<i class="edit icon"></i>'
@@ -751,68 +751,46 @@ function fetchTrafficData(serverId) {
 function debugOfflineServersConfig() {
   // 检查全局状态数据是否存在
   if (!window.statusCards || !window.statusCards.servers) {
-    console.log("状态数据尚未加载，稍后再试");
     return;
   }
   
   // 遍历所有服务器，检查并修复离线服务器的配置数据
   window.statusCards.servers.forEach(server => {
-    // 重点关注ID为39的服务器
-    const isTargetServer = server.ID === 39;
-    
     if (!server.IsOnline) {
-      if (isTargetServer) {
-        console.log(`服务器: ${server.Name} (ID: ${server.ID})`, server);
-        console.log("Host 配置信息:", server.Host);
-      }
-      
       // 确保Host对象存在
       if (!server.Host) {
         server.Host = {};
-        if (isTargetServer) console.log("创建空Host对象");
       }
       
       // 确保CPU数组存在且不为null
       if (!server.Host.CPU || !Array.isArray(server.Host.CPU)) {
         server.Host.CPU = [];
-        if (isTargetServer) console.log("CPU信息为空");
       }
       
       // 确保GPU数组存在且不为null
       if (!server.Host.GPU || !Array.isArray(server.Host.GPU)) {
         server.Host.GPU = [];
-        if (isTargetServer) console.log("GPU信息为空");
       }
       
       // 确保其他必要的属性存在
       if (!server.Host.MemTotal) {
         server.Host.MemTotal = 0;
-        if (isTargetServer) console.log("内存信息为空");
       }
       
       if (!server.Host.Platform) {
         server.Host.Platform = "";
-        if (isTargetServer) console.log("平台信息为空");
       }
       
       if (!server.Host.PlatformVersion) {
         server.Host.PlatformVersion = "";
-        if (isTargetServer) console.log("平台版本信息为空");
       }
       
       if (!server.Host.Virtualization) {
         server.Host.Virtualization = "";
-        if (isTargetServer) console.log("虚拟化信息为空");
       }
       
       if (!server.Host.Arch) {
         server.Host.Arch = "";
-        if (isTargetServer) console.log("架构信息为空");
-      }
-      
-      // 更新原始对象，确保Vue能检测到变化
-      if (isTargetServer) {
-        console.log("修复后的Host对象:", server.Host);
       }
     }
   });

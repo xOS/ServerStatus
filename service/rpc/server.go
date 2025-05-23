@@ -158,7 +158,7 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			}
 		}
 	} else {
-		log.Printf("NG>> 序列化服务器 %s 的最后状态失败: %v", singleton.ServerList[clientID].Name, err)
+		log.Printf("序列化服务器 %s 的最后状态失败: %v", singleton.ServerList[clientID].Name, err)
 	}
 
 	// 确保PrevTransferSnapshot值被正确初始化
@@ -193,7 +193,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 				}(provider)
 			}
 		} else {
-			log.Printf("NG>> 获取DDNS配置时发生错误: %v", err)
+			log.Printf("获取DDNS配置时发生错误: %v", err)
 		}
 	}
 
@@ -223,7 +223,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	 * 这是可以借助上报顺序的空档，标记服务器为重启状态，表示从该节点开始累计流量
 	 */
 	if singleton.ServerList[clientID].Host != nil && singleton.ServerList[clientID].Host.BootTime < host.BootTime {
-		log.Printf("NG>> 检测到服务器 %s 重启，重置流量计数", singleton.ServerList[clientID].Name)
+		log.Printf("检测到服务器 %s 重启，重置流量计数", singleton.ServerList[clientID].Name)
 
 		// 服务器重启时保持累计流量不变，只重置上次记录点
 		singleton.ServerList[clientID].PrevTransferInSnapshot = 0
@@ -241,13 +241,10 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		// 更新servers表中的host_json字段
 		if err := singleton.DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
 			string(hostJSON), clientID).Error; err != nil {
-			log.Printf("NG>> [RPC] 保存服务器ID:%d (%s) 的Host配置失败: %v", clientID, singleton.ServerList[clientID].Name, err)
-		} else if singleton.Conf.Debug {
-			log.Printf("NG>> [RPC] 保存服务器ID:%d (%s) 的Host配置成功, CPU=%v",
-				clientID, singleton.ServerList[clientID].Name, len(host.CPU) > 0)
+			log.Printf("保存服务器ID:%d (%s) 的Host配置失败: %v", clientID, singleton.ServerList[clientID].Name, err)
 		}
 	} else {
-		log.Printf("NG>> 序列化服务器 %s 的Host信息失败: %v", singleton.ServerList[clientID].Name, err)
+		log.Printf("序列化服务器 %s 的Host信息失败: %v", singleton.ServerList[clientID].Name, err)
 	}
 
 	singleton.ServerList[clientID].Host = &host

@@ -35,39 +35,29 @@ func loadServers() {
 	DB.Find(&servers)
 	for _, s := range servers {
 		innerS := s
-		// 确保创建完整的Host对象
-		innerS.Host = &model.Host{
-			CPU: []string{},
-			GPU: []string{},
-		}
-		// 显式调用初始化方法，确保数组正确
-		innerS.Host.Initialize()
 
+		// 初始化基本对象
 		innerS.State = &model.HostState{}
 		innerS.LastStateBeforeOffline = nil
 		innerS.IsOnline = false // 初始状态为离线，等待agent报告
 
-		// 从数据库加载最后一次上报的Host信息
+		// 从数据库加载Host信息
 		var hostJSON []byte
 		if err := DB.Raw("SELECT host_json FROM servers WHERE id = ?", innerS.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
-			// 只记录特定离线服务器的信息（ID为39）
-			if innerS.ID == 39 {
-				log.Printf("NG>> [服务启动] 离线服务器ID:39 (%s) 加载Host数据: %s",
-					innerS.Name, string(hostJSON))
-			} else if Conf.Debug {
-				log.Printf("NG>> 服务器 %s (ID: %d) 加载Host数据: %d字节", innerS.Name, innerS.ID, len(hostJSON))
+			// 创建Host对象并解析数据
+			host := &model.Host{}
+			if err := utils.Json.Unmarshal(hostJSON, host); err != nil {
+				log.Printf("解析服务器 %s 的Host数据失败: %v", innerS.Name, err)
+				// 创建空的Host对象作为后备
+				host = &model.Host{}
 			}
-
-			if err := utils.Json.Unmarshal(hostJSON, innerS.Host); err != nil {
-				log.Printf("NG>> 解析服务器 %s 的Host数据失败: %v", innerS.Name, err)
-			} else if innerS.ID == 39 {
-				// 只记录特定离线服务器的信息
-				log.Printf("NG>> [服务启动] 离线服务器ID:39 (%s) 解析后数据: CPU=%v, MEM=%v",
-					innerS.Name, innerS.Host.CPU, innerS.Host.MemTotal)
-			}
-		} else if err != nil && innerS.ID == 39 {
-			// 只记录特定离线服务器的错误
-			log.Printf("NG>> 服务器 %s (ID: %d) 从数据库加载Host数据失败: %v", innerS.Name, innerS.ID, err)
+			// 确保Host对象正确初始化
+			host.Initialize()
+			innerS.Host = host
+		} else {
+			// 如果数据库中没有Host数据，创建空的Host对象
+			innerS.Host = &model.Host{}
+			innerS.Host.Initialize()
 		}
 
 		// 加载离线前的最后状态
@@ -97,14 +87,14 @@ func loadServers() {
 						innerS.State.DiskUsed = lastState.DiskUsed
 					}
 				} else {
-					log.Printf("NG>> 复制服务器 %s 的状态数据失败: %v", innerS.Name, copyErr)
+					log.Printf("复制服务器 %s 的状态数据失败: %v", innerS.Name, copyErr)
 				}
 
 				// 将保存的流量数据初始化到State中，确保显示流量数据
 				innerS.State.NetInTransfer = innerS.CumulativeNetInTransfer
 				innerS.State.NetOutTransfer = innerS.CumulativeNetOutTransfer
 			} else {
-				log.Printf("NG>> 解析服务器 %s 的最后状态失败: %v", innerS.Name, err)
+				log.Printf("解析服务器 %s 的最后状态失败: %v", innerS.Name, err)
 			}
 		}
 
@@ -112,24 +102,6 @@ func loadServers() {
 		ServerList[innerS.ID] = &innerS
 		SecretToID[innerS.Secret] = innerS.ID
 		ServerTagToIDList[innerS.Tag] = append(ServerTagToIDList[innerS.Tag], innerS.ID)
-
-		// 确保Host信息也已保存
-		if innerS.Host != nil {
-			// 检查Host信息是否为空
-			if len(innerS.Host.CPU) > 0 || innerS.Host.MemTotal > 0 {
-				// 将Host信息保存到servers表
-				hostJSON, hostErr := utils.Json.Marshal(innerS.Host)
-				if hostErr == nil && len(hostJSON) > 0 {
-					DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
-						string(hostJSON), innerS.ID)
-
-					if Conf.Debug {
-						log.Printf("NG>> 服务器 %s (ID: %d) 离线前保存Host信息成功",
-							innerS.Name, innerS.ID)
-					}
-				}
-			}
-		}
 	}
 	ReSortServer()
 }
@@ -165,7 +137,6 @@ func ReSortServer() {
 		return SortedServerListForGuest[i].DisplayIndex > SortedServerListForGuest[j].DisplayIndex
 	})
 
-	// 总是执行，不再限制在Debug模式下
 	printServerLoadSummary()
 }
 
@@ -184,10 +155,6 @@ func printServerLoadSummary() {
 				withHost++
 			} else {
 				incompleteHost++
-				// 仅在Debug模式下记录不完整的Host对象
-				if Conf.Debug {
-					log.Printf("NG>> 服务器 %s 的Host数据不完整", server.Name)
-				}
 			}
 		} else {
 			noHost++
@@ -206,6 +173,6 @@ func printServerLoadSummary() {
 	}
 
 	// 输出摘要日志
-	log.Printf("NG>> 服务器状态统计 - 总计=%d, 有完整Host=%d, Host不完整=%d, 无Host=%d, 有State=%d, 有离线前状态=%d",
+	log.Printf("服务器状态统计 - 总计=%d, 有完整Host=%d, Host不完整=%d, 无Host=%d, 有State=%d, 有离线前状态=%d",
 		len(ServerList), withHost, incompleteHost, noHost, withState, loaded)
 }

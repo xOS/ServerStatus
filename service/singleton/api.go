@@ -115,48 +115,36 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 			continue
 		}
 
-		// 尝试从数据库加载Host信息
+		// 获取Host信息，优先使用内存中的数据
 		host := server.Host
-		if host == nil || host.MemTotal == 0 || len(host.CPU) == 0 {
+		if host == nil || (host.MemTotal == 0 && len(host.CPU) == 0) {
+			// 尝试从数据库重新加载Host信息
 			var hostJSON []byte
 			if err := DB.Raw("SELECT host_json FROM servers WHERE id = ?", server.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
-				tempHost := &model.Host{
-					CPU: []string{},
-					GPU: []string{},
-				}
+				tempHost := &model.Host{}
 				if err := utils.Json.Unmarshal(hostJSON, tempHost); err == nil {
-					// 仅为特定问题服务器添加日志（ID为39）
-					if server.ID == 39 {
-						log.Printf("NG>> [API] 离线服务器ID:39 (%s) Host数据: %s", server.Name, string(hostJSON))
-					}
-
-					// 不再填充默认数据，只使用实际数据
-					if Conf.Debug {
-						log.Printf("NG>> API - 服务器 %s (ID: %d) 成功加载Host数据", server.Name, server.ID)
-					}
+					tempHost.Initialize()
 					host = tempHost
 					server.Host = tempHost // 更新内存中的数据
-				} else if Conf.Debug {
-					log.Printf("NG>> API - 服务器 %s (ID: %d) 解析Host数据失败: %v", server.Name, server.ID, err)
+				} else {
+					log.Printf("API - 服务器 %s (ID: %d) 解析Host数据失败: %v", server.Name, server.ID, err)
 				}
 			}
+		}
+
+		// 如果仍然没有有效的Host数据，创建空的Host对象
+		if host == nil {
+			host = &model.Host{}
+			host.Initialize()
+		} else {
+			// 确保已有的Host对象数组已初始化
+			host.Initialize()
 		}
 
 		// 获取状态数据，优先使用当前状态，没有则使用离线前保存的最后状态
 		state := server.State
 		if state == nil && server.LastStateBeforeOffline != nil {
 			state = server.LastStateBeforeOffline
-		}
-
-		// 如果没有有效的Host或状态数据，跳过该服务器
-		if host == nil {
-			// 确保至少有一个空的Host对象，避免前端报错
-			host = &model.Host{}
-			// 确保初始化数组
-			host.Initialize()
-		} else {
-			// 确保已有的Host对象数组已初始化
-			host.Initialize()
 		}
 
 		ipv4, ipv6, validIP := utils.SplitIPAddr(host.IP)
@@ -201,53 +189,36 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 	defer ServerLock.RUnlock()
 
 	for _, v := range ServerList {
-		// 尝试从数据库加载Host信息
+		// 获取Host信息，优先使用内存中的数据
 		host := v.Host
-		if host == nil || host.MemTotal == 0 || len(host.CPU) == 0 {
+		if host == nil || (host.MemTotal == 0 && len(host.CPU) == 0) {
+			// 尝试从数据库重新加载Host信息
 			var hostJSON []byte
 			if err := DB.Raw("SELECT host_json FROM servers WHERE id = ?", v.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
-				tempHost := &model.Host{
-					CPU: []string{},
-					GPU: []string{},
-				}
+				tempHost := &model.Host{}
 				if err := utils.Json.Unmarshal(hostJSON, tempHost); err == nil {
-					// 仅为特定问题服务器添加日志（ID为39）
-					if v.ID == 39 {
-						log.Printf("NG>> [API] 离线服务器ID:39 (%s) Host数据: %s", v.Name, string(hostJSON))
-					}
-
-					// 不再填充默认数据，只使用实际数据
-					if Conf.Debug {
-						log.Printf("NG>> API - 服务器 %s (ID: %d) 成功加载Host数据", v.Name, v.ID)
-					}
+					tempHost.Initialize()
 					host = tempHost
 					v.Host = tempHost // 更新内存中的数据
-				} else if Conf.Debug {
-					log.Printf("NG>> API - 服务器 %s (ID: %d) 解析Host数据失败: %v", v.Name, v.ID, err)
+				} else {
+					log.Printf("API - 服务器 %s (ID: %d) 解析Host数据失败: %v", v.Name, v.ID, err)
 				}
 			}
 		}
 
-		// 如果Host信息不可用，创建一个空对象而不是跳过
+		// 如果仍然没有有效的Host数据，创建空的Host对象
 		if host == nil {
 			host = &model.Host{}
+			host.Initialize()
+		} else {
+			// 确保已有的Host对象数组已初始化
+			host.Initialize()
 		}
 
 		// 获取状态数据，优先使用当前状态，没有则使用离线前保存的最后状态
 		state := v.State
 		if state == nil && v.LastStateBeforeOffline != nil {
 			state = v.LastStateBeforeOffline
-		}
-
-		// 如果没有有效的Host或状态数据，跳过该服务器
-		if host == nil {
-			// 确保至少有一个空的Host对象，避免前端报错
-			host = &model.Host{}
-			// 确保初始化数组
-			host.Initialize()
-		} else {
-			// 确保已有的Host对象数组已初始化
-			host.Initialize()
 		}
 
 		ipv4, ipv6, validIP := utils.SplitIPAddr(host.IP)
