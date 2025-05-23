@@ -144,19 +144,6 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			"last_state_json": singleton.ServerList[clientID].LastStateJSON,
 			"last_online":     singleton.ServerList[clientID].LastOnline,
 		})
-
-		// 确认Host信息是否已保存，如果该服务器尚未保存Host信息，尝试保存当前内存中的信息
-		if singleton.ServerList[clientID].Host != nil {
-			var count int64
-			singleton.DB.Raw("SELECT COUNT(*) FROM servers WHERE id = ? AND host_json IS NOT NULL", clientID).Scan(&count)
-
-			if count == 0 {
-				hostJSON, hostErr := utils.Json.Marshal(singleton.ServerList[clientID].Host)
-				if hostErr == nil && len(hostJSON) > 0 {
-					singleton.DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?", string(hostJSON), clientID)
-				}
-			}
-		}
 	} else {
 		log.Printf("序列化服务器 %s 的最后状态失败: %v", singleton.ServerList[clientID].Name, err)
 	}

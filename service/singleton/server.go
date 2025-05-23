@@ -42,11 +42,11 @@ func loadServers() {
 		innerS.IsOnline = false // 初始状态为离线，等待agent报告
 
 		// 从数据库加载Host信息
-		var hostJSON []byte
-		if err := DB.Raw("SELECT host_json FROM servers WHERE id = ?", innerS.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
+		var hostJSONStr string
+		if err := DB.Raw("SELECT host_json FROM servers WHERE id = ?", innerS.ID).Scan(&hostJSONStr).Error; err == nil && len(hostJSONStr) > 0 {
 			// 创建Host对象并解析数据
 			host := &model.Host{}
-			if err := utils.Json.Unmarshal(hostJSON, host); err != nil {
+			if err := utils.Json.Unmarshal([]byte(hostJSONStr), host); err != nil {
 				log.Printf("解析服务器 %s 的Host数据失败: %v", innerS.Name, err)
 				// 创建空的Host对象作为后备
 				host = &model.Host{}

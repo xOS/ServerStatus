@@ -119,10 +119,10 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 		host := server.Host
 		if host == nil || (host.MemTotal == 0 && len(host.CPU) == 0) {
 			// 尝试从数据库重新加载Host信息
-			var hostJSON []byte
-			if err := DB.Raw("SELECT host_json FROM servers WHERE id = ?", server.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
+			var hostJSONStr string
+			if err := DB.Raw("SELECT host_json FROM servers WHERE id = ?", server.ID).Scan(&hostJSONStr).Error; err == nil && len(hostJSONStr) > 0 {
 				tempHost := &model.Host{}
-				if err := utils.Json.Unmarshal(hostJSON, tempHost); err == nil {
+				if err := utils.Json.Unmarshal([]byte(hostJSONStr), tempHost); err == nil {
 					tempHost.Initialize()
 					host = tempHost
 					server.Host = tempHost // 更新内存中的数据
@@ -193,10 +193,10 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 		host := v.Host
 		if host == nil || (host.MemTotal == 0 && len(host.CPU) == 0) {
 			// 尝试从数据库重新加载Host信息
-			var hostJSON []byte
-			if err := DB.Raw("SELECT host_json FROM servers WHERE id = ?", v.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
+			var hostJSONStr string
+			if err := DB.Raw("SELECT host_json FROM servers WHERE id = ?", v.ID).Scan(&hostJSONStr).Error; err == nil && len(hostJSONStr) > 0 {
 				tempHost := &model.Host{}
-				if err := utils.Json.Unmarshal(hostJSON, tempHost); err == nil {
+				if err := utils.Json.Unmarshal([]byte(hostJSONStr), tempHost); err == nil {
 					tempHost.Initialize()
 					host = tempHost
 					v.Host = tempHost // 更新内存中的数据
