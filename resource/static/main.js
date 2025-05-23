@@ -863,7 +863,6 @@ window.extractTrafficData = function() {
         const maxTrafficText = item.max;
         const usedTrafficText = item.used;
         const percentStr = String(item.percent);
-        const percent = parseInt(percentStr) || 0;
         
         // Find matching server
         let matchingServer = null;
@@ -881,8 +880,12 @@ window.extractTrafficData = function() {
         const maxTrafficBytes = window.parseTrafficToBytes(maxTrafficText);
         const usedTrafficBytes = window.parseTrafficToBytes(usedTrafficText);
         
-        // Use percent from data attributes
-        const calculatedPercent = percent;
+        // 修复：重新计算百分比，使用正确的算法计算使用比例
+        let calculatedPercent = 0;
+        if (maxTrafficBytes > 0) {
+          // 使用标准的百分比计算方法，而不是依赖服务器发送的百分比
+          calculatedPercent = Math.min(100, Math.max(0, Math.round((usedTrafficBytes / maxTrafficBytes) * 100)));
+        }
         
         // Store data
         newTrafficData[serverId] = {

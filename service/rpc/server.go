@@ -148,17 +148,12 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		// 确认Host信息是否已保存，如果该服务器尚未保存Host信息，尝试保存当前内存中的信息
 		if singleton.ServerList[clientID].Host != nil {
 			var count int64
-			singleton.DB.Raw("SELECT COUNT(*) FROM last_reported_host WHERE server_id = ?", clientID).Scan(&count)
+			singleton.DB.Raw("SELECT COUNT(*) FROM servers WHERE id = ? AND host_json IS NOT NULL", clientID).Scan(&count)
 
 			if count == 0 {
 				hostJSON, hostErr := utils.Json.Marshal(singleton.ServerList[clientID].Host)
 				if hostErr == nil && len(hostJSON) > 0 {
-					singleton.DB.Exec(`
-						INSERT INTO last_reported_host (server_id, host_json) 
-						VALUES (?, ?)
-						ON CONFLICT(server_id) 
-						DO UPDATE SET host_json = ?
-					`, clientID, string(hostJSON), string(hostJSON))
+					singleton.DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?", string(hostJSON), clientID)
 				}
 			}
 		}
@@ -243,13 +238,9 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	// 保存完整Host信息到数据库，用于重启后恢复
 	hostJSON, err := utils.Json.Marshal(host)
 	if err == nil {
-		// 使用Replace语法，如果记录不存在则插入，存在则更新
-		if err := singleton.DB.Exec(`
-			INSERT INTO last_reported_host (server_id, host_json) 
-			VALUES (?, ?)
-			ON CONFLICT(server_id) 
-			DO UPDATE SET host_json = ?
-		`, clientID, string(hostJSON), string(hostJSON)).Error; err != nil {
+		// 更新servers表中的host_json字段
+		if err := singleton.DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
+			string(hostJSON), clientID).Error; err != nil {
 			log.Printf("NG>> [RPC] 保存服务器ID:%d (%s) 的Host配置失败: %v", clientID, singleton.ServerList[clientID].Name, err)
 		} else if singleton.Conf.Debug {
 			log.Printf("NG>> [RPC] 保存服务器ID:%d (%s) 的Host配置成功, CPU=%v",

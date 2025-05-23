@@ -119,7 +119,7 @@ func (s *ServerAPIService) GetStatusByIDList(idList []uint64) *ServerStatusRespo
 		host := server.Host
 		if host == nil || host.MemTotal == 0 || len(host.CPU) == 0 {
 			var hostJSON []byte
-			if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", server.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
+			if err := DB.Raw("SELECT host_json FROM servers WHERE id = ?", server.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
 				tempHost := &model.Host{
 					CPU: []string{},
 					GPU: []string{},
@@ -205,7 +205,7 @@ func (s *ServerAPIService) GetAllStatus() *ServerStatusResponse {
 		host := v.Host
 		if host == nil || host.MemTotal == 0 || len(host.CPU) == 0 {
 			var hostJSON []byte
-			if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", v.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
+			if err := DB.Raw("SELECT host_json FROM servers WHERE id = ?", v.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
 				tempHost := &model.Host{
 					CPU: []string{},
 					GPU: []string{},

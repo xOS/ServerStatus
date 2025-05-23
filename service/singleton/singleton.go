@@ -139,20 +139,42 @@ func InitDBFromPath(path string) {
 		}
 	}
 
-	// 创建存储Host信息的表
-	err = DB.Exec(`
-		CREATE TABLE IF NOT EXISTS last_reported_host (
-			server_id INTEGER PRIMARY KEY,
-			host_json TEXT NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)
-	`).Error
+	// 检查host_json字段是否存在，如果不存在则添加
+	if !DB.Migrator().HasColumn(&model.Server{}, "host_json") {
+		err = DB.Migrator().AddColumn(&model.Server{}, "host_json")
+		if err != nil {
+			log.Println("NG>> 添加host_json字段失败:", err)
+		} else {
+			log.Println("NG>> 添加host_json字段成功")
+		}
+	}
 
-	if err != nil {
-		log.Println("NG>> 创建last_reported_host表失败:", err)
-	} else {
-		log.Println("NG>> last_reported_host表检查/创建成功")
+	// 检查是否需要从last_reported_host表迁移数据到servers表
+	var hasLegacyTable bool
+	if err := DB.Raw("SELECT 1 FROM sqlite_master WHERE type='table' AND name='last_reported_host'").Scan(&hasLegacyTable).Error; err == nil && hasLegacyTable {
+		log.Println("NG>> 检测到旧的last_reported_host表，开始迁移数据...")
+
+		// 迁移数据
+		if err := DB.Exec(`
+			UPDATE servers 
+			SET host_json = (
+				SELECT host_json 
+				FROM last_reported_host 
+				WHERE last_reported_host.server_id = servers.id
+			)
+			WHERE id IN (SELECT server_id FROM last_reported_host)
+		`).Error; err != nil {
+			log.Println("NG>> 迁移host_json数据失败:", err)
+		} else {
+			log.Println("NG>> 迁移host_json数据成功")
+
+			// 删除旧表
+			if err := DB.Exec("DROP TABLE last_reported_host").Error; err != nil {
+				log.Println("NG>> 删除last_reported_host表失败:", err)
+			} else {
+				log.Println("NG>> 删除last_reported_host表成功")
+			}
+		}
 	}
 }
 
@@ -385,20 +407,18 @@ func CheckServerOnlineStatus() {
 
 						// 确保Host信息也已保存
 						if server.Host != nil {
-							// 检查是否已存在Host信息
-							var count int64
-							DB.Raw("SELECT COUNT(*) FROM last_reported_host WHERE server_id = ?", server.ID).Scan(&count)
-
-							if count == 0 {
-								// 如果不存在，保存当前Host信息
+							// 检查Host信息是否为空
+							if len(server.Host.CPU) > 0 || server.Host.MemTotal > 0 {
+								// 将Host信息保存到servers表
 								hostJSON, hostErr := utils.Json.Marshal(server.Host)
 								if hostErr == nil && len(hostJSON) > 0 {
-									DB.Exec(`
-										INSERT INTO last_reported_host (server_id, host_json) 
-										VALUES (?, ?)
-										ON CONFLICT(server_id) 
-										DO UPDATE SET host_json = ?
-									`, server.ID, string(hostJSON), string(hostJSON))
+									DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
+										string(hostJSON), server.ID)
+
+									if Conf.Debug {
+										log.Printf("NG>> 服务器 %s (ID: %d) 离线前保存Host信息成功",
+											server.Name, server.ID)
+									}
 								}
 							}
 						}

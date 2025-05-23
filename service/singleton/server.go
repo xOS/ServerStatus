@@ -49,7 +49,7 @@ func loadServers() {
 
 		// 从数据库加载最后一次上报的Host信息
 		var hostJSON []byte
-		if err := DB.Raw("SELECT host_json FROM last_reported_host WHERE server_id = ?", innerS.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
+		if err := DB.Raw("SELECT host_json FROM servers WHERE id = ?", innerS.ID).Scan(&hostJSON).Error; err == nil && len(hostJSON) > 0 {
 			// 只记录特定离线服务器的信息（ID为39）
 			if innerS.ID == 39 {
 				log.Printf("NG>> [服务启动] 离线服务器ID:39 (%s) 加载Host数据: %s",
@@ -112,6 +112,24 @@ func loadServers() {
 		ServerList[innerS.ID] = &innerS
 		SecretToID[innerS.Secret] = innerS.ID
 		ServerTagToIDList[innerS.Tag] = append(ServerTagToIDList[innerS.Tag], innerS.ID)
+
+		// 确保Host信息也已保存
+		if innerS.Host != nil {
+			// 检查Host信息是否为空
+			if len(innerS.Host.CPU) > 0 || innerS.Host.MemTotal > 0 {
+				// 将Host信息保存到servers表
+				hostJSON, hostErr := utils.Json.Marshal(innerS.Host)
+				if hostErr == nil && len(hostJSON) > 0 {
+					DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
+						string(hostJSON), innerS.ID)
+
+					if Conf.Debug {
+						log.Printf("NG>> 服务器 %s (ID: %d) 离线前保存Host信息成功",
+							innerS.Name, innerS.ID)
+					}
+				}
+			}
+		}
 	}
 	ReSortServer()
 }

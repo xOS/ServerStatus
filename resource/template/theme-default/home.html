@@ -52,7 +52,7 @@
                                 <template v-if="getTrafficTooltip(server.ID)">
                                 {{tr "TrafficTotal"}}：@#getTrafficTooltip(server.ID)#@<br />
                                 </template>
-                                <template v-if="server.Host.GPU">
+                                <template v-if="server.Host.GPU && server.Host.GPU.length > 0">
                                     {{tr "GPU"}}：@#server.Host.GPU#@<br />
                                 </template>
                                 <template v-if="hasTemperature(server.State.Temperatures, sensorList)">
@@ -201,14 +201,12 @@
             ];
         </script>
 
-        <!-- 添加页脚上方的间距 -->
-        <!--<div style="margin-bottom: 30px;"></div>-->
-
-        {{template "theme-default/footer" .}}
+        <!--{{template "common/footer" .}}-->
+        <!--{{template "theme-default/footer" .}}-->
     </div>
 </div>
-
-{{template "theme-default/footer" .}}
+{{template "common/footer" .}}
+<!--{{template "theme-default/footer" .}}-->
 <script>
     // 确保流量提取函数可用（备用逻辑）
     if (!window.trafficFunctionsReady) {
@@ -289,9 +287,6 @@
                         } else if (rawPercent >= 0 && rawPercent <= 100) {
                             calculatedPercent = rawPercent;
                         }
-                        
-                        // 输出调试信息
-                        // console.log(`服务器 ${serverId}/${serverName} 流量：${standardUsedTraffic}/${standardMaxTraffic}, 百分比: ${calculatedPercent}%`);
                         
                         newTrafficData[serverId] = {
                             max: standardMaxTraffic,
@@ -572,7 +567,7 @@
                 return f.toFixed(2)
             },
             isWindowsPlatform(str) {
-                return str.includes('indows')
+                return str && typeof str === 'string' && str.includes('indows')
             },
             getFontLogoClass(str) {
                 if (["almalinux",
@@ -632,7 +627,7 @@
                 if (str == 'arch') {
                     return 'archlinux';
                 }
-                if (str.toLowerCase().includes('opensuse')) {
+                if (str && typeof str === 'string' && str.toLowerCase().includes('opensuse')) {
                     return 'opensuse';
                 }
                 return '';
@@ -917,6 +912,15 @@
                 // 只显示百分比，与硬盘显示保持一致
                 return `${trafficData.percent}%`;
             },
+            getTrafficUsedMaxDisplay(serverId) {
+                const trafficData = this.getServerTrafficData(serverId);
+                if (!trafficData) {
+                    return '无数据';
+                }
+                
+                // 显示已用/总量格式
+                return `${trafficData.used}/${trafficData.max}`;
+            },
             getTrafficTooltip(serverId) {
                 const trafficData = this.getServerTrafficData(serverId);
                 if (!trafficData || !trafficData.used || !trafficData.max) {
@@ -949,7 +953,7 @@
                 const lowerCaseSensorList = sensorList.map(sensor => sensor.toLowerCase());
 
                 // 合并过滤逻辑：过滤出 Temperature 不为 0 且 Name 在 sensorList 中的元素（忽略大小写）
-                const filtered = temperatureList.filter(item => item.Temperature !== 0 && lowerCaseSensorList.includes(item.Name.toLowerCase()));
+                const filtered = temperatureList.filter(item => item.Temperature !== 0 && item.Name && lowerCaseSensorList.includes(item.Name.toLowerCase()));
                 
                 // 如果有匹配的元素，则计算这些元素的 Temperature 的最大值
                 if (filtered.length > 0) {
