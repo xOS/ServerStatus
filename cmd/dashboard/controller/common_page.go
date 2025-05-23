@@ -3,10 +3,12 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
 
+	"code.cloudfoundry.org/bytefmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/go-uuid"
@@ -247,6 +249,48 @@ func (cp *commonPage) home(c *gin.Context) {
 	defer singleton.AlertsLock.RUnlock()
 	var statsStore map[uint64]model.CycleTransferStats
 	copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
+
+	// 预处理流量数据
+	var trafficData []map[string]interface{}
+	if statsStore != nil {
+		for cycleID, stats := range statsStore {
+			for serverID, transfer := range stats.Transfer {
+				serverName := ""
+				if stats.ServerName != nil {
+					if name, exists := stats.ServerName[serverID]; exists {
+						serverName = name
+					}
+				}
+
+				usedPercent := float64(0)
+				if stats.Max > 0 {
+					usedPercent = (float64(transfer) / float64(stats.Max)) * 100
+					if usedPercent > 100 {
+						usedPercent = 100
+					}
+					if usedPercent < 0 {
+						usedPercent = 0
+					}
+				}
+
+				trafficItem := map[string]interface{}{
+					"server_id":      serverID,
+					"server_name":    serverName,
+					"max_bytes":      stats.Max,
+					"used_bytes":     transfer,
+					"max_formatted":  bytefmt.ByteSize(stats.Max),
+					"used_formatted": bytefmt.ByteSize(transfer),
+					"used_percent":   math.Round(usedPercent*100) / 100,
+					"cycle_name":     stats.Name,
+					"cycle_id":       strconv.FormatUint(cycleID, 10),
+				}
+				trafficData = append(trafficData, trafficItem)
+			}
+		}
+	}
+
+	trafficDataJSON, _ := utils.Json.Marshal(trafficData)
+
 	if err != nil {
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
 			Code: http.StatusInternalServerError,
@@ -262,6 +306,7 @@ func (cp *commonPage) home(c *gin.Context) {
 	c.HTML(http.StatusOK, mygin.GetPreferredTheme(c, "/home"), mygin.CommonEnvironment(c, gin.H{
 		"Servers":            string(stat),
 		"CycleTransferStats": statsStore,
+		"TrafficData":        string(trafficDataJSON),
 	}))
 }
 

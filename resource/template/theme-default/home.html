@@ -243,34 +243,61 @@ $(document).ready(function() {
                 <p>{{tr "NoServersDesc"}}</p>
             </div>
         </template>
-
-        <!-- 优化的流量数据结构 -->
-        <script>
-            // 优化的流量统计逻辑
-            window.serverTrafficRawData = [
-                {{if .CycleTransferStats}}
-                {{range $id, $stats := .CycleTransferStats}}
-                {{range $serverId, $transfer := $stats.Transfer}}
-                {{$usedPercent := TransUsedPercent (UintToFloat $transfer) (UintToFloat $stats.Max)}}
-                {
-                    "server_id": {{$serverId}},
-                    "server_name": "{{index $stats.ServerName $serverId}}",
-                    "max_bytes": {{$stats.Max}},
-                    "used_bytes": {{$transfer}},
-                    "max_formatted": "{{$stats.Max|bf}}",
-                    "used_formatted": "{{$transfer|bf}}",
-                    "used_percent": {{printf "%.2f" $usedPercent}},
-                    "cycle_name": "{{$stats.Name}}",
-                    "cycle_id": "{{$id}}"
-                },
-                {{end}}
-                {{end}}
-                {{end}}
-            ];
-        </script>
+    </div>
 </div>
+
+<!-- 隐藏的数据容器 -->
+<div id="traffic-data" style="display: none;">{{.TrafficData}}</div>
+
 {{template "common/footer" .}}
 <!--{{template "theme-default/footer" .}}-->
+<script>
+    // 初始化全局变量
+    window.serverTrafficData = window.serverTrafficData || {};
+    window.lastTrafficUpdateTime = window.lastTrafficUpdateTime || 0;
+    
+    // 从DOM提取流量数据
+    function extractTrafficDataFromDOM() {
+        try {
+            const trafficDataElement = document.getElementById('traffic-data');
+            if (trafficDataElement && trafficDataElement.textContent) {
+                const rawData = JSON.parse(trafficDataElement.textContent);
+                if (Array.isArray(rawData)) {
+                    const newTrafficData = {};
+                    rawData.forEach(item => {
+                        if (item && item.server_id) {
+                            const serverId = String(item.server_id);
+                            newTrafficData[serverId] = {
+                                max: item.max_formatted || "0B",
+                                used: item.used_formatted || "0B",
+                                percent: parseFloat(item.used_percent) || 0,
+                                maxBytes: item.max_bytes || 0,
+                                usedBytes: item.used_bytes || 0,
+                                serverName: item.server_name || "Unknown",
+                                cycleName: item.cycle_name || "Unknown"
+                            };
+                        }
+                    });
+                    window.serverTrafficData = newTrafficData;
+                    window.lastTrafficUpdateTime = Date.now();
+                    console.log('流量数据已加载:', Object.keys(newTrafficData).length, '个服务器');
+                }
+            }
+        } catch (e) {
+            console.error('提取流量数据时出错:', e);
+        }
+    }
+    
+    // 页面加载后立即执行
+    document.addEventListener('DOMContentLoaded', function() {
+        extractTrafficDataFromDOM();
+    });
+    
+    // 如果已经加载完成，立即执行
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        setTimeout(extractTrafficDataFromDOM, 100);
+    }
+</script>
 <script>
     // 确保流量提取函数可用（备用逻辑）
     if (!window.trafficFunctionsReady) {
@@ -281,44 +308,26 @@ $(document).ready(function() {
         window.serverTrafficData = window.serverTrafficData || {};
         window.lastTrafficUpdateTime = window.lastTrafficUpdateTime || 0;
         
-        // 解析流量字节数
-        window.parseTrafficToBytes = function(trafficStr) {
-            if (!trafficStr) return 0;
-            const cleanStr = trafficStr.replace(/\s+/g, '').toUpperCase();
-            let match = cleanStr.match(/^([\d.,]+)([KMGTPEZY]?B)$/i);
-            if (!match) {
-                match = cleanStr.match(/^([\d.,]+)([KMGTPEZY])$/i);
-                if (match) match[2] = match[2] + 'B';
-            }
-            if (!match) return 0;
-            const value = parseFloat(match[1].replace(/,/g, ''));
-            const unit = match[2].toUpperCase();
-            const units = {
-                'B': 1, 'KB': 1024, 'MB': 1024 * 1024, 'GB': 1024 * 1024 * 1024,
-                'TB': 1024 * 1024 * 1024 * 1024, 'PB': 1024 * 1024 * 1024 * 1024 * 1024
-            };
-            return value * (units[unit] || 1);
-        };
-        
-        // 格式化流量单位
-        window.formatTrafficUnit = function(trafficStr) {
-            if (!trafficStr) return '0B';
-            if (/^[\d.,]+\s*[KMGTPEZY]B$/i.test(trafficStr)) return trafficStr;
-            const match = trafficStr.match(/^([\d.,]+)\s*([KMGTPEZY])$/i);
-            if (match) return `${match[1]}${match[2].toUpperCase()}B`;
-            const bytes = window.parseTrafficToBytes(trafficStr);
-            if (bytes > 0) {
-                const i = Math.floor(Math.log(bytes) / Math.log(1024));
-                const sizes = ["B", "KB", "MB", "GB", "TB", "PB"];
-                return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
-            }
-            return trafficStr;
-        };
-        
         // 提取流量数据的函数
         window.extractTrafficData = function() {
             try {
-                const trafficItems = window.serverTrafficRawData || [];
+                // 尝试从DOM元素获取数据
+                const trafficDataElement = document.getElementById('traffic-data');
+                let trafficItems = [];
+                
+                if (trafficDataElement && trafficDataElement.textContent) {
+                    try {
+                        trafficItems = JSON.parse(trafficDataElement.textContent);
+                    } catch(e) {
+                        console.warn('DOM数据解析失败:', e);
+                    }
+                }
+                
+                // 如果DOM中没有数据，使用全局变量
+                if (!trafficItems || trafficItems.length === 0) {
+                    trafficItems = window.serverTrafficRawData || [];
+                }
+                
                 if (!trafficItems || trafficItems.length === 0) return;
                 
                 const newTrafficData = {};
@@ -497,8 +506,8 @@ $(document).ready(function() {
         delimiters: ['@#', '#@'],
         data: {
             page: 'index',
-            defaultTemplate: {{.Conf.Site.Theme }},
-            templates: {{.Themes }},
+            defaultTemplate: '{{.Conf.Site.Theme}}',
+            templates: {{.Themes}},
             servers: [],
             cache: [],
             chartDataList: [],
