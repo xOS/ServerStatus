@@ -52,8 +52,8 @@
                                 <template v-if="getTrafficTooltip(server.ID)">
                                 {{tr "TrafficTotal"}}：@#getTrafficTooltip(server.ID)#@<br />
                                 </template>
-                                <template v-if="server.Host.GPU && server.Host.GPU.length > 0">
-                                    {{tr "GPU"}}：@#server.Host.GPU#@<br />
+                                <template v-if="server.Host.GPU && server.Host.GPU.length > 0 && server.Host.GPU.some(gpu => gpu !== 'unknown')">
+                                    {{tr "GPU"}}：@#server.Host.GPU.filter(gpu => gpu !== 'unknown').join(', ')#@<br />
                                 </template>
                                 <template v-if="hasTemperature(server.State.Temperatures, sensorList)">
                                     {{tr "Temperature"}}：@#getTemperature(server.State.Temperatures, sensorList)#@°C<br />

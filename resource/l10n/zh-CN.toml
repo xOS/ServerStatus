@@ -7,6 +7,9 @@ other = "全部"
 [ID]
 other = "标识号"
 
+[GPU]
+other = "显卡"
+
 [Connecting]
 other = "连接中"
 
