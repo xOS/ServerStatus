@@ -407,7 +407,13 @@ func (m *MonitorAPIService) GetMonitorHistories(query map[string]any) *MonitorIn
 				if server, exists := ServerList[history.ServerID]; exists && server != nil {
 					serverName = server.Name
 				} else {
-					serverName = "Unknown Server"
+					// 如果内存中没有，尝试从数据库查询
+					var dbServer model.Server
+					if err := DB.Where("id = ?", history.ServerID).First(&dbServer).Error; err == nil {
+						serverName = dbServer.Name
+					} else {
+						serverName = "Unknown Server"
+					}
 				}
 				ServerLock.RUnlock()
 
@@ -420,7 +426,9 @@ func (m *MonitorAPIService) GetMonitorHistories(query map[string]any) *MonitorIn
 				resultMap[history.MonitorID] = infos
 				sortedMonitorIDs = append(sortedMonitorIDs, history.MonitorID)
 			}
-			infos.CreatedAt = append(infos.CreatedAt, history.CreatedAt.Truncate(time.Minute).Unix()*1000)
+			// 修复时间戳计算：确保返回正确的毫秒时间戳
+			timestampMs := history.CreatedAt.Truncate(time.Minute).Unix() * 1000
+			infos.CreatedAt = append(infos.CreatedAt, timestampMs)
 			infos.AvgDelay = append(infos.AvgDelay, history.AvgDelay)
 		}
 		for _, monitorID := range sortedMonitorIDs {
