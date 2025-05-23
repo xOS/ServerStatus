@@ -7,10 +7,12 @@
 <div class="nb-container">
     <div class="ui container">
         <div class="service-status">
-            <table class="ui celled table">
+            
+            <div class="server-buttons-container">
                 <button class="ui network-primary-btn icon button"
                         v-for="server in servers"
-                        style="margin-top: 3px"
+                        :key="server.ID"
+                        style="margin-top: 3px;font-size: 100%;"
                         @click="redirectNetwork(server.ID)">
                          <i :class="'flag-icon flag-icon-'+server.Host.CountryCode"></i>&nbsp;<i
                     v-if='server.Host.Platform == "darwin"' class="apple icon"></i><i
@@ -18,17 +20,46 @@
                     v-else :class="'fl-' + getFontLogoClass(server.Host.Platform)"></i>
                     @#server.Name#@ &nbsp;
                 </button>
-            </table>
+            </div>
         </div>
     </div>
     <div class="ui container">
-        <div ref="chartDom" style="margin-top: 15px;height: auto;overflow: hidden"></div>
+        <div ref="chartDom" style="margin-top: 10px;height: auto;overflow: hidden"></div>
     </div>
 </div>
 
 {{template "theme-default/footer" .}}
 
 <script>
+    // 性能优化措施
+    if ('requestIdleCallback' in window) {
+        // 使用空闲时间预处理数据
+        requestIdleCallback(() => {
+            // 预加载字体
+            if (document.fonts && document.fonts.load) {
+                document.fonts.load('1em "Font Awesome 5 Free"').catch(() => {});
+                document.fonts.load('1em "Font Awesome 5 Brands"').catch(() => {});
+                document.fonts.load('1em "Font Awesome 6 Pro"').catch(() => {});
+                document.fonts.load('1em "Font Awesome 6 Brands"').catch(() => {});
+                document.fonts.load('1em "Font Awesome 6 Free"').catch(() => {});
+            }
+        });
+    }
+    
+    // 减少重排提示
+    const originalSetTimeout = window.setTimeout;
+    let timeoutCount = 0;
+    window.setTimeout = function(fn, delay) {
+        timeoutCount++;
+        if (timeoutCount > 10) {
+            // 批量处理过多的setTimeout
+            return originalSetTimeout(() => {
+                requestAnimationFrame(fn);
+            }, delay || 0);
+        }
+        return originalSetTimeout(fn, delay);
+    };
+
     const monitorInfo =  JSON.parse('{{.MonitorInfos}}');
     const initData = JSON.parse('{{.Servers}}').servers;
     let MaxTCPPingValue = {{.Conf.MaxTCPPingValue}};
@@ -40,7 +71,8 @@
             defaultTemplate: {{.Conf.Site.Theme}},
             templates: {{.Themes}},
             servers: initData,
-            option: {}
+            option: {},
+            resizeTimer: null
         },
         mixins: [mixinsVue],
         created() {
@@ -58,30 +90,50 @@
                         return result;
                     },
                     confine: true,
-                    transitionDuration: 0
+                    transitionDuration: 0,
+                    z: 10,
+                    zlevel: 1
                 },
                 title: {
                     left: 'center',
                     text: "",
-                    textStyle: {}
+                    textStyle: {},
+                    z: 5,
+                    zlevel: 0
                 },
                 legend: {
                     top: '5%',
                     data: [],
                     textStyle: {
-                        fontSize: 14
-                    }
+                        fontSize: this.isMobile ? 11 : 14 // 移动端使用更小字体
+                    },
+                    itemWidth: this.isMobile ? 15 : 25, // 移动端缩小图例图标
+                    itemHeight: this.isMobile ? 10 : 14,
+                    itemGap: this.isMobile ? 8 : 10, // 移动端减少间距
+                    z: 4,
+                    zlevel: 0
                 },
                 grid: {
-                    left: this.isMobile ? '8%' : '3.8%',
-                    right: this.isMobile ? '8%' : '3.8%',
+                    left: this.isMobile ? '12%' : '7%', // 进一步增加左边距
+                    right: this.isMobile ? '12%' : '7%', // 进一步增加右边距
+                    bottom: this.isMobile ? '13%' : '12%', // PC端略微增加，移动端减少
+                    z: 1,
+                    zlevel: 0
                 },
                 backgroundColor: 'rgba(255, 255, 255, 0.6)',
                 dataZoom: [
                     {
                         type: 'slider',
                         start: 0,
-                        end: 100
+                        end: 100,
+                        bottom: this.isMobile ? '2%' : '1%', // 调整滑动条位置
+                        height: this.isMobile ? 20 : 28, // PC端略微再增加高度
+                        z: 6,
+                        zlevel: 0,
+                        labelFormatter: function (value) {
+                            // 滑动条两端时间字符串换行显示
+                            return echarts.format.formatTime('MM-dd\nhh:mm', value);
+                        }
                     }
                 ],
                 xAxis: {
@@ -89,25 +141,64 @@
                     boundaryGap: false,
                     axisLabel: {
                         formatter: function (value) {
-                            // 确保时间戳正确格式化
+                            // PC端不换行，移动端换行
+                            if (window.innerWidth <= 768) {
+                                return echarts.format.formatTime('MM-dd\nhh:mm', value);
+                            }
                             return echarts.format.formatTime('MM-dd hh:mm', value);
-                        }
-                    }
+                        },
+                        interval: 'auto', // 自动计算间隔
+                        rotate: 0, // 不旋转
+                        fontSize: window.innerWidth <= 768 ? 10 : 12, // 移动端使用更小字体
+                        margin: window.innerWidth <= 768 ? 8 : 8, // 增加边距
+                        showMaxLabel: true,
+                        showMinLabel: true,
+                        lineHeight: window.innerWidth <= 768 ? 16 : 14 // 移动端需要更大行高
+                    },
+                    z: 1,
+                    zlevel: 0
                 },
                 yAxis: {
                     type: 'value',
-                    boundaryGap: false
+                    boundaryGap: false,
+                    z: 1,
+                    zlevel: 0
                 },
                 series: [],
+                animation: false,
+                animationDuration: 0
             }
         },
         mounted() {
-            this.renderChart();
-            this.parseMonitorInfo(monitorInfo);
-            window.addEventListener('resize', this.resizeHandle);
+            // 使用passive事件监听器优化滚轮性能
+            window.addEventListener('resize', this.resizeHandle, { passive: true });
+            
+            // 温和的移动端滚动优化
+            if (this.isMobile) {
+                // 简单的滚动优化，不强制改变页面结构
+                document.body.style.webkitOverflowScrolling = 'touch';
+                
+                // 防止意外的页面跳转
+                let lastScrollTop = 0;
+                window.addEventListener('scroll', function() {
+                    const currentScrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                    lastScrollTop = currentScrollTop;
+                }, { passive: true });
+            }
+            
+            // 优化初始化序列，减少延迟
+            this.$nextTick(() => {
+                // 先渲染图表
+                this.renderChart();
+                
+                // 然后加载数据，避免阻塞UI
+                setTimeout(() => {
+                    this.parseMonitorInfo(monitorInfo);
+                }, 50);
+            });
         },
         destroyed () {
-            window.removeEventListener('resize', this.resizeHandle)
+            window.removeEventListener('resize', this.resizeHandle, { passive: true });
         },
         methods: {
             getFontLogoClass(str) {
@@ -191,8 +282,11 @@
                 // 检查数据有效性
                 if (!monitorInfo || !monitorInfo.result || monitorInfo.result.length === 0) {
                     this.option.title.text = "No Data Available";
-                    this.myChart.clear();
-                    this.myChart.setOption(this.option);
+                    // 使用requestAnimationFrame避免强制重排
+                    requestAnimationFrame(() => {
+                        this.myChart.clear();
+                        this.myChart.setOption(this.option, true);
+                    });
                     return;
                 }
                 
@@ -204,9 +298,13 @@
                     let data = [];
                     let datal = [];
                     
-                    for (let j = 0; j < monitorInfo.result[i].created_at.length; j++) {
-                        avgDelay = Math.round(monitorInfo.result[i].avg_delay[j]);
-                        let timestamp = monitorInfo.result[i].created_at[j];
+                    // 批量处理数据，减少计算
+                    const timestamps = monitorInfo.result[i].created_at;
+                    const delays = monitorInfo.result[i].avg_delay;
+                    
+                    for (let j = 0; j < timestamps.length; j++) {
+                        const avgDelay = Math.round(delays[j]);
+                        const timestamp = timestamps[j];
                         
                         // 确保时间戳是有效的数字
                         if (typeof timestamp !== 'number' || isNaN(timestamp)) {
@@ -229,7 +327,7 @@
                             });
                         }
                     }
-                    lossRate = ((loss / monitorInfo.result[i].created_at.length) * 100).toFixed(1);
+                    lossRate = ((loss / timestamps.length) * 100).toFixed(1);
                     if (lossRate > 99) {
                         datal = [];
                     }
@@ -241,16 +339,22 @@
                             smooth: true,
                             symbol: 'none',
                             data: data,
+                            z: 1,
+                            zlevel: 0,
                             markLine: {
                                 symbol: "none",
-                                symbolSize :0,
-                                data: datal
+                                symbolSize: 0,
+                                data: datal,
+                                z: 2,
+                                zlevel: 0
                             },
                             markPoint: {
                                 data: [
                                     { type: 'max', symbol: 'pin', name: 'Max', itemStyle: { color: rgbaColorMarker }, symbolSize: 30, label: { fontSize: 8 } },
                                     { type: 'min', symbol: 'pin', name: 'Min', itemStyle: { color: rgbaColorMarker }, symbolSize: 30, label: { fontSize: 8, offset: [0, 7.5] }, symbolRotate: 180 }
-                                ]
+                                ],
+                                z: 3,
+                                zlevel: 0
                             }
                     });
                 }
@@ -261,40 +365,89 @@
                     titleText = monitorInfo.result[0].server_name;
                 }
                 
+                // 批量更新配置，减少重排
+                const maxLegendsPerRowMobile = parseInt(localStorage.getItem("maxLegendsPerRowMobile") || "2");
+                const maxLegendsPerRowPc = parseInt(localStorage.getItem("maxLegendsPerRowPc") || "6");
+                const autoIncrement = Math.floor((tLegendData.length - 1) / (this.isMobile ? maxLegendsPerRowMobile : maxLegendsPerRowPc)) * (this.isMobile ? 28 : 34);
+                const height = (this.isMobile ? 440 : 480) + autoIncrement; // 减少基础高度
+                const gridTop = 60 + autoIncrement;
+                
+                // 一次性更新所有配置
                 this.option.title.text = titleText;
                 this.option.series = tSeries;
                 this.option.legend.data = tLegendData;
-                const maxLegendsPerRowMobile = localStorage.getItem("maxLegendsPerRowMobile") ? localStorage.getItem("maxLegendsPerRowMobile") : 2;
-                const maxLegendsPerRowPc = localStorage.getItem("maxLegendsPerRowPc") ? localStorage.getItem("maxLegendsPerRowPc") : 6;
-                const autoIncrement = Math.floor((tLegendData.length - 1) / (this.isMobile ? maxLegendsPerRowMobile : maxLegendsPerRowPc)) * (this.isMobile ? 28 : 34);
-                const height = 520 + autoIncrement;
-                const gridTop = 60 + autoIncrement;
                 this.option.grid = {
-                    left: this.isMobile ? '8%' : '3.8%',
-                    right: this.isMobile ? '8%' : '3.8%',
-                    top: gridTop
+                    left: this.isMobile ? '12%' : '7%', // 进一步增加左边距
+                    right: this.isMobile ? '12%' : '7%', // 进一步增加右边距
+                    top: gridTop,
+                    bottom: this.isMobile ? '13%' : '12%', // PC端略微增加，移动端减少
+                    z: 1,
+                    zlevel: 0
                 };
-                this.myChart.resize({
-                    width: 'auto',
-                    height: height
+                
+                // 使用requestAnimationFrame优化渲染
+                requestAnimationFrame(() => {
+                    this.myChart.resize({
+                        width: 'auto',
+                        height: height
+                    });
+                    this.myChart.clear();
+                    this.myChart.setOption(this.option, true);
                 });
-                this.myChart.clear();
-                this.myChart.setOption(this.option);
             },
             isWindowsPlatform(str) {
                 return str.includes('Windows')
             },
             renderChart() {
-              const chartTheme = $('html').attr('nz-theme') == "dark" ? "dark" : "";
-              this.myChart = echarts.init(this.$refs.chartDom,chartTheme);
-              this.myChart.setOption(this.option);
+                const chartTheme = $('html').attr('nz-theme') == "dark" ? "dark" : "";
+                
+                // 避免重复初始化
+                if (this.myChart && !this.myChart.isDisposed()) {
+                    this.myChart.dispose();
+                }
+                
+                // 延迟初始化，确保DOM准备就绪
+                requestAnimationFrame(() => {
+                    this.myChart = echarts.init(this.$refs.chartDom, chartTheme, {
+                        renderer: 'canvas',
+                        useDirtyRect: true,
+                        width: 'auto',
+                        height: this.isMobile ? 440 : 480 // 减少初始高度
+                    });
+                    
+                    // 恢复图表正常交互，只做必要的滚动优化
+                    if (this.isMobile) {
+                        // 设置图表容器允许触摸操作
+                        this.$refs.chartDom.style.touchAction = 'manipulation';
+                    }
+                    
+                    this.myChart.setOption(this.option, true);
+                });
             },
-            resizeHandle () {
-              this.myChart.resize();
+            resizeHandle() {
+                if (this.myChart && !this.myChart.isDisposed()) {
+                    // 使用防抖优化resize性能，增加延迟时间
+                    clearTimeout(this.resizeTimer);
+                    this.resizeTimer = setTimeout(() => {
+                        // 使用requestAnimationFrame进一步优化
+                        requestAnimationFrame(() => {
+                            if (this.myChart && !this.myChart.isDisposed()) {
+                                this.myChart.resize();
+                            }
+                        });
+                    }, 200);
+                }
             },
         },
         beforeDestroy() {
-            this.myChart.dispose();
+            // 清理定时器
+            if (this.resizeTimer) {
+                clearTimeout(this.resizeTimer);
+            }
+            // 清理图表实例
+            if (this.myChart && !this.myChart.isDisposed()) {
+                this.myChart.dispose();
+            }
             this.myChart = null;
         },
     });

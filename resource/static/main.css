@@ -126,15 +126,6 @@
     line-height: 1.5em!important;
 }
 
-.ui.card .description .ui.progress {
-    margin-top: 0!important;
-    margin-bottom: 0!important;
-}
-
-.ui.table:first-child {
-    margin-top: -15px!important;
-}
-
 .ui.card .description .ui.grid > .row {
     display: flex!important;
     align-items: center!important;
@@ -923,4 +914,100 @@ i.s {
 
 .ui.menu .item:before {
     width: 0px !important;
+}
+
+/* 性能优化CSS - 减少非被动事件监听器警告 (from home.html) */
+html, body {
+    touch-action: manipulation; /* 优化触摸事件性能 */
+    -webkit-overflow-scrolling: touch; /* iOS设备滚动优化 */
+}
+
+/* 卡片容器触摸优化 */
+.ui.card {
+    touch-action: manipulation;
+}
+
+/* 标签页容器触摸优化 */
+.custom-tabs-container {
+    touch-action: pan-x; /* 只允许水平滚动 */
+}
+
+/* 弹窗触摸优化 */
+.ui.popup {
+    touch-action: manipulation;
+}
+
+/* 折叠面板触摸优化 */
+.ui.accordion {
+    touch-action: manipulation;
+}
+
+/* 网络监控页面性能优化CSS (from network.html) */
+.ui.container {
+    contain: layout style;
+}
+
+.service-status {
+    will-change: transform;
+    contain: layout style;
+}
+
+.server-buttons-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 15px;
+}
+
+.server-buttons-container .network-primary-btn {
+    flex: 0 0 auto;
+    margin: 0 !important;
+}
+
+.network-primary-btn {
+    will-change: auto;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+    padding: 0.6em !important;
+}
+
+/* 减少重绘 */
+[ref="chartDom"] {
+    contain: layout style; /* 改为较宽松的contain，避免strict影响滚动 */
+    will-change: auto;
+    transform: scale(0.85); /* 整体缩小到85% */
+    transform-origin: top center; /* 从顶部中心开始缩放 */
+    margin-bottom: -60px; /* 调整底部边距补偿缩放后的空间 */
+    touch-action: pan-y; /* 允许垂直滚动 */
+}
+
+/* 响应式设计：移动设备上进一步缩小 */
+@media (max-width: 768px) {
+    [ref="chartDom"] {
+        transform: scale(0.75); /* 移动设备缩小到75% */
+        margin-bottom: -80px;
+        touch-action: manipulation; /* 允许基本触摸操作 */
+        overflow: visible;
+    }
+    
+    /* 温和的移动端滚动优化 */
+    html, body {
+        -webkit-overflow-scrolling: touch;
+        overflow-y: auto;
+    }
+    
+    /* 确保容器不干扰滚动 */
+    .nb-container {
+        overflow: visible;
+        position: relative;
+    }
+}
+
+/* 字体加载优化 */
+.flag-icon {
+    font-display: swap;
+}
+
+.fl-alpine, .fl-archlinux, .fl-centos, .fl-debian, .fl-fedora, .fl-tux, .fl-ubuntu {
+    font-display: swap;
 }

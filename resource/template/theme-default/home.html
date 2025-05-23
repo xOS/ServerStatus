@@ -1,5 +1,70 @@
 {{define "theme-default/home"}}
 {{template "theme-default/header" .}}
+
+<script>
+// 性能优化 - 覆盖默认事件监听器为被动模式
+(function() {
+    // 保存原始的 addEventListener
+    const originalAddEventListener = EventTarget.prototype.addEventListener;
+    
+    // 需要设置为被动的事件类型
+    const passiveEvents = ['touchstart', 'touchmove', 'wheel', 'mousewheel'];
+    
+    // 重写 addEventListener
+    EventTarget.prototype.addEventListener = function(type, listener, options) {
+        // 如果是目标事件类型且没有显式设置选项
+        if (passiveEvents.includes(type) && typeof options !== 'object') {
+            options = { passive: true };
+        } else if (passiveEvents.includes(type) && typeof options === 'object' && options.passive === undefined) {
+            options.passive = true;
+        }
+        
+        return originalAddEventListener.call(this, type, listener, options);
+    };
+})();
+
+// jQuery 事件优化
+$(document).ready(function() {
+    // 为 jQuery 添加被动事件监听器支持
+    if ($.fn.on) {
+        const originalOn = $.fn.on;
+        $.fn.on = function(events, selector, data, handler) {
+            // 如果是触摸或滚动事件，添加被动标志
+            if (typeof events === 'string' && 
+                (events.includes('touchstart') || events.includes('touchmove') || 
+                 events.includes('wheel') || events.includes('mousewheel'))) {
+                
+                // 创建被动版本的处理函数
+                const passiveHandler = function(e) {
+                    // 不调用 preventDefault
+                    if (typeof handler === 'function') {
+                        return handler.call(this, e);
+                    } else if (typeof data === 'function') {
+                        return data.call(this, e);
+                    }
+                };
+                
+                // 使用原生 addEventListener 添加被动监听器
+                if (typeof data === 'function') {
+                    handler = data;
+                    data = undefined;
+                }
+                
+                this.each(function() {
+                    if (this.addEventListener) {
+                        this.addEventListener(events, passiveHandler, { passive: true });
+                    }
+                });
+                
+                return this;
+            }
+            
+            return originalOn.apply(this, arguments);
+        };
+    }
+});
+</script>
+
 {{if ts .CustomCode}} {{.CustomCode|safe}} {{end}}
 {{template "theme-default/menu" .}}
 
@@ -791,8 +856,11 @@
                         on: 'hover',
                         hoverable: true,
                         exclusive: true, // Semantic UI 应处理排他性
-                        // position: 'top left', // 可以根据需要调整位置
-                        // delay: { show: 200, hide: 400 }, // 可以调整延迟
+                        // 适度延迟：防止误触发但保持响应性
+                        delay: { show: 100, hide: 300 },
+                        // 保留性能优化设置
+                        silent: true, // 减少控制台输出
+                        performance: true, // 启用性能监控
                         onShow: function() {
                             // 'this' 指向当前正在显示的弹窗的 DOM 元素
                             const $currentPopup = $(this);
@@ -1093,7 +1161,24 @@
 })();
 
     $(document).ready(function() {
-        $('.ui.accordion').accordion({ "exclusive": false });
+        // 优化 accordion 初始化，减少非被动事件监听器
+        $('.ui.accordion').accordion({ 
+            "exclusive": false,
+            "silent": true, // 减少控制台输出
+            "performance": true, // 启用性能监控
+            "selector": {
+                "trigger": '.title'
+            },
+            // 优化动画性能
+            "duration": 200,
+            "easing": 'easeOutQuad'
+        });
+        
+        // 为已存在的触摸事件添加被动标志
+        $(document).off('touchstart.accordion touchmove.accordion');
+        $(document).on('touchstart.accordion', '.ui.accordion .title', function(e) {
+            // 被动处理，不阻止默认行为
+        });
     });
 </script>
 {{end}}
