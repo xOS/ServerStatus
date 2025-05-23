@@ -86,6 +86,17 @@ type MonitorInfo struct {
 	AvgDelay    []float32 `json:"avg_delay"`
 }
 
+type TrafficDisplayData struct {
+	ServerID   uint64  `json:"server_id"`
+	ServerName string  `json:"server_name"`
+	Used       string  `json:"used"`        // 已用流量（格式化后）
+	Total      string  `json:"total"`       // 总流量（格式化后）
+	UsedBytes  uint64  `json:"used_bytes"`  // 已用字节数
+	TotalBytes uint64  `json:"total_bytes"` // 总字节数
+	Percent    float64 `json:"percent"`     // 使用百分比
+	CycleName  string  `json:"cycle_name"`  // 周期名称
+}
+
 func InitAPI() {
 	ApiTokenList = make(map[string]*model.ApiToken)
 	UserIDToApiTokenList = make(map[uint64][]string)

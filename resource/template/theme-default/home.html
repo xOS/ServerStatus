@@ -244,21 +244,24 @@ $(document).ready(function() {
             </div>
         </template>
 
-        <!-- JS数据区域，直接将流量数据嵌入为JavaScript变量 -->
+        <!-- 优化的流量数据结构 -->
         <script>
-            // 将流量数据直接嵌入页面
+            // 优化的流量统计逻辑
             window.serverTrafficRawData = [
                 {{if .CycleTransferStats}}
                 {{range $id, $stats := .CycleTransferStats}}
-                {{range $innerId, $transfer := $stats.Transfer}}
-                {{$TransLeftPercent := TransLeftPercent (UintToFloat $transfer) (UintToFloat $stats.Max)}}
+                {{range $serverId, $transfer := $stats.Transfer}}
+                {{$usedPercent := TransUsedPercent (UintToFloat $transfer) (UintToFloat $stats.Max)}}
                 {
-                    "id": "{{$id}}",
-                    "name": "{{$stats.Name}}",
-                    "serverName": "{{index $stats.ServerName $innerId}}",
-                    "max": "{{$stats.Max|bf}}",
-                    "used": "{{$transfer|bf}}",
-                    "percent": {{$TransLeftPercent}}
+                    "server_id": {{$serverId}},
+                    "server_name": "{{index $stats.ServerName $serverId}}",
+                    "max_bytes": {{$stats.Max}},
+                    "used_bytes": {{$transfer}},
+                    "max_formatted": "{{$stats.Max|bf}}",
+                    "used_formatted": "{{$transfer|bf}}",
+                    "used_percent": {{printf "%.2f" $usedPercent}},
+                    "cycle_name": "{{$stats.Name}}",
+                    "cycle_id": "{{$id}}"
                 },
                 {{end}}
                 {{end}}
@@ -315,66 +318,40 @@ $(document).ready(function() {
         // 提取流量数据的函数
         window.extractTrafficData = function() {
             try {
-                // 直接从全局变量获取数据，不再从DOM元素中读取
                 const trafficItems = window.serverTrafficRawData || [];
                 if (!trafficItems || trafficItems.length === 0) return;
                 
                 const newTrafficData = {};
                 trafficItems.forEach(item => {
-                    if (item) {
-                        const rawServerId = item.id;
-                        const serverName = item.serverName;
-                        const maxTrafficText = item.max;
-                        const usedTrafficText = item.used;
-                        const percentStr = String(item.percent);
-                        // 先尝试从percent获取百分比值
-                        let rawPercent = parseInt(percentStr) || 0;
+                    if (item && item.server_id) {
+                        const serverId = String(item.server_id);
+                        const serverName = item.server_name || "Unknown Server";
+                        const maxTraffic = item.max_formatted || "0B";
+                        const usedTraffic = item.used_formatted || "0B";
+                        const percent = parseFloat(item.used_percent) || 0;
                         
-                        let matchingServer = null;
-                        if (window.statusCards && window.statusCards.servers) {
-                            matchingServer = window.statusCards.servers.find(s => s.Name === serverName);
-                        }
-                        
-                        const serverId = matchingServer ? matchingServer.ID : rawServerId;
-                        const standardMaxTraffic = window.formatTrafficUnit(maxTrafficText);
-                        const standardUsedTraffic = window.formatTrafficUnit(usedTrafficText);
-                        const maxTrafficBytes = window.parseTrafficToBytes(maxTrafficText);
-                        const usedTrafficBytes = window.parseTrafficToBytes(usedTrafficText);
-                        
-                        // 重新计算百分比，确保数值正确
-                        let calculatedPercent = 0;
-                        if (maxTrafficBytes > 0) {
-                            calculatedPercent = Math.min(100, Math.max(0, Math.round((usedTrafficBytes / maxTrafficBytes) * 100)));
-                        } else if (rawPercent >= 0 && rawPercent <= 100) {
-                            calculatedPercent = rawPercent;
-                        }
-                        
+                        // 直接使用清晰的数据结构
                         newTrafficData[serverId] = {
-                            max: standardMaxTraffic,
-                            used: standardUsedTraffic,
-                            percent: calculatedPercent,
-                            maxBytes: maxTrafficBytes,
-                            usedBytes: usedTrafficBytes
+                            max: maxTraffic,
+                            used: usedTraffic,
+                            percent: Math.round(percent * 100) / 100, // 保留2位小数
+                            maxBytes: item.max_bytes || 0,
+                            usedBytes: item.used_bytes || 0,
+                            serverName: serverName,
+                            cycleName: item.cycle_name || "Unknown"
                         };
-                        
-                        if (serverId !== rawServerId) {
-                            newTrafficData[rawServerId] = {
-                                max: standardMaxTraffic,
-                                used: standardUsedTraffic,
-                                percent: calculatedPercent,
-                                maxBytes: maxTrafficBytes,
-                                usedBytes: usedTrafficBytes
-                            };
-                        }
                     }
                 });
                 
                 window.serverTrafficData = newTrafficData;
                 window.lastTrafficUpdateTime = Date.now();
                 
+                // 通知Vue组件更新
                 if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
                     window.statusCards.updateTrafficData();
                 }
+                
+                console.log('流量数据已更新:', Object.keys(newTrafficData).length, '个服务器');
             } catch (e) {
                 console.error('提取流量数据时出错:', e);
             }
@@ -602,48 +579,24 @@ $(document).ready(function() {
             },
             getServerTrafficData(serverId) {
                 try {
-                    // Try local cache first for reactivity
-                    if (this.trafficData) {
-                        const serverIdStr = String(serverId).trim();
-                        
-                        if (this.trafficData[serverIdStr]) {
-                            return this.trafficData[serverIdStr];
-                        }
-                        
-                        // Try numeric match
-                        const keys = Object.keys(this.trafficData);
-                        for (const key of keys) {
-                            if (parseInt(key) === parseInt(serverIdStr)) {
-                                return this.trafficData[key]; 
-                            }
-                        }
+                    // 首先尝试从本地响应式数据获取
+                    if (this.trafficData && this.trafficData[serverId]) {
+                        return this.trafficData[serverId];
                     }
                     
-                    // Fall back to global variable
-                    if (!window.serverTrafficData || Object.keys(window.serverTrafficData).length === 0) {
-                        // Try to get data if not already loaded
-                        setTimeout(window.extractTrafficData, 100);
-                        return null;
+                    // 回退到全局数据
+                    if (window.serverTrafficData && window.serverTrafficData[serverId]) {
+                        return window.serverTrafficData[serverId];
                     }
                     
-                    // Ensure serverId is treated as string for comparison
-                    const serverIdStr = String(serverId).trim();
-                    
-                    // Check direct match first
-                    if (window.serverTrafficData && window.serverTrafficData[serverIdStr]) {
-                        return window.serverTrafficData[serverIdStr];
-                    }
-                    
-                    // Try to find by numeric value if direct match fails
-                    const keys = Object.keys(window.serverTrafficData || {});
-                    for (const key of keys) {
-                        if (parseInt(key) === parseInt(serverIdStr)) {
-                            return window.serverTrafficData[key];
-                        }
+                    // 如果没有找到，尝试触发数据提取
+                    if (typeof window.extractTrafficData === 'function') {
+                        window.extractTrafficData();
                     }
                     
                     return null;
                 } catch (e) {
+                    console.error('获取流量数据时出错:', e);
                     return null;
                 }
             },

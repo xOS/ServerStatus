@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -231,11 +232,30 @@ var funcMap = template.FuncMap{
 		return a + b
 	},
 	"TransLeftPercent": func(a, b float64) (n float64) {
-		n, _ = strconv.ParseFloat(fmt.Sprintf("%.2f", (100-(a/b)*100)), 64)
+		if b <= 0 {
+			return 0
+		}
+		n = (a / b) * 100
+		if n > 100 {
+			n = 100
+		}
 		if n < 0 {
 			n = 0
 		}
-		return
+		return math.Round(n*100) / 100
+	},
+	"TransUsedPercent": func(used, total float64) (n float64) {
+		if total <= 0 {
+			return 0
+		}
+		n = (used / total) * 100
+		if n > 100 {
+			n = 100
+		}
+		if n < 0 {
+			n = 0
+		}
+		return math.Round(n*100) / 100
 	},
 	"TransLeft": func(a, b uint64) string {
 		if a < b {
