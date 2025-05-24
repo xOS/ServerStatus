@@ -371,23 +371,11 @@
                                 case 'progress':
                                     handleReady = true;
                                     break;
-                                case 'result':
-                                    handleReady = false;
-                                    const url = URL.createObjectURL(event.data.blob);
-                                    const anchor = document.createElement('a');
-                                    anchor.href = url;
-                                    anchor.download = event.data.fileName;
-                                    anchor.click();
-                                    URL.revokeObjectURL(url);
-
-                                    // Delete the file in OPFS
-                                    window.addEventListener('beforeunload', async () => {
-                                        await worker.postMessage({ operation: 3, arrayBuffer: null, fileName: event.data.fileName });
-                                    });
-
-                                    hideUpdModal();
-                                    resetUpdState();
+                                case 'complete':
+                                    worker.terminate();
                                     break;
+                                default:
+                                    console.warn('Unknown message type:', event.data.type);
                             }
                         };
                         await worker.postMessage({ operation: 1, arrayBuffer: arrayBuffer, fileName: fileName });
