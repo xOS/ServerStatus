@@ -578,16 +578,18 @@ $(document).ready(function() {
             this.updateServerLiveStatus();
             this.initTrafficDataWatcher();
             
-            // 立即尝试提取流量数据 - 无需使用折叠面板
+            // 立即尝试提取流量数据
             setTimeout(() => {
                 window.extractTrafficData();
             }, 500);
 
-            // Subscribe to traffic data updates
+            // 订阅流量数据更新
             if (window.trafficManager) {
                 window.trafficManager.subscribe((data, version) => {
+                    console.log('收到流量管理器更新，版本:', version);
                     this.trafficData = data;
                     this._trafficVersion = version;
+                    this.$forceUpdate(); // 强制更新视图
                 });
             }
         },
@@ -1012,7 +1014,25 @@ $(document).ready(function() {
                 return `${this.formatByteSize(trafficData.usedBytes)} / ${this.formatByteSize(trafficData.maxBytes)}`;
             },
             updateTrafficData() {
-                // Force Vue to recognize the data change
+                if (!window.serverTrafficData) {
+                    console.warn('没有可用的流量数据');
+                    return;
+                }
+                
+                // 更新每个服务器的流量数据
+                this.servers.forEach(server => {
+                    const trafficInfo = window.serverTrafficData[server.ID];
+                    if (trafficInfo) {
+                        server.traffic = {
+                            used: trafficInfo.used,
+                            total: trafficInfo.max,
+                            percent: trafficInfo.percent,
+                            lastUpdate: trafficInfo.lastUpdate
+                        };
+                    }
+                });
+                
+                // 强制更新视图
                 this.$forceUpdate();
             },
             hasTemperature(temperatureList, sensorList) {

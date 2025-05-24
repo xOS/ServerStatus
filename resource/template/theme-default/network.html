@@ -189,11 +189,11 @@
             // 优化初始化序列，减少延迟
             this.$nextTick(() => {
                 // 先渲染图表
-                this.renderChart();
+            this.renderChart();
                 
                 // 然后加载数据，避免阻塞UI
                 setTimeout(() => {
-                    this.parseMonitorInfo(monitorInfo);
+            this.parseMonitorInfo(monitorInfo);
                 }, 50);
             });
         },
@@ -387,11 +387,11 @@
                 
                 // 使用requestAnimationFrame优化渲染
                 requestAnimationFrame(() => {
-                    this.myChart.resize({
-                        width: 'auto',
-                        height: height
-                    });
-                    this.myChart.clear();
+                this.myChart.resize({
+                    width: 'auto',
+                    height: height
+                });
+                this.myChart.clear();
                     this.myChart.setOption(this.option, true);
                 });
             },
@@ -399,7 +399,7 @@
                 return str.includes('Windows')
             },
             renderChart() {
-                const chartTheme = $('html').attr('nz-theme') == "dark" ? "dark" : "";
+              const chartTheme = $('html').attr('nz-theme') == "dark" ? "dark" : "";
                 
                 // 避免重复初始化
                 if (this.myChart && !this.myChart.isDisposed()) {
@@ -432,7 +432,7 @@
                         // 使用requestAnimationFrame进一步优化
                         requestAnimationFrame(() => {
                             if (this.myChart && !this.myChart.isDisposed()) {
-                                this.myChart.resize();
+              this.myChart.resize();
                             }
                         });
                     }, 200);
@@ -446,7 +446,7 @@
             }
             // 清理图表实例
             if (this.myChart && !this.myChart.isDisposed()) {
-                this.myChart.dispose();
+            this.myChart.dispose();
             }
             this.myChart = null;
         },

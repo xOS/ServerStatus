@@ -802,19 +802,46 @@ function debugOfflineServersConfig() {
   }
 }
 
-// 在页面加载完成后运行调试函数
+// 添加流量数据API轮询
+function updateTrafficData() {
+    $.ajax({
+        url: '/api/traffic',
+        type: 'GET',
+        success: function(data) {
+            if (data && data.code === 200) {
+                window.serverTrafficRawData = data.data;
+                window.extractTrafficData();
+            } else if (data && data.code === 403) {
+                console.warn('需要登录才能访问流量数据');
+                // 如果未登录,重定向到登录页面
+                if (window.location.pathname !== '/login') {
+                    window.location.href = '/login';
+                }
+            }
+        },
+        error: function(err) {
+            console.error('获取流量数据失败:', err);
+        }
+    });
+}
+
+// 在页面加载完成后初始化
 $(document).ready(function() {
-  // 等待状态数据加载完成后再运行调试
-  setTimeout(function() {
-    debugOfflineServersConfig();
-  }, 1000);
-  
-  // 每30秒检查一次，确保数据始终正确
-  setInterval(debugOfflineServersConfig, 30000);
-  
-  // 原有的流量数据提取
-  setTimeout(window.extractTrafficData, 500);
-  setInterval(window.extractTrafficData, 30000);
+    // 等待状态数据加载完成后再运行调试
+    setTimeout(function() {
+        debugOfflineServersConfig();
+    }, 1000);
+    
+    // 每30秒检查一次，确保数据始终正确
+    setInterval(debugOfflineServersConfig, 30000);
+    
+    // 原有的流量数据提取
+    setTimeout(window.extractTrafficData, 500);
+    setInterval(window.extractTrafficData, 30000);
+    
+    // 添加流量数据API轮询
+    setTimeout(updateTrafficData, 1000);
+    setInterval(updateTrafficData, 30000);
 });
 
 // 初始化全局流量数据变量
@@ -825,79 +852,86 @@ window.lastTrafficUpdateTime = 0;
  * 从嵌入的JavaScript变量中提取流量数据并进行处理
  */
 window.extractTrafficData = function() {
-  try {
-    // Get traffic data from global variable
-    const trafficItems = window.serverTrafficRawData || [];
-    if (!trafficItems || trafficItems.length === 0) {
-      return;
+    try {
+        // Get traffic data from global variable
+        const trafficItems = window.serverTrafficRawData || [];
+        if (!trafficItems || trafficItems.length === 0) {
+            console.warn("没有可用的流量数据");
+            return;
+        }
+        
+        const newTrafficData = {};
+        let updatedCount = 0;
+        
+        // Process each traffic data item
+        trafficItems.forEach(item => {
+            if (item) {
+                const rawServerId = item.id;
+                const serverName = item.serverName;
+                const maxTrafficText = item.max;
+                const usedTrafficText = item.used;
+                const percentStr = String(item.percent);
+                
+                // Find matching server
+                let matchingServer = null;
+                if (window.statusCards && window.statusCards.servers) {
+                    matchingServer = window.statusCards.servers.find(s => s.Name === serverName);
+                }
+                
+                const serverId = matchingServer ? matchingServer.ID : rawServerId;
+                
+                // Normalize unit format
+                const standardMaxTraffic = window.formatTrafficUnit(maxTrafficText);
+                const standardUsedTraffic = window.formatTrafficUnit(usedTrafficText);
+                
+                // Convert traffic data to bytes for accurate calculation
+                const maxTrafficBytes = window.parseTrafficToBytes(maxTrafficText);
+                const usedTrafficBytes = window.parseTrafficToBytes(usedTrafficText);
+                
+                // 修复：重新计算百分比，使用正确的算法计算使用比例
+                let calculatedPercent = 0;
+                if (maxTrafficBytes > 0) {
+                    // 使用标准的百分比计算方法，而不是依赖服务器发送的百分比
+                    calculatedPercent = Math.min(100, Math.max(0, Math.round((usedTrafficBytes / maxTrafficBytes) * 100)));
+                }
+                
+                // Store data
+                newTrafficData[serverId] = {
+                    max: standardMaxTraffic,
+                    used: standardUsedTraffic,
+                    percent: calculatedPercent,
+                    maxBytes: maxTrafficBytes,
+                    usedBytes: usedTrafficBytes,
+                    lastUpdate: Date.now()
+                };
+                
+                // Store a copy with original ID as well
+                if (serverId !== rawServerId) {
+                    newTrafficData[rawServerId] = {
+                        max: standardMaxTraffic,
+                        used: standardUsedTraffic,
+                        percent: calculatedPercent,
+                        maxBytes: maxTrafficBytes,
+                        usedBytes: usedTrafficBytes,
+                        lastUpdate: Date.now()
+                    };
+                }
+                
+                updatedCount++;
+            }
+        });
+        
+        window.serverTrafficData = newTrafficData;
+        window.lastTrafficUpdateTime = Date.now();
+        
+        // Update Vue component if available
+        if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
+            window.statusCards.updateTrafficData();
+            console.log(`已更新 ${updatedCount} 个服务器的流量数据`);
+        }
+    } catch (e) {
+        console.error('处理流量数据时出错:', e);
     }
-    
-    const newTrafficData = {};
-    
-    // Process each traffic data item
-    trafficItems.forEach(item => {
-      if (item) {
-        const rawServerId = item.id;
-        const serverName = item.serverName;
-        const maxTrafficText = item.max;
-        const usedTrafficText = item.used;
-        const percentStr = String(item.percent);
-        
-        // Find matching server
-        let matchingServer = null;
-        if (window.statusCards && window.statusCards.servers) {
-          matchingServer = window.statusCards.servers.find(s => s.Name === serverName);
-        }
-        
-        const serverId = matchingServer ? matchingServer.ID : rawServerId;
-        
-        // Normalize unit format
-        const standardMaxTraffic = window.formatTrafficUnit(maxTrafficText);
-        const standardUsedTraffic = window.formatTrafficUnit(usedTrafficText);
-        
-        // Convert traffic data to bytes for accurate calculation
-        const maxTrafficBytes = window.parseTrafficToBytes(maxTrafficText);
-        const usedTrafficBytes = window.parseTrafficToBytes(usedTrafficText);
-        
-        // 修复：重新计算百分比，使用正确的算法计算使用比例
-        let calculatedPercent = 0;
-        if (maxTrafficBytes > 0) {
-          // 使用标准的百分比计算方法，而不是依赖服务器发送的百分比
-          calculatedPercent = Math.min(100, Math.max(0, Math.round((usedTrafficBytes / maxTrafficBytes) * 100)));
-        }
-        
-        // Store data
-        newTrafficData[serverId] = {
-          max: standardMaxTraffic,
-          used: standardUsedTraffic,
-          percent: calculatedPercent,
-          maxBytes: maxTrafficBytes,
-          usedBytes: usedTrafficBytes
-        };
-        
-        // Store a copy with original ID as well
-        if (serverId !== rawServerId) {
-          newTrafficData[rawServerId] = {
-            max: standardMaxTraffic,
-            used: standardUsedTraffic,
-            percent: calculatedPercent,
-            maxBytes: maxTrafficBytes,
-            usedBytes: usedTrafficBytes
-          };
-        }
-      }
-    });
-    
-    window.serverTrafficData = newTrafficData;
-    window.lastTrafficUpdateTime = Date.now();
-    
-    // Update Vue component if available
-    if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
-      window.statusCards.updateTrafficData();
-    }
-  } catch (e) {
-    console.error('Error extracting traffic data:', e);
-  }
 };
 
 /**
@@ -1167,4 +1201,82 @@ document.addEventListener('DOMContentLoaded', () => {
         window.trafficManager.processTrafficData(window.serverTrafficRawData);
     }
     window.trafficManager.startAutoUpdate();
-}); 
+});
+
+// WebSocket连接，用于实时更新服务器数据
+(function() {
+    const wsProtocol = window.location.protocol == "https:" ? "wss" : "ws";
+    const wsUrl = wsProtocol + '://' + window.location.host + '/ws';
+    
+    function initWebSocket() {
+        const ws = new WebSocket(wsUrl);
+        
+        ws.onopen = function() {
+            console.log("WebSocket连接已建立");
+        };
+        
+        ws.onmessage = function(evt) {
+            try {
+                const data = JSON.parse(evt.data);
+                if (data && data.servers && Array.isArray(data.servers)) {
+                    // 确保statusCards实例存在
+                    if (window.statusCards) {
+                        statusCards.servers = data.servers;
+                        statusCards.updateServerLiveStatus(data);
+                        
+                        // 添加流量数据更新
+                        if (data.trafficData) {
+                            window.serverTrafficRawData = data.trafficData;
+                            window.extractTrafficData();
+                            console.log("收到流量数据更新");
+                        }
+                    }
+                } else {
+                    console.warn("WebSocket接收到无效的服务器数据格式");
+                }
+            } catch (e) {
+                console.error("处理WebSocket消息时出错:", e);
+            }
+        };
+        
+        ws.onclose = function() {
+            console.log("WebSocket连接已关闭，3秒后重试...");
+            // 连接关闭后3秒重连
+            setTimeout(initWebSocket, 3000);
+        };
+        
+        ws.onerror = function(err) {
+            console.error("WebSocket错误:", err);
+        };
+    }
+    
+    // 初始化WebSocket连接
+    initWebSocket();
+})();
+
+/**
+ * 获取单个服务器的流量数据
+ * @param {string|number} serverId 服务器ID
+ * @returns {Promise} 返回Promise对象
+ */
+function fetchServerTrafficData(serverId) {
+    return $.ajax({
+        url: `/api/server/${serverId}/traffic`,
+        type: 'GET',
+        success: function(data) {
+            if (data && data.code === 200) {
+                return data.data;
+            } else if (data && data.code === 403) {
+                console.warn('需要登录才能访问流量数据');
+                if (window.location.pathname !== '/login') {
+                    window.location.href = '/login';
+                }
+            }
+            return null;
+        },
+        error: function(err) {
+            console.error('获取服务器流量数据失败:', err);
+            return null;
+        }
+    });
+} 

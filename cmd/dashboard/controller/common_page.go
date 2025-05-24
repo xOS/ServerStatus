@@ -50,6 +50,11 @@ func (cp *commonPage) serve() {
 	cr.POST("/terminal", cp.createTerminal)
 	cr.GET("/file", cp.createFM)
 	cr.GET("/file/:id", cp.fm)
+
+	// 新增：流量数据API，未登录用户也可访问
+	cr.GET("/api/traffic", cp.apiTraffic)
+	// 新增：单个服务器流量数据API
+	cr.GET("/api/server/:id/traffic", cp.apiServerTraffic)
 }
 
 type viewPasswordForm struct {
@@ -607,4 +612,143 @@ func (cp *commonPage) createFM(c *gin.Context) {
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/file", mygin.CommonEnvironment(c, gin.H{
 		"SessionID": streamId,
 	}))
+}
+
+// 新增：/api/traffic handler，返回和首页相同结构的流量数据
+func (cp *commonPage) apiTraffic(c *gin.Context) {
+	// 使用与 /server 相同的授权机制
+	_, authorized := c.Get(model.CtxKeyAuthorizedUser)
+	if !authorized {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "请先登录",
+		})
+		return
+	}
+
+	singleton.AlertsLock.RLock()
+	defer singleton.AlertsLock.RUnlock()
+	var statsStore map[uint64]model.CycleTransferStats
+	copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
+
+	var trafficData []map[string]interface{}
+	if statsStore != nil {
+		for cycleID, stats := range statsStore {
+			for serverID, transfer := range stats.Transfer {
+				serverName := ""
+				if stats.ServerName != nil {
+					if name, exists := stats.ServerName[serverID]; exists {
+						serverName = name
+					}
+				}
+				usedPercent := float64(0)
+				if stats.Max > 0 {
+					usedPercent = (float64(transfer) / float64(stats.Max)) * 100
+					if usedPercent > 100 {
+						usedPercent = 100
+					}
+					if usedPercent < 0 {
+						usedPercent = 0
+					}
+				}
+				trafficItem := map[string]interface{}{
+					"server_id":      serverID,
+					"server_name":    serverName,
+					"max_bytes":      stats.Max,
+					"used_bytes":     transfer,
+					"max_formatted":  bytefmt.ByteSize(stats.Max),
+					"used_formatted": bytefmt.ByteSize(transfer),
+					"used_percent":   math.Round(usedPercent*100) / 100,
+					"cycle_name":     stats.Name,
+					"cycle_id":       strconv.FormatUint(cycleID, 10),
+				}
+				trafficData = append(trafficData, trafficItem)
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": trafficData,
+	})
+}
+
+// 新增：/api/server/:id/traffic handler，返回单个服务器的流量数据
+func (cp *commonPage) apiServerTraffic(c *gin.Context) {
+	// 使用与 /server 相同的授权机制
+	_, authorized := c.Get(model.CtxKeyAuthorizedUser)
+	if !authorized {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "请先登录",
+		})
+		return
+	}
+
+	// 获取服务器ID
+	serverID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "无效的服务器ID",
+		})
+		return
+	}
+
+	// 检查服务器是否存在
+	singleton.ServerLock.RLock()
+	server := singleton.ServerList[serverID]
+	singleton.ServerLock.RUnlock()
+	if server == nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "服务器不存在",
+		})
+		return
+	}
+
+	singleton.AlertsLock.RLock()
+	defer singleton.AlertsLock.RUnlock()
+	var statsStore map[uint64]model.CycleTransferStats
+	copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
+
+	var trafficData []map[string]interface{}
+	if statsStore != nil {
+		for cycleID, stats := range statsStore {
+			if transfer, exists := stats.Transfer[serverID]; exists {
+				serverName := ""
+				if stats.ServerName != nil {
+					if name, exists := stats.ServerName[serverID]; exists {
+						serverName = name
+					}
+				}
+				usedPercent := float64(0)
+				if stats.Max > 0 {
+					usedPercent = (float64(transfer) / float64(stats.Max)) * 100
+					if usedPercent > 100 {
+						usedPercent = 100
+					}
+					if usedPercent < 0 {
+						usedPercent = 0
+					}
+				}
+				trafficItem := map[string]interface{}{
+					"server_id":      serverID,
+					"server_name":    serverName,
+					"max_bytes":      stats.Max,
+					"used_bytes":     transfer,
+					"max_formatted":  bytefmt.ByteSize(stats.Max),
+					"used_formatted": bytefmt.ByteSize(transfer),
+					"used_percent":   math.Round(usedPercent*100) / 100,
+					"cycle_name":     stats.Name,
+					"cycle_id":       strconv.FormatUint(cycleID, 10),
+				}
+				trafficData = append(trafficData, trafficItem)
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": trafficData,
+	})
 }
