@@ -59,6 +59,21 @@ func NewServiceSentinel(serviceSentinelDispatchBus chan<- model.Monitor) {
 	var mhs []model.MonitorHistory
 	// 加载当日记录
 	DB.Where("created_at >= ?", today).Find(&mhs)
+
+	// 初始化 serviceStatusToday 和 monthlyStatus
+	for i := 0; i < len(monitors); i++ {
+		monitorID := monitors[i].ID
+		ServiceSentinelShared.serviceStatusToday[monitorID] = &_TodayStatsOfMonitor{
+			Up:    0,
+			Down:  0,
+			Delay: 0,
+		}
+		ServiceSentinelShared.monthlyStatus[monitorID] = &model.ServiceItemResponse{
+			TotalUp:   0,
+			TotalDown: 0,
+		}
+	}
+
 	totalDelay := make(map[uint64]float32)
 	totalDelayCount := make(map[uint64]float32)
 	for i := 0; i < len(mhs); i++ {
@@ -193,6 +208,12 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 			monitors[i].NotificationTag = "default"
 			DB.Save(monitors[i])
 		}
+
+		// 初始化监控数据存储
+		monitorID := monitors[i].ID
+		ss.serviceCurrentStatusData[monitorID] = make([]*pb.TaskResult, _CurrentStatusSize)
+		ss.monitors[monitorID] = monitors[i]
+
 		task := *monitors[i]
 		// 通过cron定时将服务监控任务传递给任务调度管道
 		monitors[i].CronJobID, err = Cron.AddFunc(task.CronSpec(), func() {
@@ -201,8 +222,6 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 		if err != nil {
 			panic(err)
 		}
-		ss.monitors[monitors[i].ID] = monitors[i]
-		ss.serviceCurrentStatusData[monitors[i].ID] = make([]*pb.TaskResult, _CurrentStatusSize)
 		ss.serviceStatusToday[monitors[i].ID] = &_TodayStatsOfMonitor{}
 	}
 
@@ -369,6 +388,14 @@ func (ss *ServiceSentinel) worker() {
 		}
 		ss.serviceResponseDataStoreLock.Lock()
 		// 写入当天状态
+		if ss.serviceStatusToday[mh.GetId()] == nil {
+			ss.serviceStatusToday[mh.GetId()] = &_TodayStatsOfMonitor{
+				Up:    0,
+				Down:  0,
+				Delay: 0,
+			}
+		}
+
 		if mh.Successful {
 			ss.serviceStatusToday[mh.GetId()].Delay = (ss.serviceStatusToday[mh.
 				GetId()].Delay*float32(ss.serviceStatusToday[mh.GetId()].Up) +
@@ -388,6 +415,12 @@ func (ss *ServiceSentinel) worker() {
 		// 写入当前数据
 		if ss.serviceCurrentStatusIndex[mh.GetId()].t.Before(currentTime) {
 			ss.serviceCurrentStatusIndex[mh.GetId()].t = currentTime.Add(30 * time.Second)
+
+			// 确保 serviceCurrentStatusData 已初始化
+			if ss.serviceCurrentStatusData[mh.GetId()] == nil {
+				ss.serviceCurrentStatusData[mh.GetId()] = make([]*pb.TaskResult, _CurrentStatusSize)
+			}
+
 			ss.serviceCurrentStatusData[mh.GetId()][ss.serviceCurrentStatusIndex[mh.GetId()].index] = mh
 			ss.serviceCurrentStatusIndex[mh.GetId()].index++
 		}
