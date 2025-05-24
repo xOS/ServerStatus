@@ -156,7 +156,7 @@ func CleanMonitorHistory() {
 	DB.Unscoped().Delete(&model.Transfer{}, "server_id NOT IN (SELECT `id` FROM servers)")
 
 	// 清理过期的累计流量数据（保留30天）
-	cleanCumulativeTransferData(30)
+	CleanCumulativeTransferData(30)
 
 	// 计算可清理流量记录的时长
 	var allServerKeep time.Time
@@ -198,8 +198,8 @@ func CleanMonitorHistory() {
 	}
 }
 
-// cleanCumulativeTransferData 清理累计流量数据
-func cleanCumulativeTransferData(days int) {
+// CleanCumulativeTransferData 清理累计流量数据
+func CleanCumulativeTransferData(days int) {
 	tm := GetTrafficManager()
 	if err := tm.CleanupOldData(days); err != nil {
 		log.Printf("Failed to cleanup traffic data: %v", err)
@@ -300,9 +300,6 @@ func CheckServerOnlineStatus() {
 func checkShouldResetTransferStats() bool {
 	// 获取当前时间
 	now := time.Now()
-
-	// 获取本月第一天
-	firstDay := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 
 	// 如果是本月第一天的凌晨，返回true
 	return now.Day() == 1 && now.Hour() == 0 && now.Minute() < 5

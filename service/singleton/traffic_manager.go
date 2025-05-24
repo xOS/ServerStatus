@@ -122,7 +122,6 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 		ServerID: serverID,
 		In:       inBytes,
 		Out:      outBytes,
-		Speed:    stats.InSpeed + stats.OutSpeed,
 	})
 
 	// 检查是否需要立即写入
@@ -232,4 +231,14 @@ func (tm *TrafficManager) GetTrafficTotal(serverID uint64) (inTotal, outTotal ui
 		return stats.InBytes, stats.OutBytes
 	}
 	return 0, 0
+}
+
+// SaveToDatabase 将当前的流量数据保存到数据库
+func (tm *TrafficManager) SaveToDatabase() error {
+	tm.Lock()
+	defer tm.Unlock()
+
+	// 强制执行一次批量写入
+	tm.writeBatchToDatabase()
+	return nil
 }
