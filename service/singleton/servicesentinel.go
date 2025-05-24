@@ -56,37 +56,8 @@ func NewServiceSentinel(serviceSentinelDispatchBus chan<- model.Monitor) {
 	year, month, day := time.Now().Date()
 	today := time.Date(year, month, day, 0, 0, 0, 0, Loc)
 
-	var mhs []model.MonitorHistory
-	// 加载当日记录
-	DB.Where("created_at >= ?", today).Find(&mhs)
-
 	// 初始化 serviceStatusToday 和 monthlyStatus
-	for i := 0; i < len(monitors); i++ {
-		monitorID := monitors[i].ID
-		ServiceSentinelShared.serviceStatusToday[monitorID] = &_TodayStatsOfMonitor{
-			Up:    0,
-			Down:  0,
-			Delay: 0,
-		}
-		ServiceSentinelShared.monthlyStatus[monitorID] = &model.ServiceItemResponse{
-			TotalUp:   0,
-			TotalDown: 0,
-		}
-	}
-
-	totalDelay := make(map[uint64]float32)
-	totalDelayCount := make(map[uint64]float32)
-	for i := 0; i < len(mhs); i++ {
-		totalDelay[mhs[i].MonitorID] += mhs[i].AvgDelay
-		totalDelayCount[mhs[i].MonitorID]++
-		ServiceSentinelShared.serviceStatusToday[mhs[i].MonitorID].Up += int(mhs[i].Up)
-		ServiceSentinelShared.monthlyStatus[mhs[i].MonitorID].TotalUp += mhs[i].Up
-		ServiceSentinelShared.serviceStatusToday[mhs[i].MonitorID].Down += int(mhs[i].Down)
-		ServiceSentinelShared.monthlyStatus[mhs[i].MonitorID].TotalDown += mhs[i].Down
-	}
-	for id, delay := range totalDelay {
-		ServiceSentinelShared.serviceStatusToday[id].Delay = delay / float32(totalDelayCount[id])
-	}
+	// 这部分应由 loadMonitorHistory 完成，无需在此初始化
 
 	// 启动服务监控器
 	go ServiceSentinelShared.worker()
