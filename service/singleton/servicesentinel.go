@@ -53,12 +53,6 @@ func NewServiceSentinel(serviceSentinelDispatchBus chan<- model.Monitor) {
 	// 加载历史记录
 	ServiceSentinelShared.loadMonitorHistory()
 
-	year, month, day := time.Now().Date()
-	today := time.Date(year, month, day, 0, 0, 0, 0, Loc)
-
-	// 初始化 serviceStatusToday 和 monthlyStatus
-	// 这部分应由 loadMonitorHistory 完成，无需在此初始化
-
 	// 启动服务监控器
 	go ServiceSentinelShared.worker()
 
