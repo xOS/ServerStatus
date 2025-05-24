@@ -110,8 +110,10 @@ $(document).ready(function() {
                                 [@#server.Host.Arch#@]<br />
                                 {{tr "MemUsed"}}：@#formatByteSize(server.State.MemUsed)#@ /
                                 @#formatByteSize(server.Host.MemTotal)#@<br />
+                                <template v-if="server.Host.SwapTotal">
                                 {{tr "SwapUsed"}}：@#formatByteSize(server.State.SwapUsed)#@ /
                                         @#formatByteSize(server.Host.SwapTotal)#@<br />
+                                </template>
                                 {{tr "DiskUsed"}}：@#formatByteSize(server.State.DiskUsed)#@ /
                                 @#formatByteSize(server.Host.DiskTotal)#@<br />
                                 <template v-if="getTrafficTooltip(server.ID)">
@@ -193,6 +195,9 @@ $(document).ready(function() {
                                             <small>@# getTrafficDisplay(server.ID) #@</small>
                                         </div>
                                     </div>
+                                    <div class="traffic-details" style="font-size: 0.9em; margin-top: 5px;">
+                                        <span>已用: @# getTrafficUsedDisplay(server.ID) #@</span>
+                                    </div>
                                 </div>
 
                                 <div class="three wide column">{{tr "NetSpeed"}}</div>
@@ -267,9 +272,16 @@ $(document).ready(function() {
                     rawData.forEach(item => {
                         if (item && item.server_id) {
                             const serverId = String(item.server_id);
+                            const maxFormatted = item.max_formatted || "0B";
+                            const usedFormatted = item.used_formatted || "0B";
+                            
+                            // 使用formatTrafficUnit确保单位统一
+                            const standardMax = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(maxFormatted) : maxFormatted;
+                            const standardUsed = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(usedFormatted) : usedFormatted;
+                            
                             newTrafficData[serverId] = {
-                                max: item.max_formatted || "0B",
-                                used: item.used_formatted || "0B",
+                                max: standardMax,
+                                used: standardUsed,
                                 percent: parseFloat(item.used_percent) || 0,
                                 maxBytes: item.max_bytes || 0,
                                 usedBytes: item.used_bytes || 0,
@@ -339,10 +351,14 @@ $(document).ready(function() {
                         const usedTraffic = item.used_formatted || "0B";
                         const percent = parseFloat(item.used_percent) || 0;
                         
+                        // 使用formatTrafficUnit确保单位统一
+                        const standardMax = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(maxTraffic) : maxTraffic;
+                        const standardUsed = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(usedTraffic) : usedTraffic;
+                        
                         // 直接使用清晰的数据结构
                         newTrafficData[serverId] = {
-                            max: maxTraffic,
-                            used: usedTraffic,
+                            max: standardMax,
+                            used: standardUsed,
                             percent: Math.round(percent * 100) / 100, // 保留2位小数
                             maxBytes: item.max_bytes || 0,
                             usedBytes: item.used_bytes || 0,
@@ -770,7 +786,8 @@ $(document).ready(function() {
                 }
                 const i = Math.floor(Math.log(bytes) / Math.log(1024));
                 const sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-                return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
+                const value = parseFloat((bytes / Math.pow(1024, i)).toFixed(2));
+                return `${value}${sizes[i]}`;
             },
             getCoreAndGHz(arr) {
                 if ((arr || []).length === 0) {
@@ -793,7 +810,7 @@ $(document).ready(function() {
             getK2Gb(bs){
                 bs = bs / 1024 / 1024 / 1024;
                 if (bs >= 1) {
-                    return Math.ceil(bs.toFixed(2)) + 'G';
+                    return Math.ceil(bs.toFixed(2)) + 'GB';
                 } else {
                     bs = bs * 1024;
                     return Math.ceil(bs.toFixed(2)) + 'MB';
@@ -974,14 +991,19 @@ $(document).ready(function() {
                 // 只显示百分比，与硬盘显示保持一致
                 return `${trafficData.percent}%`;
             },
-            getTrafficUsedMaxDisplay(serverId) {
+            getTrafficUsedDisplay(serverId) {
                 const trafficData = this.getServerTrafficData(serverId);
-                if (!trafficData) {
-                    return '无数据';
+                if (!trafficData || !trafficData.used) {
+                    return '0B';
                 }
-                
-                // 显示已用/总量格式
-                return `${trafficData.used}/${trafficData.max}`;
+                return this.formatByteSize(trafficData.used);
+            },
+            getTrafficRemainingDisplay(serverId) {
+                const trafficData = this.getServerTrafficData(serverId);
+                if (!trafficData || !trafficData.remaining) {
+                    return '0B';
+                }
+                return this.formatByteSize(trafficData.remaining);
             },
             getTrafficTooltip(serverId) {
                 const trafficData = this.getServerTrafficData(serverId);
@@ -1073,7 +1095,7 @@ $(document).ready(function() {
             },
             servers() {
                 this.generateUniqueTags();
-                 this.$nextTick(() => {
+                this.$nextTick(() => {
                     this.updateSliderPosition();
                 });
             }

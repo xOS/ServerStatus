@@ -24,7 +24,8 @@ function readableBytes(bytes) {
   }
   var i = Math.floor(Math.log(bytes) / Math.log(1024)),
     sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-  return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
+  const value = parseFloat((bytes / Math.pow(1024, i)).toFixed(2));
+  return `${value}${sizes[i]}`;
 }
 
 const confirmBtn = $(".mini.confirm.modal .server-primary-btn.button");
@@ -955,15 +956,30 @@ window.parseTrafficToBytes = function(trafficStr) {
 window.formatTrafficUnit = function(trafficStr) {
   if (!trafficStr) return '0B';
   
-  // 如果已经是标准格式，直接返回
-  if (/^[\d.,]+\s*[KMGTPEZY]B$/i.test(trafficStr)) {
-    return trafficStr;
+  // 清理输入字符串，去除多余空格
+  const cleanStr = trafficStr.trim();
+  
+  // 如果已经是标准格式（包含B），进行格式规范化
+  const matchWithB = cleanStr.match(/^([\d.,]+)\s*([KMGTPEZY]?B)$/i);
+  if (matchWithB) {
+    const value = matchWithB[1];
+    const unit = matchWithB[2].toUpperCase();
+    // 确保单位统一大写格式
+    return `${value}${unit}`;
   }
   
-  // 处理省略了B的情况（如1.5M）
-  const match = trafficStr.match(/^([\d.,]+)\s*([KMGTPEZY])$/i);
-  if (match) {
-    return `${match[1]}${match[2].toUpperCase()}B`;
+  // 处理省略了B的情况（如1.5M, 2.3G等）
+  const matchWithoutB = cleanStr.match(/^([\d.,]+)\s*([KMGTPEZY])$/i);
+  if (matchWithoutB) {
+    const value = matchWithoutB[1];
+    const unit = matchWithoutB[2].toUpperCase();
+    return `${value}${unit}B`;
+  }
+  
+  // 处理只有数字的情况，默认为字节
+  const matchNumberOnly = cleanStr.match(/^([\d.,]+)$/);
+  if (matchNumberOnly) {
+    return `${matchNumberOnly[1]}B`;
   }
   
   // 解析为字节数并重新格式化
@@ -971,7 +987,8 @@ window.formatTrafficUnit = function(trafficStr) {
   if (bytes > 0) {
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     const sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-    return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + sizes[i];
+    const value = parseFloat((bytes / Math.pow(1024, i)).toFixed(2));
+    return `${value}${sizes[i]}`;
   }
   
   return trafficStr; // 无法识别时返回原始字符串
