@@ -192,11 +192,8 @@ $(document).ready(function() {
                                 <div class="thirteen wide column">
                                     <div :class="getTrafficProgressClass(server.ID)">
                                         <div class="bar" :style="getTrafficProgressStyle(server.ID)">
-                                            <small>@# getTrafficDisplay(server.ID) #@</small>
+                                            <small>@#getTrafficDisplay(server.ID)#@</small>
                                         </div>
-                                    </div>
-                                    <div class="traffic-details" style="font-size: 0.9em; margin-top: 5px;">
-                                        <span>已用: @# getTrafficUsedDisplay(server.ID) #@</span>
                                     </div>
                                 </div>
 
@@ -255,61 +252,73 @@ $(document).ready(function() {
 <div id="traffic-data" style="display: none;">{{.TrafficData}}</div>
 
 {{template "common/footer" .}}
-<!--{{template "theme-default/footer" .}}-->
-<script src="/static/traffic-utils.js"></script>
+
 <script>
-    // 初始化全局变量
+    // 确保流量提取函数可用
+    // 标记函数已准备就绪，不显示警告
+    window.trafficFunctionsReady = true;
+    // 初始化全局变量，只保留一处
     window.serverTrafficData = window.serverTrafficData || {};
     window.lastTrafficUpdateTime = window.lastTrafficUpdateTime || 0;
-    
-    // 从DOM提取流量数据
-    function extractTrafficDataFromDOM() {
+    // 提取流量数据的函数
+    window.extractTrafficData = function() {
         try {
             const trafficDataElement = document.getElementById('traffic-data');
+            let trafficItems = [];
             if (trafficDataElement && trafficDataElement.textContent) {
-                const rawData = JSON.parse(trafficDataElement.textContent);
-                if (Array.isArray(rawData)) {
-                    const newTrafficData = {};
-                    rawData.forEach(item => {
-                        if (item && item.server_id) {
-                            const serverId = String(item.server_id);
-                            const maxFormatted = item.max_formatted || "0B";
-                            const usedFormatted = item.used_formatted || "0B";
-                            
-                            // 使用formatTrafficUnit确保单位统一
-                            const standardMax = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(maxFormatted) : maxFormatted;
-                            const standardUsed = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(usedFormatted) : usedFormatted;
-                            
-                            newTrafficData[serverId] = {
-                                max: standardMax,
-                                used: standardUsed,
-                                percent: parseFloat(item.used_percent) || 0,
-                                maxBytes: item.max_bytes || 0,
-                                usedBytes: item.used_bytes || 0,
-                                serverName: item.server_name || "Unknown",
-                                cycleName: item.cycle_name || "Unknown"
-                            };
-                        }
-                    });
-                    window.serverTrafficData = newTrafficData;
-                    window.lastTrafficUpdateTime = Date.now();
-                    console.log('流量数据已加载:', Object.keys(newTrafficData).length, '个服务器');
+                try {
+                    trafficItems = JSON.parse(trafficDataElement.textContent);
+                } catch (e) {
+                    // console.warn('DOM数据解析失败:', e); // 可选保留
                 }
             }
+            // 如果DOM中没有数据，使用全局变量
+            if (!trafficItems || trafficItems.length === 0) {
+                trafficItems = window.serverTrafficRawData || [];
+            }
+            if (!trafficItems || trafficItems.length === 0) return;
+            const newTrafficData = {};
+            trafficItems.forEach(item => {
+                if (item && item.server_id) {
+                    const serverId = String(item.server_id);
+                    const serverName = item.server_name || "Unknown Server";
+                    const maxTraffic = item.max_formatted || "0B";
+                    const usedTraffic = item.used_formatted || "0B";
+                    const percent = parseFloat(item.used_percent) || 0;
+                    // 使用formatTrafficUnit确保单位统一
+                    const standardMax = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(maxTraffic) : maxTraffic;
+                    const standardUsed = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(usedTraffic) : usedTraffic;
+                    // 直接使用清晰的数据结构
+                    newTrafficData[serverId] = {
+                        max: standardMax,
+                        used: standardUsed,
+                        percent: Math.round(percent * 100) / 100, // 保留2位小数
+                        maxBytes: item.max_bytes || 0,
+                        usedBytes: item.used_bytes || 0,
+                        serverName: serverName,
+                        cycleName: item.cycle_name || "Unknown"
+                    };
+                }
+            });
+            window.serverTrafficData = newTrafficData;
+            window.lastTrafficUpdateTime = Date.now();
+            // 通知Vue组件更新
+            if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
+                window.statusCards.updateTrafficData();
+            }
+            // console.log('流量数据已更新:', Object.keys(newTrafficData).length, '个服务器'); // 可选保留
         } catch (e) {
-            console.error('提取流量数据时出错:', e);
+            console.error('提取流量数据时出错:', e); // 保留错误日志
         }
-    }
-    
-    // 页面加载后立即执行
-    document.addEventListener('DOMContentLoaded', function() {
-        extractTrafficDataFromDOM();
-    });
-    
-    // 如果已经加载完成，立即执行
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        setTimeout(extractTrafficDataFromDOM, 100);
-    }
+    };
+    // 立即提取数据
+    setTimeout(function() {
+        window.extractTrafficData();
+    }, 1000);
+    // 定期更新
+    setInterval(function() {
+        window.extractTrafficData();
+    }, 30000);
 </script>
 <script>
     // 确保流量提取函数可用（备用逻辑）
@@ -377,7 +386,7 @@ $(document).ready(function() {
                     window.statusCards.updateTrafficData();
                 }
                 
-                console.log('流量数据已更新:', Object.keys(newTrafficData).length, '个服务器');
+                console.log('流量数据已更新:', Object.keys(newTrafficData ).length, '个服务器');
             } catch (e) {
                 console.error('提取流量数据时出错:', e);
             }
@@ -393,9 +402,6 @@ $(document).ready(function() {
             window.extractTrafficData();
         }, 30000);
     }
-    
-    // Note: Traffic data extraction functionality has been moved to main.js
-    // The global variables and functions are now available from main.js
     
     function specialOS(i) {
         // 处理Windows平台
@@ -456,7 +462,7 @@ $(document).ready(function() {
         // 使用对象映射代替switch语句，包含更多虚拟化平台的优雅显示
         const virMapping = {
             "kvm": "KVM",
-            "openvz": "OpenVZ", 
+            "openvz": "OpenVZ",
             "lxc": "LXC",
             "xen": "Xen",
             "vbox": "VirtualBox",
@@ -613,18 +619,25 @@ $(document).ready(function() {
                 return window.innerWidth < 768;
             },
             getServerTrafficData(serverId) {
-                // Use TrafficManager if available
-                if (window.trafficManager) {
-                    return window.trafficManager.getServerTrafficData(serverId);
-                }
-                
-                // Fallback to local data
-                if (this.trafficData && serverId) {
-                    const serverIdStr = String(serverId).trim();
-                    return this.trafficData[serverIdStr] || null;
-                }
-                
-                return null;
+                if (this.trafficData && serverId != null) {
+                    // 先尝试字符串
+                        const serverIdStr = String(serverId).trim();
+                        if (this.trafficData[serverIdStr]) {
+                            return this.trafficData[serverIdStr];
+                        }
+                    // 再尝试数字
+                    const serverIdNum = Number(serverIdStr);
+                    if (this.trafficData[serverIdNum]) {
+                        return this.trafficData[serverIdNum];
+                    }
+                    // 再遍历所有 key 做宽松匹配
+                    for (const key in this.trafficData) {
+                        if (String(key) === serverIdStr || Number(key) === serverIdNum) {
+                                return this.trafficData[key]; 
+                            }
+                        }
+                    }
+                        return null;
             },
             formatPlatformVersion(version) {
                 if (!version) return '';
@@ -983,28 +996,20 @@ $(document).ready(function() {
             },
             getTrafficDisplay(serverId) {
                 const trafficData = this.getServerTrafficData(serverId);
-                return trafficData ? `${trafficData.percent}%` : '无';
-            },
-            getTrafficUsedDisplay(serverId) {
-                const trafficData = this.getServerTrafficData(serverId);
-                if (!trafficData || !trafficData.used) {
-                    return '0B';
+                if (!trafficData || !trafficData.usedBytes || !trafficData.maxBytes) {
+                    return '无';
                 }
-                return this.formatByteSize(trafficData.used);
-            },
-            getTrafficRemainingDisplay(serverId) {
-                const trafficData = this.getServerTrafficData(serverId);
-                if (!trafficData || !trafficData.remaining) {
-                    return '0B';
-                }
-                return this.formatByteSize(trafficData.remaining);
+                const percent = (trafficData.maxBytes > 0)
+                    ? (trafficData.usedBytes / trafficData.maxBytes) * 100
+                    : 0;
+                return percent.toFixed(2) + '%';
             },
             getTrafficTooltip(serverId) {
                 const trafficData = this.getServerTrafficData(serverId);
-                if (!trafficData || !trafficData.used || !trafficData.max) {
+                if (!trafficData || !trafficData.usedBytes || !trafficData.maxBytes) {
                     return '无数据';
                 }
-                return `${trafficData.used} / ${trafficData.max}`;
+                return `${this.formatByteSize(trafficData.usedBytes)} / ${this.formatByteSize(trafficData.maxBytes)}`;
             },
             updateTrafficData() {
                 // Force Vue to recognize the data change
@@ -1103,14 +1108,7 @@ $(document).ready(function() {
                 clearInterval(this.trafficWatcherInterval);
             }
         }
-            }
-            // Clear traffic watcher interval
-            if (this.trafficWatcherInterval) {
-                clearInterval(this.trafficWatcherInterval);
-            }
-            }
-        }
-    })
+    });
 
     // Make the Vue instance available globally
     window.statusCards = statusCards;
