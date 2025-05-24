@@ -59,6 +59,7 @@ func NewServiceSentinel(serviceSentinelDispatchBus chan<- model.Monitor) {
 	var mhs []model.MonitorHistory
 	// 加载当日记录
 	DB.Where("created_at >= ?", today).Find(&mhs)
+	totalDelay := make(map[uint64]float32)
 	totalDelayCount := make(map[uint64]float32)
 	for i := 0; i < len(mhs); i++ {
 		totalDelay[mhs[i].MonitorID] += mhs[i].AvgDelay
