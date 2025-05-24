@@ -256,6 +256,7 @@ $(document).ready(function() {
 
 {{template "common/footer" .}}
 <!--{{template "theme-default/footer" .}}-->
+<script src="/static/traffic-utils.js"></script>
 <script>
     // 初始化全局变量
     window.serverTrafficData = window.serverTrafficData || {};
@@ -528,7 +529,8 @@ $(document).ready(function() {
             cache: [],
             chartDataList: [],
             activePopup: null,
-            trafficData: {}, // Add local copy for Vue reactivity
+            trafficData: {}, // Local cache for Vue reactivity
+            _trafficVersion: 0, // Track traffic data version
             sensorList: [
                 'TC0D', //CPU Die 温度，代表 CPU 内部的温度
                 'TC0H', //CPU Heatsink 温度，代表 CPU 散热器的温度
@@ -574,6 +576,14 @@ $(document).ready(function() {
             setTimeout(() => {
                 window.extractTrafficData();
             }, 500);
+
+            // Subscribe to traffic data updates
+            if (window.trafficManager) {
+                window.trafficManager.subscribe((data, version) => {
+                    this.trafficData = data;
+                    this._trafficVersion = version;
+                });
+            }
         },
         mounted() {
             this.$nextTick(() => {
@@ -603,27 +613,18 @@ $(document).ready(function() {
                 return window.innerWidth < 768;
             },
             getServerTrafficData(serverId) {
-                try {
-                    // 首先尝试从本地响应式数据获取
-                    if (this.trafficData && this.trafficData[serverId]) {
-                        return this.trafficData[serverId];
-                    }
-                    
-                    // 回退到全局数据
-                    if (window.serverTrafficData && window.serverTrafficData[serverId]) {
-                        return window.serverTrafficData[serverId];
-                    }
-                    
-                    // 如果没有找到，尝试触发数据提取
-                    if (typeof window.extractTrafficData === 'function') {
-                        window.extractTrafficData();
-                    }
-                    
-                    return null;
-                } catch (e) {
-                    console.error('获取流量数据时出错:', e);
-                    return null;
+                // Use TrafficManager if available
+                if (window.trafficManager) {
+                    return window.trafficManager.getServerTrafficData(serverId);
                 }
+                
+                // Fallback to local data
+                if (this.trafficData && serverId) {
+                    const serverIdStr = String(serverId).trim();
+                    return this.trafficData[serverIdStr] || null;
+                }
+                
+                return null;
             },
             formatPlatformVersion(version) {
                 if (!version) return '';
@@ -942,9 +943,10 @@ $(document).ready(function() {
                 if (!trafficData) {
                     return 'ui progress offline';
                 }
-                const percent = trafficData.percent || 0;
                 
+                const percent = trafficData.percent || 0;
                 let classObject = { ui: true, progress: true };
+                
                 if (percent < 60) {
                     classObject.fine = true;
                 } else if (percent < 90) {
@@ -965,15 +967,12 @@ $(document).ready(function() {
                 }
                 
                 const percent = trafficData.percent || 0;
-                let bgColor = null;
+                let bgColor = 'rgb(76,175,80)';
                 
-                // 使用与formatPercent方法一致的颜色逻辑
-                if (percent < 60) {
-                    bgColor = 'rgb(76,175,80)';
-                } else if (percent < 90) {
-                    bgColor = '#ff9800';
-                } else {
+                if (percent >= 90) {
                     bgColor = '#f44336';
+                } else if (percent >= 60) {
+                    bgColor = '#ff9800';
                 }
                 
                 return {
@@ -984,12 +983,7 @@ $(document).ready(function() {
             },
             getTrafficDisplay(serverId) {
                 const trafficData = this.getServerTrafficData(serverId);
-                if (!trafficData) {
-                    return '无';
-                }
-                
-                // 只显示百分比，与硬盘显示保持一致
-                return `${trafficData.percent}%`;
+                return trafficData ? `${trafficData.percent}%` : '无';
             },
             getTrafficUsedDisplay(serverId) {
                 const trafficData = this.getServerTrafficData(serverId);
@@ -1010,8 +1004,6 @@ $(document).ready(function() {
                 if (!trafficData || !trafficData.used || !trafficData.max) {
                     return '无数据';
                 }
-                
-                // 使用与硬盘显示一致的格式，确保单位正确
                 return `${trafficData.used} / ${trafficData.max}`;
             },
             updateTrafficData() {
@@ -1098,6 +1090,24 @@ $(document).ready(function() {
                 this.$nextTick(() => {
                     this.updateSliderPosition();
                 });
+            }
+        },
+        beforeDestroy() {
+            // Cleanup traffic manager subscription
+            if (window.trafficManager) {
+                window.trafficManager.unsubscribe(this.updateTrafficData);
+                window.trafficManager.stopAutoUpdate();
+            }
+            // Clear traffic watcher interval
+            if (this.trafficWatcherInterval) {
+                clearInterval(this.trafficWatcherInterval);
+            }
+        }
+            }
+            // Clear traffic watcher interval
+            if (this.trafficWatcherInterval) {
+                clearInterval(this.trafficWatcherInterval);
+            }
             }
         }
     })

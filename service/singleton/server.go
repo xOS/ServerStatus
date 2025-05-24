@@ -185,3 +185,40 @@ func printServerLoadSummary() {
 	log.Printf("服务器状态统计 - 总计=%d, 有完整Host=%d, Host不完整=%d, 无Host=%d, 有State=%d, 有离线前状态=%d",
 		len(ServerList), withHost, incompleteHost, noHost, withState, loaded)
 }
+
+// UpdateServer 更新服务器信息
+func UpdateServer(s *model.Server) error {
+	defer ServerLock.Unlock()
+	ServerLock.Lock()
+
+	s.LastActive = time.Now()
+
+	if s.State != nil {
+		// 更新流量统计
+		tm := GetTrafficManager()
+		tm.UpdateTraffic(s.ID, s.State.NetInTransfer, s.State.NetOutTransfer)
+
+		// 更新实时速率
+		inSpeed, outSpeed := tm.GetTrafficSpeed(s.ID)
+		s.State.NetInSpeed = inSpeed
+		s.State.NetOutSpeed = outSpeed
+
+		// 更新总流量
+		inTotal, outTotal := tm.GetTrafficTotal(s.ID)
+		s.CumulativeNetInTransfer = inTotal
+		s.CumulativeNetOutTransfer = outTotal
+	}
+
+	if err := DB.Save(s).Error; err != nil {
+		return err
+	}
+
+	// 更新内存中的服务器信息
+	if server, ok := ServerList[s.ID]; ok {
+		s.PrevTransferInSnapshot = server.PrevTransferInSnapshot
+		s.PrevTransferOutSnapshot = server.PrevTransferOutSnapshot
+	}
+
+	ServerList[s.ID] = s
+	return nil
+}

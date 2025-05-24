@@ -9,6 +9,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/ory/graceful"
+	"github.com/robfig/cron/v3"
 	flag "github.com/spf13/pflag"
 	"github.com/xos/serverstatus/cmd/dashboard/controller"
 	"github.com/xos/serverstatus/cmd/dashboard/rpc"
@@ -35,6 +36,24 @@ func init() {
 	flag.StringVar(&dashboardCliParam.DatebaseLocation, "db", "data/sqlite.db", "Sqlite3数据库文件路径")
 	flag.BoolVar(&dashboardCliParam.ResetTraffic, "reset-traffic", false, "重置所有服务器的累计流量数据")
 	flag.Parse()
+
+	// 设置定时任务
+	singleton.Cron = cron.New()
+
+	// 每分钟保存一次流量数据
+	if _, err := singleton.Cron.AddFunc("* * * * *", singleton.RecordTransferHourlyUsage); err != nil {
+		panic(err)
+	}
+
+	// 每天凌晨3点清理30天前的数据
+	if _, err := singleton.Cron.AddFunc("0 3 * * *", func() {
+		singleton.cleanCumulativeTransferData(30)
+	}); err != nil {
+		panic(err)
+	}
+
+	// 启动定时任务
+	singleton.Cron.Start()
 }
 
 func initSystem() {

@@ -137,61 +137,11 @@ func InitDBFromPath(path string) {
 	}
 }
 
-// RecordTransferHourlyUsage 对流量记录进行打点
+// RecordTransferHourlyUsage 记录每小时流量使用情况
 func RecordTransferHourlyUsage() {
-	ServerLock.Lock()
-	defer ServerLock.Unlock()
-	now := time.Now()
-	nowTrimSeconds := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, now.Location())
-	var txs []model.Transfer
-
-	for id, server := range ServerList {
-		if server.State == nil {
-			continue
-		}
-
-		// 增量流量
-		incrementalIn := utils.Uint64SubInt64(server.State.NetInTransfer-server.CumulativeNetInTransfer, server.PrevTransferInSnapshot)
-		incrementalOut := utils.Uint64SubInt64(server.State.NetOutTransfer-server.CumulativeNetOutTransfer, server.PrevTransferOutSnapshot)
-
-		// 避免重启后的异常大值
-		if incrementalIn > server.State.NetInTransfer || incrementalOut > server.State.NetOutTransfer {
-			log.Printf("服务器 %s 流量增量异常，可能是重启导致", server.Name)
-
-			incrementalIn = server.State.NetInTransfer - server.CumulativeNetInTransfer
-			incrementalOut = server.State.NetOutTransfer - server.CumulativeNetOutTransfer
-
-			if incrementalIn < 0 {
-				incrementalIn = 0
-			}
-			if incrementalOut < 0 {
-				incrementalOut = 0
-			}
-		}
-
-		tx := model.Transfer{
-			ServerID: id,
-			In:       incrementalIn,
-			Out:      incrementalOut,
-		}
-
-		if tx.In == 0 && tx.Out == 0 {
-			continue
-		}
-
-		// 记录本次计算后的数据点，用于下次增量计算
-		server.PrevTransferInSnapshot = int64(server.State.NetInTransfer - server.CumulativeNetInTransfer)
-		server.PrevTransferOutSnapshot = int64(server.State.NetOutTransfer - server.CumulativeNetOutTransfer)
-
-		tx.CreatedAt = nowTrimSeconds
-		txs = append(txs, tx)
-	}
-
-	if len(txs) > 0 {
-		err := DB.Create(txs).Error
-		if err != nil {
-			log.Printf("流量统计入库失败: %v", err)
-		}
+	tm := GetTrafficManager()
+	if err := tm.SaveToDatabase(); err != nil {
+		log.Printf("Failed to save traffic data: %v", err)
 	}
 }
 
@@ -248,72 +198,11 @@ func CleanMonitorHistory() {
 	}
 }
 
-// cleanCumulativeTransferData 清理超过指定天数的累计流量数据
+// cleanCumulativeTransferData 清理累计流量数据
 func cleanCumulativeTransferData(days int) {
-	// 获取保留期限的开始时间点
-	retentionStart := time.Now().AddDate(0, 0, -days)
-
-	// 从Transfer表中查询保留期内最早的有效数据日期
-	var oldestValidTransfers []model.Transfer
-	if err := DB.Where("datetime(`created_at`) >= datetime(?)", retentionStart).Order("created_at ASC").Limit(10).Find(&oldestValidTransfers).Error; err != nil {
-		log.Println("查询保留期内流量记录失败:", err)
-		return
-	}
-
-	if len(oldestValidTransfers) == 0 {
-		return
-	}
-
-	// 计算每个服务器在保留期内的总流量
-	serverFlows := make(map[uint64]struct {
-		In  uint64
-		Out uint64
-	})
-
-	// 查询所有在保留期内的流量记录
-	var transfers []model.Transfer
-	if err := DB.Where("datetime(`created_at`) >= datetime(?)", retentionStart).Find(&transfers).Error; err != nil {
-		log.Println("查询流量记录失败:", err)
-		return
-	}
-
-	// 计算每个服务器在保留期内的总流量
-	for _, transfer := range transfers {
-		flow := serverFlows[transfer.ServerID]
-		flow.In += transfer.In
-		flow.Out += transfer.Out
-		serverFlows[transfer.ServerID] = flow
-	}
-
-	// 更新每个服务器的累计流量为保留期内的总流量
-	ServerLock.Lock()
-	defer ServerLock.Unlock()
-
-	var serversToUpdate []model.Server
-	for id, flow := range serverFlows {
-		if server, ok := ServerList[id]; ok {
-			// 重置服务器的累计流量为保留期内的总流量
-			server.CumulativeNetInTransfer = flow.In
-			server.CumulativeNetOutTransfer = flow.Out
-
-			// 添加到待更新列表
-			serversToUpdate = append(serversToUpdate, model.Server{
-				Common:                   model.Common{ID: id},
-				CumulativeNetInTransfer:  flow.In,
-				CumulativeNetOutTransfer: flow.Out,
-			})
-		}
-	}
-
-	// 批量更新数据库中的累计流量值
-	if len(serversToUpdate) > 0 {
-		for i := range serversToUpdate {
-			DB.Model(&serversToUpdate[i]).Updates(map[string]interface{}{
-				"cumulative_net_in_transfer":  serversToUpdate[i].CumulativeNetInTransfer,
-				"cumulative_net_out_transfer": serversToUpdate[i].CumulativeNetOutTransfer,
-			})
-		}
-		log.Println("已清理过期流量数据，保留", days, "天内的累计流量")
+	tm := GetTrafficManager()
+	if err := tm.CleanupOldData(days); err != nil {
+		log.Printf("Failed to cleanup traffic data: %v", err)
 	}
 }
 
@@ -407,53 +296,14 @@ func CheckServerOnlineStatus() {
 	}
 }
 
-// checkShouldResetTransferStats 检查是否应该重置流量统计数据，基于CycleTransferStats的周期
+// checkShouldResetTransferStats 检查是否应该重置流量统计
 func checkShouldResetTransferStats() bool {
 	// 获取当前时间
 	now := time.Now()
 
-	// 由于有多个alert规则，可能有多个不同的周期，我们检查所有的周期规则
-	for _, cycleStats := range AlertsCycleTransferStatsStore {
-		if cycleStats == nil {
-			continue
-		}
+	// 获取本月第一天
+	firstDay := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 
-		// 如果当前时间已经超过了周期结束时间，说明需要重置流量
-		if !cycleStats.To.IsZero() && now.After(cycleStats.To) {
-			log.Printf("流量统计周期已结束，重置所有服务器的累计流量")
-			return true
-		}
-	}
-
-	// 检查是否存在即将到来的新周期
-	var alerts []model.AlertRule
-	DB.Find(&alerts)
-
-	for _, alert := range alerts {
-		for _, rule := range alert.Rules {
-			// 只检查与流量有关的规则
-			if rule.IsTransferDurationRule() {
-				// 获取下一个周期的开始时间
-				nextCycleStart := rule.GetTransferDurationStart()
-
-				// 如果距离上次重置已经超过了12小时，并且当前时间已经进入了新的周期
-				// 这里使用12小时作为缓冲，避免重复重置
-				lastResetKey := "last_transfer_reset"
-				lastResetTimeStr, _ := Cache.Get(lastResetKey)
-				var lastResetTime time.Time
-
-				if lastResetTimeStr != nil {
-					lastResetTime = lastResetTimeStr.(time.Time)
-				}
-
-				if now.After(nextCycleStart) && now.Sub(lastResetTime) > 12*time.Hour {
-					log.Printf("检测到新的流量统计周期开始，重置所有服务器的累计流量")
-					Cache.Set(lastResetKey, now, cache.DefaultExpiration)
-					return true
-				}
-			}
-		}
-	}
-
-	return false
+	// 如果是本月第一天的凌晨，返回true
+	return now.Day() == 1 && now.Hour() == 0 && now.Minute() < 5
 }
