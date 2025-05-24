@@ -47,7 +47,7 @@ func init() {
 
 	// 每天凌晨3点清理30天前的数据
 	if _, err := singleton.Cron.AddFunc("0 3 * * *", func() {
-		singleton.cleanCumulativeTransferData(30)
+		singleton.CleanCumulativeTransferData(30)
 	}); err != nil {
 		panic(err)
 	}
