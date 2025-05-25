@@ -216,6 +216,12 @@ func (cp *commonPage) network(c *gin.Context) {
 	}))
 }
 
+type Data struct {
+	Now         int64           `json:"now,omitempty"`
+	Servers     []*model.Server `json:"servers,omitempty"`
+	TrafficData interface{}     `json:"trafficData,omitempty"`
+}
+
 func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte, error) {
 	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
 	_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
@@ -240,9 +246,54 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 			servers = append(servers, &item)
 		}
 
+		// 组装 trafficData，逻辑与 home handler 保持一致
+		singleton.AlertsLock.RLock()
+		defer singleton.AlertsLock.RUnlock()
+		var statsStore map[uint64]model.CycleTransferStats
+		copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
+
+		var trafficData []map[string]interface{}
+		if statsStore != nil {
+			for cycleID, stats := range statsStore {
+				for serverID, transfer := range stats.Transfer {
+					serverName := ""
+					if stats.ServerName != nil {
+						if name, exists := stats.ServerName[serverID]; exists {
+							serverName = name
+						}
+					}
+
+					usedPercent := float64(0)
+					if stats.Max > 0 {
+						usedPercent = (float64(transfer) / float64(stats.Max)) * 100
+						if usedPercent > 100 {
+							usedPercent = 100
+						}
+						if usedPercent < 0 {
+							usedPercent = 0
+						}
+					}
+
+					trafficItem := map[string]interface{}{
+						"server_id":      serverID,
+						"server_name":    serverName,
+						"max_bytes":      stats.Max,
+						"used_bytes":     transfer,
+						"max_formatted":  bytefmt.ByteSize(stats.Max),
+						"used_formatted": bytefmt.ByteSize(transfer),
+						"used_percent":   math.Round(usedPercent*100) / 100,
+						"cycle_name":     stats.Name,
+						"cycle_id":       strconv.FormatUint(cycleID, 10),
+					}
+					trafficData = append(trafficData, trafficItem)
+				}
+			}
+		}
+
 		return utils.Json.Marshal(Data{
-			Now:     time.Now().Unix() * 1000,
-			Servers: servers,
+			Now:         time.Now().Unix() * 1000,
+			Servers:     servers,
+			TrafficData: trafficData,
 		})
 	})
 	return v.([]byte), err
@@ -318,11 +369,6 @@ func (cp *commonPage) home(c *gin.Context) {
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  32768,
 	WriteBufferSize: 32768,
-}
-
-type Data struct {
-	Now     int64           `json:"now,omitempty"`
-	Servers []*model.Server `json:"servers,omitempty"`
 }
 
 func (cp *commonPage) ws(c *gin.Context) {

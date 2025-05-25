@@ -12,7 +12,6 @@
     
     // 重写 addEventListener
     EventTarget.prototype.addEventListener = function(type, listener, options) {
-        // 如果是目标事件类型且没有显式设置选项
         if (passiveEvents.includes(type) && typeof options !== 'object') {
             options = { passive: true };
         } else if (passiveEvents.includes(type) && typeof options === 'object' && options.passive === undefined) {
@@ -23,20 +22,136 @@
     };
 })();
 
+function specialOS(i) {
+        // 处理Windows平台
+        if (i && i.toString().toLowerCase().includes('windows')) {
+            return i.replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", "");
+        }
+        
+        // 确保i是字符串并转为小写
+        i = (i || "").toString().toLowerCase();
+        
+        // 使用对象映射代替switch语句
+        const osMapping = {
+            "ubuntu": "Ubuntu",
+            "debian": "Debian",
+            "centos": "CentOS",
+            "darwin": "MacOS",
+            "redhat": "RedHat",
+            "archlinux": "Archlinux",
+            "coreos": "Coreos",
+            "deepin": "Deepin",
+            "fedora": "Fedora",
+            "alpine": "Alpine",
+            "tux": "Tux",
+            "linuxmint": "LinuxMint",
+            "oracle": "Oracle",
+            "slackware": "SlackWare",
+            "raspbian": "Raspbian",
+            "gentoo": "GenToo",
+            "arch": "Arch",
+            "amazon": "Amazon",
+            "xenserver": "XenServer",
+            "scientific": "ScientificSL",
+            "rhel": "Rhel",
+            "rawhide": "RawHide",
+            "cloudlinux": "CloudLinux",
+            "ibm_powerkvm": "IBM",
+            "almalinux": "Almalinux",
+            "suse": "Suse",
+            "opensuse": "OpenSuse",
+            "opensuse-leap": "OpenSuse",
+            "opensuse-tumbleweed": "OpenSuse",
+            "opensuse-tumbleweed-kubic": "OpenSuse",
+            "sles": "Sles",
+            "sled": "Sled",
+            "caasp": "Caasp",
+            "exherbo": "ExherBo",
+            "solus": "Solus"
+        };
+        
+        // 如果在映射中找到匹配项，返回对应的值，否则返回原始输入
+        return osMapping[i] || i;
+    }
+    
+    function specialVir(i) {
+        // 确保i是字符串并转为小写
+        i = (i || "").toString().toLowerCase();
+        
+        // 使用对象映射代替switch语句，包含更多虚拟化平台的优雅显示
+        const virMapping = {
+            "kvm": "KVM",
+            "openvz": "OpenVZ",
+            "lxc": "LXC",
+            "xen": "Xen",
+            "vbox": "VirtualBox",
+            "virtualbox": "VirtualBox",
+            "rkt": "RKT",
+            "docker": "Docker",
+            "vmware": "VMware",
+            "vmware-esxi": "VMware ESXi",
+            "linux-vserver": "VServer",
+            "hyperv": "Hyper-V",
+            "hyper-v": "Hyper-V",
+            "microsoft": "Hyper-V",
+            "qemu": "QEMU",
+            "parallels": "Parallels",
+            "bhyve": "bhyve",
+            "jail": "FreeBSD Jail",
+            "zone": "Solaris Zone",
+            "wsl": "WSL",
+            "podman": "Podman",
+            "containerd": "containerd",
+            "systemd-nspawn": "systemd-nspawn"
+        };
+        
+        // 如果在映射中找到匹配项，返回对应的值，否则返回首字母大写的原始输入
+        if (virMapping[i]) {
+            return virMapping[i];
+        }
+        
+        // 如果没有找到映射，将首字母大写返回
+        return i.charAt(0).toUpperCase() + i.slice(1);
+    }
+    function clearString(i) {
+        if (i != null && i != "") {
+            i = Array.isArray(i) ? i.map(s => s.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")) : [i.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")];
+            return i;
+        }
+        return Array.isArray(i) ? i : [i];
+    }
+    Date.prototype.format = function (format) {
+        var date = {
+            "M+": this.getMonth() + 1,
+            "d+": this.getDate(),
+            "H+": this.getHours(),
+            "m+": this.getMinutes(),
+            "s+": this.getSeconds(),
+            "q+": Math.floor((this.getMonth() + 3) / 3),
+            "S+": this.getMilliseconds()
+        };
+        if (/(y+)/i.test(format)) {
+            format = format.replace(RegExp.$1, (this.getFullYear() + '').substr(4 - RegExp.$1.length));
+        }
+        for (var k in date) {
+            if (new RegExp("(" + k + ")").test(format)) {
+                format = format.replace(RegExp.$1, RegExp.$1.length == 1
+                    ? date[k] : ("00" + date[k]).substr(("" + date[k]).length));
+            }
+        }
+        return format;
+    };
+
 // jQuery 事件优化
 $(document).ready(function() {
-    // 为 jQuery 添加被动事件监听器支持
     if ($.fn.on) {
         const originalOn = $.fn.on;
         $.fn.on = function(events, selector, data, handler) {
-            // 如果是触摸或滚动事件，添加被动标志
             if (typeof events === 'string' && 
                 (events.includes('touchstart') || events.includes('touchmove') || 
                  events.includes('wheel') || events.includes('mousewheel'))) {
                 
-                // 创建被动版本的处理函数
                 const passiveHandler = function(e) {
-                    // 不调用 preventDefault
                     if (typeof handler === 'function') {
                         return handler.call(this, e);
                     } else if (typeof data === 'function') {
@@ -44,7 +159,6 @@ $(document).ready(function() {
                     }
                 };
                 
-                // 使用原生 addEventListener 添加被动监听器
                 if (typeof data === 'function') {
                     handler = data;
                     data = undefined;
@@ -254,886 +368,622 @@ $(document).ready(function() {
 {{template "common/footer" .}}
 
 <script>
-    // 确保流量提取函数可用
-    // 标记函数已准备就绪，不显示警告
-    window.trafficFunctionsReady = true;
-    // 初始化全局变量，只保留一处
-    window.serverTrafficData = window.serverTrafficData || {};
-    window.lastTrafficUpdateTime = window.lastTrafficUpdateTime || 0;
-    // 提取流量数据的函数
-    window.extractTrafficData = function() {
-        try {
-            const trafficDataElement = document.getElementById('traffic-data');
-            let trafficItems = [];
-            if (trafficDataElement && trafficDataElement.textContent) {
-                try {
-                    trafficItems = JSON.parse(trafficDataElement.textContent);
-                } catch (e) {
-                    // console.warn('DOM数据解析失败:', e); // 可选保留
-                }
-            }
-            // 如果DOM中没有数据，使用全局变量
-            if (!trafficItems || trafficItems.length === 0) {
-                trafficItems = window.serverTrafficRawData || [];
-            }
-            if (!trafficItems || trafficItems.length === 0) return;
-            const newTrafficData = {};
-            trafficItems.forEach(item => {
-                if (item && item.server_id) {
-                    const serverId = String(item.server_id);
-                    const serverName = item.server_name || "Unknown Server";
-                    const maxTraffic = item.max_formatted || "0B";
-                    const usedTraffic = item.used_formatted || "0B";
-                    const percent = parseFloat(item.used_percent) || 0;
-                    // 使用formatTrafficUnit确保单位统一
-                    const standardMax = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(maxTraffic) : maxTraffic;
-                    const standardUsed = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(usedTraffic) : usedTraffic;
-                    // 直接使用清晰的数据结构
-                    newTrafficData[serverId] = {
-                        max: standardMax,
-                        used: standardUsed,
-                        percent: Math.round(percent * 100) / 100, // 保留2位小数
-                        maxBytes: item.max_bytes || 0,
-                        usedBytes: item.used_bytes || 0,
-                        serverName: serverName,
-                        cycleName: item.cycle_name || "Unknown"
-                    };
-                }
-            });
-            window.serverTrafficData = newTrafficData;
-            window.lastTrafficUpdateTime = Date.now();
-            // 通知Vue组件更新
-            if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
-                window.statusCards.updateTrafficData();
-            }
-            // console.log('流量数据已更新:', Object.keys(newTrafficData).length, '个服务器'); // 可选保留
-        } catch (e) {
-            console.error('提取流量数据时出错:', e); // 保留错误日志
-        }
-    };
-    // 立即提取数据
-    setTimeout(function() {
-        window.extractTrafficData();
-    }, 1000);
-    // 定期更新
-    setInterval(function() {
-        window.extractTrafficData();
-    }, 30000);
-</script>
-<script>
-    // 确保流量提取函数可用（备用逻辑）
-    if (!window.trafficFunctionsReady) {
-        // 标记函数已准备就绪，不显示警告
-        window.trafficFunctionsReady = true;
-        
-        // 初始化全局变量
-        window.serverTrafficData = window.serverTrafficData || {};
-        window.lastTrafficUpdateTime = window.lastTrafficUpdateTime || 0;
-        
-        // 提取流量数据的函数
-        window.extractTrafficData = function() {
-            try {
-                // 尝试从DOM元素获取数据
-                const trafficDataElement = document.getElementById('traffic-data');
-                let trafficItems = [];
-                
-                if (trafficDataElement && trafficDataElement.textContent) {
-                    try {
-                        trafficItems = JSON.parse(trafficDataElement.textContent);
-                    } catch(e) {
-                        console.warn('DOM数据解析失败:', e);
-                    }
-                }
-                
-                // 如果DOM中没有数据，使用全局变量
-                if (!trafficItems || trafficItems.length === 0) {
-                    trafficItems = window.serverTrafficRawData || [];
-                }
-                
-                if (!trafficItems || trafficItems.length === 0) return;
-                
-                const newTrafficData = {};
-                trafficItems.forEach(item => {
-                    if (item && item.server_id) {
-                        const serverId = String(item.server_id);
-                        const serverName = item.server_name || "Unknown Server";
-                        const maxTraffic = item.max_formatted || "0B";
-                        const usedTraffic = item.used_formatted || "0B";
-                        const percent = parseFloat(item.used_percent) || 0;
-                        
-                        // 使用formatTrafficUnit确保单位统一
-                        const standardMax = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(maxTraffic) : maxTraffic;
-                        const standardUsed = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(usedTraffic) : usedTraffic;
-                        
-                        // 直接使用清晰的数据结构
-                        newTrafficData[serverId] = {
-                            max: standardMax,
-                            used: standardUsed,
-                            percent: Math.round(percent * 100) / 100, // 保留2位小数
-                            maxBytes: item.max_bytes || 0,
-                            usedBytes: item.used_bytes || 0,
-                            serverName: serverName,
-                            cycleName: item.cycle_name || "Unknown"
-                        };
-                    }
-                });
-                
-                window.serverTrafficData = newTrafficData;
-                window.lastTrafficUpdateTime = Date.now();
-                
-                // 通知Vue组件更新
-                if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
-                    window.statusCards.updateTrafficData();
-                }
-                
-                console.log('流量数据已更新:', Object.keys(newTrafficData ).length, '个服务器');
-            } catch (e) {
-                console.error('提取流量数据时出错:', e);
-            }
-        };
-        
-        // 立即提取数据
-        setTimeout(function() {
-            window.extractTrafficData();
-        }, 1000);
-        
-        // 定期更新
-        setInterval(function() {
-            window.extractTrafficData();
-        }, 30000);
-    }
-    
-    function specialOS(i) {
-        // 处理Windows平台
-        if (i && i.toString().toLowerCase().includes('windows')) {
-            return i.replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", "");
-        }
-        
-        // 确保i是字符串并转为小写
-        i = (i || "").toString().toLowerCase();
-        
-        // 使用对象映射代替switch语句
-        const osMapping = {
-            "ubuntu": "Ubuntu",
-            "debian": "Debian",
-            "centos": "CentOS",
-            "darwin": "MacOS",
-            "redhat": "RedHat",
-            "archlinux": "Archlinux",
-            "coreos": "Coreos",
-            "deepin": "Deepin",
-            "fedora": "Fedora",
-            "alpine": "Alpine",
-            "tux": "Tux",
-            "linuxmint": "LinuxMint",
-            "oracle": "Oracle",
-            "slackware": "SlackWare",
-            "raspbian": "Raspbian",
-            "gentoo": "GenToo",
-            "arch": "Arch",
-            "amazon": "Amazon",
-            "xenserver": "XenServer",
-            "scientific": "ScientificSL",
-            "rhel": "Rhel",
-            "rawhide": "RawHide",
-            "cloudlinux": "CloudLinux",
-            "ibm_powerkvm": "IBM",
-            "almalinux": "Almalinux",
-            "suse": "Suse",
-            "opensuse": "OpenSuse",
-            "opensuse-leap": "OpenSuse",
-            "opensuse-tumbleweed": "OpenSuse",
-            "opensuse-tumbleweed-kubic": "OpenSuse",
-            "sles": "Sles",
-            "sled": "Sled",
-            "caasp": "Caasp",
-            "exherbo": "ExherBo",
-            "solus": "Solus"
-        };
-        
-        // 如果在映射中找到匹配项，返回对应的值，否则返回原始输入
-        return osMapping[i] || i;
-    }
-    
-    function specialVir(i) {
-        // 确保i是字符串并转为小写
-        i = (i || "").toString().toLowerCase();
-        
-        // 使用对象映射代替switch语句，包含更多虚拟化平台的优雅显示
-        const virMapping = {
-            "kvm": "KVM",
-            "openvz": "OpenVZ",
-            "lxc": "LXC",
-            "xen": "Xen",
-            "vbox": "VirtualBox",
-            "virtualbox": "VirtualBox",
-            "rkt": "RKT",
-            "docker": "Docker",
-            "vmware": "VMware",
-            "vmware-esxi": "VMware ESXi",
-            "linux-vserver": "VServer",
-            "hyperv": "Hyper-V",
-            "hyper-v": "Hyper-V",
-            "microsoft": "Hyper-V",
-            "qemu": "QEMU",
-            "parallels": "Parallels",
-            "bhyve": "bhyve",
-            "jail": "FreeBSD Jail",
-            "zone": "Solaris Zone",
-            "wsl": "WSL",
-            "podman": "Podman",
-            "containerd": "containerd",
-            "systemd-nspawn": "systemd-nspawn"
-        };
-        
-        // 如果在映射中找到匹配项，返回对应的值，否则返回首字母大写的原始输入
-        if (virMapping[i]) {
-            return virMapping[i];
-        }
-        
-        // 如果没有找到映射，将首字母大写返回
-        return i.charAt(0).toUpperCase() + i.slice(1);
-    }
-    function clearString(i) {
-        if (i != null && i != "") {
-            i = Array.isArray(i) ? i.map(s => s.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")) : [i.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")];
-            return i;
-        }
-        return Array.isArray(i) ? i : [i];
-    }
-    Date.prototype.format = function (format) {
-        var date = {
-            "M+": this.getMonth() + 1,
-            "d+": this.getDate(),
-            "H+": this.getHours(),
-            "m+": this.getMinutes(),
-            "s+": this.getSeconds(),
-            "q+": Math.floor((this.getMonth() + 3) / 3),
-            "S+": this.getMilliseconds()
-        };
-        if (/(y+)/i.test(format)) {
-            format = format.replace(RegExp.$1, (this.getFullYear() + '').substr(4 - RegExp.$1.length));
-        }
-        for (var k in date) {
-            if (new RegExp("(" + k + ")").test(format)) {
-                format = format.replace(RegExp.$1, RegExp.$1.length == 1
-                    ? date[k] : ("00" + date[k]).substr(("" + date[k]).length));
-            }
-        }
-        return format;
-    };
+// 确保流量提取函数可用
+window.trafficFunctionsReady = true;
+window.serverTrafficData = window.serverTrafficData || {};
+window.lastTrafficUpdateTime = window.lastTrafficUpdateTime || 0;
 
-    // Assign Vue instance to both local and window scope for global access
-    var statusCards = new Vue({
-        el: '#app',
-        delimiters: ['@#', '#@'],
-        data: {
-            page: 'index',
-            defaultTemplate: '{{.Conf.Site.Theme}}',
-            templates: {{.Themes}},
-            servers: [],
-            cache: [],
-            chartDataList: [],
-            activePopup: null,
-            trafficData: {}, // Local cache for Vue reactivity
-            _trafficVersion: 0, // Track traffic data version
-            sensorList: [
-                'TC0D', //CPU Die 温度，代表 CPU 内部的温度
-                'TC0H', //CPU Heatsink 温度，代表 CPU 散热器的温度
-                'TC0P', //CPU Proximity 温度，代表 CPU 附近的温度
-                'k10temp', //AMD K10（Phenom、Athlon、Sempron 等）系列处理器的温度监测
-                'k10temp_tctl', //AMD K10 (Athlon II、Phenom II 等）系列处理器的温度监测
-                'coretemp_package_id_0', //整个封装处理器温度
-                'cpu_thermal_zone', //全志
-                'cpu-thermal', //树莓派(博通)
-                'soc_thermal', //新瑞芯微
-                'cpu_thermal', //老瑞芯微
-                'ACPI\\ThermalZone\\TZ0__0', //Windows
-                'ACPI\\ThermalZone\\CPUZ_0', //Windows
-                'ACPI\\ThermalZone\\TZ00_0', //Windows
-                'ACPI\\ThermalZone\\TZ001_0', //Windows
-                'ACPI\\ThermalZone\\THM0_0' //Windows
-            ],
-            activeTag: '',
-            uniqueTags: [],
-            _lastKnownUpdateTime: 0
-        },
-        mixins: [mixinsVue],
-        created() {
+// 提取流量数据的函数
+window.extractTrafficData = function() {
+    try {
+        const trafficDataElement = document.getElementById('traffic-data');
+        let trafficItems = [];
+        if (trafficDataElement && trafficDataElement.textContent) {
             try {
-                const serverData = JSON.parse('{{.Servers}}');
-                // 确保serverData存在且包含servers数组
-                if (serverData && serverData.servers && Array.isArray(serverData.servers)) {
-                    this.servers = serverData.servers;
-                } else {
-                    console.warn('服务器数据格式不正确，使用空数组');
-                    this.servers = [];
-                }
+                trafficItems = JSON.parse(trafficDataElement.textContent);
             } catch (e) {
-                console.error('解析服务器数据失败:', e);
+                console.warn('DOM数据解析失败:', e);
+            }
+        }
+        if (!trafficItems || trafficItems.length === 0) {
+            trafficItems = window.serverTrafficRawData || [];
+        }
+        if (!trafficItems || trafficItems.length === 0) return;
+        
+        const newTrafficData = {};
+        trafficItems.forEach(item => {
+            if (item && item.server_id) {
+                const serverId = String(item.server_id);
+                const serverName = item.server_name || "Unknown Server";
+                const maxTraffic = item.max_formatted || "0B";
+                const usedTraffic = item.used_formatted || "0B";
+                const percent = parseFloat(item.used_percent) || 0;
+                
+                const standardMax = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(maxTraffic) : maxTraffic;
+                const standardUsed = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(usedTraffic) : usedTraffic;
+                
+                newTrafficData[serverId] = {
+                    max: standardMax,
+                    used: standardUsed,
+                    percent: Math.round(percent * 100) / 100,
+                    maxBytes: item.max_bytes || 0,
+                    usedBytes: item.used_bytes || 0,
+                    serverName: serverName,
+                    cycleName: item.cycle_name || "Unknown"
+                };
+            }
+        });
+        
+        window.serverTrafficData = newTrafficData;
+        window.lastTrafficUpdateTime = Date.now();
+        
+        if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
+            window.statusCards.updateTrafficData();
+        }
+    } catch (e) {
+        console.error('提取流量数据时出错:', e);
+    }
+};
+
+// 立即提取数据
+setTimeout(window.extractTrafficData, 1000);
+
+// 定期更新
+setInterval(window.extractTrafficData, 30000);
+
+// Vue实例配置
+const statusCards = new Vue({
+    el: '#app',
+    delimiters: ['@#', '#@'],
+    data: {
+        page: 'index',
+        defaultTemplate: '{{.Conf.Site.Theme}}',
+        templates: {{.Themes}},
+        servers: [],
+        cache: [],
+        chartDataList: [],
+        activePopup: null,
+        trafficData: {},
+        _trafficVersion: 0,
+        sensorList: [
+            'TC0D',
+            'TC0H',
+            'TC0P',
+            'k10temp',
+            'k10temp_tctl',
+            'coretemp_package_id_0',
+            'cpu_thermal_zone',
+            'cpu-thermal',
+            'soc_thermal',
+            'cpu_thermal',
+            'ACPI\\ThermalZone\\TZ0__0',
+            'ACPI\\ThermalZone\\CPUZ_0',
+            'ACPI\\ThermalZone\\TZ00_0',
+            'ACPI\\ThermalZone\\TZ001_0',
+            'ACPI\\ThermalZone\\THM0_0'
+        ],
+        activeTag: '',
+        uniqueTags: [],
+        _lastKnownUpdateTime: 0
+    },
+    mixins: [mixinsVue],
+    created() {
+        try {
+            const serverData = JSON.parse('{{.Servers}}');
+            if (serverData && serverData.servers && Array.isArray(serverData.servers)) {
+                this.servers = serverData.servers;
+            } else {
+                console.warn('服务器数据格式不正确，使用空数组');
                 this.servers = [];
             }
-            
-            this.generateUniqueTags();
-            this.updateServerLiveStatus();
-            this.initTrafficDataWatcher();
-            
-            // 立即尝试提取流量数据
-            setTimeout(() => {
-                window.extractTrafficData();
-            }, 500);
+        } catch (e) {
+            console.error('解析服务器数据失败:', e);
+            this.servers = [];
+        }
+        
+        this.generateUniqueTags();
+        this.updateServerLiveStatus();
+        this.initTrafficDataWatcher();
+        
+        setTimeout(() => {
+            window.extractTrafficData();
+        }, 500);
 
-            // 订阅流量数据更新
-            if (window.trafficManager) {
-                window.trafficManager.subscribe((data, version) => {
-                    console.log('收到流量管理器更新，版本:', version);
-                    this.trafficData = data;
-                    this._trafficVersion = version;
-                    this.$forceUpdate(); // 强制更新视图
-                });
-            }
-        },
-        mounted() {
-            this.$nextTick(() => {
-                this.initializePopups();
-                this.updateSliderPosition(); // Initial position for slider
-                
-                // 确保折叠面板中的数据可用
-                $('.ui.accordion').accordion();
+        if (window.trafficManager) {
+            window.trafficManager.subscribe((data, version) => {
+                console.log('收到流量管理器更新，版本:', version);
+                this.trafficData = data;
+                this._trafficVersion = version;
+                this.$forceUpdate();
             });
-        },
-        computed: {
-            filteredServers() {
-                // 添加安全检查，确保this.servers是数组
-                if (!this.servers || !Array.isArray(this.servers)) {
-                    return [];
-                }
-                
-                const displayableServers = this.servers.filter(server => server.Host);
-                if (this.activeTag === '') {
-                    return displayableServers;
-                }
-                return displayableServers.filter(server => server.Tag === this.activeTag);
+        }
+    },
+    mounted() {
+        this.$nextTick(() => {
+            this.initializePopups();
+            this.updateSliderPosition();
+            $('.ui.accordion').accordion();
+        });
+    },
+    computed: {
+        filteredServers() {
+            if (!this.servers || !Array.isArray(this.servers)) {
+                return [];
             }
+            
+            const displayableServers = this.servers.filter(server => server.Host);
+            if (this.activeTag === '') {
+                return displayableServers;
+            }
+            return displayableServers.filter(server => server.Tag === this.activeTag);
+        }
+    },
+    methods: {
+        checkIsMobile() {
+            return window.innerWidth < 768;
         },
-        methods: {
-            checkIsMobile() {
-                return window.innerWidth < 768;
-            },
-            getServerTrafficData(serverId) {
-                if (this.trafficData && serverId != null) {
-                    // 先尝试字符串
-                        const serverIdStr = String(serverId).trim();
-                        if (this.trafficData[serverIdStr]) {
-                            return this.trafficData[serverIdStr];
-                        }
-                    // 再尝试数字
-                    const serverIdNum = Number(serverIdStr);
-                    if (this.trafficData[serverIdNum]) {
-                        return this.trafficData[serverIdNum];
-                    }
-                    // 再遍历所有 key 做宽松匹配
-                    for (const key in this.trafficData) {
-                        if (String(key) === serverIdStr || Number(key) === serverIdNum) {
-                                return this.trafficData[key]; 
-                            }
-                        }
-                    }
-                        return null;
-            },
-            formatPlatformVersion(version) {
-                if (!version) return '';
-                if (/^[\d.]+$/.test(version)) {
-                    return version;
+        getServerTrafficData(serverId) {
+            if (this.trafficData && serverId != null) {
+                const serverIdStr = String(serverId).trim();
+                if (this.trafficData[serverIdStr]) {
+                    return this.trafficData[serverIdStr];
                 }
-                let cleanVersion = version.split('/')[0];
-                return cleanVersion.split(' ').map(word => {
-                    if (word.length > 0) {
-                        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-                    }
-                    return word;
-                }).join(' ');
-            },
-            toFixed2(f) {
-                return f.toFixed(2)
-            },
-            isWindowsPlatform(str) {
-                return str && typeof str === 'string' && str.includes('indows')
-            },
-            getFontLogoClass(str) {
-                if (["almalinux",
-                    "alpine",
-                    "aosc",
-                    "apple",
-                    "archlinux",
-                    "archlabs",
-                    "artix",
-                    "budgie",
-                    "centos",
-                    "coreos",
-                    "debian",
-                    "deepin",
-                    "devuan",
-                    "docker",
-                    "elementary",
-                    "fedora",
-                    "ferris",
-                    "flathub",
-                    "freebsd",
-                    "gentoo",
-                    "gnu-guix",
-                    "illumos",
-                    "kali-linux",
-                    "linuxmint",
-                    "mageia",
-                    "mandriva",
-                    "manjaro",
-                    "nixos",
-                    "openbsd",
-                    "opensuse",
-                    "pop-os",
-                    "raspberry-pi",
-                    "redhat",
-                    "rocky-linux",
-                    "sabayon",
-                    "slackware",
-                    "snappy",
-                    "solus",
-                    "tux",
-                    "ubuntu",
-                    "void",
-                    "zorin"].indexOf(str)
-                    > -1) {
-                    return str;
+                const serverIdNum = Number(serverIdStr);
+                if (this.trafficData[serverIdNum]) {
+                    return this.trafficData[serverIdNum];
                 }
-                if (str == 'darwin') {
-                    return 'apple';
-                }
-                if (['openwrt', 'linux'].indexOf(str) > -1) {
-                    return 'tux';
-                }
-                if (str == 'amazon') {
-                    return 'redhat';
-                }
-                if (str == 'arch') {
-                    return 'archlinux';
-                }
-                if (str && typeof str === 'string' && str.toLowerCase().includes('opensuse')) {
-                    return 'opensuse';
-                }
-                return '';
-            },
-            formatPercent(live, used, total) {
-                let u = parseFloat(used);
-                let t = parseFloat(total);
-
-                if (isNaN(u) || isNaN(t)) {
-                    live = false;
-                }
-
-                let percent;
-                if (live && t > 0) {
-                    percent = parseInt((u / t) * 100);
-                    if (isNaN(percent) || percent < 0) percent = 0;
-                    if (percent > 100) percent = 100;
-                } else if (live && t === 0 && u === 0) {
-                    percent = 0;
-                }
-                else {
-                    percent = -1;
-                }
-
-                if (!this.cache[percent]) {
-                    let displayPercentValue = percent;
-                    let classObject = { ui: true, progress: true };
-                    let styleObject = {
-                        'transition-duration': '300ms',
-                        'min-width': 'unset',
-                        width: (percent >= 0 ? percent : 0) + '% !important',
-                    };
-
-                    if (percent < 0) {
-                        styleObject['background-color'] = 'slategray';
-                        classObject.offline = true;
-                        displayPercentValue = 0;
-                    } else if (percent < 60) {
-                        styleObject['background-color'] = 'rgb(76,175,80)';
-                        classObject.fine = true;
-                    } else if (percent < 90) {
-                        styleObject['background-color'] = '#ff9800';
-                        classObject.warning = true;
-                    } else {
-                        styleObject['background-color'] = '#f44336';
-                        classObject.error = true;
-                    }
-                    this.cache[percent] = {
-                        class: classObject,
-                        style: styleObject,
-                        percent: displayPercentValue,
-                    };
-                }
-
-                return this.cache[percent] || {
-                    class: { ui: true, progress: true, offline: true },
-                    style: { width: '0%', 'background-color': 'slategray' },
-                    percent: 0
-                };
-            },
-            secondToDate(s) {
-                var d = Math.floor(s / 3600 / 24);
-                if (d > 0) {
-                    return d + " {{tr "Day"}}"
-                }
-                var h = Math.floor(s / 3600 % 24);
-                var m = Math.floor(s / 60 % 60);
-                var s = Math.floor(s % 60);
-                return h + ":" + ("0" + m).slice(-2) + ":" + ("0" + s).slice(-2);
-            },
-            timeStamp(t) {
-                return new Date(t).format('yyyy年MM月dd日 HH:mm:ss')
-            },
-            formatByteSize(bs) {
-                const x = this.readableBytes(bs)
-                return x != "NaN undefined" ? x : '0B'
-            },
-            readableBytes(bytes) {
-                if (!bytes) {
-                    return '0B'
-                }
-                const i = Math.floor(Math.log(bytes) / Math.log(1024));
-                const sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-                const value = parseFloat((bytes / Math.pow(1024, i)).toFixed(2));
-                return `${value}${sizes[i]}`;
-            },
-            getCoreAndGHz(arr) {
-                if ((arr || []).length === 0) {
-                    return '';
-                }
-                let totalCores = 0;
-                arr.forEach(str => {
-                    let coreMatch = str.match(/(\d+(\.\d+)?) Physical/g);
-                    let coreCount = 0;
-                    if (coreMatch) {
-                        coreCount = parseFloat(coreMatch[0]);
-                    } else {
-                        let coreMatch = str.match(/(\d+(\.\d+)?) Virtual/g);
-                        coreCount = coreMatch ? parseFloat(coreMatch[0]) : 0;
-                    }
-                    totalCores += coreCount;
-                });
-                return `${totalCores} Cores`;
-            },
-            getK2Gb(bs){
-                bs = bs / 1024 / 1024 / 1024;
-                if (bs >= 1) {
-                    return Math.ceil(bs.toFixed(2)) + 'GB';
-                } else {
-                    bs = bs * 1024;
-                    return Math.ceil(bs.toFixed(2)) + 'MB';
-                }
-            },
-            listTipsMouseenter(obj, strs, tipsNum = 1){
-                this.layerIndex = layer.tips(strs, '#' + obj, { tips: [tipsNum, 'rgb(0 0 0 / 85%)'], time: 0 });
-                $('#' + obj).attr('layerIndex', this.layerIndex)
-            },
-            listTipsMouseleave(obj){
-                layer.close(this.layerIndex)
-            },
-            initializePopups() {
-                const triggerSelector = '.server-primary-font.info.circle.icon';
-
-                // 先销毁已存在的弹窗实例
-                $(triggerSelector).popup('destroy');
-
-                this.$nextTick(() => {
-                    $(triggerSelector).popup({
-                        popup: '.ui.content.popup', // 目标弹窗内容
-                        on: 'hover',
-                        hoverable: true,
-                        exclusive: true, // Semantic UI 应处理排他性
-                        // 适度延迟：防止误触发但保持响应性
-                        delay: { show: 100, hide: 300 },
-                        // 保留性能优化设置
-                        silent: true, // 减少控制台输出
-                        performance: true, // 启用性能监控
-                        onShow: function() {
-                            // 'this' 指向当前正在显示的弹窗的 DOM 元素
-                            const $currentPopup = $(this);
-                            // 隐藏所有其他当前可见的 .ui.popup 元素
-                            $('.ui.popup.visible').not($currentPopup).each(function() {
-                                // 直接移除相关类和样式以隐藏，避免触发不必要的 SUI 事件
-                                $(this).removeClass('visible transition').addClass('hidden').css('display', 'none');
-                            });
-                            return true; // 允许显示当前弹窗
-                        }
-                    });
-                });
-            },
-            generateUniqueTags() {
-                const tags = new Set();
-                if (this.servers) {
-                    this.servers.forEach(server => {
-                        if (server.Tag && server.Tag.trim() !== '') {
-                            tags.add(server.Tag.trim());
-                        }
-                    });
-                }
-                this.uniqueTags = Array.from(tags).sort();
-            },
-            handleTabClick(tag, event) {
-                this.activeTag = tag;
-                this.$nextTick(() => {
-                    const tabEl = event.currentTarget;
-                    const tabsContainer = this.$refs.tabsContainer;
-                    if (tabEl && tabsContainer && tabsContainer.contains(tabEl)) {
-                        if (tabsContainer.scrollWidth > tabsContainer.clientWidth) {
-                            tabEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-                        }
-                    }
-                });
-            },
-            updateSliderPosition() {
-                const slider = this.$refs.tabSlider;
-                if (!slider) return;
-
-                let activeTabElement = null;
-                if (this.activeTag === '') {
-                    activeTabElement = this.$refs.allTab;
-                } else {
-                    const reversedTags = this.uniqueTags.slice().reverse();
-                    const activeIndexInReversed = reversedTags.indexOf(this.activeTag);
-                    if (activeIndexInReversed !== -1 && this.$refs['tagTab' + activeIndexInReversed]) {
-                         activeTabElement = this.$refs['tagTab' + activeIndexInReversed];
-                         if (Array.isArray(activeTabElement)) {
-                            activeTabElement = activeTabElement[0];
-                         }
+                for (const key in this.trafficData) {
+                    if (String(key) === serverIdStr || Number(key) === serverIdNum) {
+                        return this.trafficData[key];
                     }
                 }
+            }
+            return null;
+        },
+        formatPlatformVersion(version) {
+            if (!version) return '';
+            if (/^[\d.]+$/.test(version)) {
+                return version;
+            }
+            let cleanVersion = version.split('/')[0];
+            return cleanVersion.split(' ').map(word => {
+                if (word.length > 0) {
+                    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+                }
+                return word;
+            }).join(' ');
+        },
+        toFixed2(f) {
+            return f.toFixed(2);
+        },
+        isWindowsPlatform(str) {
+            return str && typeof str === 'string' && str.includes('indows');
+        },
+        getFontLogoClass(str) {
+            const validPlatforms = [
+                "almalinux", "alpine", "aosc", "apple", "archlinux", "archlabs",
+                "artix", "budgie", "centos", "coreos", "debian", "deepin",
+                "devuan", "docker", "elementary", "fedora", "ferris", "flathub",
+                "freebsd", "gentoo", "gnu-guix", "illumos", "kali-linux",
+                "linuxmint", "mageia", "mandriva", "manjaro", "nixos",
+                "openbsd", "opensuse", "pop-os", "raspberry-pi", "redhat",
+                "rocky-linux", "sabayon", "slackware", "snappy", "solus",
+                "tux", "ubuntu", "void", "zorin"
+            ];
+            
+            if (validPlatforms.includes(str)) {
+                return str;
+            }
+            if (str === 'darwin') {
+                return 'apple';
+            }
+            if (['openwrt', 'linux'].includes(str)) {
+                return 'tux';
+            }
+            if (str === 'amazon') {
+                return 'redhat';
+            }
+            if (str === 'arch') {
+                return 'archlinux';
+            }
+            if (str && typeof str === 'string' && str.toLowerCase().includes('opensuse')) {
+                return 'opensuse';
+            }
+            return '';
+        },
+        formatPercent(live, used, total) {
+            let u = parseFloat(used);
+            let t = parseFloat(total);
 
-                if (!activeTabElement && this.$refs.allTab) {
-                    activeTabElement = this.$refs.allTab;
-                }
+            if (isNaN(u) || isNaN(t)) {
+                live = false;
+            }
 
-                if (activeTabElement && this.$refs.tabsContainer) {
-                    const containerRect = this.$refs.tabsContainer.getBoundingClientRect();
-                    const tabRect = activeTabElement.getBoundingClientRect();
-                    const newLeft = tabRect.left - containerRect.left + this.$refs.tabsContainer.scrollLeft;
-                    const newWidth = tabRect.width;
-                    slider.style.left = `${newLeft}px`;
-                    slider.style.width = `${newWidth}px`;
-                } else {
-                    slider.style.width = '0px';
-                }
-            },
-            updateServerLiveStatus(wsData) {
-                const nowMillisFromWS = wsData ? wsData.now : null;
-                const fallbackNowMillis = new Date().getTime();
-                const currentTimeMillisToUse = nowMillisFromWS || fallbackNowMillis;
+            let percent;
+            if (live && t > 0) {
+                percent = parseInt((u / t) * 100);
+                if (isNaN(percent) || percent < 0) percent = 0;
+                if (percent > 100) percent = 100;
+            } else if (live && t === 0 && u === 0) {
+                percent = 0;
+            } else {
+                percent = -1;
+            }
 
-                if (this.servers) {
-                    this.servers.forEach(serverItem => {
-                        if (!serverItem.Host) {
-                            serverItem.live = false;
-                        } else {
-                            const lastActiveString = serverItem.LastActive;
-                            const lastActiveTimestampMs = new Date(lastActiveString).getTime();
-                            let calculatedLive = false;
-                            if (isNaN(lastActiveTimestampMs)) {
-                                calculatedLive = false;
-                            } else {
-                                const diffMs = currentTimeMillisToUse - lastActiveTimestampMs;
-                                if (diffMs <= 15000 && diffMs >= -5000) {
-                                    calculatedLive = true;
-                                } else {
-                                    calculatedLive = false;
-                                }
-                            }
-                            serverItem.live = calculatedLive;
-                        }
-                    });
-                }
-            },
-            getTrafficProgressClass(serverId) {
-                const trafficData = this.getServerTrafficData(serverId);
-                if (!trafficData) {
-                    return 'ui progress offline';
-                }
-                
-                const percent = trafficData.percent || 0;
+            if (!this.cache[percent]) {
+                let displayPercentValue = percent;
                 let classObject = { ui: true, progress: true };
-                
-                if (percent < 60) {
+                let styleObject = {
+                    'transition-duration': '300ms',
+                    'min-width': 'unset',
+                    width: (percent >= 0 ? percent : 0) + '% !important',
+                };
+
+                if (percent < 0) {
+                    styleObject['background-color'] = 'slategray';
+                    classObject.offline = true;
+                    displayPercentValue = 0;
+                } else if (percent < 60) {
+                    styleObject['background-color'] = 'rgb(76,175,80)';
                     classObject.fine = true;
                 } else if (percent < 90) {
+                    styleObject['background-color'] = '#ff9800';
                     classObject.warning = true;
                 } else {
+                    styleObject['background-color'] = '#f44336';
                     classObject.error = true;
                 }
-                
-                return Object.keys(classObject).join(' ');
-            },
-            getTrafficProgressStyle(serverId) {
-                const trafficData = this.getServerTrafficData(serverId);
-                if (!trafficData) {
-                    return {
-                        'transition-duration': '300ms',
-                        'width': '0%'
-                    };
+                this.cache[percent] = {
+                    class: classObject,
+                    style: styleObject,
+                    percent: displayPercentValue,
+                };
+            }
+
+            return this.cache[percent] || {
+                class: { ui: true, progress: true, offline: true },
+                style: { width: '0%', 'background-color': 'slategray' },
+                percent: 0
+            };
+        },
+        secondToDate(s) {
+            var d = Math.floor(s / 3600 / 24);
+            if (d > 0) {
+                return d + " {{tr "Day"}}";
+            }
+            var h = Math.floor(s / 3600 % 24);
+            var m = Math.floor(s / 60 % 60);
+            var s = Math.floor(s % 60);
+            return h + ":" + ("0" + m).slice(-2) + ":" + ("0" + s).slice(-2);
+        },
+        timeStamp(t) {
+            return new Date(t).format('yyyy年MM月dd日 HH:mm:ss');
+        },
+        formatByteSize(bs) {
+            const x = this.readableBytes(bs);
+            return x != "NaN undefined" ? x : '0B';
+        },
+        readableBytes(bytes) {
+            if (!bytes) {
+                return '0B';
+            }
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            const sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+            const value = parseFloat((bytes / Math.pow(1024, i)).toFixed(2));
+            return `${value}${sizes[i]}`;
+        },
+        getCoreAndGHz(arr) {
+            if ((arr || []).length === 0) {
+                return '';
+            }
+            let totalCores = 0;
+            arr.forEach(str => {
+                let coreMatch = str.match(/(\d+(\.\d+)?) Physical/g);
+                let coreCount = 0;
+                if (coreMatch) {
+                    coreCount = parseFloat(coreMatch[0]);
+                } else {
+                    let coreMatch = str.match(/(\d+(\.\d+)?) Virtual/g);
+                    coreCount = coreMatch ? parseFloat(coreMatch[0]) : 0;
                 }
-                
-                const percent = trafficData.percent || 0;
-                let bgColor = 'rgb(76,175,80)';
-                
-                if (percent >= 90) {
-                    bgColor = '#f44336';
-                } else if (percent >= 60) {
-                    bgColor = '#ff9800';
+                totalCores += coreCount;
+            });
+            return `${totalCores} Cores`;
+        },
+        getK2Gb(bs) {
+            bs = bs / 1024 / 1024 / 1024;
+            if (bs >= 1) {
+                return Math.ceil(bs.toFixed(2)) + 'GB';
+            } else {
+                bs = bs * 1024;
+                return Math.ceil(bs.toFixed(2)) + 'MB';
+            }
+        },
+        listTipsMouseenter(obj, strs, tipsNum = 1) {
+            this.layerIndex = layer.tips(strs, '#' + obj, { tips: [tipsNum, 'rgb(0 0 0 / 85%)'], time: 0 });
+            $('#' + obj).attr('layerIndex', this.layerIndex);
+        },
+        listTipsMouseleave(obj) {
+            layer.close(this.layerIndex);
+        },
+        initializePopups() {
+            const triggerSelector = '.server-primary-font.info.circle.icon';
+            $(triggerSelector).popup('destroy');
+            
+            this.$nextTick(() => {
+                $(triggerSelector).popup({
+                    popup: '.ui.content.popup',
+                    on: 'hover',
+                    hoverable: true,
+                    exclusive: true,
+                    delay: { show: 100, hide: 300 },
+                    silent: true,
+                    performance: true,
+                    onShow: function() {
+                        const $currentPopup = $(this);
+                        $('.ui.popup.visible').not($currentPopup).each(function() {
+                            $(this).removeClass('visible transition').addClass('hidden').css('display', 'none');
+                        });
+                        return true;
+                    }
+                });
+            });
+        },
+        generateUniqueTags() {
+            const tags = new Set();
+            if (this.servers) {
+                this.servers.forEach(server => {
+                    if (server.Tag && server.Tag.trim() !== '') {
+                        tags.add(server.Tag.trim());
+                    }
+                });
+            }
+            this.uniqueTags = Array.from(tags).sort();
+        },
+        handleTabClick(tag, event) {
+            this.activeTag = tag;
+            this.$nextTick(() => {
+                const tabEl = event.currentTarget;
+                const tabsContainer = this.$refs.tabsContainer;
+                if (tabEl && tabsContainer && tabsContainer.contains(tabEl)) {
+                    if (tabsContainer.scrollWidth > tabsContainer.clientWidth) {
+                        tabEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                    }
                 }
-                
+            });
+        },
+        updateSliderPosition() {
+            const slider = this.$refs.tabSlider;
+            if (!slider) return;
+
+            let activeTabElement = null;
+            if (this.activeTag === '') {
+                activeTabElement = this.$refs.allTab;
+            } else {
+                const reversedTags = this.uniqueTags.slice().reverse();
+                const activeIndexInReversed = reversedTags.indexOf(this.activeTag);
+                if (activeIndexInReversed !== -1 && this.$refs['tagTab' + activeIndexInReversed]) {
+                    activeTabElement = this.$refs['tagTab' + activeIndexInReversed];
+                    if (Array.isArray(activeTabElement)) {
+                        activeTabElement = activeTabElement[0];
+                    }
+                }
+            }
+
+            if (!activeTabElement && this.$refs.allTab) {
+                activeTabElement = this.$refs.allTab;
+            }
+
+            if (activeTabElement && this.$refs.tabsContainer) {
+                const containerRect = this.$refs.tabsContainer.getBoundingClientRect();
+                const tabRect = activeTabElement.getBoundingClientRect();
+                const newLeft = tabRect.left - containerRect.left + this.$refs.tabsContainer.scrollLeft;
+                const newWidth = tabRect.width;
+                slider.style.left = `${newLeft}px`;
+                slider.style.width = `${newWidth}px`;
+            } else {
+                slider.style.width = '0px';
+            }
+        },
+        updateServerLiveStatus(wsData) {
+            const nowMillisFromWS = wsData ? wsData.now : null;
+            const fallbackNowMillis = new Date().getTime();
+            const currentTimeMillisToUse = nowMillisFromWS || fallbackNowMillis;
+
+            if (this.servers) {
+                this.servers.forEach(serverItem => {
+                    if (!serverItem.Host) {
+                        serverItem.live = false;
+                    } else {
+                        const lastActiveString = serverItem.LastActive;
+                        const lastActiveTimestampMs = new Date(lastActiveString).getTime();
+                        let calculatedLive = false;
+                        if (isNaN(lastActiveTimestampMs)) {
+                            calculatedLive = false;
+                        } else {
+                            const diffMs = currentTimeMillisToUse - lastActiveTimestampMs;
+                            if (diffMs <= 15000 && diffMs >= -5000) {
+                                calculatedLive = true;
+                            } else {
+                                calculatedLive = false;
+                            }
+                        }
+                        serverItem.live = calculatedLive;
+                    }
+                });
+            }
+        },
+        getTrafficProgressClass(serverId) {
+            const trafficData = this.getServerTrafficData(serverId);
+            if (!trafficData) {
+                return 'ui progress offline';
+            }
+            
+            const percent = trafficData.percent || 0;
+            let classObject = { ui: true, progress: true };
+            
+            if (percent < 60) {
+                classObject.fine = true;
+            } else if (percent < 90) {
+                classObject.warning = true;
+            } else {
+                classObject.error = true;
+            }
+            
+            return Object.keys(classObject).join(' ');
+        },
+        getTrafficProgressStyle(serverId) {
+            const trafficData = this.getServerTrafficData(serverId);
+            if (!trafficData) {
                 return {
                     'transition-duration': '300ms',
-                    'width': percent + '%',
-                    'background-color': bgColor
+                    'width': '0%'
                 };
-            },
-            getTrafficDisplay(serverId) {
-                const trafficData = this.getServerTrafficData(serverId);
-                if (!trafficData || !trafficData.usedBytes || !trafficData.maxBytes) {
-                    return '无';
+            }
+            
+            const percent = trafficData.percent || 0;
+            let bgColor = 'rgb(76,175,80)';
+            
+            if (percent >= 90) {
+                bgColor = '#f44336';
+            } else if (percent >= 60) {
+                bgColor = '#ff9800';
+            }
+            
+            return {
+                'transition-duration': '300ms',
+                'width': percent + '%',
+                'background-color': bgColor
+            };
+        },
+        getTrafficDisplay(serverId) {
+            const trafficData = this.getServerTrafficData(serverId);
+            if (!trafficData || !trafficData.usedBytes || !trafficData.maxBytes) {
+                return '无';
+            }
+            const percent = (trafficData.maxBytes > 0)
+                ? (trafficData.usedBytes / trafficData.maxBytes) * 100
+                : 0;
+            return percent.toFixed(2) + '%';
+        },
+        getTrafficTooltip(serverId) {
+            const trafficData = this.getServerTrafficData(serverId);
+            if (!trafficData || !trafficData.usedBytes || !trafficData.maxBytes) {
+                return '无数据';
+            }
+            return `${this.formatByteSize(trafficData.usedBytes)} / ${this.formatByteSize(trafficData.maxBytes)}`;
+        },
+        updateTrafficData() {
+            if (!window.serverTrafficData) {
+                console.warn('没有可用的流量数据');
+                return;
+            }
+            
+            this.servers.forEach(server => {
+                const trafficInfo = window.serverTrafficData[server.ID];
+                if (trafficInfo) {
+                    server.traffic = {
+                        used: trafficInfo.used,
+                        total: trafficInfo.max,
+                        percent: trafficInfo.percent,
+                        lastUpdate: trafficInfo.lastUpdate
+                    };
                 }
-                const percent = (trafficData.maxBytes > 0)
-                    ? (trafficData.usedBytes / trafficData.maxBytes) * 100
-                    : 0;
-                return percent.toFixed(2) + '%';
-            },
-            getTrafficTooltip(serverId) {
-                const trafficData = this.getServerTrafficData(serverId);
-                if (!trafficData || !trafficData.usedBytes || !trafficData.maxBytes) {
-                    return '无数据';
-                }
-                return `${this.formatByteSize(trafficData.usedBytes)} / ${this.formatByteSize(trafficData.maxBytes)}`;
-            },
-            updateTrafficData() {
-                if (!window.serverTrafficData) {
-                    console.warn('没有可用的流量数据');
-                    return;
-                }
-                
-                // 更新每个服务器的流量数据
-                this.servers.forEach(server => {
-                    const trafficInfo = window.serverTrafficData[server.ID];
-                    if (trafficInfo) {
-                        server.traffic = {
-                            used: trafficInfo.used,
-                            total: trafficInfo.max,
-                            percent: trafficInfo.percent,
-                            lastUpdate: trafficInfo.lastUpdate
-                        };
-                    }
-                });
-                
-                // 强制更新视图
-                this.$forceUpdate();
-            },
-            hasTemperature(temperatureList, sensorList) {
-                // 如果没有温度数据，返回false
-                if (!temperatureList || !Array.isArray(temperatureList) || temperatureList.length === 0) {
-                    return false;
-                }
-                
-                // 检查是否存在任何非零温度数据
-                return temperatureList.some(item => item.Temperature !== 0);
-            },
-            getTemperature(temperatureList, sensorList) {
-                // 如果没有温度数据，返回空字符串
-                if (!temperatureList || !Array.isArray(temperatureList) || temperatureList.length === 0) {
-                    return '';
-                }
-                
-                // 将 sensorList 中的所有项转换为小写
-                const lowerCaseSensorList = sensorList.map(sensor => sensor.toLowerCase());
-
-                // 合并过滤逻辑：过滤出 Temperature 不为 0 且 Name 在 sensorList 中的元素（忽略大小写）
-                const filtered = temperatureList.filter(item => item.Temperature !== 0 && item.Name && lowerCaseSensorList.includes(item.Name.toLowerCase()));
-                
-                // 如果有匹配的元素，则计算这些元素的 Temperature 的最大值
-                if (filtered.length > 0) {
-                    const maxTemp = filtered.reduce((max, current) => {
-                        return current.Temperature > max ? current.Temperature : max;
-                    }, filtered[0].Temperature);
-                    return maxTemp.toFixed(1);
-                }
-
-                // 如果没有匹配的元素，则计算 temperatureList 中所有 Temperature 不为 0 的元素的最大值
-                const nonZeroTemps = temperatureList.filter(item => item.Temperature !== 0);
-
-                if (nonZeroTemps.length > 0) {
-                    const maxTemp = nonZeroTemps.reduce((max, current) => {
-                        return current.Temperature > max ? current.Temperature : max;
-                    }, nonZeroTemps[0].Temperature);
-                    return maxTemp.toFixed(1);
-                }
-
-                // 如果所有元素的 Temperature 都为 0，则返回空字符串
+            });
+            
+            this.$forceUpdate();
+        },
+        hasTemperature(temperatureList, sensorList) {
+            if (!temperatureList || !Array.isArray(temperatureList) || temperatureList.length === 0) {
+                return false;
+            }
+            return temperatureList.some(item => item.Temperature !== 0);
+        },
+        getTemperature(temperatureList, sensorList) {
+            if (!temperatureList || !Array.isArray(temperatureList) || temperatureList.length === 0) {
                 return '';
-            },
-            initTrafficDataWatcher() {
-                this.trafficWatcherInterval = setInterval(() => {
-                    if (window.serverTrafficData && 
-                        Object.keys(window.serverTrafficData).length > 0 && 
-                        window.lastTrafficUpdateTime !== this._lastKnownUpdateTime) {
-                        
-                        // 复制到本地对象以激活Vue的响应式系统
-                        this.trafficData = JSON.parse(JSON.stringify(window.serverTrafficData));
-                        this._lastKnownUpdateTime = window.lastTrafficUpdateTime;
-                        this.$forceUpdate();
-                    }
-                }, 1000);
             }
+            
+            const lowerCaseSensorList = sensorList.map(sensor => sensor.toLowerCase());
+            const filtered = temperatureList.filter(item => 
+                item.Temperature !== 0 && 
+                item.Name && 
+                lowerCaseSensorList.includes(item.Name.toLowerCase())
+            );
+            
+            if (filtered.length > 0) {
+                const maxTemp = filtered.reduce((max, current) => 
+                    current.Temperature > max ? current.Temperature : max, 
+                    filtered[0].Temperature
+                );
+                return maxTemp.toFixed(1);
+            }
+
+            const nonZeroTemps = temperatureList.filter(item => item.Temperature !== 0);
+            if (nonZeroTemps.length > 0) {
+                const maxTemp = nonZeroTemps.reduce((max, current) => 
+                    current.Temperature > max ? current.Temperature : max, 
+                    nonZeroTemps[0].Temperature
+                );
+                return maxTemp.toFixed(1);
+            }
+
+            return '';
         },
-        watch: {
-            activeTag() {
-                this.$nextTick(() => {
-                    this.updateSliderPosition();
-                });
-            },
-            filteredServers: {
-                handler() {
-                    this.$nextTick(() => {
-                        this.initializePopups();
-                    });
-                },
-                deep: true
-            },
-            uniqueTags() {
-                this.$nextTick(() => {
-                    this.updateSliderPosition();
-                });
-            },
-            servers() {
-                this.generateUniqueTags();
-                this.$nextTick(() => {
-                    this.updateSliderPosition();
-                });
-            }
-        },
-        beforeDestroy() {
-            // Cleanup traffic manager subscription
-            if (window.trafficManager) {
-                window.trafficManager.unsubscribe(this.updateTrafficData);
-                window.trafficManager.stopAutoUpdate();
-            }
-            // Clear traffic watcher interval
-            if (this.trafficWatcherInterval) {
-                clearInterval(this.trafficWatcherInterval);
-            }
+        initTrafficDataWatcher() {
+            this.trafficWatcherInterval = setInterval(() => {
+                if (window.serverTrafficData && 
+                    Object.keys(window.serverTrafficData).length > 0 && 
+                    window.lastTrafficUpdateTime !== this._lastKnownUpdateTime) {
+                    
+                    this.trafficData = JSON.parse(JSON.stringify(window.serverTrafficData));
+                    this._lastKnownUpdateTime = window.lastTrafficUpdateTime;
+                    this.$forceUpdate();
+                }
+            }, 1000);
         }
-    });
+    },
+    watch: {
+        activeTag() {
+            this.$nextTick(() => {
+                this.updateSliderPosition();
+            });
+        },
+        filteredServers: {
+            handler() {
+                this.$nextTick(() => {
+                    this.initializePopups();
+                });
+            },
+            deep: true
+        },
+        uniqueTags() {
+            this.$nextTick(() => {
+                this.updateSliderPosition();
+            });
+        },
+        servers() {
+            this.generateUniqueTags();
+            this.$nextTick(() => {
+                this.updateSliderPosition();
+            });
+        }
+    },
+    beforeDestroy() {
+        if (window.trafficManager) {
+            window.trafficManager.unsubscribe(this.updateTrafficData);
+            window.trafficManager.stopAutoUpdate();
+        }
+        if (this.trafficWatcherInterval) {
+            clearInterval(this.trafficWatcherInterval);
+        }
+    }
+});
 
-    // Make the Vue instance available globally
-    window.statusCards = statusCards;
+// 使Vue实例全局可用
+window.statusCards = statusCards;
 
-// WebSocket连接，用于实时更新服务器数据
+// WebSocket连接
 (function() {
     const wsProtocol = window.location.protocol == "https:" ? "wss" : "ws";
     const wsUrl = wsProtocol + '://' + window.location.host + '/ws';
@@ -1145,7 +995,6 @@ $(document).ready(function() {
             try {
                 const data = JSON.parse(evt.data);
                 if (data && data.servers && Array.isArray(data.servers)) {
-                    // 确保statusCards实例存在
                     if (window.statusCards) {
                         statusCards.servers = data.servers;
                         statusCards.updateServerLiveStatus(data);
@@ -1159,7 +1008,6 @@ $(document).ready(function() {
         };
         
         ws.onclose = function() {
-            // 连接关闭后3秒重连
             setTimeout(initWebSocket, 3000);
         };
         
@@ -1168,29 +1016,25 @@ $(document).ready(function() {
         };
     }
     
-    // 初始化WebSocket连接
     initWebSocket();
 })();
 
-    $(document).ready(function() {
-        // 优化 accordion 初始化，减少非被动事件监听器
-        $('.ui.accordion').accordion({ 
-            "exclusive": false,
-            "silent": true, // 减少控制台输出
-            "performance": true, // 启用性能监控
-            "selector": {
-                "trigger": '.title'
-            },
-            // 优化动画性能
-            "duration": 200,
-            "easing": 'easeOutQuad'
-        });
-        
-        // 为已存在的触摸事件添加被动标志
-        $(document).off('touchstart.accordion touchmove.accordion');
-        $(document).on('touchstart.accordion', '.ui.accordion .title', function(e) {
-            // 被动处理，不阻止默认行为
-        });
+$(document).ready(function() {
+    $('.ui.accordion').accordion({ 
+        exclusive: false,
+        silent: true,
+        performance: true,
+        selector: {
+            trigger: '.title'
+        },
+        duration: 200,
+        easing: 'easeOutQuad'
     });
+    
+    $(document).off('touchstart.accordion touchmove.accordion');
+    $(document).on('touchstart.accordion', '.ui.accordion .title', function(e) {
+        // 被动处理，不阻止默认行为
+    });
+});
 </script>
 {{end}}
