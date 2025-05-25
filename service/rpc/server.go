@@ -206,9 +206,19 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			log.Printf("更新服务器 %s 累计流量到数据库失败: %v", singleton.ServerList[clientID].Name, err)
 		}
 	} else {
-		// 正常更新，使用增量计算
+		// 正常更新，使用增量计算并更新累计流量
+		// 先从数据库读取最新的累计流量值，确保使用最准确的数据
+		var server model.Server
+		if err := singleton.DB.First(&server, clientID).Error; err == nil {
+			// 使用数据库中的最新累计值
+			singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
+			singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+		}
+
+		// 设置State中的总流量（原始流量+累计流量）
 		state.NetInTransfer = originalNetInTransfer + singleton.ServerList[clientID].CumulativeNetInTransfer
 		state.NetOutTransfer = originalNetOutTransfer + singleton.ServerList[clientID].CumulativeNetOutTransfer
+
 		log.Printf("服务器 %s 正常更新流量: 当前入站=%d, 当前出站=%d, 累计入站=%d, 累计出站=%d",
 			singleton.ServerList[clientID].Name,
 			originalNetInTransfer,

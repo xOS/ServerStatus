@@ -1183,8 +1183,19 @@ if (window.statusCards) {
         if (!trafficData) {
             return '0%';
         }
-        // 直接使用后端提供的百分比值，避免重复计算导致的不一致
-        return trafficData.percent.toFixed(2) + '%';
+        
+        // 确保我们使用有效的百分比值
+        if (typeof trafficData.percent === 'number') {
+            return trafficData.percent.toFixed(2) + '%';
+        }
+        
+        // 如果没有直接提供百分比，尝试计算
+        if (trafficData.maxBytes && trafficData.maxBytes > 0) {
+            const percent = (trafficData.usedBytes / trafficData.maxBytes) * 100;
+            return percent.toFixed(2) + '%';
+        }
+        
+        return '0%';
     };
 
     // 获取流量提示

@@ -194,19 +194,37 @@ func UpdateServer(s *model.Server) error {
 	s.LastActive = time.Now()
 
 	if s.State != nil {
-		// 更新流量统计
+		// 更新流量统计 - 注意这里传入的是原始流量，不是累计流量
+		// 我们需要确保 NetInTransfer 和 NetOutTransfer 是累计后的总流量
+		// 从原始 State 中获取实时流量数据
+		currentInTransfer := s.State.NetInTransfer
+		currentOutTransfer := s.State.NetOutTransfer
+
+		// 更新实时速率统计，但不让它修改我们的累计流量
 		tm := GetTrafficManager()
-		tm.UpdateTraffic(s.ID, s.State.NetInTransfer, s.State.NetOutTransfer)
+		origInTransfer := currentInTransfer
+		origOutTransfer := currentOutTransfer
+
+		// 如果 s.State 包含累计流量，我们需要减去 CumulativeNetInTransfer 获取实际原始流量
+		if currentInTransfer > s.CumulativeNetInTransfer {
+			origInTransfer = currentInTransfer - s.CumulativeNetInTransfer
+		}
+		if currentOutTransfer > s.CumulativeNetOutTransfer {
+			origOutTransfer = currentOutTransfer - s.CumulativeNetOutTransfer
+		}
+
+		// 使用原始流量更新流量统计
+		tm.UpdateTraffic(s.ID, origInTransfer, origOutTransfer)
 
 		// 更新实时速率
 		inSpeed, outSpeed := tm.GetTrafficSpeed(s.ID)
 		s.State.NetInSpeed = inSpeed
 		s.State.NetOutSpeed = outSpeed
 
-		// 更新总流量
-		inTotal, outTotal := tm.GetTrafficTotal(s.ID)
-		s.CumulativeNetInTransfer = inTotal
-		s.CumulativeNetOutTransfer = outTotal
+		// 直接将当前流量值保存到数据库，而不是从 TrafficManager 获取值
+		// 这确保了我们不会覆盖累计流量
+		log.Printf("更新服务器 %s 的累计流量数据到数据库: 入站=%d, 出站=%d",
+			s.Name, s.CumulativeNetInTransfer, s.CumulativeNetOutTransfer)
 
 		// 立即更新到数据库
 		if err := DB.Model(s).Updates(map[string]interface{}{
