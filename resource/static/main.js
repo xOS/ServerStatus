@@ -1180,13 +1180,11 @@ if (window.statusCards) {
     // 获取流量显示
     window.statusCards.getTrafficDisplay = function(serverId) {
         const trafficData = this.getServerTrafficData(serverId);
-        if (!trafficData || !trafficData.usedBytes || !trafficData.maxBytes) {
+        if (!trafficData) {
             return '0%';
         }
-        const percent = (trafficData.maxBytes > 0)
-            ? (trafficData.usedBytes / trafficData.maxBytes) * 100
-            : 0;
-        return percent.toFixed(2) + '%';
+        // 直接使用后端提供的百分比值，避免重复计算导致的不一致
+        return trafficData.percent.toFixed(2) + '%';
     };
 
     // 获取流量提示
