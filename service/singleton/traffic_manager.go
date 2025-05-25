@@ -143,12 +143,27 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 		tm.writeBatchToDatabase()
 	}
 
-	// 强制更新服务器状态
+	// 强制更新服务器状态 - 使用累计流量而不是原始流量
 	if server, ok := ServerList[serverID]; ok {
-		server.State.NetInTransfer = inBytes
-		server.State.NetOutTransfer = outBytes
+		// 保持累计流量，只更新网络速率
 		server.State.NetInSpeed = stats.InSpeed
 		server.State.NetOutSpeed = stats.OutSpeed
+
+		// 读取数据库中的累计流量作为基准
+		var dbServer model.Server
+		if err := DB.First(&dbServer, serverID); err == nil {
+			// 使用数据库中的累计流量作为基础
+			server.CumulativeNetInTransfer = dbServer.CumulativeNetInTransfer
+			server.CumulativeNetOutTransfer = dbServer.CumulativeNetOutTransfer
+
+			// 计算增量并添加到累计流量
+			server.State.NetInTransfer = inBytes + dbServer.CumulativeNetInTransfer
+			server.State.NetOutTransfer = outBytes + dbServer.CumulativeNetOutTransfer
+
+			log.Printf("更新服务器 %d 流量: 原始入站=%d, 原始出站=%d, 累计入站=%d, 累计出站=%d",
+				serverID, inBytes, outBytes, server.State.NetInTransfer, server.State.NetOutTransfer)
+		}
+
 		UpdateServer(server)
 	}
 }
