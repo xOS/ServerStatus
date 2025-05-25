@@ -8,7 +8,6 @@ import (
 
 	"github.com/patrickmn/go-cache"
 	"github.com/xos/serverstatus/model"
-	"gorm.io/gorm"
 )
 
 // TrafficManager 流量管理器
@@ -23,8 +22,6 @@ type TrafficManager struct {
 	batchBuffer []*model.Transfer
 	// 上次批量写入时间
 	lastBatchWrite time.Time
-	// 数据库连接
-	db *gorm.DB
 }
 
 // TrafficStats 流量统计数据
@@ -74,11 +71,6 @@ func GetTrafficManager() *TrafficManager {
 	return trafficManager
 }
 
-// SetDB 设置数据库连接
-func (tm *TrafficManager) SetDB(db *gorm.DB) {
-	tm.db = db
-}
-
 // UpdateTraffic 更新服务器流量统计
 func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint64) {
 	tm.Lock()
@@ -96,7 +88,17 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 			lastOutBytes: outBytes,
 		}
 		tm.trafficStats[serverID] = stats
+		log.Printf("服务器 %d 初始化流量统计: 入站=%d, 出站=%d", serverID, inBytes, outBytes)
 		return
+	}
+
+	// 验证数据有效性
+	if inBytes < stats.InBytes || outBytes < stats.OutBytes {
+		log.Printf("警告: 服务器 %d 的流量数据异常: 新入站=%d < 旧入站=%d 或 新出站=%d < 旧出站=%d",
+			serverID, inBytes, stats.InBytes, outBytes, stats.OutBytes)
+		// 如果新数据小于旧数据，可能是服务器重启，使用增量
+		inBytes = stats.InBytes + (inBytes - stats.lastInBytes)
+		outBytes = stats.OutBytes + (outBytes - stats.lastOutBytes)
 	}
 
 	// 计算时间差
@@ -118,6 +120,9 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 	stats.OutBytes = outBytes
 	stats.LastTime = now
 	stats.UpdateCount++
+
+	log.Printf("服务器 %d 更新流量统计: 入站=%d, 出站=%d, 入站速率=%d/s, 出站速率=%d/s",
+		serverID, inBytes, outBytes, stats.InSpeed, stats.OutSpeed)
 
 	// 缓存最新数据
 	tm.cache.Set(
@@ -144,23 +149,15 @@ func (tm *TrafficManager) GetTrafficStats(serverID uint64) *TrafficStats {
 	tm.RLock()
 	defer tm.RUnlock()
 
-	// 先从缓存获取
+	// 先尝试从缓存获取
 	if cached, found := tm.cache.Get(tm.getCacheKey(serverID)); found {
-		return cached.(*TrafficStats)
+		if stats, ok := cached.(*TrafficStats); ok {
+			return stats
+		}
 	}
 
-	// 缓存未命中，从内存获取
-	if stats, exists := tm.trafficStats[serverID]; exists {
-		// 更新缓存
-		tm.cache.Set(
-			tm.getCacheKey(serverID),
-			stats,
-			cache.DefaultExpiration,
-		)
-		return stats
-	}
-
-	return nil
+	// 缓存未命中，返回实时数据
+	return tm.trafficStats[serverID]
 }
 
 // getCacheKey 生成缓存键
@@ -182,40 +179,31 @@ func (tm *TrafficManager) batchWriteWorker() {
 	}
 }
 
-// writeBatchToDatabase 将批量数据写入数据库
+// writeBatchToDatabase 批量写入数据库
 func (tm *TrafficManager) writeBatchToDatabase() {
 	if len(tm.batchBuffer) == 0 {
 		return
 	}
 
-	// 创建数据库事务
-	tx := tm.db.Begin()
+	// 创建批量写入的事务
+	tx := DB.Begin()
 	if tx.Error != nil {
-		log.Printf("创建事务失败: %v", tx.Error)
 		return
 	}
 
-	// 批量更新服务器累计流量
-	for _, transfer := range tm.batchBuffer {
-		if err := tx.Model(&model.Server{}).
-			Where("id = ?", transfer.ServerID).
-			Updates(map[string]interface{}{
-				"cumulative_net_in_transfer":  gorm.Expr("cumulative_net_in_transfer + ?", transfer.In),
-				"cumulative_net_out_transfer": gorm.Expr("cumulative_net_out_transfer + ?", transfer.Out),
-			}).Error; err != nil {
-			tx.Rollback()
-			log.Printf("更新服务器累计流量失败: %v", err)
-			return
-		}
+	// 批量插入数据
+	if err := tx.CreateInBatches(tm.batchBuffer, 100).Error; err != nil {
+		tx.Rollback()
+		return
 	}
 
 	// 提交事务
 	if err := tx.Commit().Error; err != nil {
-		log.Printf("提交事务失败: %v", err)
+		tx.Rollback()
 		return
 	}
 
-	// 清空缓冲区
+	// 清空缓冲区并更新最后写入时间
 	tm.batchBuffer = tm.batchBuffer[:0]
 	tm.lastBatchWrite = time.Now()
 }
@@ -227,7 +215,7 @@ func (tm *TrafficManager) CleanupOldData(days int) error {
 	// 分批删除数据以减少数据库压力
 	batchSize := 1000
 	for {
-		result := tm.db.Where("created_at < ?", deadline).Limit(batchSize).Delete(&model.Transfer{})
+		result := DB.Where("created_at < ?", deadline).Limit(batchSize).Delete(&model.Transfer{})
 		if result.Error != nil {
 			return fmt.Errorf("failed to cleanup old traffic data: %v", result.Error)
 		}

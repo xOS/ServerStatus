@@ -120,10 +120,26 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	originalNetInTransfer := state.NetInTransfer
 	originalNetOutTransfer := state.NetOutTransfer
 
-	// 更新状态中的累计流量 = 当前会话的原始流量 + 数据库中保存的累计流量
-	// 这确保了我们只累加当前会话的流量，不会重复累加历史数据
-	state.NetInTransfer += singleton.ServerList[clientID].CumulativeNetInTransfer
-	state.NetOutTransfer += singleton.ServerList[clientID].CumulativeNetOutTransfer
+	// 更新状态中的累计流量
+	if singleton.ServerList[clientID].LastActive.IsZero() {
+		// 首次上线，直接使用当前流量
+		state.NetInTransfer = originalNetInTransfer
+		state.NetOutTransfer = originalNetOutTransfer
+		log.Printf("服务器 %s 首次上线，使用当前流量: 入站=%d, 出站=%d",
+			singleton.ServerList[clientID].Name,
+			originalNetInTransfer,
+			originalNetOutTransfer)
+	} else {
+		// 非首次上线，使用增量计算
+		state.NetInTransfer = originalNetInTransfer + singleton.ServerList[clientID].CumulativeNetInTransfer
+		state.NetOutTransfer = originalNetOutTransfer + singleton.ServerList[clientID].CumulativeNetOutTransfer
+		log.Printf("服务器 %s 更新流量: 当前入站=%d, 当前出站=%d, 累计入站=%d, 累计出站=%d",
+			singleton.ServerList[clientID].Name,
+			originalNetInTransfer,
+			originalNetOutTransfer,
+			singleton.ServerList[clientID].CumulativeNetInTransfer,
+			singleton.ServerList[clientID].CumulativeNetOutTransfer)
+	}
 
 	// 保存当前状态
 	singleton.ServerList[clientID].State = &state

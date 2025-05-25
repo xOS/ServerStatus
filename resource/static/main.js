@@ -1013,18 +1013,13 @@ class TrafficManager {
 
             const serverId = String(item.server_id);
             const maxTraffic = item.max_formatted || '0B';
-            // 使用累计流量作为已使用流量
-            const usedTraffic = item.cumulative_net_in_transfer && item.cumulative_net_out_transfer 
-                ? this.formatTrafficSize(item.cumulative_net_in_transfer + item.cumulative_net_out_transfer)
-                : '0B';
+            const usedTraffic = item.used_formatted || '0B';
             const percent = parseFloat(item.used_percent) || 0;
             
             const standardMax = TrafficManager.standardizeTrafficUnit(maxTraffic);
             const standardUsed = TrafficManager.standardizeTrafficUnit(usedTraffic);
             const maxBytes = TrafficManager.parseTrafficToBytes(maxTraffic);
-            const usedBytes = item.cumulative_net_in_transfer && item.cumulative_net_out_transfer
-                ? item.cumulative_net_in_transfer + item.cumulative_net_out_transfer
-                : 0;
+            const usedBytes = TrafficManager.parseTrafficToBytes(usedTraffic);
 
             newData[serverId] = {
                 max: standardMax,
@@ -1048,6 +1043,7 @@ class TrafficManager {
         window.serverTrafficData = newData;
         window.lastTrafficUpdateTime = this.lastUpdateTime;
         
+        // console.log(`已更新 ${updatedCount} 个服务器的流量数据`);
         this.notifySubscribers();
     }
 

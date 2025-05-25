@@ -270,10 +270,24 @@ func CheckServerOnlineStatus() {
 
 			// 离线前保存累计流量数据到数据库
 			if server.State != nil {
-				DB.Model(server).Updates(map[string]interface{}{
+				// 使用事务确保数据一致性
+				tx := DB.Begin()
+				if err := tx.Model(server).Updates(map[string]interface{}{
 					"cumulative_net_in_transfer":  server.State.NetInTransfer,
 					"cumulative_net_out_transfer": server.State.NetOutTransfer,
-				})
+				}).Error; err != nil {
+					tx.Rollback()
+					log.Printf("保存服务器 %s 的累计流量数据失败: %v", server.Name, err)
+				} else {
+					if err := tx.Commit().Error; err != nil {
+						log.Printf("提交服务器 %s 的累计流量数据事务失败: %v", server.Name, err)
+					} else {
+						log.Printf("服务器 %s 离线，保存累计流量数据: 入站=%d, 出站=%d",
+							server.Name,
+							server.State.NetInTransfer,
+							server.State.NetOutTransfer)
+					}
+				}
 			}
 		}
 
