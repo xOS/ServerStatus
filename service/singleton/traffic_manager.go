@@ -23,6 +23,8 @@ type TrafficManager struct {
 	batchBuffer []*model.Transfer
 	// 上次批量写入时间
 	lastBatchWrite time.Time
+	// 数据库连接
+	db *gorm.DB
 }
 
 // TrafficStats 流量统计数据
@@ -70,6 +72,11 @@ func GetTrafficManager() *TrafficManager {
 		go trafficManager.batchWriteWorker()
 	})
 	return trafficManager
+}
+
+// SetDB 设置数据库连接
+func (tm *TrafficManager) SetDB(db *gorm.DB) {
+	tm.db = db
 }
 
 // UpdateTraffic 更新服务器流量统计
@@ -182,7 +189,7 @@ func (tm *TrafficManager) writeBatchToDatabase() {
 	}
 
 	// 创建数据库事务
-	tx := model.DB.Begin()
+	tx := tm.db.Begin()
 	if tx.Error != nil {
 		log.Printf("创建事务失败: %v", tx.Error)
 		return
@@ -220,7 +227,7 @@ func (tm *TrafficManager) CleanupOldData(days int) error {
 	// 分批删除数据以减少数据库压力
 	batchSize := 1000
 	for {
-		result := DB.Where("created_at < ?", deadline).Limit(batchSize).Delete(&model.Transfer{})
+		result := tm.db.Where("created_at < ?", deadline).Limit(batchSize).Delete(&model.Transfer{})
 		if result.Error != nil {
 			return fmt.Errorf("failed to cleanup old traffic data: %v", result.Error)
 		}
