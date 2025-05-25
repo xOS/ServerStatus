@@ -141,9 +141,16 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		// 首次上线或重启，使用当前流量加上数据库中的累计流量
 		state.NetInTransfer = originalNetInTransfer + singleton.ServerList[clientID].CumulativeNetInTransfer
 		state.NetOutTransfer = originalNetOutTransfer + singleton.ServerList[clientID].CumulativeNetOutTransfer
+
+		// 根据状态选择日志消息
+		statusMsg := "首次上线"
+		if isRestart {
+			statusMsg = "重启"
+		}
+
 		log.Printf("服务器 %s %s，使用当前流量+累计流量: 当前入站=%d, 当前出站=%d, 累计入站=%d, 累计出站=%d",
 			singleton.ServerList[clientID].Name,
-			isRestart ? "重启" : "首次上线",
+			statusMsg,
 			originalNetInTransfer,
 			originalNetOutTransfer,
 			singleton.ServerList[clientID].CumulativeNetInTransfer,
