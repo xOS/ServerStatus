@@ -139,9 +139,33 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 
 	// 循环区间流量检测 · 更新下次需要检测时间
 	if u.IsTransferDurationRule() {
-		seconds := 1800 * ((u.Max - src) / u.Max)
-		if seconds < 180 {
-			seconds = 180
+		// 分层检测算法：根据使用率采用不同的检测频率
+		var seconds float64
+		if u.Max > 0 {
+			usagePercent := (src / u.Max) * 100
+			switch {
+			case usagePercent >= 90:
+				// 90%+ 使用率 → 1分钟检测（紧急）
+				seconds = 60
+			case usagePercent >= 60:
+				// 60-89% 使用率 → 5分钟检测
+				seconds = 300
+			case usagePercent >= 25:
+				// 25-59% 使用率 → 15分钟检测
+				seconds = 900
+			case usagePercent >= 5:
+				// 5-24% 使用率 → 15分钟检测
+				seconds = 900
+			default:
+				// 0-4% 使用率 → 30分钟检测，渐减到最短10分钟
+				seconds = 1800 - (usagePercent/5.0)*600
+				if seconds < 600 {
+					seconds = 600
+				}
+			}
+		} else {
+			// 如果没有设置最大值，使用默认30分钟
+			seconds = 1800
 		}
 		if u.NextTransferAt == nil {
 			u.NextTransferAt = make(map[uint64]time.Time)

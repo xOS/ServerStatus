@@ -45,6 +45,7 @@ func (ma *memberAPI) serve() {
 	mr.POST("/cron", ma.addOrEditCron)
 	mr.GET("/cron/:id/manual", ma.manualTrigger)
 	mr.POST("/force-update", ma.forceUpdate)
+	mr.POST("/traffic/refresh", ma.refreshTrafficCache)
 	mr.POST("/batch-update-server-group", ma.batchUpdateServerGroup)
 	mr.POST("/batch-delete-server", ma.batchDeleteServer)
 	mr.POST("/notification", ma.addOrEditNotification)
@@ -1163,4 +1164,61 @@ func onServerDelete(id uint64) {
 	singleton.AlertsLock.Unlock()
 
 	singleton.DB.Unscoped().Delete(&model.Transfer{}, "server_id = ?", id)
+}
+
+// refreshTrafficCache 强制刷新流量检测缓存
+func (ma *memberAPI) refreshTrafficCache(c *gin.Context) {
+	user := c.MustGet(model.CtxKeyAuthorizedUser).(*model.User)
+
+	// 清空所有流量检测缓存
+	singleton.AlertsLock.Lock()
+	defer singleton.AlertsLock.Unlock()
+
+	clearedCount := 0
+
+	// 重置所有流量监控规则的下次更新时间
+	for i := 0; i < len(singleton.Alerts); i++ {
+		// 检查是否包含流量规则
+		hasTrafficRule := false
+		for j := 0; j < len(singleton.Alerts[i].Rules); j++ {
+			if singleton.Alerts[i].Rules[j].IsTransferDurationRule() {
+				hasTrafficRule = true
+				// 重置下次更新时间缓存，强制立即更新
+				if singleton.Alerts[i].Rules[j].NextTransferAt != nil {
+					for serverID := range singleton.Alerts[i].Rules[j].NextTransferAt {
+						singleton.Alerts[i].Rules[j].NextTransferAt[serverID] = time.Now()
+						clearedCount++
+					}
+				}
+				// 清空上次状态缓存
+				if singleton.Alerts[i].Rules[j].LastCycleStatus != nil {
+					for serverID := range singleton.Alerts[i].Rules[j].LastCycleStatus {
+						singleton.Alerts[i].Rules[j].LastCycleStatus[serverID] = nil
+					}
+				}
+			}
+		}
+
+		// 如果包含流量规则，也清理AlertsCycleTransferStatsStore
+		if hasTrafficRule && singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID] != nil {
+			for serverID := range singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID].NextUpdate {
+				singleton.AlertsCycleTransferStatsStore[singleton.Alerts[i].ID].NextUpdate[serverID] = time.Now()
+			}
+		}
+	}
+
+	// 同时清理流量管理器缓存
+	tm := singleton.GetTrafficManager()
+	if err := tm.SaveToDatabase(); err != nil {
+		c.JSON(http.StatusInternalServerError, model.Response{
+			Code:    http.StatusInternalServerError,
+			Message: fmt.Sprintf("保存流量数据到数据库失败: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Response{
+		Code:    http.StatusOK,
+		Message: fmt.Sprintf("流量缓存刷新成功，用户: %s，清理了 %d 个服务器的流量缓存", user.Login, clearedCount),
+	})
 }

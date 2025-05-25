@@ -662,12 +662,14 @@ func (cp *commonPage) createFM(c *gin.Context) {
 
 // 新增：/api/traffic handler，返回和首页相同结构的流量数据
 func (cp *commonPage) apiTraffic(c *gin.Context) {
-	// 使用与 /server 相同的授权机制
-	_, authorized := c.Get(model.CtxKeyAuthorizedUser)
-	if !authorized {
+	// 支持用户登录或view password验证
+	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
+	_, isViewPasswordVerified := c.Get(model.CtxKeyViewPasswordVerified)
+
+	if !isMember && !isViewPasswordVerified {
 		c.JSON(http.StatusForbidden, gin.H{
 			"code":    403,
-			"message": "请先登录",
+			"message": "请先登录或输入访问密码",
 		})
 		return
 	}
@@ -720,12 +722,14 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 
 // 新增：/api/server/:id/traffic handler，返回单个服务器的流量数据
 func (cp *commonPage) apiServerTraffic(c *gin.Context) {
-	// 使用与 /server 相同的授权机制
-	_, authorized := c.Get(model.CtxKeyAuthorizedUser)
-	if !authorized {
+	// 支持用户登录或view password验证
+	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
+	_, isViewPasswordVerified := c.Get(model.CtxKeyViewPasswordVerified)
+
+	if !isMember && !isViewPasswordVerified {
 		c.JSON(http.StatusForbidden, gin.H{
 			"code":    403,
-			"message": "请先登录",
+			"message": "请先登录或输入访问密码",
 		})
 		return
 	}
