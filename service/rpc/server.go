@@ -126,35 +126,41 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		// 获取之前的流量值（原始值，不包含累计）
 		prevNetIn := singleton.ServerList[clientID].State.NetInTransfer - singleton.ServerList[clientID].CumulativeNetInTransfer
 		prevNetOut := singleton.ServerList[clientID].State.NetOutTransfer - singleton.ServerList[clientID].CumulativeNetOutTransfer
-		
-		// 计算流量差值的绝对值和百分比
-		netInDiff := float64(prevNetIn - originalNetInTransfer)
-		netOutDiff := float64(prevNetOut - originalNetOutTransfer)
-		
-		// 设置重启检测阈值：
-		// 1. 流量回退超过1GB且回退幅度超过50%
-		// 2. 或者两个方向的流量都大幅回退超过500MB
-		const restartThresholdBytes = 1024 * 1024 * 1024 // 1GB
-		const restartThresholdSmall = 500 * 1024 * 1024  // 500MB
-		const restartPercentThreshold = 0.5               // 50%
-		
-		if prevNetIn > 0 && prevNetOut > 0 { // 确保有历史数据
-			netInPercent := netInDiff / float64(prevNetIn)
-			netOutPercent := netOutDiff / float64(prevNetOut)
-			
-			// 重启条件：大幅流量回退
-			largeRollback := (netInDiff > restartThresholdBytes && netInPercent > restartPercentThreshold) ||
-				(netOutDiff > restartThresholdBytes && netOutPercent > restartPercentThreshold)
-			
-			// 或者两个方向都有明显回退
-			bothRollback := netInDiff > restartThresholdSmall && netOutDiff > restartThresholdSmall
-			
-			if largeRollback || bothRollback {
-				isRestart = true
-				log.Printf("检测到服务器 %s 可能重启: 入站回退=%.2fMB(%.1f%%), 出站回退=%.2fMB(%.1f%%)",
-					singleton.ServerList[clientID].Name,
-					netInDiff/(1024*1024), netInPercent*100,
-					netOutDiff/(1024*1024), netOutPercent*100)
+
+		// 检查是否是真实的流量回退
+		// 避免因数值溢出导致的错误检测
+		if originalNetInTransfer < prevNetIn || originalNetOutTransfer < prevNetOut {
+			// 设置重启检测阈值：
+			// 1. 流量回退超过1GB且回退幅度超过50%
+			// 2. 或者两个方向的流量都大幅回退超过500MB
+			const restartThresholdBytes = 1024 * 1024 * 1024 // 1GB
+			const restartThresholdSmall = 500 * 1024 * 1024  // 500MB
+			const restartPercentThreshold = 0.5              // 50%
+
+			if prevNetIn > 0 && prevNetOut > 0 { // 确保有历史数据
+				netInDiff := float64(prevNetIn - originalNetInTransfer)
+				netOutDiff := float64(prevNetOut - originalNetOutTransfer)
+
+				// 确保差值合理，防止整数溢出导致的异常大数值
+				if netInDiff >= 0 && netOutDiff >= 0 && netInDiff < 1e15 && netOutDiff < 1e15 {
+					netInPercent := netInDiff / float64(prevNetIn)
+					netOutPercent := netOutDiff / float64(prevNetOut)
+
+					// 重启条件：大幅流量回退
+					largeRollback := (netInDiff > restartThresholdBytes && netInPercent > restartPercentThreshold) ||
+						(netOutDiff > restartThresholdBytes && netOutPercent > restartPercentThreshold)
+
+					// 或者两个方向都有明显回退
+					bothRollback := netInDiff > restartThresholdSmall && netOutDiff > restartThresholdSmall
+
+					if largeRollback || bothRollback {
+						isRestart = true
+						log.Printf("检测到服务器 %s 可能重启: 入站回退=%.2fMB(%.1f%%), 出站回退=%.2fMB(%.1f%%)",
+							singleton.ServerList[clientID].Name,
+							netInDiff/(1024*1024), netInPercent*100,
+							netOutDiff/(1024*1024), netOutPercent*100)
+					}
+				}
 			}
 		}
 	}
