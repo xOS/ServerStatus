@@ -142,6 +142,15 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 	if len(tm.batchBuffer) >= batchSize || now.Sub(tm.lastBatchWrite) >= batchInterval {
 		tm.writeBatchToDatabase()
 	}
+
+	// 强制更新服务器状态
+	if server, ok := ServerList[serverID]; ok {
+		server.State.NetInTransfer = inBytes
+		server.State.NetOutTransfer = outBytes
+		server.State.NetInSpeed = stats.InSpeed
+		server.State.NetOutSpeed = stats.OutSpeed
+		UpdateServer(server)
+	}
 }
 
 // GetTrafficStats 获取服务器流量统计

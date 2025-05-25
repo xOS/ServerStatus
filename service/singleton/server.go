@@ -207,10 +207,16 @@ func UpdateServer(s *model.Server) error {
 		inTotal, outTotal := tm.GetTrafficTotal(s.ID)
 		s.CumulativeNetInTransfer = inTotal
 		s.CumulativeNetOutTransfer = outTotal
-	}
 
-	if err := DB.Save(s).Error; err != nil {
-		return err
+		// 立即更新到数据库
+		if err := DB.Model(s).Updates(map[string]interface{}{
+			"cumulative_net_in_transfer":  s.CumulativeNetInTransfer,
+			"cumulative_net_out_transfer": s.CumulativeNetOutTransfer,
+			"last_active":                 s.LastActive,
+		}).Error; err != nil {
+			log.Printf("更新服务器 %s 的流量数据失败: %v", s.Name, err)
+			return err
+		}
 	}
 
 	// 更新内存中的服务器信息
