@@ -21,127 +21,6 @@
         return originalAddEventListener.call(this, type, listener, options);
     };
 })();
-
-function specialOS(i) {
-        // 处理Windows平台
-        if (i && i.toString().toLowerCase().includes('windows')) {
-            return i.replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", "");
-        }
-        
-        // 确保i是字符串并转为小写
-        i = (i || "").toString().toLowerCase();
-        
-        // 使用对象映射代替switch语句
-        const osMapping = {
-            "ubuntu": "Ubuntu",
-            "debian": "Debian",
-            "centos": "CentOS",
-            "darwin": "MacOS",
-            "redhat": "RedHat",
-            "archlinux": "Archlinux",
-            "coreos": "Coreos",
-            "deepin": "Deepin",
-            "fedora": "Fedora",
-            "alpine": "Alpine",
-            "tux": "Tux",
-            "linuxmint": "LinuxMint",
-            "oracle": "Oracle",
-            "slackware": "SlackWare",
-            "raspbian": "Raspbian",
-            "gentoo": "GenToo",
-            "arch": "Arch",
-            "amazon": "Amazon",
-            "xenserver": "XenServer",
-            "scientific": "ScientificSL",
-            "rhel": "Rhel",
-            "rawhide": "RawHide",
-            "cloudlinux": "CloudLinux",
-            "ibm_powerkvm": "IBM",
-            "almalinux": "Almalinux",
-            "suse": "Suse",
-            "opensuse": "OpenSuse",
-            "opensuse-leap": "OpenSuse",
-            "opensuse-tumbleweed": "OpenSuse",
-            "opensuse-tumbleweed-kubic": "OpenSuse",
-            "sles": "Sles",
-            "sled": "Sled",
-            "caasp": "Caasp",
-            "exherbo": "ExherBo",
-            "solus": "Solus"
-        };
-        
-        // 如果在映射中找到匹配项，返回对应的值，否则返回原始输入
-        return osMapping[i] || i;
-    }
-    
-    function specialVir(i) {
-        // 确保i是字符串并转为小写
-        i = (i || "").toString().toLowerCase();
-        
-        // 使用对象映射代替switch语句，包含更多虚拟化平台的优雅显示
-        const virMapping = {
-            "kvm": "KVM",
-            "openvz": "OpenVZ",
-            "lxc": "LXC",
-            "xen": "Xen",
-            "vbox": "VirtualBox",
-            "virtualbox": "VirtualBox",
-            "rkt": "RKT",
-            "docker": "Docker",
-            "vmware": "VMware",
-            "vmware-esxi": "VMware ESXi",
-            "linux-vserver": "VServer",
-            "hyperv": "Hyper-V",
-            "hyper-v": "Hyper-V",
-            "microsoft": "Hyper-V",
-            "qemu": "QEMU",
-            "parallels": "Parallels",
-            "bhyve": "bhyve",
-            "jail": "FreeBSD Jail",
-            "zone": "Solaris Zone",
-            "wsl": "WSL",
-            "podman": "Podman",
-            "containerd": "containerd",
-            "systemd-nspawn": "systemd-nspawn"
-        };
-        
-        // 如果在映射中找到匹配项，返回对应的值，否则返回首字母大写的原始输入
-        if (virMapping[i]) {
-            return virMapping[i];
-        }
-        
-        // 如果没有找到映射，将首字母大写返回
-        return i.charAt(0).toUpperCase() + i.slice(1);
-    }
-    function clearString(i) {
-        if (i != null && i != "") {
-            i = Array.isArray(i) ? i.map(s => s.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")) : [i.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")];
-            return i;
-        }
-        return Array.isArray(i) ? i : [i];
-    }
-    Date.prototype.format = function (format) {
-        var date = {
-            "M+": this.getMonth() + 1,
-            "d+": this.getDate(),
-            "H+": this.getHours(),
-            "m+": this.getMinutes(),
-            "s+": this.getSeconds(),
-            "q+": Math.floor((this.getMonth() + 3) / 3),
-            "S+": this.getMilliseconds()
-        };
-        if (/(y+)/i.test(format)) {
-            format = format.replace(RegExp.$1, (this.getFullYear() + '').substr(4 - RegExp.$1.length));
-        }
-        for (var k in date) {
-            if (new RegExp("(" + k + ")").test(format)) {
-                format = format.replace(RegExp.$1, RegExp.$1.length == 1
-                    ? date[k] : ("00" + date[k]).substr(("" + date[k]).length));
-            }
-        }
-        return format;
-    };
-
 // jQuery 事件优化
 $(document).ready(function() {
     if ($.fn.on) {
@@ -464,7 +343,8 @@ const statusCards = new Vue({
         ],
         activeTag: '',
         uniqueTags: [],
-        _lastKnownUpdateTime: 0
+        _lastKnownUpdateTime: 0,
+        _updateInterval: null
     },
     mixins: [mixinsVue],
     created() {
@@ -483,20 +363,20 @@ const statusCards = new Vue({
         
         this.generateUniqueTags();
         this.updateServerLiveStatus();
-        this.initTrafficDataWatcher();
         
-        setTimeout(() => {
-            window.extractTrafficData();
-        }, 500);
-
+        // 订阅流量数据更新
         if (window.trafficManager) {
             window.trafficManager.subscribe((data, version) => {
-                console.log('收到流量管理器更新，版本:', version);
                 this.trafficData = data;
                 this._trafficVersion = version;
-                this.$forceUpdate();
+                this.updateTrafficData();
             });
         }
+        
+        // 设置定期更新
+        this._updateInterval = setInterval(() => {
+            this.updateServerLiveStatus({ now: Date.now() });
+        }, 1000); // 改回1秒更新一次
     },
     mounted() {
         this.$nextTick(() => {
@@ -523,21 +403,35 @@ const statusCards = new Vue({
             return window.innerWidth < 768;
         },
         getServerTrafficData(serverId) {
-            if (this.trafficData && serverId != null) {
+            if (!serverId) return null;
+            
+            // 首先尝试从 trafficManager 获取数据
+            if (window.trafficManager) {
+                const trafficData = window.trafficManager.getServerTrafficData(serverId);
+                if (trafficData) {
+                    return trafficData;
+                }
+            }
+            
+            // 如果 trafficManager 没有数据，尝试从全局数据获取
+            if (window.serverTrafficData) {
                 const serverIdStr = String(serverId).trim();
-                if (this.trafficData[serverIdStr]) {
-                    return this.trafficData[serverIdStr];
+                if (window.serverTrafficData[serverIdStr]) {
+                    return window.serverTrafficData[serverIdStr];
                 }
-                const serverIdNum = Number(serverIdStr);
-                if (this.trafficData[serverIdNum]) {
-                    return this.trafficData[serverIdNum];
-                }
-                for (const key in this.trafficData) {
-                    if (String(key) === serverIdStr || Number(key) === serverIdNum) {
-                        return this.trafficData[key];
+                
+                // 尝试数字匹配
+                const numericId = parseInt(serverIdStr);
+                if (!isNaN(numericId)) {
+                    const keys = Object.keys(window.serverTrafficData);
+                    for (const key of keys) {
+                        if (parseInt(key) === numericId) {
+                            return window.serverTrafficData[key];
+                        }
                     }
                 }
             }
+            
             return null;
         },
         formatPlatformVersion(version) {
@@ -786,31 +680,61 @@ const statusCards = new Vue({
             }
         },
         updateServerLiveStatus(wsData) {
-            const nowMillisFromWS = wsData ? wsData.now : null;
-            const fallbackNowMillis = new Date().getTime();
-            const currentTimeMillisToUse = nowMillisFromWS || fallbackNowMillis;
-
-            if (this.servers) {
-                this.servers.forEach(serverItem => {
-                    if (!serverItem.Host) {
-                        serverItem.live = false;
-                    } else {
-                        const lastActiveString = serverItem.LastActive;
-                        const lastActiveTimestampMs = new Date(lastActiveString).getTime();
-                        let calculatedLive = false;
-                        if (isNaN(lastActiveTimestampMs)) {
-                            calculatedLive = false;
-                        } else {
-                            const diffMs = currentTimeMillisToUse - lastActiveTimestampMs;
-                            if (diffMs <= 15000 && diffMs >= -5000) {
-                                calculatedLive = true;
-                            } else {
-                                calculatedLive = false;
-                            }
-                        }
-                        serverItem.live = calculatedLive;
-                    }
+            if (!wsData || !this.servers) return;
+            
+            const nowMillisFromWS = wsData.now || Date.now();
+            let hasUpdates = false;
+            
+            // 创建服务器ID到数据的映射，提高查找效率
+            const serverMap = new Map();
+            if (wsData.servers) {
+                wsData.servers.forEach(server => {
+                    serverMap.set(server.ID, server);
                 });
+            }
+            
+            this.servers.forEach(serverItem => {
+                if (!serverItem.Host) {
+                    if (serverItem.live !== false) {
+                        serverItem.live = false;
+                        hasUpdates = true;
+                    }
+                    return;
+                }
+                
+                const wsServer = serverMap.get(serverItem.ID);
+                if (wsServer) {
+                    // 更新服务器状态
+                    if (wsServer.State) {
+                        const oldState = serverItem.State;
+                        serverItem.State = {
+                            ...oldState,
+                            ...wsServer.State
+                        };
+                        hasUpdates = true;
+                    }
+                    
+                    // 更新最后活动时间
+                    if (wsServer.LastActive) {
+                        serverItem.LastActive = wsServer.LastActive;
+                    }
+                }
+                
+                // 计算在线状态
+                const lastActiveTimestampMs = new Date(serverItem.LastActive).getTime();
+                const diffMs = nowMillisFromWS - lastActiveTimestampMs;
+                const newLiveStatus = !isNaN(lastActiveTimestampMs) && diffMs <= 30000 && diffMs >= -5000;
+                
+                // 只有在状态发生变化时才更新
+                if (serverItem.live !== newLiveStatus) {
+                    serverItem.live = newLiveStatus;
+                    hasUpdates = true;
+                }
+            });
+            
+            // 只有在有实际更新时才强制更新视图
+            if (hasUpdates) {
+                this.$forceUpdate();
             }
         },
         getTrafficProgressClass(serverId) {
@@ -858,40 +782,56 @@ const statusCards = new Vue({
         },
         getTrafficDisplay(serverId) {
             const trafficData = this.getServerTrafficData(serverId);
-            if (!trafficData || !trafficData.usedBytes || !trafficData.maxBytes) {
-                return '无';
+            if (!trafficData) {
+                return '0%';
             }
-            const percent = (trafficData.maxBytes > 0)
-                ? (trafficData.usedBytes / trafficData.maxBytes) * 100
-                : 0;
+            
+            const percent = trafficData.percent || 0;
             return percent.toFixed(2) + '%';
         },
         getTrafficTooltip(serverId) {
             const trafficData = this.getServerTrafficData(serverId);
-            if (!trafficData || !trafficData.usedBytes || !trafficData.maxBytes) {
+            if (!trafficData) {
                 return '无数据';
             }
-            return `${this.formatByteSize(trafficData.usedBytes)} / ${this.formatByteSize(trafficData.maxBytes)}`;
+            
+            const used = trafficData.used || '0B';
+            const max = trafficData.max || '0B';
+            return `${used} / ${max}`;
         },
         updateTrafficData() {
             if (!window.serverTrafficData) {
-                console.warn('没有可用的流量数据');
                 return;
             }
             
+            let hasUpdates = false;
+            const trafficData = window.serverTrafficData;
+            
             this.servers.forEach(server => {
-                const trafficInfo = window.serverTrafficData[server.ID];
+                const trafficInfo = trafficData[server.ID];
                 if (trafficInfo) {
-                    server.traffic = {
+                    const oldTraffic = server.traffic;
+                    const newTraffic = {
                         used: trafficInfo.used,
                         total: trafficInfo.max,
                         percent: trafficInfo.percent,
                         lastUpdate: trafficInfo.lastUpdate
                     };
+                    
+                    // 检查是否有实际更新
+                    if (!oldTraffic || 
+                        oldTraffic.used !== newTraffic.used ||
+                        oldTraffic.total !== newTraffic.total ||
+                        oldTraffic.percent !== newTraffic.percent) {
+                        server.traffic = newTraffic;
+                        hasUpdates = true;
+                    }
                 }
             });
             
-            this.$forceUpdate();
+            if (hasUpdates) {
+                this.$forceUpdate();
+            }
         },
         hasTemperature(temperatureList, sensorList) {
             if (!temperatureList || !Array.isArray(temperatureList) || temperatureList.length === 0) {
@@ -970,12 +910,11 @@ const statusCards = new Vue({
         }
     },
     beforeDestroy() {
+        if (this._updateInterval) {
+            clearInterval(this._updateInterval);
+        }
         if (window.trafficManager) {
             window.trafficManager.unsubscribe(this.updateTrafficData);
-            window.trafficManager.stopAutoUpdate();
-        }
-        if (this.trafficWatcherInterval) {
-            clearInterval(this.trafficWatcherInterval);
         }
     }
 });
@@ -991,16 +930,18 @@ window.statusCards = statusCards;
     function initWebSocket() {
         const ws = new WebSocket(wsUrl);
         
+        ws.onopen = function() {
+            // console.log('WebSocket连接已建立');
+        };
+        
         ws.onmessage = function(evt) {
             try {
                 const data = JSON.parse(evt.data);
-                if (data && data.servers && Array.isArray(data.servers)) {
-                    if (window.statusCards) {
-                        statusCards.servers = data.servers;
-                        statusCards.updateServerLiveStatus(data);
+                if (data.trafficData) {
+                    window.serverTrafficRawData = data.trafficData;
+                    if (window.trafficManager) {
+                        window.trafficManager.processTrafficData(data.trafficData);
                     }
-                } else {
-                    console.warn("WebSocket接收到无效的服务器数据格式");
                 }
             } catch (e) {
                 console.error("处理WebSocket消息时出错:", e);
@@ -1008,15 +949,19 @@ window.statusCards = statusCards;
         };
         
         ws.onclose = function() {
-            setTimeout(initWebSocket, 3000);
+            console.log("WebSocket连接已关闭，5秒后重试...");
+            setTimeout(initWebSocket, 5000);
         };
         
         ws.onerror = function(err) {
             console.error("WebSocket错误:", err);
         };
+        
+        return ws;
     }
     
-    initWebSocket();
+    // 初始化WebSocket连接
+    window.ws = initWebSocket();
 })();
 
 $(document).ready(function() {

@@ -802,120 +802,104 @@ function debugOfflineServersConfig() {
   }
 }
 
-// 添加流量数据API轮询
-function updateTrafficData() {
-    $.ajax({
-        url: '/api/traffic',
-        type: 'GET',
-        success: function(data) {
-            if (data && data.code === 200) {
-                window.serverTrafficRawData = data.data;
-                window.extractTrafficData();
-            } else if (data && data.code === 403) {
-                console.warn('需要登录才能访问流量数据');
-                // 如果未登录,重定向到登录页面
-                if (window.location.pathname !== '/login') {
-                    window.location.href = '/login';
+// 初始化WebSocket连接
+function initWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    
+    const ws = new WebSocket(wsUrl);
+    
+    ws.onopen = function() {
+        // 发送一个ping消息来测试连接
+        try {
+            ws.send(JSON.stringify({ type: 'ping' }));
+        } catch (e) {
+            console.error('发送ping消息失败:', e);
+        }
+    };
+    
+    ws.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+            
+            // 处理服务器状态更新
+            if (data.servers && Array.isArray(data.servers)) {
+                if (window.statusCards) {
+                    window.statusCards.updateServerLiveStatus(data);
                 }
             }
-        },
-        error: function(err) {
-            console.error('获取流量数据失败:', err);
+            
+            // 处理流量数据更新
+            if (data.trafficData) {
+                window.serverTrafficRawData = data.trafficData;
+                if (window.trafficManager) {
+                    window.trafficManager.processTrafficData(data.trafficData);
+                } else {
+                    window.extractTrafficData();
+                }
+            }
+        } catch (e) {
+            console.error('处理WebSocket消息时出错:', e);
         }
-    });
+    };
+    
+    ws.onerror = function(error) {
+        console.error('WebSocket错误:', error);
+    };
+    
+    ws.onclose = function(event) {
+        setTimeout(initWebSocket, 5000);
+    };
+    
+    return ws;
 }
 
-// 在页面加载完成后初始化
+// 在页面加载完成后初始化WebSocket
 $(document).ready(function() {
-    // 等待状态数据加载完成后再运行调试
-    setTimeout(function() {
-        debugOfflineServersConfig();
-    }, 1000);
+    window.ws = initWebSocket();
     
-    // 每30秒检查一次，确保数据始终正确
-    setInterval(debugOfflineServersConfig, 30000);
-    
-    // 原有的流量数据提取
-    setTimeout(window.extractTrafficData, 500);
-    setInterval(window.extractTrafficData, 30000);
-    
-    // 添加流量数据API轮询
-    setTimeout(updateTrafficData, 1000);
-    setInterval(updateTrafficData, 30000);
+    // 添加页面可见性变化监听
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') {
+            if (!window.ws || window.ws.readyState !== WebSocket.OPEN) {
+                window.ws = initWebSocket();
+            }
+        }
+    });
 });
 
-// 初始化全局流量数据变量
-window.serverTrafficData = {};
-window.lastTrafficUpdateTime = 0;
-
-/**
- * 从嵌入的JavaScript变量中提取流量数据并进行处理
- */
+// 保留WebSocket的流量数据处理
 window.extractTrafficData = function() {
     try {
-        // Get traffic data from global variable
         const trafficItems = window.serverTrafficRawData || [];
         if (!trafficItems || trafficItems.length === 0) {
-            console.warn("没有可用的流量数据");
             return;
         }
         
         const newTrafficData = {};
         let updatedCount = 0;
         
-        // Process each traffic data item
         trafficItems.forEach(item => {
-            if (item) {
-                const rawServerId = item.id;
-                const serverName = item.serverName;
-                const maxTrafficText = item.max;
-                const usedTrafficText = item.used;
-                const percentStr = String(item.percent);
+            if (item && item.server_id) {
+                const serverId = String(item.server_id);
+                const serverName = item.server_name || "Unknown Server";
+                const maxTraffic = item.max_formatted || "0B";
+                const usedTraffic = item.used_formatted || "0B";
+                const percent = parseFloat(item.used_percent) || 0;
                 
-                // Find matching server
-                let matchingServer = null;
-                if (window.statusCards && window.statusCards.servers) {
-                    matchingServer = window.statusCards.servers.find(s => s.Name === serverName);
-                }
+                const standardMax = window.formatTrafficUnit ? window.formatTrafficUnit(maxTraffic) : maxTraffic;
+                const standardUsed = window.formatTrafficUnit ? window.formatTrafficUnit(usedTraffic) : usedTraffic;
                 
-                const serverId = matchingServer ? matchingServer.ID : rawServerId;
-                
-                // Normalize unit format
-                const standardMaxTraffic = window.formatTrafficUnit(maxTrafficText);
-                const standardUsedTraffic = window.formatTrafficUnit(usedTrafficText);
-                
-                // Convert traffic data to bytes for accurate calculation
-                const maxTrafficBytes = window.parseTrafficToBytes(maxTrafficText);
-                const usedTrafficBytes = window.parseTrafficToBytes(usedTrafficText);
-                
-                // 修复：重新计算百分比，使用正确的算法计算使用比例
-                let calculatedPercent = 0;
-                if (maxTrafficBytes > 0) {
-                    // 使用标准的百分比计算方法，而不是依赖服务器发送的百分比
-                    calculatedPercent = Math.min(100, Math.max(0, Math.round((usedTrafficBytes / maxTrafficBytes) * 100)));
-                }
-                
-                // Store data
                 newTrafficData[serverId] = {
-                    max: standardMaxTraffic,
-                    used: standardUsedTraffic,
-                    percent: calculatedPercent,
-                    maxBytes: maxTrafficBytes,
-                    usedBytes: usedTrafficBytes,
+                    max: standardMax,
+                    used: standardUsed,
+                    percent: Math.round(percent * 100) / 100,
+                    maxBytes: item.max_bytes || 0,
+                    usedBytes: item.used_bytes || 0,
+                    serverName: serverName,
+                    cycleName: item.cycle_name || "Unknown",
                     lastUpdate: Date.now()
                 };
-                
-                // Store a copy with original ID as well
-                if (serverId !== rawServerId) {
-                    newTrafficData[rawServerId] = {
-                        max: standardMaxTraffic,
-                        used: standardUsedTraffic,
-                        percent: calculatedPercent,
-                        maxBytes: maxTrafficBytes,
-                        usedBytes: usedTrafficBytes,
-                        lastUpdate: Date.now()
-                    };
-                }
                 
                 updatedCount++;
             }
@@ -924,10 +908,8 @@ window.extractTrafficData = function() {
         window.serverTrafficData = newTrafficData;
         window.lastTrafficUpdateTime = Date.now();
         
-        // Update Vue component if available
         if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
             window.statusCards.updateTrafficData();
-            console.log(`已更新 ${updatedCount} 个服务器的流量数据`);
         }
     } catch (e) {
         console.error('处理流量数据时出错:', e);
@@ -1038,6 +1020,104 @@ class TrafficManager {
         this.callbacks = new Set();
     }
 
+    // Process raw traffic data
+    processTrafficData(rawData) {
+        if (!Array.isArray(rawData) || rawData.length === 0) {
+            console.warn('没有可用的流量数据');
+            return;
+        }
+
+        const newData = {};
+        let updatedCount = 0;
+
+        rawData.forEach(item => {
+            if (!item || !item.server_id) return;
+
+            const serverId = String(item.server_id);
+            const maxTraffic = item.max_formatted || '0B';
+            const usedTraffic = item.used_formatted || '0B';
+            const percent = parseFloat(item.used_percent) || 0;
+            
+            const standardMax = TrafficManager.standardizeTrafficUnit(maxTraffic);
+            const standardUsed = TrafficManager.standardizeTrafficUnit(usedTraffic);
+            const maxBytes = TrafficManager.parseTrafficToBytes(maxTraffic);
+            const usedBytes = TrafficManager.parseTrafficToBytes(usedTraffic);
+
+            newData[serverId] = {
+                max: standardMax,
+                used: standardUsed,
+                percent: Math.round(percent * 100) / 100,
+                maxBytes: maxBytes,
+                usedBytes: usedBytes,
+                serverName: item.server_name || 'Unknown',
+                cycleName: item.cycle_name || 'Default',
+                lastUpdate: Date.now()
+            };
+            
+            updatedCount++;
+        });
+
+        this.trafficData = newData;
+        this.lastUpdateTime = Date.now();
+        this.dataVersion++;
+        
+        // 同时更新全局数据
+        window.serverTrafficData = newData;
+        window.lastTrafficUpdateTime = this.lastUpdateTime;
+        
+        // console.log(`已更新 ${updatedCount} 个服务器的流量数据`);
+        this.notifySubscribers();
+    }
+
+    // Get traffic data for a specific server
+    getServerTrafficData(serverId) {
+        if (!serverId) return null;
+        const serverIdStr = String(serverId).trim();
+        
+        // Try exact match
+        if (this.trafficData[serverIdStr]) {
+            return this.trafficData[serverIdStr];
+        }
+
+        // Try numeric match
+        const numericId = parseInt(serverIdStr);
+        if (!isNaN(numericId)) {
+            const keys = Object.keys(this.trafficData);
+            for (const key of keys) {
+                if (parseInt(key) === numericId) {
+                    return this.trafficData[key];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // Subscribe to data updates
+    subscribe(callback) {
+        if (typeof callback === 'function') {
+            this.callbacks.add(callback);
+            // 立即发送当前数据
+            callback(this.trafficData, this.dataVersion);
+        }
+    }
+
+    // Unsubscribe from data updates
+    unsubscribe(callback) {
+        this.callbacks.delete(callback);
+    }
+
+    // Notify all subscribers of data updates
+    notifySubscribers() {
+        this.callbacks.forEach(callback => {
+            try {
+                callback(this.trafficData, this.dataVersion);
+            } catch (e) {
+                console.error('Error in traffic data subscriber:', e);
+            }
+        });
+    }
+
     // Parse traffic string to bytes
     static parseTrafficToBytes(trafficStr) {
         if (!trafficStr) return 0;
@@ -1078,118 +1158,6 @@ class TrafficManager {
         const bytes = TrafficManager.parseTrafficToBytes(trafficStr);
         return TrafficManager.formatTrafficSize(bytes);
     }
-
-    // Calculate traffic percentage
-    static calculateTrafficPercent(used, max) {
-        if (!used || !max) return 0;
-        const usedBytes = typeof used === 'number' ? used : TrafficManager.parseTrafficToBytes(used);
-        const maxBytes = typeof max === 'number' ? max : TrafficManager.parseTrafficToBytes(max);
-        if (maxBytes === 0) return 0;
-        return Math.min(100, Math.max(0, Math.round((usedBytes / maxBytes) * 100)));
-    }
-
-    // Process raw traffic data
-    processTrafficData(rawData) {
-        if (!Array.isArray(rawData) || rawData.length === 0) return;
-
-        const newData = {};
-        rawData.forEach(item => {
-            if (!item || !item.server_id) return;
-
-            const serverId = String(item.server_id);
-            const maxTraffic = item.max || '0B';
-            const usedTraffic = item.used || '0B';
-            
-            const standardMax = TrafficManager.standardizeTrafficUnit(maxTraffic);
-            const standardUsed = TrafficManager.standardizeTrafficUnit(usedTraffic);
-            const maxBytes = TrafficManager.parseTrafficToBytes(maxTraffic);
-            const usedBytes = TrafficManager.parseTrafficToBytes(usedTraffic);
-            const percent = TrafficManager.calculateTrafficPercent(usedBytes, maxBytes);
-
-            newData[serverId] = {
-                max: standardMax,
-                used: standardUsed,
-                maxBytes: maxBytes,
-                usedBytes: usedBytes,
-                percent: percent,
-                serverName: item.server_name || 'Unknown',
-                cycleName: item.cycle_name || 'Default',
-                lastUpdate: Date.now()
-            };
-        });
-
-        this.trafficData = newData;
-        this.lastUpdateTime = Date.now();
-        this.dataVersion++;
-        this.notifySubscribers();
-    }
-
-    // Get traffic data for a specific server
-    getServerTrafficData(serverId) {
-        if (!serverId) return null;
-        const serverIdStr = String(serverId).trim();
-        
-        // Try exact match
-        if (this.trafficData[serverIdStr]) {
-            return this.trafficData[serverIdStr];
-        }
-
-        // Try numeric match
-        const numericId = parseInt(serverIdStr);
-        if (!isNaN(numericId)) {
-            const keys = Object.keys(this.trafficData);
-            for (const key of keys) {
-                if (parseInt(key) === numericId) {
-                    return this.trafficData[key];
-                }
-            }
-        }
-
-        return null;
-    }
-
-    // Subscribe to data updates
-    subscribe(callback) {
-        if (typeof callback === 'function') {
-            this.callbacks.add(callback);
-        }
-    }
-
-    // Unsubscribe from data updates
-    unsubscribe(callback) {
-        this.callbacks.delete(callback);
-    }
-
-    // Notify all subscribers of data updates
-    notifySubscribers() {
-        this.callbacks.forEach(callback => {
-            try {
-                callback(this.trafficData, this.dataVersion);
-            } catch (e) {
-                console.error('Error in traffic data subscriber:', e);
-            }
-        });
-    }
-
-    // Start automatic updates
-    startAutoUpdate(interval = 30000) {
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-        }
-        this.updateInterval = setInterval(() => {
-            if (window.serverTrafficRawData) {
-                this.processTrafficData(window.serverTrafficRawData);
-            }
-        }, interval);
-    }
-
-    // Stop automatic updates
-    stopAutoUpdate() {
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-            this.updateInterval = null;
-        }
-    }
 }
 
 // Create global instance
@@ -1200,59 +1168,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.serverTrafficRawData) {
         window.trafficManager.processTrafficData(window.serverTrafficRawData);
     }
-    window.trafficManager.startAutoUpdate();
 });
-
-// WebSocket连接，用于实时更新服务器数据
-(function() {
-    const wsProtocol = window.location.protocol == "https:" ? "wss" : "ws";
-    const wsUrl = wsProtocol + '://' + window.location.host + '/ws';
-    
-    function initWebSocket() {
-        const ws = new WebSocket(wsUrl);
-        
-        ws.onopen = function() {
-            console.log("WebSocket连接已建立");
-        };
-        
-        ws.onmessage = function(evt) {
-            try {
-                const data = JSON.parse(evt.data);
-                if (data && data.servers && Array.isArray(data.servers)) {
-                    // 确保statusCards实例存在
-                    if (window.statusCards) {
-                        statusCards.servers = data.servers;
-                        statusCards.updateServerLiveStatus(data);
-                        
-                        // 添加流量数据更新
-                        if (data.trafficData) {
-                            window.serverTrafficRawData = data.trafficData;
-                            window.extractTrafficData();
-                            console.log("收到流量数据更新");
-                        }
-                    }
-                } else {
-                    console.warn("WebSocket接收到无效的服务器数据格式");
-                }
-            } catch (e) {
-                console.error("处理WebSocket消息时出错:", e);
-            }
-        };
-        
-        ws.onclose = function() {
-            console.log("WebSocket连接已关闭，3秒后重试...");
-            // 连接关闭后3秒重连
-            setTimeout(initWebSocket, 3000);
-        };
-        
-        ws.onerror = function(err) {
-            console.error("WebSocket错误:", err);
-        };
-    }
-    
-    // 初始化WebSocket连接
-    initWebSocket();
-})();
 
 /**
  * 获取单个服务器的流量数据
@@ -1279,4 +1195,175 @@ function fetchServerTrafficData(serverId) {
             return null;
         }
     });
-} 
+}
+
+// 修改Vue实例中的流量相关方法
+if (window.statusCards) {
+    // 获取流量显示
+    window.statusCards.getTrafficDisplay = function(serverId) {
+        const trafficData = this.getServerTrafficData(serverId);
+        if (!trafficData || !trafficData.usedBytes || !trafficData.maxBytes) {
+            return '无';
+        }
+        const percent = (trafficData.maxBytes > 0)
+            ? (trafficData.usedBytes / trafficData.maxBytes) * 100
+            : 0;
+        return percent.toFixed(2) + '%';
+    };
+
+    // 获取流量提示
+    window.statusCards.getTrafficTooltip = function(serverId) {
+        const trafficData = this.getServerTrafficData(serverId);
+        if (!trafficData || !trafficData.usedBytes || !trafficData.maxBytes) {
+            return '无数据';
+        }
+        return `${this.formatByteSize(trafficData.usedBytes)} / ${this.formatByteSize(trafficData.maxBytes)}`;
+    };
+
+    // 获取服务器流量数据
+    window.statusCards.getServerTrafficData = function(serverId) {
+        if (!serverId || !window.serverTrafficData) {
+            return null;
+        }
+        
+        const serverIdStr = String(serverId).trim();
+        
+        // 尝试精确匹配
+        if (window.serverTrafficData[serverIdStr]) {
+            return window.serverTrafficData[serverIdStr];
+        }
+        
+        // 尝试数字匹配
+        const numericId = parseInt(serverIdStr);
+        if (!isNaN(numericId)) {
+            const keys = Object.keys(window.serverTrafficData);
+            for (const key of keys) {
+                if (parseInt(key) === numericId) {
+                    return window.serverTrafficData[key];
+                }
+            }
+        }
+        
+        return null;
+    };
+}
+
+function specialOS(i) {
+        // 处理Windows平台
+        if (i && i.toString().toLowerCase().includes('windows')) {
+            return i.replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", "");
+        }
+        
+        // 确保i是字符串并转为小写
+        i = (i || "").toString().toLowerCase();
+        
+        // 使用对象映射代替switch语句
+        const osMapping = {
+            "ubuntu": "Ubuntu",
+            "debian": "Debian",
+            "centos": "CentOS",
+            "darwin": "MacOS",
+            "redhat": "RedHat",
+            "archlinux": "Archlinux",
+            "coreos": "Coreos",
+            "deepin": "Deepin",
+            "fedora": "Fedora",
+            "alpine": "Alpine",
+            "tux": "Tux",
+            "linuxmint": "LinuxMint",
+            "oracle": "Oracle",
+            "slackware": "SlackWare",
+            "raspbian": "Raspbian",
+            "gentoo": "GenToo",
+            "arch": "Arch",
+            "amazon": "Amazon",
+            "xenserver": "XenServer",
+            "scientific": "ScientificSL",
+            "rhel": "Rhel",
+            "rawhide": "RawHide",
+            "cloudlinux": "CloudLinux",
+            "ibm_powerkvm": "IBM",
+            "almalinux": "Almalinux",
+            "suse": "Suse",
+            "opensuse": "OpenSuse",
+            "opensuse-leap": "OpenSuse",
+            "opensuse-tumbleweed": "OpenSuse",
+            "opensuse-tumbleweed-kubic": "OpenSuse",
+            "sles": "Sles",
+            "sled": "Sled",
+            "caasp": "Caasp",
+            "exherbo": "ExherBo",
+            "solus": "Solus"
+        };
+        
+        // 如果在映射中找到匹配项，返回对应的值，否则返回原始输入
+        return osMapping[i] || i;
+    }
+    
+    function specialVir(i) {
+        // 确保i是字符串并转为小写
+        i = (i || "").toString().toLowerCase();
+        
+        // 使用对象映射代替switch语句，包含更多虚拟化平台的优雅显示
+        const virMapping = {
+            "kvm": "KVM",
+            "openvz": "OpenVZ",
+            "lxc": "LXC",
+            "xen": "Xen",
+            "vbox": "VirtualBox",
+            "virtualbox": "VirtualBox",
+            "rkt": "RKT",
+            "docker": "Docker",
+            "vmware": "VMware",
+            "vmware-esxi": "VMware ESXi",
+            "linux-vserver": "VServer",
+            "hyperv": "Hyper-V",
+            "hyper-v": "Hyper-V",
+            "microsoft": "Hyper-V",
+            "qemu": "QEMU",
+            "parallels": "Parallels",
+            "bhyve": "bhyve",
+            "jail": "FreeBSD Jail",
+            "zone": "Solaris Zone",
+            "wsl": "WSL",
+            "podman": "Podman",
+            "containerd": "containerd",
+            "systemd-nspawn": "systemd-nspawn"
+        };
+        
+        // 如果在映射中找到匹配项，返回对应的值，否则返回首字母大写的原始输入
+        if (virMapping[i]) {
+            return virMapping[i];
+        }
+        
+        // 如果没有找到映射，将首字母大写返回
+        return i.charAt(0).toUpperCase() + i.slice(1);
+    }
+    function clearString(i) {
+        if (i != null && i != "") {
+            i = Array.isArray(i) ? i.map(s => s.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")) : [i.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")];
+            return i;
+        }
+        return Array.isArray(i) ? i : [i];
+    }
+    Date.prototype.format = function (format) {
+        var date = {
+            "M+": this.getMonth() + 1,
+            "d+": this.getDate(),
+            "H+": this.getHours(),
+            "m+": this.getMinutes(),
+            "s+": this.getSeconds(),
+            "q+": Math.floor((this.getMonth() + 3) / 3),
+            "S+": this.getMilliseconds()
+        };
+        if (/(y+)/i.test(format)) {
+            format = format.replace(RegExp.$1, (this.getFullYear() + '').substr(4 - RegExp.$1.length));
+        }
+        for (var k in date) {
+            if (new RegExp("(" + k + ")").test(format)) {
+                format = format.replace(RegExp.$1, RegExp.$1.length == 1
+                    ? date[k] : ("00" + date[k]).substr(("" + date[k]).length));
+            }
+        }
+        return format;
+    };
