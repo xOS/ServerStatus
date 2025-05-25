@@ -120,20 +120,39 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	originalNetInTransfer := state.NetInTransfer
 	originalNetOutTransfer := state.NetOutTransfer
 
+	// 检查是否是服务器重启
+	isRestart := false
+	if singleton.ServerList[clientID].Host != nil && singleton.ServerList[clientID].State != nil {
+		// 如果当前流量小于之前保存的流量，可能是重启
+		if originalNetInTransfer < singleton.ServerList[clientID].State.NetInTransfer ||
+			originalNetOutTransfer < singleton.ServerList[clientID].State.NetOutTransfer {
+			isRestart = true
+			log.Printf("检测到服务器 %s 可能重启: 当前入站=%d < 之前入站=%d 或 当前出站=%d < 之前出站=%d",
+				singleton.ServerList[clientID].Name,
+				originalNetInTransfer,
+				singleton.ServerList[clientID].State.NetInTransfer,
+				originalNetOutTransfer,
+				singleton.ServerList[clientID].State.NetOutTransfer)
+		}
+	}
+
 	// 更新状态中的累计流量
-	if singleton.ServerList[clientID].LastActive.IsZero() {
-		// 首次上线，直接使用当前流量
-		state.NetInTransfer = originalNetInTransfer
-		state.NetOutTransfer = originalNetOutTransfer
-		log.Printf("服务器 %s 首次上线，使用当前流量: 入站=%d, 出站=%d",
-			singleton.ServerList[clientID].Name,
-			originalNetInTransfer,
-			originalNetOutTransfer)
-	} else {
-		// 非首次上线，使用增量计算
+	if singleton.ServerList[clientID].LastActive.IsZero() || isRestart {
+		// 首次上线或重启，使用当前流量加上数据库中的累计流量
 		state.NetInTransfer = originalNetInTransfer + singleton.ServerList[clientID].CumulativeNetInTransfer
 		state.NetOutTransfer = originalNetOutTransfer + singleton.ServerList[clientID].CumulativeNetOutTransfer
-		log.Printf("服务器 %s 更新流量: 当前入站=%d, 当前出站=%d, 累计入站=%d, 累计出站=%d",
+		log.Printf("服务器 %s %s，使用当前流量+累计流量: 当前入站=%d, 当前出站=%d, 累计入站=%d, 累计出站=%d",
+			singleton.ServerList[clientID].Name,
+			isRestart ? "重启" : "首次上线",
+			originalNetInTransfer,
+			originalNetOutTransfer,
+			singleton.ServerList[clientID].CumulativeNetInTransfer,
+			singleton.ServerList[clientID].CumulativeNetOutTransfer)
+	} else {
+		// 正常更新，使用增量计算
+		state.NetInTransfer = originalNetInTransfer + singleton.ServerList[clientID].CumulativeNetInTransfer
+		state.NetOutTransfer = originalNetOutTransfer + singleton.ServerList[clientID].CumulativeNetOutTransfer
+		log.Printf("服务器 %s 正常更新流量: 当前入站=%d, 当前出站=%d, 累计入站=%d, 累计出站=%d",
 			singleton.ServerList[clientID].Name,
 			originalNetInTransfer,
 			originalNetOutTransfer,

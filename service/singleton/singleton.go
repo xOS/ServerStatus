@@ -286,6 +286,10 @@ func CheckServerOnlineStatus() {
 							server.Name,
 							server.State.NetInTransfer,
 							server.State.NetOutTransfer)
+
+						// 更新内存中的累计流量数据
+						server.CumulativeNetInTransfer = server.State.NetInTransfer
+						server.CumulativeNetOutTransfer = server.State.NetOutTransfer
 					}
 				}
 			}
