@@ -13,22 +13,33 @@ import (
 )
 
 type Server struct {
-	Common
-	Name         string
+	ID              uint64    `json:"id" gorm:"primaryKey"`
+	Name            string    `json:"name"`
+	Secret          string    `json:"secret"`
+	Tag             string    `json:"tag"`
+	DisplayIndex    int       `json:"display_index"`
+	Host            *Host     `json:"host" gorm:"-"`
+	State           *State    `json:"state" gorm:"-"`
+	LastActive      time.Time `json:"last_active"`
+	Note            string    `json:"note"`
+	PublicNote      string    `json:"public_note"`
+	EnableDDNS      bool      `json:"enable_ddns"`
+	DDNSProfilesRaw string    `json:"ddns_profiles_raw"`
+	HideForGuest    bool      `json:"hide_for_guest"`
+	// 累计流量统计
+	CumulativeNetInTransfer  uint64    `json:"cumulative_net_in_transfer" gorm:"default:0"`
+	CumulativeNetOutTransfer uint64    `json:"cumulative_net_out_transfer" gorm:"default:0"`
+	LastTrafficReset         time.Time `json:"last_traffic_reset"`
+
 	Tag          string   // 分组名
-	Secret       string   `gorm:"uniqueIndex" json:"-"`
 	Note         string   `json:"-"`                    // 管理员可见备注
 	PublicNote   string   `json:"PublicNote,omitempty"` // 公开备注
 	DisplayIndex int      // 展示排序，越大越靠前
-	HideForGuest bool     // 对游客隐藏
 	EnableDDNS   bool     // 启用DDNS
 	DDNSProfiles []uint64 `gorm:"-" json:"-"` // DDNS配置
 
 	DDNSProfilesRaw string `gorm:"default:'[]';column:ddns_profiles_raw" json:"-"`
 
-	Host                   *Host      `gorm:"-"`
-	State                  *HostState `gorm:"-"`
-	LastActive             time.Time  `gorm:"-"`
 	LastStateBeforeOffline *HostState `gorm:"-" json:"-"`         // 离线前最后一次状态
 	IsOnline               bool       `gorm:"-" json:"is_online"` // 是否在线
 
@@ -42,10 +53,6 @@ type Server struct {
 
 	PrevTransferInSnapshot  int64 `gorm:"-" json:"-"` // 上次数据点时的入站使用量
 	PrevTransferOutSnapshot int64 `gorm:"-" json:"-"` // 上次数据点时的出站使用量
-
-	// 累计流量数据
-	CumulativeNetInTransfer  uint64 `gorm:"default:0" json:"cumulative_net_in_transfer"`  // 累计入站使用量
-	CumulativeNetOutTransfer uint64 `gorm:"default:0" json:"cumulative_net_out_transfer"` // 累计出站使用量
 }
 
 func (s *Server) CopyFromRunningServer(old *Server) {

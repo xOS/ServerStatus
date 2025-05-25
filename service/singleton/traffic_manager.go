@@ -2,11 +2,13 @@ package singleton
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/patrickmn/go-cache"
 	"github.com/xos/serverstatus/model"
+	"gorm.io/gorm"
 )
 
 // TrafficManager 流量管理器
@@ -135,15 +137,23 @@ func (tm *TrafficManager) GetTrafficStats(serverID uint64) *TrafficStats {
 	tm.RLock()
 	defer tm.RUnlock()
 
-	// 先尝试从缓存获取
+	// 先从缓存获取
 	if cached, found := tm.cache.Get(tm.getCacheKey(serverID)); found {
-		if stats, ok := cached.(*TrafficStats); ok {
-			return stats
-		}
+		return cached.(*TrafficStats)
 	}
 
-	// 缓存未命中，返回实时数据
-	return tm.trafficStats[serverID]
+	// 缓存未命中，从内存获取
+	if stats, exists := tm.trafficStats[serverID]; exists {
+		// 更新缓存
+		tm.cache.Set(
+			tm.getCacheKey(serverID),
+			stats,
+			cache.DefaultExpiration,
+		)
+		return stats
+	}
+
+	return nil
 }
 
 // getCacheKey 生成缓存键
@@ -165,31 +175,40 @@ func (tm *TrafficManager) batchWriteWorker() {
 	}
 }
 
-// writeBatchToDatabase 批量写入数据库
+// writeBatchToDatabase 将批量数据写入数据库
 func (tm *TrafficManager) writeBatchToDatabase() {
 	if len(tm.batchBuffer) == 0 {
 		return
 	}
 
-	// 创建批量写入的事务
-	tx := DB.Begin()
+	// 创建数据库事务
+	tx := model.DB.Begin()
 	if tx.Error != nil {
+		log.Printf("创建事务失败: %v", tx.Error)
 		return
 	}
 
-	// 批量插入数据
-	if err := tx.CreateInBatches(tm.batchBuffer, 100).Error; err != nil {
-		tx.Rollback()
-		return
+	// 批量更新服务器累计流量
+	for _, transfer := range tm.batchBuffer {
+		if err := tx.Model(&model.Server{}).
+			Where("id = ?", transfer.ServerID).
+			Updates(map[string]interface{}{
+				"cumulative_net_in_transfer":  gorm.Expr("cumulative_net_in_transfer + ?", transfer.In),
+				"cumulative_net_out_transfer": gorm.Expr("cumulative_net_out_transfer + ?", transfer.Out),
+			}).Error; err != nil {
+			tx.Rollback()
+			log.Printf("更新服务器累计流量失败: %v", err)
+			return
+		}
 	}
 
 	// 提交事务
 	if err := tx.Commit().Error; err != nil {
-		tx.Rollback()
+		log.Printf("提交事务失败: %v", err)
 		return
 	}
 
-	// 清空缓冲区并更新最后写入时间
+	// 清空缓冲区
 	tm.batchBuffer = tm.batchBuffer[:0]
 	tm.lastBatchWrite = time.Now()
 }

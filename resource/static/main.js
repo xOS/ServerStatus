@@ -723,29 +723,6 @@ $(document).ready(() => {
 // ===== 流量数据处理相关函数 =====
 
 /**
- * 通过API获取特定服务器的流量数据
- * @param {string|number} serverId 服务器ID
- * @returns {Promise} API请求Promise
- */
-function fetchTrafficData(serverId) {
-  return $.ajax({
-    url: `/api/server/${serverId}/traffic`,
-    type: "GET",
-    contentType: "application/json",
-  }).done((resp) => {
-    if (resp.code == 200) {
-      return resp.data;
-    } else {
-      console.error("获取流量数据失败:", resp.message);
-      return null;
-    }
-  }).fail((err) => {
-    console.error("获取流量数据网络错误:", err.responseText);
-    return null;
-  });
-}
-
-/**
  * 调试并修复离线服务器的配置显示问题
  * 确保即使某些字段为空，前端也能正常显示离线服务器信息
  */
@@ -848,6 +825,7 @@ function initWebSocket() {
     };
     
     ws.onclose = function(event) {
+        console.log('WebSocket连接已关闭，5秒后重试...');
         setTimeout(initWebSocket, 5000);
     };
     
@@ -1035,13 +1013,18 @@ class TrafficManager {
 
             const serverId = String(item.server_id);
             const maxTraffic = item.max_formatted || '0B';
-            const usedTraffic = item.used_formatted || '0B';
+            // 使用累计流量作为已使用流量
+            const usedTraffic = item.cumulative_net_in_transfer && item.cumulative_net_out_transfer 
+                ? this.formatTrafficSize(item.cumulative_net_in_transfer + item.cumulative_net_out_transfer)
+                : '0B';
             const percent = parseFloat(item.used_percent) || 0;
             
             const standardMax = TrafficManager.standardizeTrafficUnit(maxTraffic);
             const standardUsed = TrafficManager.standardizeTrafficUnit(usedTraffic);
             const maxBytes = TrafficManager.parseTrafficToBytes(maxTraffic);
-            const usedBytes = TrafficManager.parseTrafficToBytes(usedTraffic);
+            const usedBytes = item.cumulative_net_in_transfer && item.cumulative_net_out_transfer
+                ? item.cumulative_net_in_transfer + item.cumulative_net_out_transfer
+                : 0;
 
             newData[serverId] = {
                 max: standardMax,
@@ -1065,7 +1048,6 @@ class TrafficManager {
         window.serverTrafficData = newData;
         window.lastTrafficUpdateTime = this.lastUpdateTime;
         
-        // console.log(`已更新 ${updatedCount} 个服务器的流量数据`);
         this.notifySubscribers();
     }
 

@@ -922,48 +922,6 @@ const statusCards = new Vue({
 // 使Vue实例全局可用
 window.statusCards = statusCards;
 
-// WebSocket连接
-(function() {
-    const wsProtocol = window.location.protocol == "https:" ? "wss" : "ws";
-    const wsUrl = wsProtocol + '://' + window.location.host + '/ws';
-    
-    function initWebSocket() {
-        const ws = new WebSocket(wsUrl);
-        
-        ws.onopen = function() {
-            // console.log('WebSocket连接已建立');
-        };
-        
-        ws.onmessage = function(evt) {
-            try {
-                const data = JSON.parse(evt.data);
-                if (data.trafficData) {
-                    window.serverTrafficRawData = data.trafficData;
-                    if (window.trafficManager) {
-                        window.trafficManager.processTrafficData(data.trafficData);
-                    }
-                }
-            } catch (e) {
-                console.error("处理WebSocket消息时出错:", e);
-            }
-        };
-        
-        ws.onclose = function() {
-            console.log("WebSocket连接已关闭，5秒后重试...");
-            setTimeout(initWebSocket, 5000);
-        };
-        
-        ws.onerror = function(err) {
-            console.error("WebSocket错误:", err);
-        };
-        
-        return ws;
-    }
-    
-    // 初始化WebSocket连接
-    window.ws = initWebSocket();
-})();
-
 $(document).ready(function() {
     $('.ui.accordion').accordion({ 
         exclusive: false,
