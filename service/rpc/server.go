@@ -168,6 +168,19 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	// 更新状态中的累计流量
 	if singleton.ServerList[clientID].LastActive.IsZero() || isRestart {
 		// 首次上线或重启，使用当前流量加上数据库中的累计流量
+		// 注意：确保每次都从数据库读取最新的累计值，避免使用可能过时的内存值
+		var server model.Server
+		if err := singleton.DB.First(&server, clientID).Error; err == nil {
+			// 使用数据库中的累计值，确保不会丢失数据
+			singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
+			singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+			log.Printf("从数据库加载服务器 %s 累计流量数据: 入站=%d, 出站=%d",
+				singleton.ServerList[clientID].Name,
+				server.CumulativeNetInTransfer,
+				server.CumulativeNetOutTransfer)
+		}
+
+		// 然后再加上当前新上报的流量值
 		state.NetInTransfer = originalNetInTransfer + singleton.ServerList[clientID].CumulativeNetInTransfer
 		state.NetOutTransfer = originalNetOutTransfer + singleton.ServerList[clientID].CumulativeNetOutTransfer
 
