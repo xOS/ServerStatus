@@ -38,16 +38,18 @@ type TrafficStats struct {
 }
 
 const (
-	// 批量写入阈值
-	batchSize = 100
-	// 批量写入时间间隔
-	batchInterval = 30 * time.Second
+	// 批量写入阈值 - 减少以提高写入频率
+	batchSize = 50
+	// 批量写入时间间隔 - 减少以减少数据丢失风险
+	batchInterval = 10 * time.Second
 	// 最小更新间隔
 	minUpdateInterval = 100 * time.Millisecond
 	// 缓存过期时间
 	cacheExpiration = 5 * time.Minute
 	// 缓存清理间隔
 	cachePurgeInterval = 10 * time.Minute
+	// 强制持久化间隔 - 确保重要数据及时保存
+	forcePersistInterval = 60 * time.Second
 )
 
 var (
@@ -92,13 +94,31 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 		return
 	}
 
+	// 改进的重启检测逻辑
+	isRestart := tm.detectServerRestart(serverID, inBytes, outBytes, stats)
+	if isRestart {
+		log.Printf("检测到服务器 %d 可能重启，重置流量统计", serverID)
+		// 重启时重置统计，但保留历史数据
+		stats.InBytes = inBytes
+		stats.OutBytes = outBytes
+		stats.lastInBytes = inBytes
+		stats.lastOutBytes = outBytes
+		stats.LastTime = now
+		stats.UpdateCount = 1
+		return
+	}
+
 	// 验证数据有效性
 	if inBytes < stats.InBytes || outBytes < stats.OutBytes {
 		log.Printf("警告: 服务器 %d 的流量数据异常: 新入站=%d < 旧入站=%d 或 新出站=%d < 旧出站=%d",
 			serverID, inBytes, stats.InBytes, outBytes, stats.OutBytes)
-		// 如果新数据小于旧数据，可能是服务器重启，使用增量
-		inBytes = stats.InBytes + (inBytes - stats.lastInBytes)
-		outBytes = stats.OutBytes + (outBytes - stats.lastOutBytes)
+		// 如果新数据小于旧数据，可能是服务器重启，重新初始化
+		stats.InBytes = inBytes
+		stats.OutBytes = outBytes
+		stats.lastInBytes = inBytes
+		stats.lastOutBytes = outBytes
+		stats.LastTime = now
+		return
 	}
 
 	// 计算时间差
@@ -265,4 +285,50 @@ func (tm *TrafficManager) SaveToDatabase() error {
 	// 强制执行一次批量写入
 	tm.writeBatchToDatabase()
 	return nil
+}
+
+// Shutdown 优雅关闭，确保数据不丢失
+func (tm *TrafficManager) Shutdown() error {
+	tm.Lock()
+	defer tm.Unlock()
+	
+	log.Println("流量管理器正在优雅关闭...")
+	
+	// 强制写入所有缓冲区数据
+	if len(tm.batchBuffer) > 0 {
+		tm.writeBatchToDatabase()
+	}
+	
+	log.Println("流量管理器关闭完成")
+	return nil
+}
+
+// detectServerRestart 检测服务器是否重启
+func (tm *TrafficManager) detectServerRestart(serverID uint64, newIn, newOut uint64, stats *TrafficStats) bool {
+	// 方法1：流量值大幅减少（经典重启检测）
+	if newIn < stats.InBytes*4/5 || newOut < stats.OutBytes*4/5 {
+		log.Printf("服务器 %d 流量大幅减少，疑似重启: 入站 %d->%d, 出站 %d->%d",
+			serverID, stats.InBytes, newIn, stats.OutBytes, newOut)
+		return true
+	}
+	
+	// 方法2：检查会话时间（如果会话时间过长且流量突然变小）
+	sessionDuration := time.Since(stats.LastTime)
+	if sessionDuration > 30*time.Minute {
+		if newIn < stats.InBytes || newOut < stats.OutBytes {
+			log.Printf("服务器 %d 长时间运行后流量减少，疑似重启: 会话时长=%v",
+				serverID, sessionDuration)
+			return true
+		}
+	}
+	
+	// 方法3：检查流量是否异常小（可能是重启后的初始值）
+	if newIn < 1024*1024*10 && newOut < 1024*1024*10 && // 10MB
+		(stats.InBytes > 1024*1024*100 || stats.OutBytes > 1024*1024*100) { // 之前超过100MB
+		log.Printf("服务器 %d 流量从大值变为小值，疑似重启: 之前入站=%d, 之前出站=%d",
+			serverID, stats.InBytes, stats.OutBytes)
+		return true
+	}
+	
+	return false
 }

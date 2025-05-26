@@ -182,7 +182,16 @@ func main() {
 		return srv.ListenAndServe()
 	}, func(c context.Context) error {
 		log.Println("NG>> Graceful::START")
+		
+		// 保存流量数据
 		singleton.RecordTransferHourlyUsage()
+		
+		// 优雅关闭流量管理器
+		tm := singleton.GetTrafficManager()
+		if err := tm.Shutdown(); err != nil {
+			log.Printf("流量管理器关闭失败: %v", err)
+		}
+		
 		log.Println("NG>> Graceful::END")
 		srv.Shutdown(c)
 		return nil
