@@ -206,8 +206,9 @@ func checkStatus() {
 // UpdateTrafficStats 更新服务器流量统计到AlertsCycleTransferStatsStore
 // 这个函数直接更新流量数据，确保前端显示正确
 func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
-	AlertsLock.Lock()
-	defer AlertsLock.Unlock()
+	// 使用轻量级的锁定以提高效率
+	AlertsLock.RLock()
+	defer AlertsLock.RUnlock()
 
 	// 没有报警规则时，不需要更新
 	if len(Alerts) == 0 || AlertsCycleTransferStatsStore == nil {
@@ -216,17 +217,14 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 
 	// 查找服务器名称
 	var serverName string
-	if ServerList != nil {
-		if server := ServerList[serverID]; server != nil {
-			serverName = server.Name
-		}
+	ServerLock.RLock()
+	if server := ServerList[serverID]; server != nil {
+		serverName = server.Name
 	}
+	ServerLock.RUnlock()
 
 	// 流量总计
 	totalTransfer := inTransfer + outTransfer
-
-	// 记录已更新的规则ID，避免在日志中显示多次
-	var updatedRules []uint64
 
 	// 遍历所有报警规则，只更新包含此服务器的规则
 	for _, alert := range Alerts {
@@ -243,7 +241,6 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 		// 检查是否包含流量监控规则
 		for j := 0; j < len(alert.Rules); j++ {
 			if alert.Rules[j].IsTransferDurationRule() {
-
 				// 检查此规则是否监控该服务器
 				if alert.Rules[j].Cover == model.RuleCoverAll {
 					// 监控全部服务器但排除了此服务器
@@ -258,22 +255,16 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 				}
 
 				// 服务器在规则监控范围内，更新流量数据
-				currentTransfer, exists := stats.Transfer[serverID]
+				// 不论大小如何，总是更新最新值
+				stats.Transfer[serverID] = totalTransfer
 
-				// 如果新值大于当前值，或者当前不存在，则更新
-				if !exists || totalTransfer > currentTransfer {
-					stats.Transfer[serverID] = totalTransfer
-
-					// 更新服务器名称
-					if serverName != "" && stats.ServerName[serverID] != serverName {
-						stats.ServerName[serverID] = serverName
-					}
-
-					// 添加到已更新规则列表
-					if !containsUint64(updatedRules, alert.ID) {
-						updatedRules = append(updatedRules, alert.ID)
-					}
+				// 更新服务器名称
+				if serverName != "" {
+					stats.ServerName[serverID] = serverName
 				}
+
+				// 更新最后更新时间
+				stats.NextUpdate[serverID] = time.Now()
 
 				// 找到一个满足条件的规则即可退出循环
 				break

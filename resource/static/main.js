@@ -807,7 +807,7 @@ function initWebSocket() {
                 }
             }
             
-            // 处理流量数据更新
+            // 处理流量数据更新 - 流量数据可能单独发送或与服务器状态一起发送
             if (data.trafficData && Array.isArray(data.trafficData)) {
                 window.serverTrafficRawData = data.trafficData;
                 if (window.trafficManager) {
@@ -815,8 +815,11 @@ function initWebSocket() {
                 } else {
                     window.extractTrafficData();
                 }
-                // 打印流量数据更新日志
-                console.log('已通过WebSocket接收流量数据:', data.trafficData.length, '个服务器');
+                // 打印流量数据调试信息，只显示部分数据
+                if (data.trafficData.length > 0) {
+                    const sample = data.trafficData[0];
+                    console.debug(`流量数据更新: ${data.trafficData.length}个服务器, 示例(ID:${sample.server_id}): ${sample.used_formatted}/${sample.max_formatted}`);
+                }
             }
         } catch (e) {
             console.error('处理WebSocket消息时出错:', e);
@@ -873,6 +876,9 @@ window.extractTrafficData = function() {
                     maxBytes = item.max_bytes;
                     usedBytes = item.used_bytes;
                     
+                    // 记录调试信息
+                    console.debug(`服务器 ${serverId} 流量数据更新: ${usedBytes}/${maxBytes} 字节`);
+                    
                     // 从字节数据计算百分比
                     if (maxBytes > 0) {
                         percent = (usedBytes / maxBytes) * 100;
@@ -911,6 +917,10 @@ window.extractTrafficData = function() {
                     usedBytes: usedBytes,
                     serverName: serverName,
                     cycleName: item.cycle_name || "Unknown",
+                    cycleStart: item.cycle_start,
+                    cycleEnd: item.cycle_end,
+                    cycleUnit: item.cycle_unit,
+                    cycleInterval: item.cycle_interval,
                     lastUpdate: Date.now(),
                     isBytesSource: item.is_bytes_source || false
                 };
@@ -1100,6 +1110,10 @@ class TrafficManager {
                 usedBytes: usedBytes,
                 serverName: item.server_name || 'Unknown',
                 cycleName: item.cycle_name || 'Default',
+                cycleStart: item.cycle_start,
+                cycleEnd: item.cycle_end,
+                cycleUnit: item.cycle_unit,
+                cycleInterval: item.cycle_interval,
                 lastUpdate: Date.now(),
                 isBytesSource: item.is_bytes_source || false  // 记录数据源类型
             };

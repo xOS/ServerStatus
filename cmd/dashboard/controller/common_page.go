@@ -389,18 +389,22 @@ func (cp *commonPage) ws(c *gin.Context) {
 	}
 	defer conn.Close()
 	count := 0
+
+	// 使用更高频率的单一数据流 - 每秒更新一次
 	for {
 		// 获取服务器状态数据
 		stat, err := cp.getServerStat(c, false)
 		if err != nil {
+			time.Sleep(time.Second)
 			continue
 		}
 
-		// 增强数据：添加流量信息
+		// 增强数据：添加最新流量信息
 		var data Data
 		if err := utils.Json.Unmarshal(stat, &data); err == nil {
 			// 添加流量数据
-			data.TrafficData = buildTrafficData()
+			data.TrafficData = buildTrafficData() // 获取最新周期性流量数据
+
 			// 重新序列化
 			enhancedStat, enhancedErr := utils.Json.Marshal(data)
 			if enhancedErr == nil {
@@ -411,6 +415,7 @@ func (cp *commonPage) ws(c *gin.Context) {
 		if err := conn.WriteMessage(websocket.TextMessage, stat); err != nil {
 			break
 		}
+
 		count += 1
 		if count%4 == 0 {
 			err = conn.WriteMessage(websocket.PingMessage, []byte{})
@@ -418,7 +423,9 @@ func (cp *commonPage) ws(c *gin.Context) {
 				break
 			}
 		}
-		time.Sleep(time.Second * 2)
+
+		// 减少更新间隔，提高实时性
+		time.Sleep(time.Second)
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/go-uuid"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 
+	"github.com/jinzhu/copier"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
@@ -367,41 +368,120 @@ func natGateway(c *gin.Context) {
 }
 
 // buildTrafficData 构建用于前端显示的流量数据
+// 返回的数据符合周期配置的cycle_start和cycle_unit
 func buildTrafficData() []map[string]interface{} {
-	trafficData := make([]map[string]interface{}, 0)
+	singleton.AlertsLock.RLock()
+	defer singleton.AlertsLock.RUnlock()
 
-	singleton.ServerLock.RLock()
-	defer singleton.ServerLock.RUnlock()
+	// 创建一个AlertsCycleTransferStatsStore的副本
+	var statsStore map[uint64]model.CycleTransferStats
+	copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
 
-	// 遍历所有服务器，生成流量数据
-	for _, server := range singleton.ServerList {
-		// 跳过没有状态数据的服务器
-		if server.State == nil {
-			continue
+	// 从statsStore构建流量数据
+	var trafficData []map[string]interface{}
+
+	if statsStore != nil {
+		for cycleID, stats := range statsStore {
+			// 查找对应的Alert规则，用于获取周期设置
+			var alert *model.AlertRule
+			for _, a := range singleton.Alerts {
+				if a.ID == cycleID {
+					alert = a
+					break
+				}
+			}
+
+			// 如果找不到Alert规则，跳过此项
+			if alert == nil {
+				continue
+			}
+
+			// 找到与流量相关的Rule
+			var flowRule *model.Rule
+			for i := range alert.Rules {
+				if alert.Rules[i].IsTransferDurationRule() {
+					flowRule = &alert.Rules[i]
+					break
+				}
+			}
+
+			// 如果没有流量相关规则，跳过
+			if flowRule == nil {
+				continue
+			}
+
+			// 确保周期开始和结束时间正确设置
+			from := flowRule.GetTransferDurationStart()
+			to := flowRule.GetTransferDurationEnd()
+
+			// 更新stats中的周期时间，确保与规则一致
+			stats.From = from
+			stats.To = to
+			stats.Max = uint64(flowRule.Max)
+			stats.Name = alert.Name
+
+			// 更新主存储（需要写锁）
+			go func(id uint64, start, end time.Time, max uint64, name string) {
+				singleton.AlertsLock.Lock()
+				defer singleton.AlertsLock.Unlock()
+				if store, ok := singleton.AlertsCycleTransferStatsStore[id]; ok {
+					store.From = start
+					store.To = end
+					store.Max = max
+					store.Name = name
+				}
+			}(cycleID, from, to, uint64(flowRule.Max), alert.Name)
+
+			// 生成流量数据条目
+			for serverID, transfer := range stats.Transfer {
+				serverName := ""
+				if stats.ServerName != nil {
+					if name, exists := stats.ServerName[serverID]; exists {
+						serverName = name
+					}
+				}
+
+				// 如果没有名称，尝试从ServerList获取
+				if serverName == "" {
+					singleton.ServerLock.RLock()
+					if server := singleton.ServerList[serverID]; server != nil {
+						serverName = server.Name
+					}
+					singleton.ServerLock.RUnlock()
+				}
+
+				// 计算使用百分比
+				usedPercent := float64(0)
+				if stats.Max > 0 {
+					usedPercent = (float64(transfer) / float64(stats.Max)) * 100
+					usedPercent = math.Max(0, math.Min(100, usedPercent)) // 限制在0-100范围
+				}
+
+				// 获取周期单位和开始时间，用于前端展示
+				cycleUnit := flowRule.CycleUnit
+
+				// 构建完整的流量数据项，包含周期信息
+				trafficItem := map[string]interface{}{
+					"server_id":       serverID,
+					"server_name":     serverName,
+					"max_bytes":       stats.Max,
+					"used_bytes":      transfer,
+					"max_formatted":   formatBytes(stats.Max),
+					"used_formatted":  formatBytes(transfer),
+					"used_percent":    math.Round(usedPercent*100) / 100,
+					"cycle_name":      stats.Name,
+					"cycle_id":        strconv.FormatUint(cycleID, 10),
+					"cycle_start":     stats.From.Format(time.RFC3339),
+					"cycle_end":       stats.To.Format(time.RFC3339),
+					"cycle_unit":      cycleUnit,
+					"cycle_interval":  flowRule.CycleInterval,
+					"is_bytes_source": true,
+					"now":             time.Now().Unix() * 1000,
+				}
+
+				trafficData = append(trafficData, trafficItem)
+			}
 		}
-
-		// 计算已使用流量和总流量
-		traffic := map[string]interface{}{
-			"server_id":   server.ID,
-			"server_name": server.Name,
-			"cycle_name":  "Monthly", // 默认周期名称
-
-			// 使用字节数据作为源
-			"is_bytes_source": true,
-			"used_bytes":      server.State.NetInTransfer + server.State.NetOutTransfer,
-			"max_bytes":       uint64(1099511627776), // 默认1TB限额，可根据实际情况调整
-
-			// 提供格式化的流量字符串，兼容旧版本
-			"used_formatted": formatBytes(server.State.NetInTransfer + server.State.NetOutTransfer),
-			"max_formatted":  "1TB",
-		}
-
-		// 计算使用百分比
-		if traffic["max_bytes"].(uint64) > 0 {
-			traffic["used_percent"] = float64(traffic["used_bytes"].(uint64)) / float64(traffic["max_bytes"].(uint64)) * 100
-		}
-
-		trafficData = append(trafficData, traffic)
 	}
 
 	return trafficData
