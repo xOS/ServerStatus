@@ -127,40 +127,37 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		prevNetIn := singleton.ServerList[clientID].State.NetInTransfer - singleton.ServerList[clientID].CumulativeNetInTransfer
 		prevNetOut := singleton.ServerList[clientID].State.NetOutTransfer - singleton.ServerList[clientID].CumulativeNetOutTransfer
 
-		// 检查是否是真实的流量回退
-		// 避免因数值溢出导致的错误检测
+		// 检查是否有流量回退 - 任何流量回退都视为重启
+		// 1. 如果有明显回退（入站或出站任意一个显著减少），直接识别为重启
+		// 2. 如果出现轻微回退（可能是探针重启但流量统计未完全重置），也识别为重启
 		if originalNetInTransfer < prevNetIn || originalNetOutTransfer < prevNetOut {
-			// 设置重启检测阈值：
-			// 1. 流量回退超过1GB且回退幅度超过50%
-			// 2. 或者两个方向的流量都大幅回退超过500MB
-			const restartThresholdBytes = 1024 * 1024 * 1024 // 1GB
-			const restartThresholdSmall = 500 * 1024 * 1024  // 500MB
-			const restartPercentThreshold = 0.5              // 50%
+			// 计算回退量，用于日志记录
+			netInDiff := float64(0)
+			netOutDiff := float64(0)
+			netInPercent := float64(0)
+			netOutPercent := float64(0)
 
-			if prevNetIn > 0 && prevNetOut > 0 { // 确保有历史数据
-				netInDiff := float64(prevNetIn - originalNetInTransfer)
-				netOutDiff := float64(prevNetOut - originalNetOutTransfer)
+			if prevNetIn > 0 && originalNetInTransfer < prevNetIn {
+				netInDiff = float64(prevNetIn - originalNetInTransfer)
+				netInPercent = netInDiff / float64(prevNetIn) * 100
+			}
 
-				// 确保差值合理，防止整数溢出导致的异常大数值
-				if netInDiff >= 0 && netOutDiff >= 0 && netInDiff < 1e15 && netOutDiff < 1e15 {
-					netInPercent := netInDiff / float64(prevNetIn)
-					netOutPercent := netOutDiff / float64(prevNetOut)
+			if prevNetOut > 0 && originalNetOutTransfer < prevNetOut {
+				netOutDiff = float64(prevNetOut - originalNetOutTransfer)
+				netOutPercent = netOutDiff / float64(prevNetOut) * 100
+			}
 
-					// 重启条件：大幅流量回退
-					largeRollback := (netInDiff > restartThresholdBytes && netInPercent > restartPercentThreshold) ||
-						(netOutDiff > restartThresholdBytes && netOutPercent > restartPercentThreshold)
+			// 任何流量回退都认定为重启
+			isRestart = true
 
-					// 或者两个方向都有明显回退
-					bothRollback := netInDiff > restartThresholdSmall && netOutDiff > restartThresholdSmall
-
-					if largeRollback || bothRollback {
-						isRestart = true
-						log.Printf("检测到服务器 %s 可能重启: 入站回退=%.2fMB(%.1f%%), 出站回退=%.2fMB(%.1f%%)",
-							singleton.ServerList[clientID].Name,
-							netInDiff/(1024*1024), netInPercent*100,
-							netOutDiff/(1024*1024), netOutPercent*100)
-					}
-				}
+			// 记录日志
+			if netInDiff > 0 || netOutDiff > 0 {
+				log.Printf("检测到服务器 %s 重启: 入站回退=%.2fMB(%.1f%%), 出站回退=%.2fMB(%.1f%%)",
+					singleton.ServerList[clientID].Name,
+					netInDiff/(1024*1024), netInPercent,
+					netOutDiff/(1024*1024), netOutPercent)
+			} else {
+				log.Printf("检测到服务器 %s 重启: 流量值回退", singleton.ServerList[clientID].Name)
 			}
 		}
 	}
@@ -178,9 +175,13 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 				singleton.ServerList[clientID].Name,
 				server.CumulativeNetInTransfer,
 				server.CumulativeNetOutTransfer)
+
+			// 重置基准点，避免后续错误计算
+			singleton.ServerList[clientID].PrevTransferInSnapshot = int64(originalNetInTransfer)
+			singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(originalNetOutTransfer)
 		}
 
-		// 然后再加上当前新上报的流量值
+		// 然后再加上当前新上报的流量值 - 探针重启后的原始流量作为新的基准点
 		state.NetInTransfer = originalNetInTransfer + singleton.ServerList[clientID].CumulativeNetInTransfer
 		state.NetOutTransfer = originalNetOutTransfer + singleton.ServerList[clientID].CumulativeNetOutTransfer
 
@@ -324,11 +325,22 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	 * 这是可以借助上报顺序的空档，标记服务器为重启状态，表示从该节点开始累计流量
 	 */
 	if singleton.ServerList[clientID].Host != nil && singleton.ServerList[clientID].Host.BootTime < host.BootTime {
-		log.Printf("检测到服务器 %s 重启，重置流量计数", singleton.ServerList[clientID].Name)
+		log.Printf("检测到服务器 %s 重启，重置流量计数基准点", singleton.ServerList[clientID].Name)
 
 		// 服务器重启时保持累计流量不变，只重置上次记录点
 		singleton.ServerList[clientID].PrevTransferInSnapshot = 0
 		singleton.ServerList[clientID].PrevTransferOutSnapshot = 0
+
+		// 从数据库读取最新的累计流量值
+		var server model.Server
+		if err := singleton.DB.First(&server, clientID).Error; err == nil {
+			singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
+			singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+			log.Printf("重启时从数据库加载服务器 %s 累计流量数据: 入站=%d, 出站=%d",
+				singleton.ServerList[clientID].Name,
+				server.CumulativeNetInTransfer,
+				server.CumulativeNetOutTransfer)
+		}
 	}
 
 	// 不要冲掉国家码
