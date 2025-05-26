@@ -495,6 +495,40 @@ func checkAndResetCycleTraffic(clientID uint64) {
 
 				log.Printf("服务器 %s：已更新AlertsCycleTransferStatsStore中的重置记录", server.Name)
 			}
+
+			// 发送流量重置通知
+			// 格式化流量为人性化显示
+			formatTraffic := func(bytes uint64) string {
+				const unit = 1024
+				if bytes < unit {
+					return fmt.Sprintf("%d B", bytes)
+				}
+				div, exp := uint64(unit), 0
+				for n := bytes / unit; n >= unit; n /= unit {
+					div *= unit
+					exp++
+				}
+				return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+			}
+
+			// 计算上个周期累计流量
+			totalOldTraffic := oldInTransfer + oldOutTransfer
+
+			resetMessage := fmt.Sprintf("流量重置通知\n服务器 %s [%s] 的周期流量已重置\n上个周期累计流量: %s (入站=%s, 出站=%s)\n新周期: %s 到 %s\n报警规则: %s",
+				server.Name,
+				singleton.IPDesensitize(server.Host.IP),
+				formatTraffic(totalOldTraffic),
+				formatTraffic(oldInTransfer),
+				formatTraffic(oldOutTransfer),
+				currentCycleStart.Format("2006-01-02 15:04:05"),
+				currentCycleEnd.Format("2006-01-02 15:04:05"),
+				alert.Name)
+
+			// 创建流量重置通知的静音标签，避免短时间内重复发送
+			resetMuteLabel := fmt.Sprintf("traffic-reset-%d-%d", alert.ID, clientID)
+
+			// 发送通知到流量周期报警规则对应的通知组
+			go singleton.SendNotification(alert.NotificationTag, resetMessage, &resetMuteLabel, server)
 		}
 
 		// 只处理第一个匹配的规则

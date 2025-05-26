@@ -357,9 +357,9 @@ func SyncAllServerTrafficFromDB() {
 		server.CumulativeNetInTransfer = dbServer.CumulativeNetInTransfer
 		server.CumulativeNetOutTransfer = dbServer.CumulativeNetOutTransfer
 
-		log.Printf("服务器 %s (ID:%d) 累计流量同步: 入站=%d, 出站=%d", 
-			server.Name, serverID, 
-			server.CumulativeNetInTransfer, 
+		log.Printf("服务器 %s (ID:%d) 累计流量同步: 入站=%d, 出站=%d",
+			server.Name, serverID,
+			server.CumulativeNetInTransfer,
 			server.CumulativeNetOutTransfer)
 	}
 
@@ -389,16 +389,16 @@ func SaveAllTrafficToDB() {
 						cumulative_net_out_transfer = ? 
 						WHERE id = ?`
 
-		if err := DB.Exec(updateSQL, 
-			server.CumulativeNetInTransfer, 
-			server.CumulativeNetOutTransfer, 
+		if err := DB.Exec(updateSQL,
+			server.CumulativeNetInTransfer,
+			server.CumulativeNetOutTransfer,
 			serverID).Error; err != nil {
 			log.Printf("保存服务器 %s (ID:%d) 累计流量失败: %v", server.Name, serverID, err)
 		} else {
 			savedCount++
-			log.Printf("保存服务器 %s (ID:%d) 累计流量: 入站=%d, 出站=%d", 
-				server.Name, serverID, 
-				server.CumulativeNetInTransfer, 
+			log.Printf("保存服务器 %s (ID:%d) 累计流量: 入站=%d, 出站=%d",
+				server.Name, serverID,
+				server.CumulativeNetInTransfer,
 				server.CumulativeNetOutTransfer)
 		}
 	}
@@ -437,12 +437,12 @@ func VerifyTrafficDataConsistency() {
 		dbOut := dbServer.CumulativeNetOutTransfer
 
 		if memoryIn != dbIn || memoryOut != dbOut {
-			log.Printf("[不一致] 服务器 %s (ID:%d) - 内存: 入站=%d 出站=%d, 数据库: 入站=%d 出站=%d", 
-				server.Name, serverID, 
-				memoryIn, memoryOut, 
+			log.Printf("[不一致] 服务器 %s (ID:%d) - 内存: 入站=%d 出站=%d, 数据库: 入站=%d 出站=%d",
+				server.Name, serverID,
+				memoryIn, memoryOut,
 				dbIn, dbOut)
 		} else {
-			log.Printf("[一致] 服务器 %s (ID:%d) - 流量数据: 入站=%d 出站=%d", 
+			log.Printf("[一致] 服务器 %s (ID:%d) - 流量数据: 入站=%d 出站=%d",
 				server.Name, serverID, memoryIn, memoryOut)
 		}
 	}

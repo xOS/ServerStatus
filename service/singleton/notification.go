@@ -144,6 +144,15 @@ func SendNotification(notificationTag string, desc string, muteLabel *string, ex
 	// 向该通知方式组的所有通知方式发出通知
 	notificationsLock.RLock()
 	defer notificationsLock.RUnlock()
+
+	// 调试信息：显示通知方式组和可用的通知方式
+	log.Printf("NG>> 尝试发送通知到组 [%s]，消息：%s", notificationTag, desc)
+	if NotificationList[notificationTag] == nil {
+		log.Printf("NG>> 警告：通知方式组 [%s] 不存在", notificationTag)
+		return
+	}
+	log.Printf("NG>> 通知方式组 [%s] 包含 %d 个通知方式", notificationTag, len(NotificationList[notificationTag]))
+
 	for _, n := range NotificationList[notificationTag] {
 		log.Println("NG>> 尝试通知", n.Name)
 	}

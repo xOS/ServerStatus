@@ -185,13 +185,13 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 		if u.LastCycleStatus == nil {
 			u.LastCycleStatus = make(map[uint64]interface{})
 		}
-		
+
 		// 检查是否超限
 		isOverLimit := (u.Max > 0 && src > u.Max) || (u.Min > 0 && src < u.Min)
-		
+
 		// 设置下次检测时间
 		u.NextTransferAt[server.ID] = time.Now().Add(time.Second * time.Duration(seconds))
-		
+
 		// 更新缓存状态
 		if isOverLimit {
 			u.LastCycleStatus[server.ID] = struct{}{}
