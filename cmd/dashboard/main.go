@@ -37,8 +37,8 @@ func init() {
 	flag.BoolVar(&dashboardCliParam.ResetTraffic, "reset-traffic", false, "重置所有服务器的累计流量数据")
 	flag.Parse()
 
-	// 设置定时任务
-	singleton.Cron = cron.New()
+	// 设置定时任务 - 启用秒字段支持
+	singleton.Cron = cron.New(cron.WithSeconds())
 
 	// 每分钟保存一次流量数据
 	if _, err := singleton.Cron.AddFunc("0 * * * * *", singleton.RecordTransferHourlyUsage); err != nil {
