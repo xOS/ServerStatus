@@ -56,9 +56,15 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 		return nil
 	}
 
-	// 循环区间流量检测 · 短期无需重复检测
+	// 循环区间流量检测 · 优化检测频率，确保超限时能及时检测
 	if u.IsTransferDurationRule() && u.NextTransferAt[server.ID].After(time.Now()) {
-		return u.LastCycleStatus[server.ID]
+		// 如果上次状态是超限（非nil），立即重新检测以确保及时报警
+		if u.LastCycleStatus != nil && u.LastCycleStatus[server.ID] != nil {
+			// 超限状态下不使用缓存，强制重新检测
+		} else {
+			// 正常状态下可以使用缓存
+			return u.LastCycleStatus[server.ID]
+		}
 	}
 
 	var src float64
@@ -139,33 +145,39 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 
 	// 循环区间流量检测 · 更新下次需要检测时间
 	if u.IsTransferDurationRule() {
-		// 分层检测算法：根据使用率采用不同的检测频率
+		// 优化的分层检测算法：确保超限时能及时检测和报警
 		var seconds float64
 		if u.Max > 0 {
 			usagePercent := (src / u.Max) * 100
 			switch {
-			case usagePercent >= 90:
-				// 90%+ 使用率 → 1分钟检测（紧急）
+			case usagePercent >= 100:
+				// 已超限 → 立即检测（30秒）
+				seconds = 30
+			case usagePercent >= 95:
+				// 95%+ 使用率 → 1分钟检测（即将超限）
 				seconds = 60
-			case usagePercent >= 60:
-				// 60-89% 使用率 → 5分钟检测
+			case usagePercent >= 90:
+				// 90-94% 使用率 → 2分钟检测（高风险）
+				seconds = 120
+			case usagePercent >= 80:
+				// 80-89% 使用率 → 5分钟检测（中高风险）
 				seconds = 300
-			case usagePercent >= 25:
-				// 25-59% 使用率 → 15分钟检测
+			case usagePercent >= 60:
+				// 60-79% 使用率 → 10分钟检测
+				seconds = 600
+			case usagePercent >= 30:
+				// 30-59% 使用率 → 15分钟检测
 				seconds = 900
-			case usagePercent >= 5:
-				// 5-24% 使用率 → 15分钟检测
-				seconds = 900
+			case usagePercent >= 10:
+				// 10-29% 使用率 → 20分钟检测
+				seconds = 1200
 			default:
-				// 0-4% 使用率 → 30分钟检测，渐减到最短10分钟
-				seconds = 1800 - (usagePercent/5.0)*600
-				if seconds < 600 {
-					seconds = 600
-				}
+				// 0-9% 使用率 → 30分钟检测
+				seconds = 1800
 			}
 		} else {
-			// 如果没有设置最大值，使用默认30分钟
-			seconds = 1800
+			// 如果没有设置最大值，使用默认15分钟
+			seconds = 900
 		}
 		if u.NextTransferAt == nil {
 			u.NextTransferAt = make(map[uint64]time.Time)
@@ -173,8 +185,15 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 		if u.LastCycleStatus == nil {
 			u.LastCycleStatus = make(map[uint64]interface{})
 		}
+		
+		// 检查是否超限
+		isOverLimit := (u.Max > 0 && src > u.Max) || (u.Min > 0 && src < u.Min)
+		
+		// 设置下次检测时间
 		u.NextTransferAt[server.ID] = time.Now().Add(time.Second * time.Duration(seconds))
-		if (u.Max > 0 && src > u.Max) || (u.Min > 0 && src < u.Min) {
+		
+		// 更新缓存状态
+		if isOverLimit {
 			u.LastCycleStatus[server.ID] = struct{}{}
 		} else {
 			u.LastCycleStatus[server.ID] = nil

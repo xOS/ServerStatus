@@ -87,16 +87,33 @@ func (r *AlertRule) Snapshot(cycleTransferStats *CycleTransferStats, server *Ser
 func (r *AlertRule) Check(points [][]interface{}) (int, bool) {
 	var maxNum int // 报警持续时间
 	var count int  // 检查未通过的个数
+	var hasTransferRule bool // 是否包含流量规则
+	
 	for i := 0; i < len(r.Rules); i++ {
 		if r.Rules[i].IsTransferDurationRule() {
 			// 循环区间流量报警
+			hasTransferRule = true
 			if maxNum < 1 {
 				maxNum = 1
 			}
-			for j := len(points[i]) - 1; j >= 0; j-- {
-				if points[i][j] != nil {
+			// 检查最新的流量状态
+			if len(points) > 0 && len(points[i]) > 0 {
+				// 检查最近的几个采样点，确保流量超限检测的及时性
+				recentFailCount := 0
+				checkPoints := len(points[i])
+				if checkPoints > 3 {
+					checkPoints = 3 // 只检查最近3个点
+				}
+				
+				for j := len(points[i]) - checkPoints; j < len(points[i]); j++ {
+					if points[i][j] != nil {
+						recentFailCount++
+					}
+				}
+				
+				// 如果最近的采样点中有超限，则认为检查未通过
+				if recentFailCount > 0 {
 					count++
-					break
 				}
 			}
 		} else {
@@ -123,6 +140,15 @@ func (r *AlertRule) Check(points [][]interface{}) (int, bool) {
 			}
 		}
 	}
+	
+	// 修改逻辑：
+	// 1. 如果包含流量规则且流量超限，直接触发报警
+	// 2. 对于其他规则，仍然要求所有规则都未通过才触发报警
+	if hasTransferRule && count > 0 {
+		// 有流量规则且有规则未通过，触发报警
+		return maxNum, false
+	}
+	
 	// 仅当所有检查均未通过时 返回false
 	return maxNum, count != len(r.Rules)
 }
