@@ -247,6 +247,9 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 						log.Printf("流量管理器: 验证服务器 %d 累计流量更新: DB值=(%d,%d), 内存值=(%d,%d)",
 							serverID, savedFlow.CumulativeNetInTransfer, savedFlow.CumulativeNetOutTransfer,
 							currentServer.CumulativeNetInTransfer, currentServer.CumulativeNetOutTransfer)
+
+						// 更新用于前端显示的流量数据
+						UpdateTrafficStats(serverID, currentServer.CumulativeNetInTransfer, currentServer.CumulativeNetOutTransfer)
 					}
 				}
 			}

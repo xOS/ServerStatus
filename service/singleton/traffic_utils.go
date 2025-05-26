@@ -5,6 +5,20 @@ import (
 	"time"
 )
 
+// 是否启用流量调试日志
+var isTrafficDebugEnabled = false
+
+// EnableTrafficDebug 启用流量调试日志
+func EnableTrafficDebug() {
+	isTrafficDebugEnabled = true
+	log.Println("流量调试模式已启用")
+}
+
+// IsTrafficDebugEnabled 检查是否启用流量调试
+func IsTrafficDebugEnabled() bool {
+	return isTrafficDebugEnabled
+}
+
 // SaveAllTrafficToDB 将所有服务器的累计流量保存到数据库
 func SaveAllTrafficToDB() {
 	if ServerList == nil {
@@ -42,6 +56,9 @@ func SaveAllTrafficToDB() {
 				log.Printf("保存服务器[%s]累计流量成功: 入站=%d, 出站=%d",
 					server.Name, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
 				count++
+
+				// 同步数据到前端显示
+				UpdateTrafficStats(server.ID, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
 			}
 		}
 	}
@@ -58,8 +75,8 @@ func AutoSyncTraffic() {
 
 	// 启动定时同步协程
 	go func() {
-		syncTicker := time.NewTicker(2 * time.Minute)
-		saveTicker := time.NewTicker(1 * time.Minute)
+		syncTicker := time.NewTicker(1 * time.Minute)
+		saveTicker := time.NewTicker(30 * time.Second)
 		defer syncTicker.Stop()
 		defer saveTicker.Stop()
 
@@ -75,5 +92,5 @@ func AutoSyncTraffic() {
 		}
 	}()
 
-	log.Println("自动流量同步任务已启动，同步间隔=2分钟，保存间隔=1分钟")
+	log.Println("自动流量同步任务已启动，同步间隔=1分钟，保存间隔=30秒")
 }

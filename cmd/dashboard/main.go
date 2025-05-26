@@ -22,6 +22,7 @@ type DashboardCliParam struct {
 	ConfigFile       string // 配置文件路径
 	DatebaseLocation string // Sqlite3 数据库文件路径
 	ResetTraffic     bool   // 重置所有服务器的累计流量数据
+	DebugTraffic     bool   // 启用流量调试日志
 }
 
 var (
@@ -34,6 +35,7 @@ func init() {
 	flag.StringVarP(&dashboardCliParam.ConfigFile, "config", "c", "data/config.yaml", "配置文件路径")
 	flag.StringVar(&dashboardCliParam.DatebaseLocation, "db", "data/sqlite.db", "Sqlite3数据库文件路径")
 	flag.BoolVar(&dashboardCliParam.ResetTraffic, "reset-traffic", false, "重置所有服务器的累计流量数据")
+	flag.BoolVar(&dashboardCliParam.DebugTraffic, "debug-traffic", false, "启用流量调试日志")
 	flag.Parse()
 }
 
@@ -64,6 +66,12 @@ func main() {
 	if dashboardCliParam.ResetTraffic {
 		resetAllServerTraffic()
 		return
+	}
+
+	// 设置流量调试模式
+	if dashboardCliParam.DebugTraffic {
+		singleton.EnableTrafficDebug()
+		log.Println("已启用流量调试模式，将输出详细的流量变化信息")
 	}
 
 	initSystem()

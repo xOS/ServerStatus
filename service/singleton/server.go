@@ -292,6 +292,10 @@ func UpdateServer(s *model.Server) error {
 		if server, ok := ServerList[s.ID]; ok && server != nil {
 			server.LastFlowSaveTime = time.Now()
 		}
+
+		// 更新用于前端显示的流量数据，确保前端能正确显示流量使用情况
+		// 这是修复流量数据不更新的关键函数调用
+		UpdateTrafficStats(s.ID, s.CumulativeNetInTransfer, s.CumulativeNetOutTransfer)
 	}
 
 	// 更新内存中的服务器信息

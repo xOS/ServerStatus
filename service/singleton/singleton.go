@@ -377,6 +377,9 @@ func SyncAllServerTrafficFromDB() {
 					server.State.NetOutTransfer = originalNetOutTransfer + dbServer.CumulativeNetOutTransfer
 				}
 
+				// 同步数据到前端显示
+				UpdateTrafficStats(server.ID, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+
 				count++
 			}
 		}

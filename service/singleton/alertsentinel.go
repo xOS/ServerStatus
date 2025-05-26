@@ -202,3 +202,52 @@ func checkStatus() {
 		}
 	}
 }
+
+// UpdateTrafficStats 更新服务器流量统计到AlertsCycleTransferStatsStore
+// 这个函数直接更新流量数据，确保前端显示正确
+func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
+	AlertsLock.Lock()
+	defer AlertsLock.Unlock()
+
+	// 没有报警规则时，不需要更新
+	if len(Alerts) == 0 || AlertsCycleTransferStatsStore == nil {
+		return
+	}
+
+	// 查找服务器名称
+	var serverName string
+	if ServerList != nil {
+		if server := ServerList[serverID]; server != nil {
+			serverName = server.Name
+		}
+	}
+
+	// 遍历所有周期流量统计
+	for _, stats := range AlertsCycleTransferStatsStore {
+		// 更新流量数据
+		// 获取此服务器当前的流量数据
+		currentTransfer, exists := stats.Transfer[serverID]
+
+		// 获取总流量
+		totalTransfer := inTransfer + outTransfer
+
+		// 如果新值大于当前值，或者当前不存在，则更新
+		if !exists || totalTransfer > currentTransfer {
+			stats.Transfer[serverID] = totalTransfer
+
+			// 更新服务器名称
+			if serverName != "" && stats.ServerName[serverID] != serverName {
+				stats.ServerName[serverID] = serverName
+			}
+
+			// 记录日志
+			if exists {
+				log.Printf("更新服务器 %d (%s) 的周期流量数据: %d -> %d (增加 %d)",
+					serverID, serverName, currentTransfer, totalTransfer, totalTransfer-currentTransfer)
+			} else {
+				log.Printf("初始化服务器 %d (%s) 的周期流量数据: %d",
+					serverID, serverName, totalTransfer)
+			}
+		}
+	}
+}
