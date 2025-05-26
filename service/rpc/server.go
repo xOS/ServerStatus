@@ -200,11 +200,33 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			singleton.ServerList[clientID].CumulativeNetOutTransfer)
 
 		// 将累计流量写入数据库，确保重启后数据不丢失
-		if err := singleton.DB.Model(singleton.ServerList[clientID]).Updates(map[string]interface{}{
-			"cumulative_net_in_transfer":  singleton.ServerList[clientID].CumulativeNetInTransfer,
-			"cumulative_net_out_transfer": singleton.ServerList[clientID].CumulativeNetOutTransfer,
-		}).Error; err != nil {
+		// 使用直接的SQL语句来更新，确保数据被写入
+		updateSQL := fmt.Sprintf("UPDATE servers SET cumulative_net_in_transfer = %d, cumulative_net_out_transfer = %d WHERE id = %d",
+			singleton.ServerList[clientID].CumulativeNetInTransfer,
+			singleton.ServerList[clientID].CumulativeNetOutTransfer,
+			clientID)
+
+		if err := singleton.DB.Exec(updateSQL).Error; err != nil {
 			log.Printf("更新服务器 %s 累计流量到数据库失败: %v", singleton.ServerList[clientID].Name, err)
+		} else {
+			// 验证数据是否确实保存到了数据库
+			var savedValue struct {
+				CumulativeNetInTransfer  uint64
+				CumulativeNetOutTransfer uint64
+			}
+			if err := singleton.DB.Raw("SELECT cumulative_net_in_transfer, cumulative_net_out_transfer FROM servers WHERE id = ?", clientID).
+				Scan(&savedValue).Error; err == nil {
+				log.Printf("服务器 %s 累计流量成功保存到数据库并验证: 入站=%d, 出站=%d",
+					singleton.ServerList[clientID].Name,
+					savedValue.CumulativeNetInTransfer,
+					savedValue.CumulativeNetOutTransfer)
+
+				// 确保内存中的值与数据库一致
+				singleton.ServerList[clientID].CumulativeNetInTransfer = savedValue.CumulativeNetInTransfer
+				singleton.ServerList[clientID].CumulativeNetOutTransfer = savedValue.CumulativeNetOutTransfer
+			} else {
+				log.Printf("验证服务器 %s 累计流量保存失败: %v", singleton.ServerList[clientID].Name, err)
+			}
 		}
 	} else {
 		// 正常更新，使用增量计算并更新累计流量
@@ -215,6 +237,34 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
 			singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
 		}
+
+		// 更新累计流量 - 加上新增的流量
+		// 通过与上次报告的原始流量进行比较，计算增量
+		if singleton.ServerList[clientID].PrevTransferInSnapshot > 0 &&
+			int64(originalNetInTransfer) > singleton.ServerList[clientID].PrevTransferInSnapshot {
+			// 如果当前流量大于上次记录的原始流量，增加累计流量
+			increase := uint64(int64(originalNetInTransfer) - singleton.ServerList[clientID].PrevTransferInSnapshot)
+			singleton.ServerList[clientID].CumulativeNetInTransfer += increase
+			log.Printf("服务器 %s 入站流量增加: +%d, 累计=%d",
+				singleton.ServerList[clientID].Name,
+				increase,
+				singleton.ServerList[clientID].CumulativeNetInTransfer)
+		}
+
+		if singleton.ServerList[clientID].PrevTransferOutSnapshot > 0 &&
+			int64(originalNetOutTransfer) > singleton.ServerList[clientID].PrevTransferOutSnapshot {
+			// 如果当前流量大于上次记录的原始流量，增加累计流量
+			increase := uint64(int64(originalNetOutTransfer) - singleton.ServerList[clientID].PrevTransferOutSnapshot)
+			singleton.ServerList[clientID].CumulativeNetOutTransfer += increase
+			log.Printf("服务器 %s 出站流量增加: +%d, 累计=%d",
+				singleton.ServerList[clientID].Name,
+				increase,
+				singleton.ServerList[clientID].CumulativeNetOutTransfer)
+		}
+
+		// 更新基准点为当前值
+		singleton.ServerList[clientID].PrevTransferInSnapshot = int64(originalNetInTransfer)
+		singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(originalNetOutTransfer)
 
 		// 设置State中的总流量（原始流量+累计流量）
 		state.NetInTransfer = originalNetInTransfer + singleton.ServerList[clientID].CumulativeNetInTransfer
@@ -229,11 +279,31 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 
 		// 定期更新累计流量到数据库（按3分钟间隔）
 		if time.Since(singleton.ServerList[clientID].LastFlowSaveTime).Minutes() > 3 {
-			if err := singleton.DB.Model(singleton.ServerList[clientID]).Updates(map[string]interface{}{
-				"cumulative_net_in_transfer":  singleton.ServerList[clientID].CumulativeNetInTransfer,
-				"cumulative_net_out_transfer": singleton.ServerList[clientID].CumulativeNetOutTransfer,
-			}).Error; err != nil {
-				log.Printf("更新服务器 %s 累计流量到数据库失败: %v", singleton.ServerList[clientID].Name, err)
+			// 使用直接的SQL语句来更新，确保数据被写入
+			updateSQL := fmt.Sprintf("UPDATE servers SET cumulative_net_in_transfer = %d, cumulative_net_out_transfer = %d WHERE id = %d",
+				singleton.ServerList[clientID].CumulativeNetInTransfer,
+				singleton.ServerList[clientID].CumulativeNetOutTransfer,
+				clientID)
+
+			if err := singleton.DB.Exec(updateSQL).Error; err != nil {
+				log.Printf("定期更新服务器 %s 累计流量到数据库失败: %v", singleton.ServerList[clientID].Name, err)
+			} else {
+				// 验证数据是否确实保存到了数据库
+				var savedValue struct {
+					CumulativeNetInTransfer  uint64
+					CumulativeNetOutTransfer uint64
+				}
+				if err := singleton.DB.Raw("SELECT cumulative_net_in_transfer, cumulative_net_out_transfer FROM servers WHERE id = ?", clientID).
+					Scan(&savedValue).Error; err == nil {
+					log.Printf("服务器 %s 定期累计流量成功保存并验证: 入站=%d, 出站=%d",
+						singleton.ServerList[clientID].Name,
+						savedValue.CumulativeNetInTransfer,
+						savedValue.CumulativeNetOutTransfer)
+
+					// 确保内存中的值与数据库一致
+					singleton.ServerList[clientID].CumulativeNetInTransfer = savedValue.CumulativeNetInTransfer
+					singleton.ServerList[clientID].CumulativeNetOutTransfer = savedValue.CumulativeNetOutTransfer
+				}
 			}
 			// 更新最后保存时间
 			singleton.ServerList[clientID].LastFlowSaveTime = time.Now()
