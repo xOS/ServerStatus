@@ -41,8 +41,14 @@ func LoadSingleton() {
 	initNAT()
 	initDDNS()
 
+	// 从数据库同步累计流量数据到内存
+	SyncAllServerTrafficFromDB()
+
 	// 添加定时检查在线状态的任务，每分钟检查一次
 	Cron.AddFunc("0 */1 * * * *", CheckServerOnlineStatus)
+
+	// 添加定时验证流量数据一致性的任务，每5分钟检查一次（仅用于调试）
+	Cron.AddFunc("0 */5 * * * *", VerifyTrafficDataConsistency)
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
@@ -323,7 +329,33 @@ func checkShouldResetTransferStats() bool {
 
 // SyncAllServerTrafficFromDB 从数据库同步所有服务器的累计流量数据到内存
 func SyncAllServerTrafficFromDB() {
-	// 功能已移除
+	ServerLock.Lock()
+	defer ServerLock.Unlock()
+
+	log.Println("开始同步所有服务器的累计流量数据从数据库到内存...")
+
+	for serverID, server := range ServerList {
+		if server == nil {
+			continue
+		}
+
+		var dbServer model.Server
+		if err := DB.First(&dbServer, serverID).Error; err != nil {
+			log.Printf("从数据库获取服务器 %d 数据失败: %v", serverID, err)
+			continue
+		}
+
+		// 同步累计流量数据
+		server.CumulativeNetInTransfer = dbServer.CumulativeNetInTransfer
+		server.CumulativeNetOutTransfer = dbServer.CumulativeNetOutTransfer
+
+		log.Printf("服务器 %s (ID:%d) 累计流量同步: 入站=%d, 出站=%d", 
+			server.Name, serverID, 
+			server.CumulativeNetInTransfer, 
+			server.CumulativeNetOutTransfer)
+	}
+
+	log.Printf("累计流量数据同步完成，共同步 %d 个服务器", len(ServerList))
 }
 
 // TriggerTrafficRecalculation 流量重新计算的空实现
@@ -331,12 +363,81 @@ func TriggerTrafficRecalculation() int {
 	return 0
 }
 
-// SaveAllTrafficToDB 保存所有服务器的累计流量到数据库的空实现
+// SaveAllTrafficToDB 保存所有服务器的累计流量到数据库
 func SaveAllTrafficToDB() {
-	// 功能已移除
+	ServerLock.RLock()
+	defer ServerLock.RUnlock()
+
+	log.Println("开始保存所有服务器的累计流量数据到数据库...")
+
+	savedCount := 0
+	for serverID, server := range ServerList {
+		if server == nil {
+			continue
+		}
+
+		updateSQL := `UPDATE servers SET 
+						cumulative_net_in_transfer = ?, 
+						cumulative_net_out_transfer = ? 
+						WHERE id = ?`
+
+		if err := DB.Exec(updateSQL, 
+			server.CumulativeNetInTransfer, 
+			server.CumulativeNetOutTransfer, 
+			serverID).Error; err != nil {
+			log.Printf("保存服务器 %s (ID:%d) 累计流量失败: %v", server.Name, serverID, err)
+		} else {
+			savedCount++
+			log.Printf("保存服务器 %s (ID:%d) 累计流量: 入站=%d, 出站=%d", 
+				server.Name, serverID, 
+				server.CumulativeNetInTransfer, 
+				server.CumulativeNetOutTransfer)
+		}
+	}
+
+	log.Printf("累计流量数据保存完成，共保存 %d 个服务器", savedCount)
 }
 
 // AutoSyncTraffic 自动同步流量的空实现
 func AutoSyncTraffic() {
 	// 功能已移除
+}
+
+// VerifyTrafficDataConsistency 验证流量数据一致性（调试用）
+func VerifyTrafficDataConsistency() {
+	ServerLock.RLock()
+	defer ServerLock.RUnlock()
+
+	log.Println("开始验证流量数据一致性...")
+
+	for serverID, server := range ServerList {
+		if server == nil {
+			continue
+		}
+
+		// 从数据库读取数据
+		var dbServer model.Server
+		if err := DB.First(&dbServer, serverID).Error; err != nil {
+			log.Printf("无法从数据库读取服务器 %d: %v", serverID, err)
+			continue
+		}
+
+		// 比较内存和数据库中的数据
+		memoryIn := server.CumulativeNetInTransfer
+		memoryOut := server.CumulativeNetOutTransfer
+		dbIn := dbServer.CumulativeNetInTransfer
+		dbOut := dbServer.CumulativeNetOutTransfer
+
+		if memoryIn != dbIn || memoryOut != dbOut {
+			log.Printf("[不一致] 服务器 %s (ID:%d) - 内存: 入站=%d 出站=%d, 数据库: 入站=%d 出站=%d", 
+				server.Name, serverID, 
+				memoryIn, memoryOut, 
+				dbIn, dbOut)
+		} else {
+			log.Printf("[一致] 服务器 %s (ID:%d) - 流量数据: 入站=%d 出站=%d", 
+				server.Name, serverID, memoryIn, memoryOut)
+		}
+	}
+
+	log.Println("流量数据一致性验证完成")
 }
