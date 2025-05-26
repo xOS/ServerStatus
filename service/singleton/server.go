@@ -260,9 +260,15 @@ func UpdateServer(s *model.Server) error {
 			server.PrevTransferOutSnapshot = s.PrevTransferOutSnapshot
 		}
 
-		// 更新 State 中的累计流量显示值
-		s.State.NetInTransfer = currentInTransfer
-		s.State.NetOutTransfer = currentOutTransfer
+		// 重要修改：更新 State 中的累计流量显示值 - 必须将原始流量与累计流量相加
+		// 这是前端显示的关键：必须是 currentTransfer + cumulativeTransfer
+		s.State.NetInTransfer = currentInTransfer + s.CumulativeNetInTransfer
+		s.State.NetOutTransfer = currentOutTransfer + s.CumulativeNetOutTransfer
+
+		log.Printf("服务器 %s 显示流量更新为: 入站=%d（原始=%d+累计=%d）, 出站=%d（原始=%d+累计=%d）",
+			s.Name,
+			s.State.NetInTransfer, currentInTransfer, s.CumulativeNetInTransfer,
+			s.State.NetOutTransfer, currentOutTransfer, s.CumulativeNetOutTransfer)
 
 		// 立即更新到数据库 - 直接使用SQL增加可靠性
 		updateSQL := `UPDATE servers SET 
@@ -289,11 +295,6 @@ func UpdateServer(s *model.Server) error {
 	}
 
 	// 更新内存中的服务器信息
-	if server, ok := ServerList[s.ID]; ok {
-		s.PrevTransferInSnapshot = server.PrevTransferInSnapshot
-		s.PrevTransferOutSnapshot = server.PrevTransferOutSnapshot
-	}
-
 	ServerList[s.ID] = s
 	return nil
 }

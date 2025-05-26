@@ -58,8 +58,8 @@ func AutoSyncTraffic() {
 
 	// 启动定时同步协程
 	go func() {
-		syncTicker := time.NewTicker(5 * time.Minute)
-		saveTicker := time.NewTicker(3 * time.Minute)
+		syncTicker := time.NewTicker(2 * time.Minute)
+		saveTicker := time.NewTicker(1 * time.Minute)
 		defer syncTicker.Stop()
 		defer saveTicker.Stop()
 
@@ -75,5 +75,5 @@ func AutoSyncTraffic() {
 		}
 	}()
 
-	log.Println("自动流量同步任务已启动")
+	log.Println("自动流量同步任务已启动，同步间隔=2分钟，保存间隔=1分钟")
 }

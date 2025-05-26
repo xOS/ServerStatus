@@ -180,27 +180,41 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 	ServerLock.RUnlock()
 
 	if currentServer != nil {
-		// 获取状态中的原始流量
+		// 获取状态中的原始流量（不包含累计值）
 		var originalNetInTransfer, originalNetOutTransfer uint64
 		if currentServer.State != nil {
-			originalNetInTransfer = currentServer.State.NetInTransfer - currentServer.CumulativeNetInTransfer
-			originalNetOutTransfer = currentServer.State.NetOutTransfer - currentServer.CumulativeNetOutTransfer
+			// 原始流量 = 状态流量 - 累计流量
+			if currentServer.State.NetInTransfer > currentServer.CumulativeNetInTransfer {
+				originalNetInTransfer = currentServer.State.NetInTransfer - currentServer.CumulativeNetInTransfer
+			}
+			if currentServer.State.NetOutTransfer > currentServer.CumulativeNetOutTransfer {
+				originalNetOutTransfer = currentServer.State.NetOutTransfer - currentServer.CumulativeNetOutTransfer
+			}
 		}
 
-		// 更新状态中的总流量
+		// 更新累计流量值
+		ServerLock.Lock()
+		// 只在累计流量比当前值小时才更新
+		if inBytes > currentServer.CumulativeNetInTransfer {
+			currentServer.CumulativeNetInTransfer = inBytes
+		}
+		if outBytes > currentServer.CumulativeNetOutTransfer {
+			currentServer.CumulativeNetOutTransfer = outBytes
+		}
+
+		// 更新状态中的总流量 - 原始流量加累计流量
 		if currentServer.State != nil {
-			currentServer.State.NetInTransfer = originalNetInTransfer + inBytes
-			currentServer.State.NetOutTransfer = originalNetOutTransfer + outBytes
+			currentServer.State.NetInTransfer = originalNetInTransfer + currentServer.CumulativeNetInTransfer
+			currentServer.State.NetOutTransfer = originalNetOutTransfer + currentServer.CumulativeNetOutTransfer
 
 			// 更新速率
 			currentServer.State.NetInSpeed = stats.InSpeed
 			currentServer.State.NetOutSpeed = stats.OutSpeed
-		}
 
-		// 更新累计流量
-		ServerLock.Lock()
-		currentServer.CumulativeNetInTransfer = inBytes
-		currentServer.CumulativeNetOutTransfer = outBytes
+			log.Printf("流量管理器: 更新服务器 %d 的显示流量: 入站=%d（原始=%d+累计=%d）, 出站=%d（原始=%d+累计=%d）",
+				serverID, currentServer.State.NetInTransfer, originalNetInTransfer, currentServer.CumulativeNetInTransfer,
+				currentServer.State.NetOutTransfer, originalNetOutTransfer, currentServer.CumulativeNetOutTransfer)
+		}
 		ServerLock.Unlock()
 
 		// 如果超过1分钟没有保存，立即保存到数据库
@@ -212,7 +226,7 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 
 			// 尝试使用事务并增加重试
 			tx := DB.Begin()
-			if err := tx.Exec(updateSQL, inBytes, outBytes, serverID).Error; err != nil {
+			if err := tx.Exec(updateSQL, currentServer.CumulativeNetInTransfer, currentServer.CumulativeNetOutTransfer, serverID).Error; err != nil {
 				tx.Rollback()
 				log.Printf("流量管理器: 更新服务器 %d 累计流量到数据库失败: %v", serverID, err)
 			} else {
@@ -220,7 +234,7 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 					log.Printf("流量管理器: 提交更新服务器 %d 累计流量事务失败: %v", serverID, err)
 				} else {
 					log.Printf("流量管理器: 更新服务器 %d 累计流量成功: 入站=%d, 出站=%d",
-						serverID, inBytes, outBytes)
+						serverID, currentServer.CumulativeNetInTransfer, currentServer.CumulativeNetOutTransfer)
 					currentServer.LastFlowSaveTime = time.Now()
 
 					// 验证数据是否确实写入
@@ -232,7 +246,7 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 									FROM servers WHERE id = ?`, serverID).Scan(&savedFlow).Error; err == nil {
 						log.Printf("流量管理器: 验证服务器 %d 累计流量更新: DB值=(%d,%d), 内存值=(%d,%d)",
 							serverID, savedFlow.CumulativeNetInTransfer, savedFlow.CumulativeNetOutTransfer,
-							inBytes, outBytes)
+							currentServer.CumulativeNetInTransfer, currentServer.CumulativeNetOutTransfer)
 					}
 				}
 			}
@@ -468,20 +482,24 @@ func (tm *TrafficManager) detectServerRestart(serverID uint64, newIn, newOut uin
 
 			// 将减少的流量加入累计值中
 			if stats.InBytes > newIn {
-				cumulativeIn += stats.InBytes - newIn
+				cumulativeIn += stats.InBytes
 			}
 			if stats.OutBytes > newOut {
-				cumulativeOut += stats.OutBytes - newOut
+				cumulativeOut += stats.OutBytes
 			}
 
 			// 更新内存中的累计量
 			server.CumulativeNetInTransfer = cumulativeIn
 			server.CumulativeNetOutTransfer = cumulativeOut
 
-			// 同步到状态
+			// 同步到状态 - 必须将当前流量加上累计流量
 			if server.State != nil {
 				server.State.NetInTransfer = newIn + cumulativeIn
 				server.State.NetOutTransfer = newOut + cumulativeOut
+
+				log.Printf("重启后更新服务器 %d 显示流量: 入站=%d（当前=%d+累计=%d）, 出站=%d（当前=%d+累计=%d）",
+					serverID, server.State.NetInTransfer, newIn, cumulativeIn,
+					server.State.NetOutTransfer, newOut, cumulativeOut)
 			}
 
 			// 更新数据库
