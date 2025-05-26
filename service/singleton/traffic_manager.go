@@ -110,6 +110,16 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 	tm.Lock()
 	defer tm.Unlock()
 
+	// 检查ServerList是否存在以及是否有该服务器
+	ServerLock.RLock()
+	server, serverExists := ServerList[serverID]
+	ServerLock.RUnlock()
+
+	if !serverExists || server == nil {
+		log.Printf("流量管理器: 服务器 %d 不存在或为nil", serverID)
+		return
+	}
+
 	now := time.Now()
 	stats, exists := tm.trafficStats[serverID]
 	if !exists {
@@ -123,42 +133,6 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 		}
 		tm.trafficStats[serverID] = stats
 		log.Printf("流量管理器: 服务器 %d 初始化流量统计: 入站=%d, 出站=%d", serverID, inBytes, outBytes)
-
-		// 直接更新服务器的累计流量 - 新添加的关键代码
-		if server, ok := ServerList[serverID]; ok {
-			// 计算流量增量
-			var inDelta, outDelta uint64
-			if inBytes > 0 {
-				inDelta = inBytes
-			}
-			if outBytes > 0 {
-				outDelta = outBytes
-			}
-
-			// 只有在有实际增量时才更新累计流量
-			if inDelta > 0 || outDelta > 0 {
-				// 直接在内存中更新累计值
-				newInTotal := server.CumulativeNetInTransfer + inDelta
-				newOutTotal := server.CumulativeNetOutTransfer + outDelta
-
-				// 更新服务器对象
-				server.CumulativeNetInTransfer = newInTotal
-				server.CumulativeNetOutTransfer = newOutTotal
-
-				// 立刻保存到数据库
-				updateSQL := `UPDATE servers SET 
-								cumulative_net_in_transfer = ?, 
-								cumulative_net_out_transfer = ? 
-								WHERE id = ?`
-				if err := DB.Exec(updateSQL, newInTotal, newOutTotal, serverID).Error; err != nil {
-					log.Printf("流量管理器: 更新服务器 %d 累计流量数据库失败: %v", serverID, err)
-				} else {
-					log.Printf("流量管理器: 更新服务器 %d 累计流量成功: 入站=%d, 出站=%d",
-						serverID, newInTotal, newOutTotal)
-				}
-			}
-		}
-
 		return
 	}
 
@@ -175,53 +149,6 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 	if duration.Seconds() > 0 && !restarted {
 		stats.InSpeed = uint64(float64(inBytes-stats.lastInBytes) / duration.Seconds())
 		stats.OutSpeed = uint64(float64(outBytes-stats.lastOutBytes) / duration.Seconds())
-
-		// 直接更新服务器的累计流量 - 新添加的关键代码
-		if server, ok := ServerList[serverID]; ok {
-			// 计算流量增量
-			var inDelta, outDelta uint64
-			if inBytes > stats.lastInBytes {
-				inDelta = inBytes - stats.lastInBytes
-			}
-			if outBytes > stats.lastOutBytes {
-				outDelta = outBytes - stats.lastOutBytes
-			}
-
-			// 只有在有实际增量时才更新累计流量
-			if inDelta > 0 || outDelta > 0 {
-				// 直接在内存中更新累计值
-				newInTotal := server.CumulativeNetInTransfer + inDelta
-				newOutTotal := server.CumulativeNetOutTransfer + outDelta
-
-				// 更新服务器对象
-				server.CumulativeNetInTransfer = newInTotal
-				server.CumulativeNetOutTransfer = newOutTotal
-
-				// 同步更新状态
-				if server.State != nil {
-					server.State.NetInTransfer = server.State.NetInTransfer + inDelta
-					server.State.NetOutTransfer = server.State.NetOutTransfer + outDelta
-				}
-
-				log.Printf("流量管理器: 服务器 %d 流量增加: 入站+%d, 出站+%d",
-					serverID, inDelta, outDelta)
-
-				// 定期保存到数据库 (改为每5分钟保存一次，避免频繁写入)
-				if time.Since(server.LastFlowSaveTime).Minutes() > 5 {
-					updateSQL := `UPDATE servers SET 
-									cumulative_net_in_transfer = ?, 
-									cumulative_net_out_transfer = ? 
-									WHERE id = ?`
-					if err := DB.Exec(updateSQL, newInTotal, newOutTotal, serverID).Error; err != nil {
-						log.Printf("流量管理器: 定期更新服务器 %d 累计流量到数据库失败: %v", serverID, err)
-					} else {
-						log.Printf("流量管理器: 定期更新服务器 %d 累计流量成功: 入站=%d, 出站=%d",
-							serverID, newInTotal, newOutTotal)
-						server.LastFlowSaveTime = time.Now()
-					}
-				}
-			}
-		}
 	} else {
 		// 如果数据异常（比如重启），重置速率
 		stats.InSpeed = 0
@@ -246,6 +173,71 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 		stats,
 		cache.DefaultExpiration,
 	)
+
+	// 重新获取最新的server对象，避免使用过期引用
+	ServerLock.RLock()
+	currentServer := ServerList[serverID]
+	ServerLock.RUnlock()
+
+	if currentServer != nil {
+		// 获取状态中的原始流量
+		var originalNetInTransfer, originalNetOutTransfer uint64
+		if currentServer.State != nil {
+			originalNetInTransfer = currentServer.State.NetInTransfer - currentServer.CumulativeNetInTransfer
+			originalNetOutTransfer = currentServer.State.NetOutTransfer - currentServer.CumulativeNetOutTransfer
+		}
+
+		// 更新状态中的总流量
+		if currentServer.State != nil {
+			currentServer.State.NetInTransfer = originalNetInTransfer + inBytes
+			currentServer.State.NetOutTransfer = originalNetOutTransfer + outBytes
+
+			// 更新速率
+			currentServer.State.NetInSpeed = stats.InSpeed
+			currentServer.State.NetOutSpeed = stats.OutSpeed
+		}
+
+		// 更新累计流量
+		ServerLock.Lock()
+		currentServer.CumulativeNetInTransfer = inBytes
+		currentServer.CumulativeNetOutTransfer = outBytes
+		ServerLock.Unlock()
+
+		// 如果超过1分钟没有保存，立即保存到数据库
+		if time.Since(currentServer.LastFlowSaveTime).Minutes() > 1 {
+			updateSQL := `UPDATE servers SET 
+						cumulative_net_in_transfer = ?, 
+						cumulative_net_out_transfer = ? 
+						WHERE id = ?`
+
+			// 尝试使用事务并增加重试
+			tx := DB.Begin()
+			if err := tx.Exec(updateSQL, inBytes, outBytes, serverID).Error; err != nil {
+				tx.Rollback()
+				log.Printf("流量管理器: 更新服务器 %d 累计流量到数据库失败: %v", serverID, err)
+			} else {
+				if err := tx.Commit().Error; err != nil {
+					log.Printf("流量管理器: 提交更新服务器 %d 累计流量事务失败: %v", serverID, err)
+				} else {
+					log.Printf("流量管理器: 更新服务器 %d 累计流量成功: 入站=%d, 出站=%d",
+						serverID, inBytes, outBytes)
+					currentServer.LastFlowSaveTime = time.Now()
+
+					// 验证数据是否确实写入
+					var savedFlow struct {
+						CumulativeNetInTransfer  uint64
+						CumulativeNetOutTransfer uint64
+					}
+					if err := DB.Raw(`SELECT cumulative_net_in_transfer, cumulative_net_out_transfer 
+									FROM servers WHERE id = ?`, serverID).Scan(&savedFlow).Error; err == nil {
+						log.Printf("流量管理器: 验证服务器 %d 累计流量更新: DB值=(%d,%d), 内存值=(%d,%d)",
+							serverID, savedFlow.CumulativeNetInTransfer, savedFlow.CumulativeNetOutTransfer,
+							inBytes, outBytes)
+					}
+				}
+			}
+		}
+	}
 
 	// 添加到批量写入缓冲区 (对于详细的流量记录)
 	transferRecord := &model.Transfer{
