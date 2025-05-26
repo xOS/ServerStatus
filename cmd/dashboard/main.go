@@ -37,72 +37,6 @@ func init() {
 	flag.Parse()
 }
 
-// syncAllServerTrafficFromDB 从数据库同步所有服务器的累计流量数据到内存
-func syncAllServerTrafficFromDB() {
-	log.Println("正在从数据库同步所有服务器的累计流量数据...")
-
-	// 先检查 ServerList 是否已初始化
-	if singleton.ServerList == nil {
-		log.Println("ServerList 未初始化，跳过流量同步")
-		return
-	}
-
-	singleton.ServerLock.Lock()
-	defer singleton.ServerLock.Unlock()
-
-	count := 0
-	for _, server := range singleton.ServerList {
-		// 跳过 nil 服务器
-		if server == nil {
-			continue
-		}
-
-		// 从数据库读取最新值
-		var dbServer model.Server
-		if err := singleton.DB.First(&dbServer, server.ID).Error; err == nil {
-			// 只有当数据库中的累计值大于内存中的值时才更新
-			if dbServer.CumulativeNetInTransfer > server.CumulativeNetInTransfer ||
-				dbServer.CumulativeNetOutTransfer > server.CumulativeNetOutTransfer {
-
-				log.Printf("同步服务器 [%s] 的累计流量: 入站 %d → %d, 出站 %d → %d",
-					server.Name,
-					server.CumulativeNetInTransfer, dbServer.CumulativeNetInTransfer,
-					server.CumulativeNetOutTransfer, dbServer.CumulativeNetOutTransfer)
-
-				server.CumulativeNetInTransfer = dbServer.CumulativeNetInTransfer
-				server.CumulativeNetOutTransfer = dbServer.CumulativeNetOutTransfer
-
-				// 同时更新状态中的流量数据
-				if server.State != nil {
-					// 计算原始流量值（可能为负值）
-					var originalNetInTransfer, originalNetOutTransfer uint64
-
-					// 确保不会发生整数下溢
-					if server.State.NetInTransfer > server.CumulativeNetInTransfer {
-						originalNetInTransfer = server.State.NetInTransfer - server.CumulativeNetInTransfer
-					}
-
-					if server.State.NetOutTransfer > server.CumulativeNetOutTransfer {
-						originalNetOutTransfer = server.State.NetOutTransfer - server.CumulativeNetOutTransfer
-					}
-
-					// 应用新的累计值
-					server.State.NetInTransfer = originalNetInTransfer + dbServer.CumulativeNetInTransfer
-					server.State.NetOutTransfer = originalNetOutTransfer + dbServer.CumulativeNetOutTransfer
-				}
-
-				count++
-			}
-		}
-	}
-
-	if count > 0 {
-		log.Printf("成功同步了 %d 个服务器的累计流量数据", count)
-	} else {
-		log.Println("所有服务器的累计流量数据已是最新")
-	}
-}
-
 func initSystem() {
 	// 启动 singleton 包下的所有服务
 	singleton.LoadSingleton()
@@ -111,22 +45,7 @@ func initSystem() {
 	time.Sleep(time.Second)
 
 	// 从数据库同步流量数据到内存
-	syncAllServerTrafficFromDB()
-
-	// 每天的3:30 对 监控记录 和 流量记录 进行清理
-	if _, err := singleton.Cron.AddFunc("0 30 3 * * *", singleton.CleanMonitorHistory); err != nil {
-		panic(err)
-	}
-
-	// 每小时对流量记录进行打点
-	if _, err := singleton.Cron.AddFunc("0 0 * * * *", singleton.RecordTransferHourlyUsage); err != nil {
-		panic(err)
-	}
-
-	// 每10分钟同步一次所有服务器的累计流量
-	if _, err := singleton.Cron.AddFunc("0 */10 * * * *", syncAllServerTrafficFromDB); err != nil {
-		panic(err)
-	}
+	singleton.SyncAllServerTrafficFromDB()
 }
 
 func main() {

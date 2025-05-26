@@ -194,43 +194,69 @@ func UpdateServer(s *model.Server) error {
 	s.LastActive = time.Now()
 
 	if s.State != nil {
-		// 更新流量统计 - 注意这里传入的是原始流量，不是累计流量
-		// 我们需要确保 NetInTransfer 和 NetOutTransfer 是累计后的总流量
+		// 更新流量统计
 		// 从原始 State 中获取实时流量数据
 		currentInTransfer := s.State.NetInTransfer
 		currentOutTransfer := s.State.NetOutTransfer
 
-		// 更新实时速率统计，但不让它修改我们的累计流量
+		log.Printf("服务器 %s 报告流量: 入站=%d, 出站=%d", s.Name, currentInTransfer, currentOutTransfer)
+
+		// 获取之前存储的快照值，转换为 uint64
+		var prevIn, prevOut uint64
+		if server, ok := ServerList[s.ID]; ok {
+			if server.PrevTransferInSnapshot >= 0 {
+				prevIn = uint64(server.PrevTransferInSnapshot)
+			}
+			if server.PrevTransferOutSnapshot >= 0 {
+				prevOut = uint64(server.PrevTransferOutSnapshot)
+			}
+		}
+
+		// 计算增量流量
+		var deltaIn, deltaOut uint64
+		
+		// 检测是否为重启（新流量小于快照值）
+		if currentInTransfer < prevIn || currentOutTransfer < prevOut {
+			log.Printf("检测到服务器 %s 可能重启，重置快照: 原快照入站=%d, 出站=%d, 新流量入站=%d, 出站=%d",
+				s.Name, prevIn, prevOut, currentInTransfer, currentOutTransfer)
+			// 重启时，当前流量就是增量
+			deltaIn = currentInTransfer
+			deltaOut = currentOutTransfer
+		} else {
+			// 正常情况下的增量
+			deltaIn = currentInTransfer - prevIn
+			deltaOut = currentOutTransfer - prevOut
+		}
+
+		// 更新累计流量
+		s.CumulativeNetInTransfer += deltaIn
+		s.CumulativeNetOutTransfer += deltaOut
+
+		// 更新快照值，转换为 int64
+		s.PrevTransferInSnapshot = int64(currentInTransfer)
+		s.PrevTransferOutSnapshot = int64(currentOutTransfer)
+
+		log.Printf("服务器 %s 流量更新: 增量入站=%d, 增量出站=%d, 累计入站=%d, 累计出站=%d",
+			s.Name, deltaIn, deltaOut, s.CumulativeNetInTransfer, s.CumulativeNetOutTransfer)
+
+		// 更新流量管理器（用于速率计算）
 		tm := GetTrafficManager()
-		origInTransfer := currentInTransfer
-		origOutTransfer := currentOutTransfer
-
-		// 如果 s.State 包含累计流量，我们需要减去 CumulativeNetInTransfer 获取实际原始流量
-		if currentInTransfer > s.CumulativeNetInTransfer {
-			origInTransfer = currentInTransfer - s.CumulativeNetInTransfer
-		}
-		if currentOutTransfer > s.CumulativeNetOutTransfer {
-			origOutTransfer = currentOutTransfer - s.CumulativeNetOutTransfer
-		}
-
-		// 使用原始流量更新流量统计
-		tm.UpdateTraffic(s.ID, origInTransfer, origOutTransfer)
+		tm.UpdateTraffic(s.ID, s.CumulativeNetInTransfer, s.CumulativeNetOutTransfer)
 
 		// 更新实时速率
 		inSpeed, outSpeed := tm.GetTrafficSpeed(s.ID)
 		s.State.NetInSpeed = inSpeed
 		s.State.NetOutSpeed = outSpeed
 
-		// 直接将当前流量值保存到数据库，而不是从 TrafficManager 获取值
-		// 这确保了我们不会覆盖累计流量
-		log.Printf("更新服务器 %s 的累计流量数据到数据库: 入站=%d, 出站=%d",
-			s.Name, s.CumulativeNetInTransfer, s.CumulativeNetOutTransfer)
+		// 更新 State 中的累计流量显示值
+		s.State.NetInTransfer = s.CumulativeNetInTransfer
+		s.State.NetOutTransfer = s.CumulativeNetOutTransfer
 
 		// 立即更新到数据库
 		if err := DB.Model(s).Updates(map[string]interface{}{
-			"cumulative_net_in_transfer":  s.CumulativeNetInTransfer,
-			"cumulative_net_out_transfer": s.CumulativeNetOutTransfer,
-			"last_active":                 s.LastActive,
+			"cumulative_net_in_transfer":    s.CumulativeNetInTransfer,
+			"cumulative_net_out_transfer":   s.CumulativeNetOutTransfer,
+			"last_active":                   s.LastActive,
 		}).Error; err != nil {
 			log.Printf("更新服务器 %s 的流量数据失败: %v", s.Name, err)
 			return err

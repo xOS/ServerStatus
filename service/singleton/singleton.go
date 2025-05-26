@@ -322,3 +322,69 @@ func checkShouldResetTransferStats() bool {
 	// 如果是本月第一天的凌晨，返回true
 	return now.Day() == 1 && now.Hour() == 0 && now.Minute() < 5
 }
+
+// SyncAllServerTrafficFromDB 从数据库同步所有服务器的累计流量数据到内存
+func SyncAllServerTrafficFromDB() {
+	log.Println("正在从数据库同步所有服务器的累计流量数据...")
+
+	// 先检查 ServerList 是否已初始化
+	if ServerList == nil {
+		log.Println("ServerList 未初始化，跳过流量同步")
+		return
+	}
+
+	ServerLock.Lock()
+	defer ServerLock.Unlock()
+
+	count := 0
+	for _, server := range ServerList {
+		// 跳过 nil 服务器
+		if server == nil {
+			continue
+		}
+
+		// 从数据库读取最新值
+		var dbServer model.Server
+		if err := DB.First(&dbServer, server.ID).Error; err == nil {
+			// 只有当数据库中的累计值大于内存中的值时才更新
+			if dbServer.CumulativeNetInTransfer > server.CumulativeNetInTransfer ||
+				dbServer.CumulativeNetOutTransfer > server.CumulativeNetOutTransfer {
+
+				log.Printf("同步服务器 [%s] 的累计流量: 入站 %d → %d, 出站 %d → %d",
+					server.Name,
+					server.CumulativeNetInTransfer, dbServer.CumulativeNetInTransfer,
+					server.CumulativeNetOutTransfer, dbServer.CumulativeNetOutTransfer)
+
+				server.CumulativeNetInTransfer = dbServer.CumulativeNetInTransfer
+				server.CumulativeNetOutTransfer = dbServer.CumulativeNetOutTransfer
+
+				// 同时更新状态中的流量数据
+				if server.State != nil {
+					// 计算原始流量值（可能为负值）
+					var originalNetInTransfer, originalNetOutTransfer uint64
+
+					// 确保不会发生整数下溢
+					if server.State.NetInTransfer > server.CumulativeNetInTransfer {
+						originalNetInTransfer = server.State.NetInTransfer - server.CumulativeNetInTransfer
+					}
+
+					if server.State.NetOutTransfer > server.CumulativeNetOutTransfer {
+						originalNetOutTransfer = server.State.NetOutTransfer - server.CumulativeNetOutTransfer
+					}
+
+					// 应用新的累计值
+					server.State.NetInTransfer = originalNetInTransfer + dbServer.CumulativeNetInTransfer
+					server.State.NetOutTransfer = originalNetOutTransfer + dbServer.CumulativeNetOutTransfer
+				}
+
+				count++
+			}
+		}
+	}
+
+	if count > 0 {
+		log.Printf("成功同步了 %d 个服务器的累计流量数据", count)
+	} else {
+		log.Println("所有服务器的累计流量数据已是最新")
+	}
+}

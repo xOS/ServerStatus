@@ -90,34 +90,7 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 			lastOutBytes: outBytes,
 		}
 		tm.trafficStats[serverID] = stats
-		log.Printf("服务器 %d 初始化流量统计: 入站=%d, 出站=%d", serverID, inBytes, outBytes)
-		return
-	}
-
-	// 改进的重启检测逻辑
-	isRestart := tm.detectServerRestart(serverID, inBytes, outBytes, stats)
-	if isRestart {
-		log.Printf("检测到服务器 %d 可能重启，重置流量统计", serverID)
-		// 重启时重置统计，但保留历史数据
-		stats.InBytes = inBytes
-		stats.OutBytes = outBytes
-		stats.lastInBytes = inBytes
-		stats.lastOutBytes = outBytes
-		stats.LastTime = now
-		stats.UpdateCount = 1
-		return
-	}
-
-	// 验证数据有效性
-	if inBytes < stats.InBytes || outBytes < stats.OutBytes {
-		log.Printf("警告: 服务器 %d 的流量数据异常: 新入站=%d < 旧入站=%d 或 新出站=%d < 旧出站=%d",
-			serverID, inBytes, stats.InBytes, outBytes, stats.OutBytes)
-		// 如果新数据小于旧数据，可能是服务器重启，重新初始化
-		stats.InBytes = inBytes
-		stats.OutBytes = outBytes
-		stats.lastInBytes = inBytes
-		stats.lastOutBytes = outBytes
-		stats.LastTime = now
+		log.Printf("流量管理器: 服务器 %d 初始化流量统计: 入站=%d, 出站=%d", serverID, inBytes, outBytes)
 		return
 	}
 
@@ -127,10 +100,15 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 		return // 忽略过于频繁的更新
 	}
 
-	// 计算速率
-	if duration.Seconds() > 0 {
+	// 计算速率（使用累计流量的增量）
+	if duration.Seconds() > 0 && inBytes >= stats.lastInBytes && outBytes >= stats.lastOutBytes {
 		stats.InSpeed = uint64(float64(inBytes-stats.lastInBytes) / duration.Seconds())
 		stats.OutSpeed = uint64(float64(outBytes-stats.lastOutBytes) / duration.Seconds())
+	} else {
+		// 如果数据异常（比如重启），重置速率
+		stats.InSpeed = 0
+		stats.OutSpeed = 0
+		log.Printf("流量管理器: 服务器 %d 数据异常，重置速率", serverID)
 	}
 
 	// 更新统计数据
@@ -141,8 +119,8 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 	stats.LastTime = now
 	stats.UpdateCount++
 
-	log.Printf("服务器 %d 更新流量统计: 入站=%d, 出站=%d, 入站速率=%d/s, 出站速率=%d/s",
-		serverID, inBytes, outBytes, stats.InSpeed, stats.OutSpeed)
+	log.Printf("流量管理器: 服务器 %d 更新速率: 入站速率=%d/s, 出站速率=%d/s",
+		serverID, stats.InSpeed, stats.OutSpeed)
 
 	// 缓存最新数据
 	tm.cache.Set(
@@ -161,16 +139,6 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 	// 检查是否需要立即写入
 	if len(tm.batchBuffer) >= batchSize || now.Sub(tm.lastBatchWrite) >= batchInterval {
 		tm.writeBatchToDatabase()
-	}
-
-	// 只更新速率，不修改累计流量值
-	if server, ok := ServerList[serverID]; ok {
-		// 只更新网速
-		server.State.NetInSpeed = stats.InSpeed
-		server.State.NetOutSpeed = stats.OutSpeed
-
-		log.Printf("更新服务器 %d 流量速率: 入站速率=%d/s, 出站速率=%d/s",
-			serverID, stats.InSpeed, stats.OutSpeed)
 	}
 }
 

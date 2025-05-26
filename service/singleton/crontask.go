@@ -34,6 +34,21 @@ func InitCronTask() {
 	}); err != nil {
 		panic(err)
 	}
+
+	// 每天的3:30 对 监控记录 和 流量记录 进行清理
+	if _, err := Cron.AddFunc("0 30 3 * * *", CleanMonitorHistory); err != nil {
+		panic(err)
+	}
+
+	// 每小时对流量记录进行打点 (注意：这里不重复每分钟的任务)
+	if _, err := Cron.AddFunc("0 0 * * * *", RecordTransferHourlyUsage); err != nil {
+		panic(err)
+	}
+
+	// 每10分钟同步一次所有服务器的累计流量
+	if _, err := Cron.AddFunc("0 */10 * * * *", SyncAllServerTrafficFromDB); err != nil {
+		panic(err)
+	}
 }
 
 // loadCronTasks 加载计划任务
