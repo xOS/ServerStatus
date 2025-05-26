@@ -139,9 +139,26 @@ func InitDBFromPath(path string) {
 
 // RecordTransferHourlyUsage 记录每小时流量使用情况
 func RecordTransferHourlyUsage() {
-	tm := GetTrafficManager()
-	if err := tm.SaveToDatabase(); err != nil {
-		log.Printf("Failed to save traffic data: %v", err)
+	// 废弃TrafficManager, 仅保留函数框架
+}
+
+// StartTrafficManager 初始化流量管理器
+func StartTrafficManager() {
+	// 废弃TrafficManager, 仅保留函数框架
+}
+
+// GetTrafficManager 模拟流量管理器，向后兼容
+func GetTrafficManager() interface{} {
+	return &struct {
+		SaveToDatabase func() error
+		Shutdown       func() error
+	}{
+		SaveToDatabase: func() error {
+			return nil
+		},
+		Shutdown: func() error {
+			return nil
+		},
 	}
 }
 
@@ -200,10 +217,7 @@ func CleanMonitorHistory() {
 
 // CleanCumulativeTransferData 清理累计流量数据
 func CleanCumulativeTransferData(days int) {
-	tm := GetTrafficManager()
-	if err := tm.CleanupOldData(days); err != nil {
-		log.Printf("Failed to cleanup traffic data: %v", err)
-	}
+	// 废弃TrafficManager, 仅保留函数框架
 }
 
 // IPDesensitize 根据设置选择是否对IP进行打码处理 返回处理后的IP(关闭打码则返回原IP)
@@ -248,8 +262,6 @@ func CheckServerOnlineStatus() {
 							"last_online":     server.LastOnline,
 						})
 
-						log.Printf("服务器 %s 离线", server.Name)
-
 						// 确保Host信息也已保存
 						if server.Host != nil {
 							// 检查Host信息是否为空
@@ -281,15 +293,6 @@ func CheckServerOnlineStatus() {
 				} else {
 					if err := tx.Commit().Error; err != nil {
 						log.Printf("提交服务器 %s 的累计流量数据事务失败: %v", server.Name, err)
-					} else {
-						log.Printf("服务器 %s 离线，保存累计流量数据: 入站=%d, 出站=%d",
-							server.Name,
-							server.State.NetInTransfer,
-							server.State.NetOutTransfer)
-
-						// 更新内存中的累计流量数据
-						server.CumulativeNetInTransfer = server.State.NetInTransfer
-						server.CumulativeNetOutTransfer = server.State.NetOutTransfer
 					}
 				}
 			}
@@ -297,11 +300,6 @@ func CheckServerOnlineStatus() {
 
 		// 如果需要重置累计流量，则重置服务器的累计流量
 		if shouldResetTransferStats {
-			// 只对流量有变化的服务器打印日志
-			if server.CumulativeNetInTransfer > 0 || server.CumulativeNetOutTransfer > 0 {
-				log.Printf("重置服务器 %s 的累计流量", server.Name)
-			}
-
 			server.CumulativeNetInTransfer = 0
 			server.CumulativeNetOutTransfer = 0
 
@@ -325,69 +323,20 @@ func checkShouldResetTransferStats() bool {
 
 // SyncAllServerTrafficFromDB 从数据库同步所有服务器的累计流量数据到内存
 func SyncAllServerTrafficFromDB() {
-	log.Println("正在从数据库同步所有服务器的累计流量数据...")
+	// 功能已移除
+}
 
-	// 先检查 ServerList 是否已初始化
-	if ServerList == nil {
-		log.Println("ServerList 未初始化，跳过流量同步")
-		return
-	}
+// TriggerTrafficRecalculation 流量重新计算的空实现
+func TriggerTrafficRecalculation() int {
+	return 0
+}
 
-	ServerLock.Lock()
-	defer ServerLock.Unlock()
+// SaveAllTrafficToDB 保存所有服务器的累计流量到数据库的空实现
+func SaveAllTrafficToDB() {
+	// 功能已移除
+}
 
-	count := 0
-	for _, server := range ServerList {
-		// 跳过 nil 服务器
-		if server == nil {
-			continue
-		}
-
-		// 从数据库读取最新值
-		var dbServer model.Server
-		if err := DB.First(&dbServer, server.ID).Error; err == nil {
-			// 只有当数据库中的累计值大于内存中的值时才更新
-			if dbServer.CumulativeNetInTransfer > server.CumulativeNetInTransfer ||
-				dbServer.CumulativeNetOutTransfer > server.CumulativeNetOutTransfer {
-
-				log.Printf("同步服务器 [%s] 的累计流量: 入站 %d → %d, 出站 %d → %d",
-					server.Name,
-					server.CumulativeNetInTransfer, dbServer.CumulativeNetInTransfer,
-					server.CumulativeNetOutTransfer, dbServer.CumulativeNetOutTransfer)
-
-				server.CumulativeNetInTransfer = dbServer.CumulativeNetInTransfer
-				server.CumulativeNetOutTransfer = dbServer.CumulativeNetOutTransfer
-
-				// 同时更新状态中的流量数据
-				if server.State != nil {
-					// 计算原始流量值（可能为负值）
-					var originalNetInTransfer, originalNetOutTransfer uint64
-
-					// 确保不会发生整数下溢
-					if server.State.NetInTransfer > server.CumulativeNetInTransfer {
-						originalNetInTransfer = server.State.NetInTransfer - server.CumulativeNetInTransfer
-					}
-
-					if server.State.NetOutTransfer > server.CumulativeNetOutTransfer {
-						originalNetOutTransfer = server.State.NetOutTransfer - server.CumulativeNetOutTransfer
-					}
-
-					// 应用新的累计值
-					server.State.NetInTransfer = originalNetInTransfer + dbServer.CumulativeNetInTransfer
-					server.State.NetOutTransfer = originalNetOutTransfer + dbServer.CumulativeNetOutTransfer
-				}
-
-				// 同步数据到前端显示
-				UpdateTrafficStats(server.ID, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
-
-				count++
-			}
-		}
-	}
-
-	if count > 0 {
-		log.Printf("成功同步了 %d 个服务器的累计流量数据", count)
-	} else {
-		log.Println("所有服务器的累计流量数据已是最新")
-	}
+// AutoSyncTraffic 自动同步流量的空实现
+func AutoSyncTraffic() {
+	// 功能已移除
 }

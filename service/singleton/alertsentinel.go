@@ -225,11 +225,6 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 	// 流量总计
 	totalTransfer := inTransfer + outTransfer
 
-	if isTrafficDebugEnabled {
-		log.Printf("服务器 [%d:%s] 准备更新流量数据: IN=%d, OUT=%d, TOTAL=%d",
-			serverID, serverName, inTransfer, outTransfer, totalTransfer)
-	}
-
 	// 记录已更新的规则ID，避免在日志中显示多次
 	var updatedRules []uint64
 
@@ -278,31 +273,12 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 					if !containsUint64(updatedRules, alert.ID) {
 						updatedRules = append(updatedRules, alert.ID)
 					}
-
-					// 打印详细日志
-					if isTrafficDebugEnabled {
-						if exists {
-							log.Printf("服务器 [%d:%s] 在规则 [%d:%s] 中的流量更新: %d -> %d (增加 %d)",
-								serverID, serverName, alert.ID, alert.Name,
-								currentTransfer, totalTransfer, totalTransfer-currentTransfer)
-						} else {
-							log.Printf("服务器 [%d:%s] 在规则 [%d:%s] 中的流量初始化: %d",
-								serverID, serverName, alert.ID, alert.Name, totalTransfer)
-						}
-					}
 				}
 
 				// 找到一个满足条件的规则即可退出循环
 				break
 			}
 		}
-	}
-
-	if len(updatedRules) > 0 && !isTrafficDebugEnabled {
-		log.Printf("更新服务器 [%d:%s] 的流量数据: 总计=%d, 更新了%d个规则",
-			serverID, serverName, totalTransfer, len(updatedRules))
-	} else if len(updatedRules) == 0 && isTrafficDebugEnabled {
-		log.Printf("服务器 [%d:%s] 不在任何流量监控规则范围内，未更新流量数据", serverID, serverName)
 	}
 }
 

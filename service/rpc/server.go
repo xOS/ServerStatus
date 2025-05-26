@@ -131,34 +131,8 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		// 1. 如果有明显回退（入站或出站任意一个显著减少），直接识别为重启
 		// 2. 如果出现轻微回退（可能是探针重启但流量统计未完全重置），也识别为重启
 		if originalNetInTransfer < prevNetIn || originalNetOutTransfer < prevNetOut {
-			// 计算回退量，用于日志记录
-			netInDiff := float64(0)
-			netOutDiff := float64(0)
-			netInPercent := float64(0)
-			netOutPercent := float64(0)
-
-			if prevNetIn > 0 && originalNetInTransfer < prevNetIn {
-				netInDiff = float64(prevNetIn - originalNetInTransfer)
-				netInPercent = netInDiff / float64(prevNetIn) * 100
-			}
-
-			if prevNetOut > 0 && originalNetOutTransfer < prevNetOut {
-				netOutDiff = float64(prevNetOut - originalNetOutTransfer)
-				netOutPercent = netOutDiff / float64(prevNetOut) * 100
-			}
-
 			// 任何流量回退都认定为重启
 			isRestart = true
-
-			// 记录日志
-			if netInDiff > 0 || netOutDiff > 0 {
-				log.Printf("检测到服务器 %s 重启: 入站回退=%.2fMB(%.1f%%), 出站回退=%.2fMB(%.1f%%)",
-					singleton.ServerList[clientID].Name,
-					netInDiff/(1024*1024), netInPercent,
-					netOutDiff/(1024*1024), netOutPercent)
-			} else {
-				log.Printf("检测到服务器 %s 重启: 流量值回退", singleton.ServerList[clientID].Name)
-			}
 		}
 	}
 
@@ -171,10 +145,6 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			// 使用数据库中的累计值，确保不会丢失数据
 			singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
 			singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
-			log.Printf("从数据库加载服务器 %s 累计流量数据: 入站=%d, 出站=%d",
-				singleton.ServerList[clientID].Name,
-				server.CumulativeNetInTransfer,
-				server.CumulativeNetOutTransfer)
 
 			// 重置基准点，避免后续错误计算
 			singleton.ServerList[clientID].PrevTransferInSnapshot = int64(originalNetInTransfer)
@@ -184,20 +154,6 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		// 然后再加上当前新上报的流量值 - 探针重启后的原始流量作为新的基准点
 		state.NetInTransfer = originalNetInTransfer + singleton.ServerList[clientID].CumulativeNetInTransfer
 		state.NetOutTransfer = originalNetOutTransfer + singleton.ServerList[clientID].CumulativeNetOutTransfer
-
-		// 根据状态选择日志消息
-		statusMsg := "首次上线"
-		if isRestart {
-			statusMsg = "重启"
-		}
-
-		log.Printf("服务器 %s %s，使用当前流量+累计流量: 当前入站=%d, 当前出站=%d, 累计入站=%d, 累计出站=%d",
-			singleton.ServerList[clientID].Name,
-			statusMsg,
-			originalNetInTransfer,
-			originalNetOutTransfer,
-			singleton.ServerList[clientID].CumulativeNetInTransfer,
-			singleton.ServerList[clientID].CumulativeNetOutTransfer)
 
 		// 将累计流量写入数据库，确保重启后数据不丢失
 		// 使用直接的SQL语句来更新，确保数据被写入
@@ -216,19 +172,12 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			}
 			if err := singleton.DB.Raw("SELECT cumulative_net_in_transfer, cumulative_net_out_transfer FROM servers WHERE id = ?", clientID).
 				Scan(&savedValue).Error; err == nil {
-				log.Printf("服务器 %s 累计流量成功保存到数据库并验证: 入站=%d, 出站=%d",
-					singleton.ServerList[clientID].Name,
-					savedValue.CumulativeNetInTransfer,
-					savedValue.CumulativeNetOutTransfer)
-
 				// 确保内存中的值与数据库一致
 				singleton.ServerList[clientID].CumulativeNetInTransfer = savedValue.CumulativeNetInTransfer
 				singleton.ServerList[clientID].CumulativeNetOutTransfer = savedValue.CumulativeNetOutTransfer
 
 				// 同步到前端显示
-				singleton.UpdateTrafficStats(clientID, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer)
-			} else {
-				log.Printf("验证服务器 %s 累计流量保存失败: %v", singleton.ServerList[clientID].Name, err)
+				updateTrafficDisplay(clientID, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer)
 			}
 		}
 	} else {
@@ -248,10 +197,6 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			// 如果当前流量大于上次记录的原始流量，增加累计流量
 			increase := uint64(int64(originalNetInTransfer) - singleton.ServerList[clientID].PrevTransferInSnapshot)
 			singleton.ServerList[clientID].CumulativeNetInTransfer += increase
-			log.Printf("服务器 %s 入站流量增加: +%d, 累计=%d",
-				singleton.ServerList[clientID].Name,
-				increase,
-				singleton.ServerList[clientID].CumulativeNetInTransfer)
 		}
 
 		if singleton.ServerList[clientID].PrevTransferOutSnapshot > 0 &&
@@ -259,10 +204,6 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			// 如果当前流量大于上次记录的原始流量，增加累计流量
 			increase := uint64(int64(originalNetOutTransfer) - singleton.ServerList[clientID].PrevTransferOutSnapshot)
 			singleton.ServerList[clientID].CumulativeNetOutTransfer += increase
-			log.Printf("服务器 %s 出站流量增加: +%d, 累计=%d",
-				singleton.ServerList[clientID].Name,
-				increase,
-				singleton.ServerList[clientID].CumulativeNetOutTransfer)
 		}
 
 		// 更新基准点为当前值
@@ -272,13 +213,6 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		// 设置State中的总流量（原始流量+累计流量）
 		state.NetInTransfer = originalNetInTransfer + singleton.ServerList[clientID].CumulativeNetInTransfer
 		state.NetOutTransfer = originalNetOutTransfer + singleton.ServerList[clientID].CumulativeNetOutTransfer
-
-		log.Printf("服务器 %s 正常更新流量: 当前入站=%d, 当前出站=%d, 累计入站=%d, 累计出站=%d",
-			singleton.ServerList[clientID].Name,
-			originalNetInTransfer,
-			originalNetOutTransfer,
-			singleton.ServerList[clientID].CumulativeNetInTransfer,
-			singleton.ServerList[clientID].CumulativeNetOutTransfer)
 
 		// 定期更新累计流量到数据库（按3分钟间隔）
 		if time.Since(singleton.ServerList[clientID].LastFlowSaveTime).Minutes() > 3 {
@@ -298,24 +232,16 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 				}
 				if err := singleton.DB.Raw("SELECT cumulative_net_in_transfer, cumulative_net_out_transfer FROM servers WHERE id = ?", clientID).
 					Scan(&savedValue).Error; err == nil {
-					log.Printf("服务器 %s 定期累计流量成功保存并验证: 入站=%d, 出站=%d",
-						singleton.ServerList[clientID].Name,
-						savedValue.CumulativeNetInTransfer,
-						savedValue.CumulativeNetOutTransfer)
-
 					// 确保内存中的值与数据库一致
 					singleton.ServerList[clientID].CumulativeNetInTransfer = savedValue.CumulativeNetInTransfer
 					singleton.ServerList[clientID].CumulativeNetOutTransfer = savedValue.CumulativeNetOutTransfer
-
-					// 同步到前端显示
-					singleton.UpdateTrafficStats(clientID, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer)
 				}
 			}
 			// 更新最后保存时间
 			singleton.ServerList[clientID].LastFlowSaveTime = time.Now()
-		} else {
-			// 即使不保存到数据库，也同步到前端显示
-			singleton.UpdateTrafficStats(clientID, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer)
+
+			// 同步到前端显示
+			updateTrafficDisplay(clientID, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer)
 		}
 	}
 
@@ -493,4 +419,10 @@ func (s *ServerHandler) LookupGeoIP(c context.Context, r *pb.GeoIP) (*pb.GeoIP, 
 	singleton.ServerList[clientID].Host.CountryCode = location
 
 	return &pb.GeoIP{Ip: ip, CountryCode: location}, nil
+}
+
+// 以下代码必须保留，以确保前端功能正常
+func updateTrafficDisplay(serverID uint64, inTransfer, outTransfer uint64) {
+	// 确保同步到前端显示
+	singleton.UpdateTrafficStats(serverID, inTransfer, outTransfer)
 }

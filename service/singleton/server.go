@@ -199,8 +199,6 @@ func UpdateServer(s *model.Server) error {
 		currentInTransfer := s.State.NetInTransfer
 		currentOutTransfer := s.State.NetOutTransfer
 
-		log.Printf("服务器 %s 报告流量: 入站=%d, 出站=%d", s.Name, currentInTransfer, currentOutTransfer)
-
 		// 获取之前存储的快照值，转换为 uint64
 		var prevIn, prevOut uint64
 		if server, ok := ServerList[s.ID]; ok {
@@ -217,9 +215,6 @@ func UpdateServer(s *model.Server) error {
 
 		// 检测是否为重启（新流量小于快照值）
 		if currentInTransfer < prevIn || currentOutTransfer < prevOut {
-			log.Printf("检测到服务器 %s 可能重启，重置快照: 原快照入站=%d, 出站=%d, 新流量入站=%d, 出站=%d",
-				s.Name, prevIn, prevOut, currentInTransfer, currentOutTransfer)
-
 			// 重启处理逻辑改进：将快照中的流量添加到累计值
 			if prevIn > 0 {
 				s.CumulativeNetInTransfer += prevIn
@@ -227,10 +222,6 @@ func UpdateServer(s *model.Server) error {
 			if prevOut > 0 {
 				s.CumulativeNetOutTransfer += prevOut
 			}
-
-			// 输出日志
-			log.Printf("服务器 %s 重启，保存之前流量: 累计入站=%d, 累计出站=%d",
-				s.Name, s.CumulativeNetInTransfer, s.CumulativeNetOutTransfer)
 
 			// 流量重置处理：将当前流量作为新基准点
 			s.PrevTransferInSnapshot = int64(currentInTransfer)
@@ -257,9 +248,6 @@ func UpdateServer(s *model.Server) error {
 			s.State.NetOutTransfer = currentOutTransfer + s.CumulativeNetOutTransfer
 		}
 
-		log.Printf("服务器 %s 流量更新: 增量入站=%d, 增量出站=%d, 累计入站=%d, 累计出站=%d",
-			s.Name, deltaIn, deltaOut, s.CumulativeNetInTransfer, s.CumulativeNetOutTransfer)
-
 		// 在 ServerList 中更新该服务器的累计流量
 		if server, ok := ServerList[s.ID]; ok && server != nil {
 			server.CumulativeNetInTransfer = s.CumulativeNetInTransfer
@@ -272,11 +260,6 @@ func UpdateServer(s *model.Server) error {
 		// 这是前端显示的关键：必须是 currentTransfer + cumulativeTransfer
 		s.State.NetInTransfer = currentInTransfer + s.CumulativeNetInTransfer
 		s.State.NetOutTransfer = currentOutTransfer + s.CumulativeNetOutTransfer
-
-		log.Printf("服务器 %s 显示流量更新为: 入站=%d（原始=%d+累计=%d）, 出站=%d（原始=%d+累计=%d）",
-			s.Name,
-			s.State.NetInTransfer, currentInTransfer, s.CumulativeNetInTransfer,
-			s.State.NetOutTransfer, currentOutTransfer, s.CumulativeNetOutTransfer)
 
 		// 立即更新到数据库 - 直接使用SQL增加可靠性
 		updateSQL := `UPDATE servers SET 

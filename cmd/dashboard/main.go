@@ -21,8 +21,6 @@ type DashboardCliParam struct {
 	Version          bool   // 当前版本号
 	ConfigFile       string // 配置文件路径
 	DatebaseLocation string // Sqlite3 数据库文件路径
-	ResetTraffic     bool   // 重置所有服务器的累计流量数据
-	DebugTraffic     bool   // 启用流量调试日志
 }
 
 var (
@@ -34,8 +32,6 @@ func init() {
 	flag.BoolVarP(&dashboardCliParam.Version, "version", "v", false, "查看当前版本号")
 	flag.StringVarP(&dashboardCliParam.ConfigFile, "config", "c", "data/config.yaml", "配置文件路径")
 	flag.StringVar(&dashboardCliParam.DatebaseLocation, "db", "data/sqlite.db", "Sqlite3数据库文件路径")
-	flag.BoolVar(&dashboardCliParam.ResetTraffic, "reset-traffic", false, "重置所有服务器的累计流量数据")
-	flag.BoolVar(&dashboardCliParam.DebugTraffic, "debug-traffic", false, "启用流量调试日志")
 	flag.Parse()
 }
 
@@ -47,13 +43,10 @@ func initSystem() {
 	time.Sleep(2 * time.Second)
 
 	// 加载服务器流量数据并初始化
-	log.Println("正在从数据库加载服务器流量数据...")
 	singleton.SyncAllServerTrafficFromDB()
 
 	// 特别强调：面板重启时必须执行流量重新计算
-	log.Println("正在重新计算所有服务器流量数据...")
-	count := singleton.TriggerTrafficRecalculation()
-	log.Printf("完成流量数据初始化，处理了 %d 个服务器", count)
+	singleton.TriggerTrafficRecalculation()
 
 	// 开启流量同步和持久化
 	singleton.AutoSyncTraffic()
@@ -70,18 +63,6 @@ func main() {
 	singleton.InitTimezoneAndCache()
 	singleton.InitDBFromPath(dashboardCliParam.DatebaseLocation)
 	singleton.InitLocalizer()
-
-	// 处理重置流量命令
-	if dashboardCliParam.ResetTraffic {
-		resetAllServerTraffic()
-		return
-	}
-
-	// 设置流量调试模式
-	if dashboardCliParam.DebugTraffic {
-		singleton.EnableTrafficDebug()
-		log.Println("已启用流量调试模式，将输出详细的流量变化信息")
-	}
 
 	initSystem()
 
@@ -106,12 +87,6 @@ func main() {
 		// 保存所有服务器的累计流量
 		singleton.SaveAllTrafficToDB()
 
-		// 优雅关闭流量管理器
-		tm := singleton.GetTrafficManager()
-		if err := tm.Shutdown(); err != nil {
-			log.Printf("流量管理器关闭失败: %v", err)
-		}
-
 		log.Println("NG>> Graceful::END")
 		srv.Shutdown(c)
 		return nil
@@ -133,55 +108,4 @@ func dispatchReportInfoTask() {
 			Data: "",
 		})
 	}
-}
-
-// resetAllServerTraffic 重置所有服务器的累计流量数据
-func resetAllServerTraffic() {
-	fmt.Println("正在重置所有服务器的累计流量数据...")
-
-	// 首先清空数据库中的累计流量数据
-	err := singleton.DB.Model(&model.Server{}).Updates(map[string]interface{}{
-		"cumulative_net_in_transfer":  0,
-		"cumulative_net_out_transfer": 0,
-	}).Error
-
-	if err != nil {
-		fmt.Printf("重置数据库中的累计流量失败: %v\n", err)
-		return
-	}
-
-	// 加载服务器列表
-	singleton.LoadSingleton()
-
-	// 重置内存中的累计流量数据
-	singleton.ServerLock.Lock()
-	defer singleton.ServerLock.Unlock()
-
-	count := 0
-	for _, server := range singleton.ServerList {
-		if server.CumulativeNetInTransfer > 0 || server.CumulativeNetOutTransfer > 0 {
-			fmt.Printf("重置服务器 [%s] 的累计流量: 入站 %d → 0, 出站 %d → 0\n",
-				server.Name,
-				server.CumulativeNetInTransfer,
-				server.CumulativeNetOutTransfer)
-
-			server.CumulativeNetInTransfer = 0
-			server.CumulativeNetOutTransfer = 0
-
-			// 同时重置状态中的流量数据
-			if server.State != nil {
-				server.State.NetInTransfer = 0
-				server.State.NetOutTransfer = 0
-			}
-
-			// 重置增量计算的基准点
-			server.PrevTransferInSnapshot = 0
-			server.PrevTransferOutSnapshot = 0
-
-			count++
-		}
-	}
-
-	fmt.Printf("成功重置了 %d 个服务器的累计流量数据\n", count)
-	fmt.Println("重置完成，请重启应用程序以使更改生效")
 }
