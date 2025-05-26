@@ -67,8 +67,40 @@ func GetTrafficManager() *TrafficManager {
 			batchBuffer:    make([]*model.Transfer, 0, batchSize),
 			lastBatchWrite: time.Now(),
 		}
+		
+		// 验证Transfer表结构
+		if DB != nil {
+			if !DB.Migrator().HasTable(&model.Transfer{}) {
+				log.Printf("流量管理器: Transfer表不存在，尝试创建...")
+				if err := DB.Migrator().CreateTable(&model.Transfer{}); err != nil {
+					log.Printf("流量管理器: 创建Transfer表失败: %v", err)
+				} else {
+					log.Printf("流量管理器: Transfer表创建成功")
+				}
+			} else {
+				log.Printf("流量管理器: Transfer表已存在")
+				
+				// 验证表结构
+				requiredColumns := []string{"server_id", "in", "out"}
+				for _, col := range requiredColumns {
+					if !DB.Migrator().HasColumn(&model.Transfer{}, col) {
+						log.Printf("流量管理器: 警告 - Transfer表缺少列: %s", col)
+					}
+				}
+				
+				// 显示当前记录数
+				var count int64
+				if err := DB.Model(&model.Transfer{}).Count(&count); err == nil {
+					log.Printf("流量管理器: Transfer表中现有 %d 条记录", count)
+				}
+			}
+		} else {
+			log.Printf("流量管理器: 警告 - 数据库连接为空")
+		}
+		
 		// 启动后台批量写入任务
 		go trafficManager.batchWriteWorker()
+		log.Printf("流量管理器: 初始化完成，批量写入工作器已启动")
 	})
 	return trafficManager
 }
@@ -130,14 +162,20 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 	)
 
 	// 添加到批量写入缓冲区
-	tm.batchBuffer = append(tm.batchBuffer, &model.Transfer{
+	transferRecord := &model.Transfer{
 		ServerID: serverID,
 		In:       inBytes,
 		Out:      outBytes,
-	})
+	}
+	tm.batchBuffer = append(tm.batchBuffer, transferRecord)
+
+	log.Printf("流量管理器: 服务器 %d 添加到批量缓冲区: 入站=%d, 出站=%d (缓冲区大小: %d)",
+		serverID, inBytes, outBytes, len(tm.batchBuffer))
 
 	// 检查是否需要立即写入
 	if len(tm.batchBuffer) >= batchSize || now.Sub(tm.lastBatchWrite) >= batchInterval {
+		log.Printf("流量管理器: 触发批量写入 - 缓冲区大小: %d, 时间间隔: %v", 
+			len(tm.batchBuffer), now.Sub(tm.lastBatchWrite))
 		tm.writeBatchToDatabase()
 	}
 }
@@ -183,22 +221,88 @@ func (tm *TrafficManager) writeBatchToDatabase() {
 		return
 	}
 
+	log.Printf("流量管理器: 开始批量写入 %d 条流量记录到数据库", len(tm.batchBuffer))
+
+	// 打印前几条记录用于调试
+	for i, record := range tm.batchBuffer {
+		if i < 3 { // 只打印前3条
+			log.Printf("流量管理器: 记录%d - ServerID=%d, In=%d, Out=%d", 
+				i+1, record.ServerID, record.In, record.Out)
+		}
+	}
+
+	// 验证数据库连接
+	if DB == nil {
+		log.Printf("流量管理器: 数据库连接为空")
+		return
+	}
+
+	// 检查表是否存在
+	if !DB.Migrator().HasTable(&model.Transfer{}) {
+		log.Printf("流量管理器: Transfer表不存在，尝试创建...")
+		if err := DB.Migrator().CreateTable(&model.Transfer{}); err != nil {
+			log.Printf("流量管理器: 创建Transfer表失败: %v", err)
+			return
+		}
+		log.Printf("流量管理器: Transfer表创建成功")
+	}
+
 	// 创建批量写入的事务
 	tx := DB.Begin()
 	if tx.Error != nil {
+		log.Printf("流量管理器: 开始事务失败: %v", tx.Error)
 		return
 	}
 
 	// 批量插入数据
 	if err := tx.CreateInBatches(tm.batchBuffer, 100).Error; err != nil {
+		log.Printf("流量管理器: 批量插入失败: %v", err)
+		
+		// 尝试逐一插入来查找问题
+		log.Printf("流量管理器: 尝试逐一插入以识别问题...")
 		tx.Rollback()
-		return
+		
+		// 开始新的事务进行逐一插入
+		tx2 := DB.Begin()
+		if tx2.Error != nil {
+			log.Printf("流量管理器: 开始第二个事务失败: %v", tx2.Error)
+			return
+		}
+		
+		successCount := 0
+		for i, record := range tm.batchBuffer {
+			if err := tx2.Create(record).Error; err != nil {
+				log.Printf("流量管理器: 插入记录%d失败: %v, 记录: ServerID=%d, In=%d, Out=%d", 
+					i+1, err, record.ServerID, record.In, record.Out)
+			} else {
+				successCount++
+			}
+		}
+		
+		if err := tx2.Commit().Error; err != nil {
+			log.Printf("流量管理器: 提交第二个事务失败: %v", err)
+			tx2.Rollback()
+			return
+		}
+		
+		log.Printf("流量管理器: 逐一插入完成，成功插入 %d 条记录", successCount)
+	} else {
+		// 提交事务
+		if err := tx.Commit().Error; err != nil {
+			log.Printf("流量管理器: 提交事务失败: %v", err)
+			tx.Rollback()
+			return
+		}
+
+		log.Printf("流量管理器: 成功批量写入 %d 条流量记录到数据库", len(tm.batchBuffer))
 	}
 
-	// 提交事务
-	if err := tx.Commit().Error; err != nil {
-		tx.Rollback()
-		return
+	// 验证写入结果
+	var count int64
+	if err := DB.Model(&model.Transfer{}).Count(&count); err != nil {
+		log.Printf("流量管理器: 验证记录数失败: %v", err)
+	} else {
+		log.Printf("流量管理器: 数据库中现有 %d 条Transfer记录", count)
 	}
 
 	// 清空缓冲区并更新最后写入时间
