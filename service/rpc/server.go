@@ -120,6 +120,9 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	originalNetInTransfer := state.NetInTransfer
 	originalNetOutTransfer := state.NetOutTransfer
 
+	// 检查周期流量重置
+	checkAndResetCycleTraffic(clientID)
+
 	// 检查是否是服务器重启或网络接口重置
 	isRestart := false
 	if singleton.ServerList[clientID].Host != nil && singleton.ServerList[clientID].State != nil {
@@ -130,12 +133,12 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 
 		// 如果当前原始流量远小于之前的显示流量，说明发生了重启
 		// 使用更严格的判断：任何明显的流量回退都认为是重启
-		if (prevDisplayIn > 0 && originalNetInTransfer < prevDisplayIn/2) || 
-		   (prevDisplayOut > 0 && originalNetOutTransfer < prevDisplayOut/2) {
+		if (prevDisplayIn > 0 && originalNetInTransfer < prevDisplayIn/2) ||
+			(prevDisplayOut > 0 && originalNetOutTransfer < prevDisplayOut/2) {
 			isRestart = true
-			log.Printf("服务器 %s 检测到流量显著回退（疑似重启）: 入站 %d->%d, 出站 %d->%d", 
+			log.Printf("服务器 %s 检测到流量显著回退（疑似重启）: 入站 %d->%d, 出站 %d->%d",
 				singleton.ServerList[clientID].Name,
-				prevDisplayIn, originalNetInTransfer, 
+				prevDisplayIn, originalNetInTransfer,
 				prevDisplayOut, originalNetOutTransfer)
 		}
 	}
@@ -148,9 +151,9 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			if err := singleton.DB.First(&server, clientID).Error; err == nil {
 				singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
 				singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
-				log.Printf("服务器 %s 首次上线，从数据库加载累计流量: 入站=%d, 出站=%d", 
+				log.Printf("服务器 %s 首次上线，从数据库加载累计流量: 入站=%d, 出站=%d",
 					singleton.ServerList[clientID].Name,
-					server.CumulativeNetInTransfer, 
+					server.CumulativeNetInTransfer,
 					server.CumulativeNetOutTransfer)
 			}
 		}
@@ -163,7 +166,7 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		state.NetInTransfer = singleton.ServerList[clientID].CumulativeNetInTransfer
 		state.NetOutTransfer = singleton.ServerList[clientID].CumulativeNetOutTransfer
 
-		log.Printf("服务器 %s 重启/首次上线，重置基准点: 入站基准=%d, 出站基准=%d, 显示累计流量: 入站=%d, 出站=%d", 
+		log.Printf("服务器 %s 重启/首次上线，重置基准点: 入站基准=%d, 出站基准=%d, 显示累计流量: 入站=%d, 出站=%d",
 			singleton.ServerList[clientID].Name,
 			originalNetInTransfer, originalNetOutTransfer,
 			state.NetInTransfer, state.NetOutTransfer)
@@ -178,14 +181,14 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 				singleton.ServerList[clientID].CumulativeNetInTransfer += increaseIn
 			} else if int64(originalNetInTransfer) < singleton.ServerList[clientID].PrevTransferInSnapshot {
 				// 检测到流量重置（如网络接口重启），但不是服务器重启
-				log.Printf("服务器 %s 检测到入站流量重置: %d -> %d，重新设置基准点", 
+				log.Printf("服务器 %s 检测到入站流量重置: %d -> %d，重新设置基准点",
 					singleton.ServerList[clientID].Name,
-					singleton.ServerList[clientID].PrevTransferInSnapshot, 
+					singleton.ServerList[clientID].PrevTransferInSnapshot,
 					originalNetInTransfer)
 			}
 		} else {
 			// 首次设置基准点，不计算增量
-			log.Printf("服务器 %s 首次设置入站流量基准点: %d", 
+			log.Printf("服务器 %s 首次设置入站流量基准点: %d",
 				singleton.ServerList[clientID].Name, originalNetInTransfer)
 		}
 
@@ -194,14 +197,14 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 				increaseOut = uint64(int64(originalNetOutTransfer) - singleton.ServerList[clientID].PrevTransferOutSnapshot)
 				singleton.ServerList[clientID].CumulativeNetOutTransfer += increaseOut
 			} else if int64(originalNetOutTransfer) < singleton.ServerList[clientID].PrevTransferOutSnapshot {
-				log.Printf("服务器 %s 检测到出站流量重置: %d -> %d，重新设置基准点", 
+				log.Printf("服务器 %s 检测到出站流量重置: %d -> %d，重新设置基准点",
 					singleton.ServerList[clientID].Name,
-					singleton.ServerList[clientID].PrevTransferOutSnapshot, 
+					singleton.ServerList[clientID].PrevTransferOutSnapshot,
 					originalNetOutTransfer)
 			}
 		} else {
 			// 首次设置基准点，不计算增量
-			log.Printf("服务器 %s 首次设置出站流量基准点: %d", 
+			log.Printf("服务器 %s 首次设置出站流量基准点: %d",
 				singleton.ServerList[clientID].Name, originalNetOutTransfer)
 		}
 
@@ -214,7 +217,7 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		state.NetOutTransfer = singleton.ServerList[clientID].CumulativeNetOutTransfer
 
 		if increaseIn > 0 || increaseOut > 0 {
-			log.Printf("服务器 %s 流量增量: 入站+%d, 出站+%d, 累计显示: 入站=%d, 出站=%d", 
+			log.Printf("服务器 %s 流量增量: 入站+%d, 出站+%d, 累计显示: 入站=%d, 出站=%d",
 				singleton.ServerList[clientID].Name,
 				increaseIn, increaseOut,
 				state.NetInTransfer, state.NetOutTransfer)
@@ -241,7 +244,7 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	if singleton.ServerList[clientID].State != nil {
 		// 简单的计数器，可以使用时间戳的秒数模10
 		if time.Now().Unix()%10 == 0 {
-			log.Printf("[调试] 服务器 %s 流量状态 - 原始流量: 入站=%d 出站=%d, 显示流量: 入站=%d 出站=%d, 累计流量: 入站=%d 出站=%d", 
+			log.Printf("[调试] 服务器 %s 流量状态 - 原始流量: 入站=%d 出站=%d, 显示流量: 入站=%d 出站=%d, 累计流量: 入站=%d 出站=%d",
 				singleton.ServerList[clientID].Name,
 				originalNetInTransfer, originalNetOutTransfer,
 				state.NetInTransfer, state.NetOutTransfer,
@@ -331,9 +334,9 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	 * 这是可以借助上报顺序的空档，标记服务器为重启状态，表示从该节点开始累计流量
 	 */
 	if singleton.ServerList[clientID].Host != nil && singleton.ServerList[clientID].Host.BootTime < host.BootTime {
-		log.Printf("检测到服务器 %s 重启（BootTime: %d -> %d），重置流量计数基准点", 
-			singleton.ServerList[clientID].Name, 
-			singleton.ServerList[clientID].Host.BootTime, 
+		log.Printf("检测到服务器 %s 重启（BootTime: %d -> %d），重置流量计数基准点",
+			singleton.ServerList[clientID].Name,
+			singleton.ServerList[clientID].Host.BootTime,
 			host.BootTime)
 
 		// 服务器重启时保持累计流量不变，只重置上次记录点
@@ -429,4 +432,128 @@ func (s *ServerHandler) LookupGeoIP(c context.Context, r *pb.GeoIP) (*pb.GeoIP, 
 func updateTrafficDisplay(serverID uint64, inTransfer, outTransfer uint64) {
 	// 确保同步到前端显示
 	singleton.UpdateTrafficStats(serverID, inTransfer, outTransfer)
+}
+
+// checkAndResetCycleTraffic 检查并重置周期流量
+// 根据AlertRule中定义的transfer_all_cycle规则重置累计流量
+func checkAndResetCycleTraffic(clientID uint64) {
+	singleton.AlertsLock.RLock()
+	defer singleton.AlertsLock.RUnlock()
+
+	// 遍历所有启用的报警规则
+	for _, alert := range singleton.Alerts {
+		if !alert.Enabled() {
+			continue
+		}
+
+		// 检查规则是否包含此服务器
+		shouldMonitorServer := false
+		var transferRule *model.Rule
+
+		for i := range alert.Rules {
+			rule := &alert.Rules[i]
+			if !rule.IsTransferDurationRule() {
+				continue
+			}
+
+			// 检查规则覆盖范围
+			if rule.Cover == model.RuleCoverAll {
+				// 监控全部服务器，但排除了此服务器
+				if rule.Ignore[clientID] {
+					continue
+				}
+			} else if rule.Cover == model.RuleCoverIgnoreAll {
+				// 忽略全部服务器，但指定监控了此服务器
+				if !rule.Ignore[clientID] {
+					continue
+				}
+			}
+
+			shouldMonitorServer = true
+			transferRule = rule
+			break
+		}
+
+		if !shouldMonitorServer || transferRule == nil {
+			continue
+		}
+
+		// 获取当前周期的开始时间
+		currentCycleStart := transferRule.GetTransferDurationStart()
+		currentCycleEnd := transferRule.GetTransferDurationEnd()
+
+		// 检查周期是否已经发生变化（新周期开始）
+		server := singleton.ServerList[clientID]
+		lastResetTime := time.Time{}
+
+		// 从CycleTransferStats获取上次重置时间的记录
+		if stats, exists := singleton.AlertsCycleTransferStatsStore[alert.ID]; exists {
+			if nextUpdate, hasUpdate := stats.NextUpdate[clientID]; hasUpdate {
+				// 使用NextUpdate时间作为参考，判断是否进入新周期
+				if nextUpdate.Before(currentCycleStart) {
+					lastResetTime = nextUpdate
+				}
+			}
+		}
+
+		// 检查是否需要重置：当前时间已经进入新周期，且之前没有在这个周期重置过
+		needReset := false
+		now := time.Now()
+
+		if lastResetTime.IsZero() {
+			// 第一次运行，不需要重置，只记录时间
+			log.Printf("服务器 %s：首次检查周期流量，当前周期: %s 到 %s",
+				server.Name,
+				currentCycleStart.Format("2006-01-02 15:04:05"),
+				currentCycleEnd.Format("2006-01-02 15:04:05"))
+		} else if now.After(currentCycleStart) && lastResetTime.Before(currentCycleStart) {
+			// 当前时间已过周期开始时间，且上次重置在当前周期开始之前
+			needReset = true
+		}
+
+		if needReset {
+			// 重置累计流量
+			oldInTransfer := server.CumulativeNetInTransfer
+			oldOutTransfer := server.CumulativeNetOutTransfer
+
+			server.CumulativeNetInTransfer = 0
+			server.CumulativeNetOutTransfer = 0
+
+			// 重置基准点
+			server.PrevTransferInSnapshot = 0
+			server.PrevTransferOutSnapshot = 0
+
+			log.Printf("服务器 %s：周期流量重置完成 [%s规则]",
+				server.Name, alert.Name)
+			log.Printf("  - 重置前累计流量: 入站=%d, 出站=%d", oldInTransfer, oldOutTransfer)
+			log.Printf("  - 重置后累计流量: 入站=%d, 出站=%d",
+				server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+			log.Printf("  - 当前周期: %s 到 %s",
+				currentCycleStart.Format("2006-01-02 15:04:05"),
+				currentCycleEnd.Format("2006-01-02 15:04:05"))
+
+			// 立即保存到数据库
+			updateSQL := "UPDATE servers SET cumulative_net_in_transfer = ?, cumulative_net_out_transfer = ? WHERE id = ?"
+			if err := singleton.DB.Exec(updateSQL, 0, 0, clientID).Error; err != nil {
+				log.Printf("保存服务器 %s 周期重置流量到数据库失败: %v", server.Name, err)
+			} else {
+				log.Printf("服务器 %s 周期重置流量已保存到数据库", server.Name)
+			}
+
+			// 更新AlertsCycleTransferStatsStore中的重置时间记录
+			if stats, exists := singleton.AlertsCycleTransferStatsStore[alert.ID]; exists {
+				stats.NextUpdate[clientID] = now
+				stats.Transfer[clientID] = 0 // 重置显示的流量
+
+				// 更新周期时间信息
+				stats.From = currentCycleStart
+				stats.To = currentCycleEnd
+
+				log.Printf("服务器 %s：已更新AlertsCycleTransferStatsStore中的重置记录", server.Name)
+			}
+		}
+
+		// 只处理第一个匹配的规则
+		break
+	}
 }

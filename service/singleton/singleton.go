@@ -44,6 +44,14 @@ func LoadSingleton() {
 	// 从数据库同步累计流量数据到内存
 	SyncAllServerTrafficFromDB()
 
+	// 启动定期保存流量数据的协程
+	go func() {
+		for {
+			time.Sleep(60 * time.Second) // 每60秒保存一次
+			SaveAllTrafficToDB()
+		}
+	}()
+
 	// 添加定时检查在线状态的任务，每分钟检查一次
 	Cron.AddFunc("0 */1 * * * *", CheckServerOnlineStatus)
 
