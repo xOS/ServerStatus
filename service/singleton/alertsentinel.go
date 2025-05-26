@@ -160,17 +160,10 @@ func checkStatus() {
 				if alert.TriggerMode == model.ModeAlwaysTrigger || alertsPrevState[alert.ID][server.ID] != _RuleCheckFail {
 					alertsPrevState[alert.ID][server.ID] = _RuleCheckFail
 					log.Printf("[事件]\n%s\n规则：%s %s", server.Name, alert.Name, *NotificationMuteLabel.ServerIncident(alert.ID, server.ID))
-					message := fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s[%s]"+"\n"+"%s%s",
-						Localizer.MustLocalize(&i18n.LocalizeConfig{
-							MessageID: "Notify",
-						}),
-						Localizer.MustLocalize(&i18n.LocalizeConfig{
-							MessageID: "Incident",
-						}), server.Name, IPDesensitize(server.Host.IP),
-						Localizer.MustLocalize(&i18n.LocalizeConfig{
-							MessageID: "Rule",
-						}),
-						alert.Name)
+
+					// 生成详细的报警消息
+					message := generateDetailedAlertMessage(alert, server, alertsStore[alert.ID][server.ID])
+
 					go SendTriggerTasks(alert.FailTriggerTasks, curServer.ID)
 					go SendNotification(alert.NotificationTag, message, NotificationMuteLabel.ServerIncident(alert.ID, server.ID), &curServer)
 					// 清除恢复通知的静音缓存
@@ -282,4 +275,188 @@ func containsUint64(slice []uint64, val uint64) bool {
 		}
 	}
 	return false
+}
+
+// formatBytes 格式化字节大小为易读形式
+func formatBytes(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := uint64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// generateDetailedAlertMessage 生成详细的报警消息
+func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, checkResultsHistory [][]interface{}) string {
+	now := time.Now()
+
+	// 基础报警信息
+	message := fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s[%s]"+"\n"+"服务器ID: %d"+"\n"+"报警时间: %s"+"\n",
+		Localizer.MustLocalize(&i18n.LocalizeConfig{
+			MessageID: "Notify",
+		}),
+		Localizer.MustLocalize(&i18n.LocalizeConfig{
+			MessageID: "Incident",
+		}),
+		server.Name, IPDesensitize(server.Host.IP),
+		server.ID,
+		now.Format("2006-01-02 15:04:05"))
+
+	// 添加规则基本信息
+	message += fmt.Sprintf("报警规则: %s\n", alert.Name)
+
+	// 获取最新的检查结果（最后一组）
+	var latestResults []interface{}
+	if len(checkResultsHistory) > 0 {
+		latestResults = checkResultsHistory[len(checkResultsHistory)-1]
+	}
+
+	// 逐个检查失败的规则，生成详细信息
+	for i, rule := range alert.Rules {
+		if i < len(latestResults) && latestResults[i] != nil {
+			// 这个规则检查失败了
+			ruleType := rule.Type
+
+			// 根据规则类型生成详细信息
+			switch {
+			case rule.IsTransferDurationRule():
+				// 流量规则的详细信息
+				message += generateTrafficAlertDetails(&rule, server, alert.ID)
+			case ruleType == "cpu":
+				message += fmt.Sprintf("• CPU使用率超限: %.2f%% (阈值: %.2f%%)\n",
+					server.State.CPU, rule.Max)
+			case ruleType == "memory":
+				memPercent := float64(server.State.MemUsed) * 100 / float64(server.Host.MemTotal)
+				message += fmt.Sprintf("• 内存使用率超限: %.2f%% (阈值: %.2f%%)\n",
+					memPercent, rule.Max)
+			case ruleType == "swap":
+				swapPercent := float64(server.State.SwapUsed) * 100 / float64(server.Host.SwapTotal)
+				message += fmt.Sprintf("• Swap使用率超限: %.2f%% (阈值: %.2f%%)\n",
+					swapPercent, rule.Max)
+			case ruleType == "disk":
+				diskPercent := float64(server.State.DiskUsed) * 100 / float64(server.Host.DiskTotal)
+				message += fmt.Sprintf("• 磁盘使用率超限: %.2f%% (阈值: %.2f%%)\n",
+					diskPercent, rule.Max)
+			case ruleType == "net_in_speed":
+				message += fmt.Sprintf("• 入站网速过高: %s/s (阈值: %s/s)\n",
+					formatBytes(server.State.NetInSpeed), formatBytes(uint64(rule.Max)))
+			case ruleType == "net_out_speed":
+				message += fmt.Sprintf("• 出站网速过高: %s/s (阈值: %s/s)\n",
+					formatBytes(server.State.NetOutSpeed), formatBytes(uint64(rule.Max)))
+			case ruleType == "net_all_speed":
+				allSpeed := server.State.NetInSpeed + server.State.NetOutSpeed
+				message += fmt.Sprintf("• 总网速过高: %s/s (阈值: %s/s)\n",
+					formatBytes(allSpeed), formatBytes(uint64(rule.Max)))
+			case ruleType == "load1":
+				message += fmt.Sprintf("• 1分钟负载过高: %.2f (阈值: %.2f)\n",
+					server.State.Load1, rule.Max)
+			case ruleType == "load5":
+				message += fmt.Sprintf("• 5分钟负载过高: %.2f (阈值: %.2f)\n",
+					server.State.Load5, rule.Max)
+			case ruleType == "load15":
+				message += fmt.Sprintf("• 15分钟负载过高: %.2f (阈值: %.2f)\n",
+					server.State.Load15, rule.Max)
+			case ruleType == "tcp_conn_count":
+				message += fmt.Sprintf("• TCP连接数过多: %d (阈值: %.0f)\n",
+					server.State.TcpConnCount, rule.Max)
+			case ruleType == "udp_conn_count":
+				message += fmt.Sprintf("• UDP连接数过多: %d (阈值: %.0f)\n",
+					server.State.UdpConnCount, rule.Max)
+			case ruleType == "process_count":
+				message += fmt.Sprintf("• 进程数过多: %d (阈值: %.0f)\n",
+					server.State.ProcessCount, rule.Max)
+			case ruleType == "offline":
+				lastSeen := time.Unix(int64(server.State.Uptime), 0)
+				message += fmt.Sprintf("• 服务器离线: 最后在线时间 %s\n",
+					lastSeen.Format("2006-01-02 15:04:05"))
+			default:
+				message += fmt.Sprintf("• %s 超限 (阈值: %.2f)\n", ruleType, rule.Max)
+			}
+		}
+	}
+
+	return message
+}
+
+// generateTrafficAlertDetails 生成流量报警的详细信息
+func generateTrafficAlertDetails(rule *model.Rule, server *model.Server, alertID uint64) string {
+	var details string
+
+	// 获取流量统计信息
+	stats := AlertsCycleTransferStatsStore[alertID]
+	if stats == nil {
+		details = "• 流量超限: 无法获取详细统计信息\n"
+		return details
+	}
+
+	currentUsage := stats.Transfer[server.ID]
+	maxLimit := uint64(rule.Max)
+
+	// 计算超额部分
+	var overageAmount uint64
+	if currentUsage > maxLimit {
+		overageAmount = currentUsage - maxLimit
+	}
+
+	// 计算使用率
+	usagePercent := float64(0)
+	if maxLimit > 0 {
+		usagePercent = float64(currentUsage) / float64(maxLimit) * 100
+	}
+
+	// 确定流量类型
+	trafficType := "流量"
+	switch rule.Type {
+	case "transfer_in_cycle":
+		trafficType = "入站流量"
+	case "transfer_out_cycle":
+		trafficType = "出站流量"
+	case "transfer_all_cycle":
+		trafficType = "总流量"
+	}
+
+	// 生成周期信息
+	periodInfo := fmt.Sprintf("周期: %s - %s",
+		stats.From.Format("2006-01-02 15:04:05"),
+		stats.To.Format("2006-01-02 15:04:05"))
+
+	// 生成详细信息
+	details += fmt.Sprintf("• %s超限:\n", trafficType)
+	details += fmt.Sprintf("  - 当前使用: %s (%.2f%%)\n", formatBytes(currentUsage), usagePercent)
+	details += fmt.Sprintf("  - 额定流量: %s\n", formatBytes(maxLimit))
+
+	if overageAmount > 0 {
+		details += fmt.Sprintf("  - 超额: %s\n", formatBytes(overageAmount))
+	}
+
+	details += fmt.Sprintf("  - %s\n", periodInfo)
+
+	// 添加下次重置时间信息
+	nextReset := stats.To
+	if nextReset.After(time.Now()) {
+		duration := time.Until(nextReset)
+		details += fmt.Sprintf("  - 下次重置: %s (还有 %s)\n",
+			nextReset.Format("2006-01-02 15:04:05"),
+			formatDuration(duration))
+	}
+
+	return details
+}
+
+// formatDuration 格式化时间长度为易读形式
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%.0f秒", d.Seconds())
+	} else if d < time.Hour {
+		return fmt.Sprintf("%.0f分钟", d.Minutes())
+	} else if d < 24*time.Hour {
+		return fmt.Sprintf("%.1f小时", d.Hours())
+	} else {
+		return fmt.Sprintf("%.1f天", d.Hours()/24)
+	}
 }
