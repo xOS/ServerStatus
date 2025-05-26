@@ -274,21 +274,56 @@ window.extractTrafficData = function() {
             if (item && item.server_id) {
                 const serverId = String(item.server_id);
                 const serverName = item.server_name || "Unknown Server";
-                const maxTraffic = item.max_formatted || "0B";
-                const usedTraffic = item.used_formatted || "0B";
-                const percent = parseFloat(item.used_percent) || 0;
                 
-                const standardMax = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(maxTraffic) : maxTraffic;
-                const standardUsed = (typeof window.formatTrafficUnit === 'function') ? window.formatTrafficUnit(usedTraffic) : usedTraffic;
+                // 优先使用字节数据作为源数据
+                let maxBytes, usedBytes, percent;
+                
+                if (item.is_bytes_source && typeof item.used_bytes === 'number' && typeof item.max_bytes === 'number') {
+                    // 后端提供了字节数据源，直接使用
+                    maxBytes = item.max_bytes;
+                    usedBytes = item.used_bytes;
+                    
+                    // 从字节数据计算百分比
+                    if (maxBytes > 0) {
+                        percent = (usedBytes / maxBytes) * 100;
+                        percent = Math.max(0, Math.min(100, percent)); // 限制在0-100范围
+                    } else {
+                        percent = 0;
+                    }
+                } else {
+                    // 回退到解析格式化字符串
+                    const maxTraffic = item.max_formatted || "0B";
+                    const usedTraffic = item.used_formatted || "0B";
+                    
+                    maxBytes = (typeof window.parseTrafficToBytes === 'function') ? window.parseTrafficToBytes(maxTraffic) : 0;
+                    usedBytes = (typeof window.parseTrafficToBytes === 'function') ? window.parseTrafficToBytes(usedTraffic) : 0;
+                    
+                    // 如果有后端计算的百分比，作为备选
+                    if (typeof item.used_percent === 'number') {
+                        percent = item.used_percent;
+                    } else if (maxBytes > 0) {
+                        percent = (usedBytes / maxBytes) * 100;
+                        percent = Math.max(0, Math.min(100, percent));
+                    } else {
+                        percent = 0;
+                    }
+                }
+                
+                // 格式化显示字符串，使用readableBytes函数
+                const standardMax = (typeof window.formatTrafficUnit === 'function') ? 
+                    window.formatTrafficUnit(readableBytes(maxBytes)) : readableBytes(maxBytes);
+                const standardUsed = (typeof window.formatTrafficUnit === 'function') ? 
+                    window.formatTrafficUnit(readableBytes(usedBytes)) : readableBytes(usedBytes);
                 
                 newTrafficData[serverId] = {
                     max: standardMax,
                     used: standardUsed,
                     percent: Math.round(percent * 100) / 100,
-                    maxBytes: item.max_bytes || 0,
-                    usedBytes: item.used_bytes || 0,
+                    maxBytes: maxBytes,
+                    usedBytes: usedBytes,
                     serverName: serverName,
-                    cycleName: item.cycle_name || "Unknown"
+                    cycleName: item.cycle_name || "Unknown",
+                    isBytesSource: item.is_bytes_source || false
                 };
             }
         });

@@ -861,22 +861,55 @@ window.extractTrafficData = function() {
             if (item && item.server_id) {
                 const serverId = String(item.server_id);
                 const serverName = item.server_name || "Unknown Server";
-                const maxTraffic = item.max_formatted || "0B";
-                const usedTraffic = item.used_formatted || "0B";
-                const percent = parseFloat(item.used_percent) || 0;
                 
-                const standardMax = window.formatTrafficUnit ? window.formatTrafficUnit(maxTraffic) : maxTraffic;
-                const standardUsed = window.formatTrafficUnit ? window.formatTrafficUnit(usedTraffic) : usedTraffic;
+                // 优先使用字节数据作为源数据
+                let maxBytes, usedBytes, percent;
+                
+                if (item.is_bytes_source && typeof item.used_bytes === 'number' && typeof item.max_bytes === 'number') {
+                    // 后端提供了字节数据源，直接使用
+                    maxBytes = item.max_bytes;
+                    usedBytes = item.used_bytes;
+                    
+                    // 从字节数据计算百分比
+                    if (maxBytes > 0) {
+                        percent = (usedBytes / maxBytes) * 100;
+                        percent = Math.max(0, Math.min(100, percent)); // 限制在0-100范围
+                    } else {
+                        percent = 0;
+                    }
+                } else {
+                    // 回退到解析格式化字符串
+                    const maxTraffic = item.max_formatted || "0B";
+                    const usedTraffic = item.used_formatted || "0B";
+                    
+                    maxBytes = window.parseTrafficToBytes ? window.parseTrafficToBytes(maxTraffic) : 0;
+                    usedBytes = window.parseTrafficToBytes ? window.parseTrafficToBytes(usedTraffic) : 0;
+                    
+                    // 如果有后端计算的百分比，作为备选
+                    if (typeof item.used_percent === 'number') {
+                        percent = item.used_percent;
+                    } else if (maxBytes > 0) {
+                        percent = (usedBytes / maxBytes) * 100;
+                        percent = Math.max(0, Math.min(100, percent));
+                    } else {
+                        percent = 0;
+                    }
+                }
+                
+                // 格式化显示字符串
+                const standardMax = window.formatTrafficUnit ? window.formatTrafficUnit(readableBytes(maxBytes)) : readableBytes(maxBytes);
+                const standardUsed = window.formatTrafficUnit ? window.formatTrafficUnit(readableBytes(usedBytes)) : readableBytes(usedBytes);
                 
                 newTrafficData[serverId] = {
                     max: standardMax,
                     used: standardUsed,
                     percent: Math.round(percent * 100) / 100,
-                    maxBytes: item.max_bytes || 0,
-                    usedBytes: item.used_bytes || 0,
+                    maxBytes: maxBytes,
+                    usedBytes: usedBytes,
                     serverName: serverName,
                     cycleName: item.cycle_name || "Unknown",
-                    lastUpdate: Date.now()
+                    lastUpdate: Date.now(),
+                    isBytesSource: item.is_bytes_source || false
                 };
                 
                 updatedCount++;
@@ -889,6 +922,8 @@ window.extractTrafficData = function() {
         if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
             window.statusCards.updateTrafficData();
         }
+        
+        console.log(`已更新 ${updatedCount} 个服务器的流量数据 (WebSocket字节源数据)`);
     } catch (e) {
         console.error('处理流量数据时出错:', e);
     }
@@ -1012,14 +1047,44 @@ class TrafficManager {
             if (!item || !item.server_id) return;
 
             const serverId = String(item.server_id);
-            const maxTraffic = item.max_formatted || '0B';
-            const usedTraffic = item.used_formatted || '0B';
-            const percent = parseFloat(item.used_percent) || 0;
             
-            const standardMax = TrafficManager.standardizeTrafficUnit(maxTraffic);
-            const standardUsed = TrafficManager.standardizeTrafficUnit(usedTraffic);
-            const maxBytes = TrafficManager.parseTrafficToBytes(maxTraffic);
-            const usedBytes = TrafficManager.parseTrafficToBytes(usedTraffic);
+            // 优先使用字节数据作为源数据
+            let maxBytes, usedBytes, percent;
+            
+            if (item.is_bytes_source && typeof item.used_bytes === 'number' && typeof item.max_bytes === 'number') {
+                // 后端提供了字节数据源，直接使用
+                maxBytes = item.max_bytes;
+                usedBytes = item.used_bytes;
+                
+                // 从字节数据计算百分比
+                if (maxBytes > 0) {
+                    percent = (usedBytes / maxBytes) * 100;
+                    percent = Math.max(0, Math.min(100, percent)); // 限制在0-100范围
+                } else {
+                    percent = 0;
+                }
+            } else {
+                // 回退到解析格式化字符串
+                const maxTraffic = item.max_formatted || '0B';
+                const usedTraffic = item.used_formatted || '0B';
+                
+                maxBytes = TrafficManager.parseTrafficToBytes(maxTraffic);
+                usedBytes = TrafficManager.parseTrafficToBytes(usedTraffic);
+                
+                // 如果有后端计算的百分比，作为备选
+                if (typeof item.used_percent === 'number') {
+                    percent = item.used_percent;
+                } else if (maxBytes > 0) {
+                    percent = (usedBytes / maxBytes) * 100;
+                    percent = Math.max(0, Math.min(100, percent));
+                } else {
+                    percent = 0;
+                }
+            }
+            
+            // 格式化显示字符串
+            const standardMax = TrafficManager.formatTrafficSize(maxBytes);
+            const standardUsed = TrafficManager.formatTrafficSize(usedBytes);
 
             newData[serverId] = {
                 max: standardMax,
@@ -1029,7 +1094,8 @@ class TrafficManager {
                 usedBytes: usedBytes,
                 serverName: item.server_name || 'Unknown',
                 cycleName: item.cycle_name || 'Default',
-                lastUpdate: Date.now()
+                lastUpdate: Date.now(),
+                isBytesSource: item.is_bytes_source || false  // 记录数据源类型
             };
             
             updatedCount++;
@@ -1043,7 +1109,7 @@ class TrafficManager {
         window.serverTrafficData = newData;
         window.lastTrafficUpdateTime = this.lastUpdateTime;
         
-        // console.log(`已更新 ${updatedCount} 个服务器的流量数据`);
+        console.log(`已更新 ${updatedCount} 个服务器的流量数据 (字节源数据)`);
         this.notifySubscribers();
     }
 

@@ -284,6 +284,7 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 						"used_percent":   math.Round(usedPercent*100) / 100,
 						"cycle_name":     stats.Name,
 						"cycle_id":       strconv.FormatUint(cycleID, 10),
+						"is_bytes_source": true,  // 标识这是字节数据源
 					}
 					trafficData = append(trafficData, trafficItem)
 				}
@@ -339,6 +340,7 @@ func (cp *commonPage) home(c *gin.Context) {
 					"used_percent":   math.Round(usedPercent*100) / 100,
 					"cycle_name":     stats.Name,
 					"cycle_id":       strconv.FormatUint(cycleID, 10),
+					"is_bytes_source": true,  // 标识这是字节数据源
 				}
 				trafficData = append(trafficData, trafficItem)
 			}
@@ -709,6 +711,7 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 					"used_percent":   math.Round(usedPercent*100) / 100,
 					"cycle_name":     stats.Name,
 					"cycle_id":       strconv.FormatUint(cycleID, 10),
+					"is_bytes_source": true,  // 标识这是字节数据源
 				}
 				trafficData = append(trafficData, trafficItem)
 			}
@@ -791,6 +794,7 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 					"used_percent":   math.Round(usedPercent*100) / 100,
 					"cycle_name":     stats.Name,
 					"cycle_id":       strconv.FormatUint(cycleID, 10),
+					"is_bytes_source": true,  // 标识这是字节数据源
 				}
 				trafficData = append(trafficData, trafficItem)
 			}
