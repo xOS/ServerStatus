@@ -41,12 +41,12 @@ func init() {
 	singleton.Cron = cron.New()
 
 	// 每分钟保存一次流量数据
-	if _, err := singleton.Cron.AddFunc("* * * * *", singleton.RecordTransferHourlyUsage); err != nil {
+	if _, err := singleton.Cron.AddFunc("0 * * * * *", singleton.RecordTransferHourlyUsage); err != nil {
 		panic(err)
 	}
 
 	// 每天凌晨3点清理30天前的数据
-	if _, err := singleton.Cron.AddFunc("0 3 * * *", func() {
+	if _, err := singleton.Cron.AddFunc("0 0 3 * * *", func() {
 		singleton.CleanCumulativeTransferData(30)
 	}); err != nil {
 		panic(err)
@@ -143,7 +143,7 @@ func initSystem() {
 	}
 
 	// 每10分钟同步一次所有服务器的累计流量
-	if _, err := singleton.Cron.AddFunc("*/10 * * * *", syncAllServerTrafficFromDB); err != nil {
+	if _, err := singleton.Cron.AddFunc("0 */10 * * * *", syncAllServerTrafficFromDB); err != nil {
 		panic(err)
 	}
 }

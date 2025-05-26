@@ -42,7 +42,7 @@ func LoadSingleton() {
 	initDDNS()
 
 	// 添加定时检查在线状态的任务，每分钟检查一次
-	Cron.AddFunc("*/1 * * * *", CheckServerOnlineStatus)
+	Cron.AddFunc("0 */1 * * * *", CheckServerOnlineStatus)
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
