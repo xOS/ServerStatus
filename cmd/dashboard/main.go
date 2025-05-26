@@ -60,11 +60,22 @@ func init() {
 func syncAllServerTrafficFromDB() {
 	log.Println("正在从数据库同步所有服务器的累计流量数据...")
 
+	// 先检查 ServerList 是否已初始化
+	if singleton.ServerList == nil {
+		log.Println("ServerList 未初始化，跳过流量同步")
+		return
+	}
+
 	singleton.ServerLock.Lock()
 	defer singleton.ServerLock.Unlock()
 
 	count := 0
 	for _, server := range singleton.ServerList {
+		// 跳过 nil 服务器
+		if server == nil {
+			continue
+		}
+
 		// 从数据库读取最新值
 		var dbServer model.Server
 		if err := singleton.DB.First(&dbServer, server.ID).Error; err == nil {
@@ -82,9 +93,17 @@ func syncAllServerTrafficFromDB() {
 
 				// 同时更新状态中的流量数据
 				if server.State != nil {
-					// 保持原始流量不变，只更新累计部分
-					originalNetInTransfer := server.State.NetInTransfer - server.CumulativeNetInTransfer
-					originalNetOutTransfer := server.State.NetOutTransfer - server.CumulativeNetOutTransfer
+					// 计算原始流量值（可能为负值）
+					var originalNetInTransfer, originalNetOutTransfer uint64
+
+					// 确保不会发生整数下溢
+					if server.State.NetInTransfer > server.CumulativeNetInTransfer {
+						originalNetInTransfer = server.State.NetInTransfer - server.CumulativeNetInTransfer
+					}
+
+					if server.State.NetOutTransfer > server.CumulativeNetOutTransfer {
+						originalNetOutTransfer = server.State.NetOutTransfer - server.CumulativeNetOutTransfer
+					}
 
 					// 应用新的累计值
 					server.State.NetInTransfer = originalNetInTransfer + dbServer.CumulativeNetInTransfer
@@ -106,6 +125,9 @@ func syncAllServerTrafficFromDB() {
 func initSystem() {
 	// 启动 singleton 包下的所有服务
 	singleton.LoadSingleton()
+
+	// 等待一秒钟确保所有初始化完成
+	time.Sleep(time.Second)
 
 	// 从数据库同步流量数据到内存
 	syncAllServerTrafficFromDB()
