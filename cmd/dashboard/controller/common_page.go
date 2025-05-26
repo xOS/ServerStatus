@@ -275,16 +275,16 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 					}
 
 					trafficItem := map[string]interface{}{
-						"server_id":      serverID,
-						"server_name":    serverName,
-						"max_bytes":      stats.Max,
-						"used_bytes":     transfer,
-						"max_formatted":  bytefmt.ByteSize(stats.Max),
-						"used_formatted": bytefmt.ByteSize(transfer),
-						"used_percent":   math.Round(usedPercent*100) / 100,
-						"cycle_name":     stats.Name,
-						"cycle_id":       strconv.FormatUint(cycleID, 10),
-						"is_bytes_source": true,  // 标识这是字节数据源
+						"server_id":       serverID,
+						"server_name":     serverName,
+						"max_bytes":       stats.Max,
+						"used_bytes":      transfer,
+						"max_formatted":   bytefmt.ByteSize(stats.Max),
+						"used_formatted":  bytefmt.ByteSize(transfer),
+						"used_percent":    math.Round(usedPercent*100) / 100,
+						"cycle_name":      stats.Name,
+						"cycle_id":        strconv.FormatUint(cycleID, 10),
+						"is_bytes_source": true, // 标识这是字节数据源
 					}
 					trafficData = append(trafficData, trafficItem)
 				}
@@ -331,16 +331,16 @@ func (cp *commonPage) home(c *gin.Context) {
 				}
 
 				trafficItem := map[string]interface{}{
-					"server_id":      serverID,
-					"server_name":    serverName,
-					"max_bytes":      stats.Max,
-					"used_bytes":     transfer,
-					"max_formatted":  bytefmt.ByteSize(stats.Max),
-					"used_formatted": bytefmt.ByteSize(transfer),
-					"used_percent":   math.Round(usedPercent*100) / 100,
-					"cycle_name":     stats.Name,
-					"cycle_id":       strconv.FormatUint(cycleID, 10),
-					"is_bytes_source": true,  // 标识这是字节数据源
+					"server_id":       serverID,
+					"server_name":     serverName,
+					"max_bytes":       stats.Max,
+					"used_bytes":      transfer,
+					"max_formatted":   bytefmt.ByteSize(stats.Max),
+					"used_formatted":  bytefmt.ByteSize(transfer),
+					"used_percent":    math.Round(usedPercent*100) / 100,
+					"cycle_name":      stats.Name,
+					"cycle_id":        strconv.FormatUint(cycleID, 10),
+					"is_bytes_source": true, // 标识这是字节数据源
 				}
 				trafficData = append(trafficData, trafficItem)
 			}
@@ -390,10 +390,24 @@ func (cp *commonPage) ws(c *gin.Context) {
 	defer conn.Close()
 	count := 0
 	for {
+		// 获取服务器状态数据
 		stat, err := cp.getServerStat(c, false)
 		if err != nil {
 			continue
 		}
+
+		// 增强数据：添加流量信息
+		var data Data
+		if err := utils.Json.Unmarshal(stat, &data); err == nil {
+			// 添加流量数据
+			data.TrafficData = buildTrafficData()
+			// 重新序列化
+			enhancedStat, enhancedErr := utils.Json.Marshal(data)
+			if enhancedErr == nil {
+				stat = enhancedStat
+			}
+		}
+
 		if err := conn.WriteMessage(websocket.TextMessage, stat); err != nil {
 			break
 		}
@@ -702,16 +716,16 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 					}
 				}
 				trafficItem := map[string]interface{}{
-					"server_id":      serverID,
-					"server_name":    serverName,
-					"max_bytes":      stats.Max,
-					"used_bytes":     transfer,
-					"max_formatted":  bytefmt.ByteSize(stats.Max),
-					"used_formatted": bytefmt.ByteSize(transfer),
-					"used_percent":   math.Round(usedPercent*100) / 100,
-					"cycle_name":     stats.Name,
-					"cycle_id":       strconv.FormatUint(cycleID, 10),
-					"is_bytes_source": true,  // 标识这是字节数据源
+					"server_id":       serverID,
+					"server_name":     serverName,
+					"max_bytes":       stats.Max,
+					"used_bytes":      transfer,
+					"max_formatted":   bytefmt.ByteSize(stats.Max),
+					"used_formatted":  bytefmt.ByteSize(transfer),
+					"used_percent":    math.Round(usedPercent*100) / 100,
+					"cycle_name":      stats.Name,
+					"cycle_id":        strconv.FormatUint(cycleID, 10),
+					"is_bytes_source": true, // 标识这是字节数据源
 				}
 				trafficData = append(trafficData, trafficItem)
 			}
@@ -785,16 +799,16 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 					}
 				}
 				trafficItem := map[string]interface{}{
-					"server_id":      serverID,
-					"server_name":    serverName,
-					"max_bytes":      stats.Max,
-					"used_bytes":     transfer,
-					"max_formatted":  bytefmt.ByteSize(stats.Max),
-					"used_formatted": bytefmt.ByteSize(transfer),
-					"used_percent":   math.Round(usedPercent*100) / 100,
-					"cycle_name":     stats.Name,
-					"cycle_id":       strconv.FormatUint(cycleID, 10),
-					"is_bytes_source": true,  // 标识这是字节数据源
+					"server_id":       serverID,
+					"server_name":     serverName,
+					"max_bytes":       stats.Max,
+					"used_bytes":      transfer,
+					"max_formatted":   bytefmt.ByteSize(stats.Max),
+					"used_formatted":  bytefmt.ByteSize(transfer),
+					"used_percent":    math.Round(usedPercent*100) / 100,
+					"cycle_name":      stats.Name,
+					"cycle_id":        strconv.FormatUint(cycleID, 10),
+					"is_bytes_source": true, // 标识这是字节数据源
 				}
 				trafficData = append(trafficData, trafficItem)
 			}
