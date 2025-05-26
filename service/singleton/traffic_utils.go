@@ -57,8 +57,39 @@ func SaveAllTrafficToDB() {
 					server.Name, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
 				count++
 
-				// 同步数据到前端显示
-				UpdateTrafficStats(server.ID, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+				// 验证数据是否成功保存
+				var verifiedData struct {
+					CumulativeNetInTransfer  uint64
+					CumulativeNetOutTransfer uint64
+				}
+
+				if err := DB.Raw(`SELECT cumulative_net_in_transfer, cumulative_net_out_transfer 
+								FROM servers WHERE id = ?`, server.ID).Scan(&verifiedData).Error; err == nil {
+					if verifiedData.CumulativeNetInTransfer != server.CumulativeNetInTransfer ||
+						verifiedData.CumulativeNetOutTransfer != server.CumulativeNetOutTransfer {
+						log.Printf("警告: 服务器[%s]流量数据保存验证失败: 期望(%d,%d)但获得(%d,%d)",
+							server.Name,
+							server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer,
+							verifiedData.CumulativeNetInTransfer, verifiedData.CumulativeNetOutTransfer)
+
+						// 再次尝试保存
+						if retryResult := DB.Exec(updateSQL,
+							server.CumulativeNetInTransfer,
+							server.CumulativeNetOutTransfer,
+							time.Now(),
+							server.ID); retryResult.Error != nil {
+							log.Printf("重试保存服务器[%s]累计流量失败: %v", server.Name, retryResult.Error)
+						} else {
+							log.Printf("重试保存服务器[%s]累计流量成功", server.Name)
+						}
+					} else if isTrafficDebugEnabled {
+						log.Printf("服务器[%s]流量数据保存验证成功: (%d,%d)",
+							server.Name, verifiedData.CumulativeNetInTransfer, verifiedData.CumulativeNetOutTransfer)
+					}
+
+					// 同步数据到前端显示
+					UpdateTrafficStats(server.ID, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+				}
 			}
 		}
 	}

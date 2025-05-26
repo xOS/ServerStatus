@@ -222,32 +222,96 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 		}
 	}
 
-	// 遍历所有周期流量统计
-	for _, stats := range AlertsCycleTransferStatsStore {
-		// 更新流量数据
-		// 获取此服务器当前的流量数据
-		currentTransfer, exists := stats.Transfer[serverID]
+	// 流量总计
+	totalTransfer := inTransfer + outTransfer
 
-		// 获取总流量
-		totalTransfer := inTransfer + outTransfer
+	if isTrafficDebugEnabled {
+		log.Printf("服务器 [%d:%s] 准备更新流量数据: IN=%d, OUT=%d, TOTAL=%d",
+			serverID, serverName, inTransfer, outTransfer, totalTransfer)
+	}
 
-		// 如果新值大于当前值，或者当前不存在，则更新
-		if !exists || totalTransfer > currentTransfer {
-			stats.Transfer[serverID] = totalTransfer
+	// 记录已更新的规则ID，避免在日志中显示多次
+	var updatedRules []uint64
 
-			// 更新服务器名称
-			if serverName != "" && stats.ServerName[serverID] != serverName {
-				stats.ServerName[serverID] = serverName
-			}
+	// 遍历所有报警规则，只更新包含此服务器的规则
+	for _, alert := range Alerts {
+		if !alert.Enabled() {
+			continue
+		}
 
-			// 记录日志
-			if exists {
-				log.Printf("更新服务器 %d (%s) 的周期流量数据: %d -> %d (增加 %d)",
-					serverID, serverName, currentTransfer, totalTransfer, totalTransfer-currentTransfer)
-			} else {
-				log.Printf("初始化服务器 %d (%s) 的周期流量数据: %d",
-					serverID, serverName, totalTransfer)
+		// 获取此报警规则的流量统计数据
+		stats := AlertsCycleTransferStatsStore[alert.ID]
+		if stats == nil {
+			continue
+		}
+
+		// 检查是否包含流量监控规则
+		for j := 0; j < len(alert.Rules); j++ {
+			if alert.Rules[j].IsTransferDurationRule() {
+
+				// 检查此规则是否监控该服务器
+				if alert.Rules[j].Cover == model.RuleCoverAll {
+					// 监控全部服务器但排除了此服务器
+					if alert.Rules[j].Ignore[serverID] {
+						continue
+					}
+				} else if alert.Rules[j].Cover == model.RuleCoverIgnoreAll {
+					// 忽略全部服务器但监控此服务器
+					if !alert.Rules[j].Ignore[serverID] {
+						continue
+					}
+				}
+
+				// 服务器在规则监控范围内，更新流量数据
+				currentTransfer, exists := stats.Transfer[serverID]
+
+				// 如果新值大于当前值，或者当前不存在，则更新
+				if !exists || totalTransfer > currentTransfer {
+					stats.Transfer[serverID] = totalTransfer
+
+					// 更新服务器名称
+					if serverName != "" && stats.ServerName[serverID] != serverName {
+						stats.ServerName[serverID] = serverName
+					}
+
+					// 添加到已更新规则列表
+					if !containsUint64(updatedRules, alert.ID) {
+						updatedRules = append(updatedRules, alert.ID)
+					}
+
+					// 打印详细日志
+					if isTrafficDebugEnabled {
+						if exists {
+							log.Printf("服务器 [%d:%s] 在规则 [%d:%s] 中的流量更新: %d -> %d (增加 %d)",
+								serverID, serverName, alert.ID, alert.Name,
+								currentTransfer, totalTransfer, totalTransfer-currentTransfer)
+						} else {
+							log.Printf("服务器 [%d:%s] 在规则 [%d:%s] 中的流量初始化: %d",
+								serverID, serverName, alert.ID, alert.Name, totalTransfer)
+						}
+					}
+				}
+
+				// 找到一个满足条件的规则即可退出循环
+				break
 			}
 		}
 	}
+
+	if len(updatedRules) > 0 && !isTrafficDebugEnabled {
+		log.Printf("更新服务器 [%d:%s] 的流量数据: 总计=%d, 更新了%d个规则",
+			serverID, serverName, totalTransfer, len(updatedRules))
+	} else if len(updatedRules) == 0 && isTrafficDebugEnabled {
+		log.Printf("服务器 [%d:%s] 不在任何流量监控规则范围内，未更新流量数据", serverID, serverName)
+	}
+}
+
+// containsUint64 检查切片中是否包含指定的uint64值
+func containsUint64(slice []uint64, val uint64) bool {
+	for _, item := range slice {
+		if item == val {
+			return true
+		}
+	}
+	return false
 }
