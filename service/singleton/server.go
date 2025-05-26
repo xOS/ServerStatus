@@ -220,7 +220,7 @@ func UpdateServer(s *model.Server) error {
 			log.Printf("检测到服务器 %s 可能重启，重置快照: 原快照入站=%d, 出站=%d, 新流量入站=%d, 出站=%d",
 				s.Name, prevIn, prevOut, currentInTransfer, currentOutTransfer)
 
-			// 重启时，将之前的流量添加到累计中，并以当前值作为新快照
+			// 重启处理逻辑改进：将快照中的流量添加到累计值
 			if prevIn > 0 {
 				s.CumulativeNetInTransfer += prevIn
 			}
@@ -232,22 +232,30 @@ func UpdateServer(s *model.Server) error {
 			log.Printf("服务器 %s 重启，保存之前流量: 累计入站=%d, 累计出站=%d",
 				s.Name, s.CumulativeNetInTransfer, s.CumulativeNetOutTransfer)
 
-			// 当前值作为新的流量基准
-			deltaIn = 0
-			deltaOut = 0
+			// 流量重置处理：将当前流量作为新基准点
+			s.PrevTransferInSnapshot = int64(currentInTransfer)
+			s.PrevTransferOutSnapshot = int64(currentOutTransfer)
+
+			// 更新状态显示值
+			s.State.NetInTransfer = currentInTransfer + s.CumulativeNetInTransfer
+			s.State.NetOutTransfer = currentOutTransfer + s.CumulativeNetOutTransfer
 		} else {
-			// 正常情况下的增量
+			// 正常流量增量计算（流量没有重置）
 			deltaIn = currentInTransfer - prevIn
 			deltaOut = currentOutTransfer - prevOut
 
-			// 累计增量
+			// 更新累计流量
 			s.CumulativeNetInTransfer += deltaIn
 			s.CumulativeNetOutTransfer += deltaOut
-		}
 
-		// 更新快照值，转换为 int64
-		s.PrevTransferInSnapshot = int64(currentInTransfer)
-		s.PrevTransferOutSnapshot = int64(currentOutTransfer)
+			// 更新快照值
+			s.PrevTransferInSnapshot = int64(currentInTransfer)
+			s.PrevTransferOutSnapshot = int64(currentOutTransfer)
+
+			// 更新状态显示值 - 当前流量加累计流量
+			s.State.NetInTransfer = currentInTransfer + s.CumulativeNetInTransfer
+			s.State.NetOutTransfer = currentOutTransfer + s.CumulativeNetOutTransfer
+		}
 
 		log.Printf("服务器 %s 流量更新: 增量入站=%d, 增量出站=%d, 累计入站=%d, 累计出站=%d",
 			s.Name, deltaIn, deltaOut, s.CumulativeNetInTransfer, s.CumulativeNetOutTransfer)

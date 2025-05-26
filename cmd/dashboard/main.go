@@ -46,6 +46,15 @@ func initSystem() {
 	// 等待两秒钟确保所有服务充分初始化
 	time.Sleep(2 * time.Second)
 
+	// 加载服务器流量数据并初始化
+	log.Println("正在从数据库加载服务器流量数据...")
+	singleton.SyncAllServerTrafficFromDB()
+
+	// 特别强调：面板重启时必须执行流量重新计算
+	log.Println("正在重新计算所有服务器流量数据...")
+	count := singleton.TriggerTrafficRecalculation()
+	log.Printf("完成流量数据初始化，处理了 %d 个服务器", count)
+
 	// 开启流量同步和持久化
 	singleton.AutoSyncTraffic()
 }

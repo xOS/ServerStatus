@@ -483,12 +483,16 @@ func (tm *TrafficManager) detectServerRestart(serverID uint64, newIn, newOut uin
 			cumulativeIn := server.CumulativeNetInTransfer
 			cumulativeOut := server.CumulativeNetOutTransfer
 
-			// 将减少的流量加入累计值中
+			// 将减少的流量加入累计值中 - 探针重启时必须保存之前的流量
 			if stats.InBytes > newIn {
 				cumulativeIn += stats.InBytes
+				log.Printf("流量重启: 服务器 %d 入站流量保存: 原始=%d, 当前=%d, 增加累计值为: %d",
+					serverID, stats.InBytes, newIn, cumulativeIn)
 			}
 			if stats.OutBytes > newOut {
 				cumulativeOut += stats.OutBytes
+				log.Printf("流量重启: 服务器 %d 出站流量保存: 原始=%d, 当前=%d, 增加累计值为: %d",
+					serverID, stats.OutBytes, newOut, cumulativeOut)
 			}
 
 			// 更新内存中的累计量
@@ -516,6 +520,9 @@ func (tm *TrafficManager) detectServerRestart(serverID uint64, newIn, newOut uin
 				log.Printf("流量管理器: 重启时更新服务器 %d 累计流量成功: 入站=%d, 出站=%d",
 					serverID, cumulativeIn, cumulativeOut)
 				server.LastFlowSaveTime = time.Now()
+
+				// 更新前端显示数据
+				UpdateTrafficStats(serverID, cumulativeIn, cumulativeOut)
 			}
 
 			// 验证更新结果
@@ -535,6 +542,9 @@ func (tm *TrafficManager) detectServerRestart(serverID uint64, newIn, newOut uin
 					log.Printf("流量管理器: 重启时二次更新失败: %v", err)
 				} else {
 					log.Printf("流量管理器: 重启时二次更新完成")
+
+					// 再次更新前端显示数据
+					UpdateTrafficStats(serverID, cumulativeIn, cumulativeOut)
 				}
 			} else {
 				log.Printf("流量管理器: 重启时更新验证成功")

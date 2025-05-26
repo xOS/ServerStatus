@@ -224,6 +224,9 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 				// 确保内存中的值与数据库一致
 				singleton.ServerList[clientID].CumulativeNetInTransfer = savedValue.CumulativeNetInTransfer
 				singleton.ServerList[clientID].CumulativeNetOutTransfer = savedValue.CumulativeNetOutTransfer
+
+				// 同步到前端显示
+				singleton.UpdateTrafficStats(clientID, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer)
 			} else {
 				log.Printf("验证服务器 %s 累计流量保存失败: %v", singleton.ServerList[clientID].Name, err)
 			}
@@ -303,10 +306,16 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 					// 确保内存中的值与数据库一致
 					singleton.ServerList[clientID].CumulativeNetInTransfer = savedValue.CumulativeNetInTransfer
 					singleton.ServerList[clientID].CumulativeNetOutTransfer = savedValue.CumulativeNetOutTransfer
+
+					// 同步到前端显示
+					singleton.UpdateTrafficStats(clientID, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer)
 				}
 			}
 			// 更新最后保存时间
 			singleton.ServerList[clientID].LastFlowSaveTime = time.Now()
+		} else {
+			// 即使不保存到数据库，也同步到前端显示
+			singleton.UpdateTrafficStats(clientID, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer)
 		}
 	}
 

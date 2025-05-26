@@ -46,6 +46,7 @@ func (ma *memberAPI) serve() {
 	mr.GET("/cron/:id/manual", ma.manualTrigger)
 	mr.POST("/force-update", ma.forceUpdate)
 	mr.POST("/traffic/refresh", ma.refreshTrafficCache)
+	mr.POST("/traffic/recalculate", ma.recalculateTraffic)
 	mr.POST("/batch-update-server-group", ma.batchUpdateServerGroup)
 	mr.POST("/batch-delete-server", ma.batchDeleteServer)
 	mr.POST("/notification", ma.addOrEditNotification)
@@ -1220,5 +1221,17 @@ func (ma *memberAPI) refreshTrafficCache(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Response{
 		Code:    http.StatusOK,
 		Message: fmt.Sprintf("流量缓存刷新成功，用户: %s，清理了 %d 个服务器的流量缓存", user.Login, clearedCount),
+	})
+}
+
+// recalculateTraffic 重新计算所有服务器的流量使用情况
+func (ma *memberAPI) recalculateTraffic(c *gin.Context) {
+	// 调用流量重新计算函数
+	count := singleton.TriggerTrafficRecalculation()
+
+	// 返回处理的服务器数量
+	c.JSON(http.StatusOK, model.Response{
+		Code:    http.StatusOK,
+		Message: fmt.Sprintf("已重新计算 %d 个服务器的流量数据", count),
 	})
 }

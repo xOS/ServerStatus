@@ -19,6 +19,53 @@ func IsTrafficDebugEnabled() bool {
 	return isTrafficDebugEnabled
 }
 
+// TriggerTrafficRecalculation 强制重新计算所有服务器的累计流量并同步到前端显示
+func TriggerTrafficRecalculation() int {
+	// 首先从数据库同步数据
+	SyncAllServerTrafficFromDB()
+
+	// 然后遍历所有服务器，将其流量数据同步到前端
+	ServerLock.RLock()
+	defer ServerLock.RUnlock()
+
+	count := 0
+	for _, server := range ServerList {
+		if server == nil || server.State == nil {
+			continue
+		}
+
+		// 计算正确的流量显示数据
+		originalNetInTransfer := uint64(0)
+		originalNetOutTransfer := uint64(0)
+
+		// 如果State中的总流量大于累计流量，说明有原始流量部分
+		if server.State.NetInTransfer > server.CumulativeNetInTransfer {
+			originalNetInTransfer = server.State.NetInTransfer - server.CumulativeNetInTransfer
+		}
+
+		if server.State.NetOutTransfer > server.CumulativeNetOutTransfer {
+			originalNetOutTransfer = server.State.NetOutTransfer - server.CumulativeNetOutTransfer
+		}
+
+		// 重新设置状态显示值
+		server.State.NetInTransfer = originalNetInTransfer + server.CumulativeNetInTransfer
+		server.State.NetOutTransfer = originalNetOutTransfer + server.CumulativeNetOutTransfer
+
+		// 更新前端显示
+		UpdateTrafficStats(server.ID, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+
+		log.Printf("重新计算服务器 %s 的流量数据: 原始入站=%d, 原始出站=%d, 累计入站=%d, 累计出站=%d, 总入站=%d, 总出站=%d",
+			server.Name, originalNetInTransfer, originalNetOutTransfer,
+			server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer,
+			server.State.NetInTransfer, server.State.NetOutTransfer)
+
+		count++
+	}
+
+	log.Printf("完成流量重新计算，共处理了 %d 个服务器", count)
+	return count
+}
+
 // SaveAllTrafficToDB 将所有服务器的累计流量保存到数据库
 func SaveAllTrafficToDB() {
 	if ServerList == nil {
