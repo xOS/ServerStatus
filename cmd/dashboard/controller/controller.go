@@ -10,11 +10,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"code.cloudfoundry.org/bytefmt"
 	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"github.com/hashicorp/go-uuid"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 
@@ -24,6 +26,12 @@ import (
 	"github.com/xos/serverstatus/proto"
 	"github.com/xos/serverstatus/service/rpc"
 	"github.com/xos/serverstatus/service/singleton"
+)
+
+// WebSocket相关
+var (
+	wsClients sync.Map // 存储WebSocket连接 [clientID]=>连接
+	// 注：upgrader已在common_page.go中定义
 )
 
 func ServeWeb(port uint) *http.Server {
@@ -46,6 +54,32 @@ func ServeWeb(port uint) *http.Server {
 	r.Use(mygin.RecordPath)
 	// 直接用本地静态资源目录
 	r.Static("/static", "resource/static")
+
+	// WebSocket服务
+	r.GET("/ws", func(c *gin.Context) {
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			log.Println("WebSocket连接失败:", err)
+			return
+		}
+
+		// 生成唯一客户端ID
+		clientID, _ := uuid.GenerateUUID()
+		wsClients.Store(clientID, conn)
+
+		// 连接关闭时清理
+		conn.SetCloseHandler(func(code int, text string) error {
+			wsClients.Delete(clientID)
+			return nil
+		})
+
+		// 处理接收到的消息
+		go handleWebSocketMessages(conn, clientID)
+	})
+
+	// 启动定时推送服务
+	startWebSocketPushService()
+
 	routers(r)
 	page404 := func(c *gin.Context) {
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
@@ -363,4 +397,135 @@ func natGateway(c *gin.Context) {
 
 	rpc.ServerHandlerSingleton.StartStream(streamId, time.Second*10)
 	c.Abort()
+}
+
+// pushServerStatusToClients 推送服务器状态和流量数据到WebSocket客户端
+func pushServerStatusToClients() {
+	singleton.ServerLock.RLock()
+	defer singleton.ServerLock.RUnlock()
+
+	// 构建服务器状态数据
+	serverStatusData := make([]map[string]interface{}, 0)
+	for _, server := range singleton.ServerList {
+		serverData := map[string]interface{}{
+			"ID":         server.ID,
+			"Name":       server.Name,
+			"IsOnline":   server.IsOnline,
+			"LastActive": server.LastActive,
+		}
+
+		// 添加服务器状态数据
+		if server.State != nil {
+			serverData["State"] = server.State
+		}
+
+		serverStatusData = append(serverStatusData, serverData)
+	}
+
+	// 构建流量数据
+	trafficData := buildTrafficData()
+
+	// 构建完整的消息
+	message := map[string]interface{}{
+		"now":         time.Now().UnixMilli(),
+		"servers":     serverStatusData,
+		"trafficData": trafficData,
+	}
+
+	// 发送到所有客户端
+	messageJSON, err := utils.Json.Marshal(message)
+	if err == nil {
+		// 发送到所有WebSocket客户端
+		wsClients.Range(func(key, value interface{}) bool {
+			if conn, ok := value.(*websocket.Conn); ok {
+				conn.WriteMessage(websocket.TextMessage, messageJSON)
+			}
+			return true
+		})
+	}
+}
+
+// buildTrafficData 构建用于前端显示的流量数据
+func buildTrafficData() []map[string]interface{} {
+	trafficData := make([]map[string]interface{}, 0)
+
+	// 遍历所有服务器，生成流量数据
+	for _, server := range singleton.ServerList {
+		// 跳过没有状态数据的服务器
+		if server.State == nil {
+			continue
+		}
+
+		// 计算已使用流量和总流量
+		traffic := map[string]interface{}{
+			"server_id":   server.ID,
+			"server_name": server.Name,
+			"cycle_name":  "Monthly", // 默认周期名称
+
+			// 使用字节数据作为源
+			"is_bytes_source": true,
+			"used_bytes":      server.State.NetInTransfer + server.State.NetOutTransfer,
+			"max_bytes":       uint64(1099511627776), // 默认1TB限额，可根据实际情况调整
+
+			// 提供格式化的流量字符串，兼容旧版本
+			"used_formatted": formatBytes(server.State.NetInTransfer + server.State.NetOutTransfer),
+			"max_formatted":  "1TB",
+		}
+
+		// 计算使用百分比
+		if traffic["max_bytes"].(uint64) > 0 {
+			traffic["used_percent"] = float64(traffic["used_bytes"].(uint64)) / float64(traffic["max_bytes"].(uint64)) * 100
+		}
+
+		trafficData = append(trafficData, traffic)
+	}
+
+	return trafficData
+}
+
+// formatBytes 格式化字节大小为易读形式
+func formatBytes(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := uint64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// 启动WebSocket数据推送服务
+func startWebSocketPushService() {
+	// 每5秒推送一次数据
+	go func() {
+		for {
+			time.Sleep(5 * time.Second)
+			pushServerStatusToClients()
+		}
+	}()
+}
+
+// 处理从客户端收到的WebSocket消息
+func handleWebSocketMessages(conn *websocket.Conn, clientID string) {
+	for {
+		messageType, p, err := conn.ReadMessage()
+		if err != nil {
+			log.Println("读取WebSocket消息失败:", err)
+			wsClients.Delete(clientID)
+			return
+		}
+
+		// 简单的ping-pong测试
+		if messageType == websocket.TextMessage {
+			var message map[string]interface{}
+			if err := utils.Json.Unmarshal(p, &message); err == nil {
+				if message["type"] == "ping" {
+					conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"pong"}`))
+				}
+			}
+		}
+	}
 }

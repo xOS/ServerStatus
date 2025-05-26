@@ -787,6 +787,7 @@ function initWebSocket() {
     const ws = new WebSocket(wsUrl);
     
     ws.onopen = function() {
+        console.log('WebSocket连接已建立');
         // 发送一个ping消息来测试连接
         try {
             ws.send(JSON.stringify({ type: 'ping' }));
@@ -807,13 +808,15 @@ function initWebSocket() {
             }
             
             // 处理流量数据更新
-            if (data.trafficData) {
+            if (data.trafficData && Array.isArray(data.trafficData)) {
                 window.serverTrafficRawData = data.trafficData;
                 if (window.trafficManager) {
                     window.trafficManager.processTrafficData(data.trafficData);
                 } else {
                     window.extractTrafficData();
                 }
+                // 打印流量数据更新日志
+                console.log('已通过WebSocket接收流量数据:', data.trafficData.length, '个服务器');
             }
         } catch (e) {
             console.error('处理WebSocket消息时出错:', e);
@@ -1055,6 +1058,9 @@ class TrafficManager {
                 // 后端提供了字节数据源，直接使用
                 maxBytes = item.max_bytes;
                 usedBytes = item.used_bytes;
+                
+                // 为调试输出完整信息
+                console.debug(`服务器${serverId}: 收到流量字节数据 used=${usedBytes}, max=${maxBytes}`);
                 
                 // 从字节数据计算百分比
                 if (maxBytes > 0) {
