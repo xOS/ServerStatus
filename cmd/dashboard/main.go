@@ -41,11 +41,11 @@ func initSystem() {
 	// 启动 singleton 包下的所有服务
 	singleton.LoadSingleton()
 
-	// 等待一秒钟确保所有初始化完成
-	time.Sleep(time.Second)
+	// 等待两秒钟确保所有服务充分初始化
+	time.Sleep(2 * time.Second)
 
-	// 从数据库同步流量数据到内存
-	singleton.SyncAllServerTrafficFromDB()
+	// 开启流量同步和持久化
+	singleton.AutoSyncTraffic()
 }
 
 func main() {
@@ -82,16 +82,19 @@ func main() {
 		return srv.ListenAndServe()
 	}, func(c context.Context) error {
 		log.Println("NG>> Graceful::START")
-		
+
 		// 保存流量数据
 		singleton.RecordTransferHourlyUsage()
-		
+
+		// 保存所有服务器的累计流量
+		singleton.SaveAllTrafficToDB()
+
 		// 优雅关闭流量管理器
 		tm := singleton.GetTrafficManager()
 		if err := tm.Shutdown(); err != nil {
 			log.Printf("流量管理器关闭失败: %v", err)
 		}
-		
+
 		log.Println("NG>> Graceful::END")
 		srv.Shutdown(c)
 		return nil

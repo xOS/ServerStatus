@@ -67,7 +67,7 @@ func GetTrafficManager() *TrafficManager {
 			batchBuffer:    make([]*model.Transfer, 0, batchSize),
 			lastBatchWrite: time.Now(),
 		}
-		
+
 		// 验证Transfer表结构
 		if DB != nil {
 			if !DB.Migrator().HasTable(&model.Transfer{}) {
@@ -79,7 +79,7 @@ func GetTrafficManager() *TrafficManager {
 				}
 			} else {
 				log.Printf("流量管理器: Transfer表已存在")
-				
+
 				// 验证表结构
 				requiredColumns := []string{"server_id", "in", "out"}
 				for _, col := range requiredColumns {
@@ -87,7 +87,7 @@ func GetTrafficManager() *TrafficManager {
 						log.Printf("流量管理器: 警告 - Transfer表缺少列: %s", col)
 					}
 				}
-				
+
 				// 显示当前记录数
 				var count int64
 				if err := DB.Model(&model.Transfer{}).Count(&count); err == nil {
@@ -97,7 +97,7 @@ func GetTrafficManager() *TrafficManager {
 		} else {
 			log.Printf("流量管理器: 警告 - 数据库连接为空")
 		}
-		
+
 		// 启动后台批量写入任务
 		go trafficManager.batchWriteWorker()
 		log.Printf("流量管理器: 初始化完成，批量写入工作器已启动")
@@ -123,6 +123,42 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 		}
 		tm.trafficStats[serverID] = stats
 		log.Printf("流量管理器: 服务器 %d 初始化流量统计: 入站=%d, 出站=%d", serverID, inBytes, outBytes)
+
+		// 直接更新服务器的累计流量 - 新添加的关键代码
+		if server, ok := ServerList[serverID]; ok {
+			// 计算流量增量
+			var inDelta, outDelta uint64
+			if inBytes > 0 {
+				inDelta = inBytes
+			}
+			if outBytes > 0 {
+				outDelta = outBytes
+			}
+
+			// 只有在有实际增量时才更新累计流量
+			if inDelta > 0 || outDelta > 0 {
+				// 直接在内存中更新累计值
+				newInTotal := server.CumulativeNetInTransfer + inDelta
+				newOutTotal := server.CumulativeNetOutTransfer + outDelta
+
+				// 更新服务器对象
+				server.CumulativeNetInTransfer = newInTotal
+				server.CumulativeNetOutTransfer = newOutTotal
+
+				// 立刻保存到数据库
+				updateSQL := `UPDATE servers SET 
+								cumulative_net_in_transfer = ?, 
+								cumulative_net_out_transfer = ? 
+								WHERE id = ?`
+				if err := DB.Exec(updateSQL, newInTotal, newOutTotal, serverID).Error; err != nil {
+					log.Printf("流量管理器: 更新服务器 %d 累计流量数据库失败: %v", serverID, err)
+				} else {
+					log.Printf("流量管理器: 更新服务器 %d 累计流量成功: 入站=%d, 出站=%d",
+						serverID, newInTotal, newOutTotal)
+				}
+			}
+		}
+
 		return
 	}
 
@@ -132,10 +168,60 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 		return // 忽略过于频繁的更新
 	}
 
+	// 检测服务器是否重启（流量回退）
+	restarted := tm.detectServerRestart(serverID, inBytes, outBytes, stats)
+
 	// 计算速率（使用累计流量的增量）
-	if duration.Seconds() > 0 && inBytes >= stats.lastInBytes && outBytes >= stats.lastOutBytes {
+	if duration.Seconds() > 0 && !restarted {
 		stats.InSpeed = uint64(float64(inBytes-stats.lastInBytes) / duration.Seconds())
 		stats.OutSpeed = uint64(float64(outBytes-stats.lastOutBytes) / duration.Seconds())
+
+		// 直接更新服务器的累计流量 - 新添加的关键代码
+		if server, ok := ServerList[serverID]; ok {
+			// 计算流量增量
+			var inDelta, outDelta uint64
+			if inBytes > stats.lastInBytes {
+				inDelta = inBytes - stats.lastInBytes
+			}
+			if outBytes > stats.lastOutBytes {
+				outDelta = outBytes - stats.lastOutBytes
+			}
+
+			// 只有在有实际增量时才更新累计流量
+			if inDelta > 0 || outDelta > 0 {
+				// 直接在内存中更新累计值
+				newInTotal := server.CumulativeNetInTransfer + inDelta
+				newOutTotal := server.CumulativeNetOutTransfer + outDelta
+
+				// 更新服务器对象
+				server.CumulativeNetInTransfer = newInTotal
+				server.CumulativeNetOutTransfer = newOutTotal
+
+				// 同步更新状态
+				if server.State != nil {
+					server.State.NetInTransfer = server.State.NetInTransfer + inDelta
+					server.State.NetOutTransfer = server.State.NetOutTransfer + outDelta
+				}
+
+				log.Printf("流量管理器: 服务器 %d 流量增加: 入站+%d, 出站+%d",
+					serverID, inDelta, outDelta)
+
+				// 定期保存到数据库 (改为每5分钟保存一次，避免频繁写入)
+				if time.Since(server.LastFlowSaveTime).Minutes() > 5 {
+					updateSQL := `UPDATE servers SET 
+									cumulative_net_in_transfer = ?, 
+									cumulative_net_out_transfer = ? 
+									WHERE id = ?`
+					if err := DB.Exec(updateSQL, newInTotal, newOutTotal, serverID).Error; err != nil {
+						log.Printf("流量管理器: 定期更新服务器 %d 累计流量到数据库失败: %v", serverID, err)
+					} else {
+						log.Printf("流量管理器: 定期更新服务器 %d 累计流量成功: 入站=%d, 出站=%d",
+							serverID, newInTotal, newOutTotal)
+						server.LastFlowSaveTime = time.Now()
+					}
+				}
+			}
+		}
 	} else {
 		// 如果数据异常（比如重启），重置速率
 		stats.InSpeed = 0
@@ -161,7 +247,7 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 		cache.DefaultExpiration,
 	)
 
-	// 添加到批量写入缓冲区
+	// 添加到批量写入缓冲区 (对于详细的流量记录)
 	transferRecord := &model.Transfer{
 		ServerID: serverID,
 		In:       inBytes,
@@ -174,7 +260,7 @@ func (tm *TrafficManager) UpdateTraffic(serverID uint64, inBytes, outBytes uint6
 
 	// 检查是否需要立即写入
 	if len(tm.batchBuffer) >= batchSize || now.Sub(tm.lastBatchWrite) >= batchInterval {
-		log.Printf("流量管理器: 触发批量写入 - 缓冲区大小: %d, 时间间隔: %v", 
+		log.Printf("流量管理器: 触发批量写入详细记录 - 缓冲区大小: %d, 时间间隔: %v",
 			len(tm.batchBuffer), now.Sub(tm.lastBatchWrite))
 		tm.writeBatchToDatabase()
 	}
@@ -226,7 +312,7 @@ func (tm *TrafficManager) writeBatchToDatabase() {
 	// 打印前几条记录用于调试
 	for i, record := range tm.batchBuffer {
 		if i < 3 { // 只打印前3条
-			log.Printf("流量管理器: 记录%d - ServerID=%d, In=%d, Out=%d", 
+			log.Printf("流量管理器: 记录%d - ServerID=%d, In=%d, Out=%d",
 				i+1, record.ServerID, record.In, record.Out)
 		}
 	}
@@ -257,34 +343,34 @@ func (tm *TrafficManager) writeBatchToDatabase() {
 	// 批量插入数据
 	if err := tx.CreateInBatches(tm.batchBuffer, 100).Error; err != nil {
 		log.Printf("流量管理器: 批量插入失败: %v", err)
-		
+
 		// 尝试逐一插入来查找问题
 		log.Printf("流量管理器: 尝试逐一插入以识别问题...")
 		tx.Rollback()
-		
+
 		// 开始新的事务进行逐一插入
 		tx2 := DB.Begin()
 		if tx2.Error != nil {
 			log.Printf("流量管理器: 开始第二个事务失败: %v", tx2.Error)
 			return
 		}
-		
+
 		successCount := 0
 		for i, record := range tm.batchBuffer {
 			if err := tx2.Create(record).Error; err != nil {
-				log.Printf("流量管理器: 插入记录%d失败: %v, 记录: ServerID=%d, In=%d, Out=%d", 
+				log.Printf("流量管理器: 插入记录%d失败: %v, 记录: ServerID=%d, In=%d, Out=%d",
 					i+1, err, record.ServerID, record.In, record.Out)
 			} else {
 				successCount++
 			}
 		}
-		
+
 		if err := tx2.Commit().Error; err != nil {
 			log.Printf("流量管理器: 提交第二个事务失败: %v", err)
 			tx2.Rollback()
 			return
 		}
-		
+
 		log.Printf("流量管理器: 逐一插入完成，成功插入 %d 条记录", successCount)
 	} else {
 		// 提交事务
@@ -363,44 +449,87 @@ func (tm *TrafficManager) SaveToDatabase() error {
 func (tm *TrafficManager) Shutdown() error {
 	tm.Lock()
 	defer tm.Unlock()
-	
+
 	log.Println("流量管理器正在优雅关闭...")
-	
+
 	// 强制写入所有缓冲区数据
 	if len(tm.batchBuffer) > 0 {
 		tm.writeBatchToDatabase()
 	}
-	
+
 	log.Println("流量管理器关闭完成")
 	return nil
 }
 
 // detectServerRestart 检测服务器是否重启
 func (tm *TrafficManager) detectServerRestart(serverID uint64, newIn, newOut uint64, stats *TrafficStats) bool {
-	// 方法1：流量值大幅减少（经典重启检测）
-	if newIn < stats.InBytes*4/5 || newOut < stats.OutBytes*4/5 {
-		log.Printf("服务器 %d 流量大幅减少，疑似重启: 入站 %d->%d, 出站 %d->%d",
+	// 方法1：流量值减少检测
+	if newIn < stats.InBytes || newOut < stats.OutBytes {
+		log.Printf("服务器 %d 流量减少，判定为重启: 入站 %d->%d, 出站 %d->%d",
 			serverID, stats.InBytes, newIn, stats.OutBytes, newOut)
-		return true
-	}
-	
-	// 方法2：检查会话时间（如果会话时间过长且流量突然变小）
-	sessionDuration := time.Since(stats.LastTime)
-	if sessionDuration > 30*time.Minute {
-		if newIn < stats.InBytes || newOut < stats.OutBytes {
-			log.Printf("服务器 %d 长时间运行后流量减少，疑似重启: 会话时长=%v",
-				serverID, sessionDuration)
-			return true
+
+		// 更新服务器的累计流量
+		if server, ok := ServerList[serverID]; ok && server != nil {
+			// 获取当前累计流量
+			cumulativeIn := server.CumulativeNetInTransfer
+			cumulativeOut := server.CumulativeNetOutTransfer
+
+			// 将减少的流量加入累计值中
+			if stats.InBytes > newIn {
+				cumulativeIn += stats.InBytes - newIn
+			}
+			if stats.OutBytes > newOut {
+				cumulativeOut += stats.OutBytes - newOut
+			}
+
+			// 更新内存中的累计量
+			server.CumulativeNetInTransfer = cumulativeIn
+			server.CumulativeNetOutTransfer = cumulativeOut
+
+			// 同步到状态
+			if server.State != nil {
+				server.State.NetInTransfer = newIn + cumulativeIn
+				server.State.NetOutTransfer = newOut + cumulativeOut
+			}
+
+			// 更新数据库
+			updateSQL := `UPDATE servers SET 
+							cumulative_net_in_transfer = ?, 
+							cumulative_net_out_transfer = ? 
+							WHERE id = ?`
+			if err := DB.Exec(updateSQL, cumulativeIn, cumulativeOut, serverID).Error; err != nil {
+				log.Printf("流量管理器: 重启时更新服务器 %d 累计流量到数据库失败: %v", serverID, err)
+			} else {
+				log.Printf("流量管理器: 重启时更新服务器 %d 累计流量成功: 入站=%d, 出站=%d",
+					serverID, cumulativeIn, cumulativeOut)
+				server.LastFlowSaveTime = time.Now()
+			}
+
+			// 验证更新结果
+			var updatedServer struct {
+				CumulativeNetInTransfer  uint64
+				CumulativeNetOutTransfer uint64
+			}
+			if err := DB.Raw(`SELECT cumulative_net_in_transfer, cumulative_net_out_transfer 
+								FROM servers WHERE id = ?`, serverID).Scan(&updatedServer).Error; err != nil {
+				log.Printf("流量管理器: 重启时验证更新失败: %v", err)
+			} else if updatedServer.CumulativeNetInTransfer != cumulativeIn || updatedServer.CumulativeNetOutTransfer != cumulativeOut {
+				log.Printf("流量管理器: 重启时更新不成功，数据库值 (入站=%d,出站=%d) 与期望值 (入站=%d,出站=%d) 不一致!",
+					updatedServer.CumulativeNetInTransfer, updatedServer.CumulativeNetOutTransfer, cumulativeIn, cumulativeOut)
+
+				// 再次尝试更新
+				if err := DB.Exec(updateSQL, cumulativeIn, cumulativeOut, serverID).Error; err != nil {
+					log.Printf("流量管理器: 重启时二次更新失败: %v", err)
+				} else {
+					log.Printf("流量管理器: 重启时二次更新完成")
+				}
+			} else {
+				log.Printf("流量管理器: 重启时更新验证成功")
+			}
 		}
-	}
-	
-	// 方法3：检查流量是否异常小（可能是重启后的初始值）
-	if newIn < 1024*1024*10 && newOut < 1024*1024*10 && // 10MB
-		(stats.InBytes > 1024*1024*100 || stats.OutBytes > 1024*1024*100) { // 之前超过100MB
-		log.Printf("服务器 %d 流量从大值变为小值，疑似重启: 之前入站=%d, 之前出站=%d",
-			serverID, stats.InBytes, stats.OutBytes)
+
 		return true
 	}
-	
+
 	return false
 }
