@@ -21,6 +21,19 @@ var (
 func InitCronTask() {
 	Cron = cron.New(cron.WithSeconds(), cron.WithLocation(Loc))
 	Crons = make(map[uint64]*model.Cron)
+	
+	// 添加基础的系统定时任务
+	// 每分钟保存一次流量数据
+	if _, err := Cron.AddFunc("0 * * * * *", RecordTransferHourlyUsage); err != nil {
+		panic(err)
+	}
+
+	// 每天凌晨3点清理30天前的数据
+	if _, err := Cron.AddFunc("0 0 3 * * *", func() {
+		CleanCumulativeTransferData(30)
+	}); err != nil {
+		panic(err)
+	}
 }
 
 // loadCronTasks 加载计划任务
