@@ -340,8 +340,6 @@ func SyncAllServerTrafficFromDB() {
 	ServerLock.Lock()
 	defer ServerLock.Unlock()
 
-	log.Println("开始同步所有服务器的累计流量数据从数据库到内存...")
-
 	for serverID, server := range ServerList {
 		if server == nil {
 			continue
@@ -356,14 +354,9 @@ func SyncAllServerTrafficFromDB() {
 		// 同步累计流量数据
 		server.CumulativeNetInTransfer = dbServer.CumulativeNetInTransfer
 		server.CumulativeNetOutTransfer = dbServer.CumulativeNetOutTransfer
-
-		log.Printf("服务器 %s (ID:%d) 累计流量同步: 入站=%d, 出站=%d",
-			server.Name, serverID,
-			server.CumulativeNetInTransfer,
-			server.CumulativeNetOutTransfer)
 	}
 
-	log.Printf("累计流量数据同步完成，共同步 %d 个服务器", len(ServerList))
+	// 累计流量数据同步完成
 }
 
 // TriggerTrafficRecalculation 流量重新计算的空实现
@@ -375,8 +368,6 @@ func TriggerTrafficRecalculation() int {
 func SaveAllTrafficToDB() {
 	ServerLock.RLock()
 	defer ServerLock.RUnlock()
-
-	log.Println("开始保存所有服务器的累计流量数据到数据库...")
 
 	savedCount := 0
 	for serverID, server := range ServerList {
@@ -396,14 +387,10 @@ func SaveAllTrafficToDB() {
 			log.Printf("保存服务器 %s (ID:%d) 累计流量失败: %v", server.Name, serverID, err)
 		} else {
 			savedCount++
-			log.Printf("保存服务器 %s (ID:%d) 累计流量: 入站=%d, 出站=%d",
-				server.Name, serverID,
-				server.CumulativeNetInTransfer,
-				server.CumulativeNetOutTransfer)
 		}
 	}
 
-	log.Printf("累计流量数据保存完成，共保存 %d 个服务器", savedCount)
+	// 累计流量数据保存完成
 }
 
 // AutoSyncTraffic 自动同步流量的空实现
@@ -415,8 +402,6 @@ func AutoSyncTraffic() {
 func VerifyTrafficDataConsistency() {
 	ServerLock.RLock()
 	defer ServerLock.RUnlock()
-
-	log.Println("开始验证流量数据一致性...")
 
 	for serverID, server := range ServerList {
 		if server == nil {
@@ -441,11 +426,8 @@ func VerifyTrafficDataConsistency() {
 				server.Name, serverID,
 				memoryIn, memoryOut,
 				dbIn, dbOut)
-		} else {
-			log.Printf("[一致] 服务器 %s (ID:%d) - 流量数据: 入站=%d 出站=%d",
-				server.Name, serverID, memoryIn, memoryOut)
 		}
 	}
 
-	log.Println("流量数据一致性验证完成")
+	// 流量数据一致性验证完成
 }

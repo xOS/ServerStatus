@@ -446,10 +446,7 @@ func checkAndResetCycleTraffic(clientID uint64) {
 
 		if lastResetTime.IsZero() {
 			// 第一次运行，不需要重置，只记录时间
-			log.Printf("服务器 %s：首次检查周期流量，当前周期: %s 到 %s",
-				server.Name,
-				currentCycleStart.Format("2006-01-02 15:04:05"),
-				currentCycleEnd.Format("2006-01-02 15:04:05"))
+			// 首次检查周期流量，静默处理
 		} else if now.After(currentCycleStart) && lastResetTime.Before(currentCycleStart) {
 			// 当前时间已过周期开始时间，且上次重置在当前周期开始之前
 			needReset = true
@@ -467,21 +464,12 @@ func checkAndResetCycleTraffic(clientID uint64) {
 			server.PrevTransferInSnapshot = 0
 			server.PrevTransferOutSnapshot = 0
 
-			log.Printf("服务器 %s：周期流量重置完成 [%s规则]",
-				server.Name, alert.Name)
-			log.Printf("  - 重置前累计流量: 入站=%d, 出站=%d", oldInTransfer, oldOutTransfer)
-			log.Printf("  - 重置后累计流量: 入站=%d, 出站=%d",
-				server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
-			log.Printf("  - 当前周期: %s 到 %s",
-				currentCycleStart.Format("2006-01-02 15:04:05"),
-				currentCycleEnd.Format("2006-01-02 15:04:05"))
+			// 周期流量重置完成，静默处理
 
 			// 立即保存到数据库
 			updateSQL := "UPDATE servers SET cumulative_net_in_transfer = ?, cumulative_net_out_transfer = ? WHERE id = ?"
 			if err := singleton.DB.Exec(updateSQL, 0, 0, clientID).Error; err != nil {
 				log.Printf("保存服务器 %s 周期重置流量到数据库失败: %v", server.Name, err)
-			} else {
-				log.Printf("服务器 %s 周期重置流量已保存到数据库", server.Name)
 			}
 
 			// 更新AlertsCycleTransferStatsStore中的重置时间记录
@@ -493,7 +481,7 @@ func checkAndResetCycleTraffic(clientID uint64) {
 				stats.From = currentCycleStart
 				stats.To = currentCycleEnd
 
-				log.Printf("服务器 %s：已更新AlertsCycleTransferStatsStore中的重置记录", server.Name)
+				// 已更新AlertsCycleTransferStatsStore中的重置记录
 			}
 
 			// 发送流量重置通知

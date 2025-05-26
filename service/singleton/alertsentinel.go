@@ -321,12 +321,14 @@ func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, 
 		if i < len(latestResults) && latestResults[i] != nil {
 			// 这个规则检查失败了
 			ruleType := rule.Type
+			// 创建局部副本以避免内存别名问题
+			ruleCopy := rule
 
 			// 根据规则类型生成详细信息
 			switch {
 			case rule.IsTransferDurationRule():
 				// 流量规则的详细信息
-				message += generateTrafficAlertDetails(&rule, server, alert.ID)
+				message += generateTrafficAlertDetails(&ruleCopy, server, alert.ID)
 			case ruleType == "cpu":
 				message += fmt.Sprintf("• CPU使用率超限: %.2f%% (阈值: %.2f%%)\n",
 					server.State.CPU, rule.Max)

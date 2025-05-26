@@ -181,9 +181,7 @@ func printServerLoadSummary() {
 		}
 	}
 
-	// 输出摘要日志
-	log.Printf("服务器状态统计 - 总计=%d, 有完整Host=%d, Host不完整=%d, 无Host=%d, 有State=%d, 有离线前状态=%d",
-		len(ServerList), withHost, incompleteHost, noHost, withState, loaded)
+	// 服务器状态统计完成
 }
 
 // UpdateServer 更新服务器信息
@@ -214,20 +212,16 @@ func UpdateServer(s *model.Server) error {
 			// 正常增量
 			increase := uint64(int64(originalIn) - prevIn)
 			s.CumulativeNetInTransfer += increase
-			log.Printf("服务器 %s 入站流量增量: +%d, 累计: %d", s.Name, increase, s.CumulativeNetInTransfer)
 		} else if prevIn > 0 && int64(originalIn) < prevIn {
 			// 流量重置，不增加累计流量，只更新基准点
-			log.Printf("服务器 %s 入站流量重置: %d -> %d", s.Name, prevIn, originalIn)
 		}
 
 		if prevOut > 0 && int64(originalOut) > prevOut {
 			// 正常增量
 			increase := uint64(int64(originalOut) - prevOut)
 			s.CumulativeNetOutTransfer += increase
-			log.Printf("服务器 %s 出站流量增量: +%d, 累计: %d", s.Name, increase, s.CumulativeNetOutTransfer)
 		} else if prevOut > 0 && int64(originalOut) < prevOut {
 			// 流量重置，不增加累计流量，只更新基准点
-			log.Printf("服务器 %s 出站流量重置: %d -> %d", s.Name, prevOut, originalOut)
 		}
 
 		// 更新基准点
