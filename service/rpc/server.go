@@ -252,7 +252,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		(singleton.ServerList[clientID].Host == nil || singleton.ServerList[clientID].Host.IP != host.IP) {
 		ipv4, ipv6, _ := utils.SplitIPAddr(host.IP)
 		providers, err := singleton.GetDDNSProvidersFromProfilesWithServer(
-			singleton.ServerList[clientID].DDNSProfiles, 
+			singleton.ServerList[clientID].DDNSProfiles,
 			&ddns.IP{Ipv4Addr: ipv4, Ipv6Addr: ipv6},
 			singleton.ServerList[clientID].Name,
 			clientID,

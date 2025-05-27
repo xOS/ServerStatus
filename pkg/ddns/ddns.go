@@ -35,11 +35,11 @@ type Provider struct {
 	DDNSProfile *model.DDNSProfile
 	IPAddrs     *IP
 	Setter      libdns.RecordSetter
-	
+
 	// 新增字段用于DDNS变更通知
-	ServerName      string
-	ServerID        uint64
-	NotifyCallback  func(serverName string, serverID uint64, domain string, recordType string, oldIP string, newIP string) // 通知回调函数
+	ServerName     string
+	ServerID       uint64
+	NotifyCallback func(serverName string, serverID uint64, domain string, recordType string, oldIP string, newIP string) // 通知回调函数
 }
 
 func InitDNSServers(s string) {
@@ -99,7 +99,7 @@ func (provider *Provider) addDomainRecord() error {
 	} else if provider.recordType == "AAAA" {
 		oldIP = provider.IPAddrs.Ipv6Addr
 	}
-	
+
 	_, err := provider.Setter.SetRecords(provider.ctx, provider.zone,
 		[]libdns.Record{
 			{
@@ -109,12 +109,12 @@ func (provider *Provider) addDomainRecord() error {
 				TTL:   time.Minute,
 			},
 		})
-	
+
 	// 如果DDNS更新成功且有通知回调，发送DDNS变更通知
 	if err == nil && provider.NotifyCallback != nil && provider.ServerName != "" {
 		go provider.NotifyCallback(provider.ServerName, provider.ServerID, provider.domain, provider.recordType, oldIP, provider.ipAddr)
 	}
-	
+
 	return err
 }
 

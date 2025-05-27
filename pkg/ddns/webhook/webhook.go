@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -63,7 +62,7 @@ func (provider *Provider) SetRecords(ctx context.Context, zone string,
 		if _, err := utils.HttpClient.Do(req); err != nil {
 			return nil, fmt.Errorf("failed to update a domain: %s. Cause by: %v", provider.domain, err)
 		}
-		
+
 		// 发送DDNS记录变更通知（如果有服务器名称）
 		if provider.serverName != "" {
 			provider.sendDDNSChangeNotification()
