@@ -251,7 +251,12 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	if singleton.ServerList[clientID].EnableDDNS && host.IP != "" &&
 		(singleton.ServerList[clientID].Host == nil || singleton.ServerList[clientID].Host.IP != host.IP) {
 		ipv4, ipv6, _ := utils.SplitIPAddr(host.IP)
-		providers, err := singleton.GetDDNSProvidersFromProfiles(singleton.ServerList[clientID].DDNSProfiles, &ddns.IP{Ipv4Addr: ipv4, Ipv6Addr: ipv6})
+		providers, err := singleton.GetDDNSProvidersFromProfilesWithServer(
+			singleton.ServerList[clientID].DDNSProfiles, 
+			&ddns.IP{Ipv4Addr: ipv4, Ipv6Addr: ipv6},
+			singleton.ServerList[clientID].Name,
+			clientID,
+		)
 		if err == nil {
 			for _, provider := range providers {
 				go func(provider *ddns.Provider) {
@@ -263,7 +268,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		}
 	}
 
-	// 发送IP变动通知
+	// 发送IP变动通知（带节流机制）
 	if singleton.ServerList[clientID].Host != nil && singleton.Conf.EnableIPChangeNotification &&
 		((singleton.Conf.Cover == model.ConfigCoverAll && !singleton.Conf.IgnoredIPNotificationServerIDs[clientID]) ||
 			(singleton.Conf.Cover == model.ConfigCoverIgnoreAll && singleton.Conf.IgnoredIPNotificationServerIDs[clientID])) &&
@@ -271,6 +276,8 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		host.IP != "" &&
 		singleton.ServerList[clientID].Host.IP != host.IP {
 
+		// 使用IP变更通知的静音标签来实现节流
+		muteLabel := singleton.NotificationMuteLabel.IPChanged(clientID)
 		singleton.SendNotification(singleton.Conf.IPChangeNotificationTag,
 			fmt.Sprintf(
 				"[%s] %s, %s => %s",
@@ -280,7 +287,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 				singleton.ServerList[clientID].Name, singleton.IPDesensitize(singleton.ServerList[clientID].Host.IP),
 				singleton.IPDesensitize(host.IP),
 			),
-			nil)
+			muteLabel)
 	}
 
 	/**

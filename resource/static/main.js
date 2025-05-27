@@ -211,8 +211,8 @@ function addOrEditAlertRule(rule) {
       node1.after(
         '<a class="ui label transition visible" data-value="' +
         failTriggerTasksList[i] +
-        '" style="display: inline-block !important;">ID:' +
-        failTriggerTasksList[i] +
+        '" style="display: inline-block !important;">' +
+        getTaskNameById(failTriggerTasksList[i]) +
         '<i class="delete icon"></i></a>'
       );
     }
@@ -220,8 +220,8 @@ function addOrEditAlertRule(rule) {
       node2.after(
         '<a class="ui label transition visible" data-value="' +
         recoverTriggerTasksList[i] +
-        '" style="display: inline-block !important;">ID:' +
-        recoverTriggerTasksList[i] +
+        '" style="display: inline-block !important;">' +
+        getTaskNameById(recoverTriggerTasksList[i]) +
         '<i class="delete icon"></i></a>'
       );
     }
@@ -411,8 +411,8 @@ function addOrEditServer(server, conf) {
       node.after(
         '<a class="ui label transition visible" data-value="' +
         serverList[i] +
-        '" style="display: inline-block !important;">ID:' +
-        serverList[i] +
+        '" style="display: inline-block !important;">' +
+        getDDNSNameById(serverList[i]) +
         '<i class="delete icon"></i></a>'
       );
     }
@@ -501,8 +501,8 @@ function addOrEditMonitor(monitor) {
       node.after(
         '<a class="ui label transition visible" data-value="' +
         serverList[i] +
-        '" style="display: inline-block !important;">ID:' +
-        serverList[i] +
+        '" style="display: inline-block !important;">' +
+        getServerNameById(serverList[i]) +
         '<i class="delete icon"></i></a>'
       );
     }
@@ -517,8 +517,8 @@ function addOrEditMonitor(monitor) {
       node1.after(
         '<a class="ui label transition visible" data-value="' +
         failTriggerTasksList[i] +
-        '" style="display: inline-block !important;">ID:' +
-        failTriggerTasksList[i] +
+        '" style="display: inline-block !important;">' +
+        getTaskNameById(failTriggerTasksList[i]) +
         '<i class="delete icon"></i></a>'
       );
     }
@@ -526,8 +526,8 @@ function addOrEditMonitor(monitor) {
       node2.after(
         '<a class="ui label transition visible" data-value="' +
         recoverTriggerTasksList[i] +
-        '" style="display: inline-block !important;">ID:' +
-        recoverTriggerTasksList[i] +
+        '" style="display: inline-block !important;">' +
+        getTaskNameById(recoverTriggerTasksList[i]) +
         '<i class="delete icon"></i></a>'
       );
     }
@@ -571,8 +571,8 @@ function addOrEditCron(cron) {
       node.after(
         '<a class="ui label transition visible" data-value="' +
         serverList[i] +
-        '" style="display: inline-block !important;">ID:' +
-        serverList[i] +
+        '" style="display: inline-block !important;">' +
+        getServerNameById(serverList[i]) +
         '<i class="delete icon"></i></a>'
       );
     }
@@ -1321,124 +1321,203 @@ if (window.statusCards) {
     };
 }
 
+// 全局服务器ID到名称的映射
+window.serverIdToName = {};
+
+// 获取服务器名称的函数
+function getServerNameById(serverId) {
+  return window.serverIdToName[serverId] || `ID:${serverId}`;
+}
+
+// 更新服务器名称映射的函数
+function updateServerNameMapping() {
+  // 在页面加载时和每次修改后更新映射
+  $.get('/api/search-server?word=')
+    .done(function(resp) {
+      if (resp.success && resp.results) {
+        window.serverIdToName = {};
+        resp.results.forEach(server => {
+          window.serverIdToName[server.value] = server.name;
+        });
+      }
+    })
+    .fail(function() {
+      console.warn('无法加载服务器名称映射');
+    });
+}
+
+// 全局DDNS ID到名称的映射
+window.ddnsIdToName = {};
+
+// 获取DDNS配置名称的函数
+function getDDNSNameById(ddnsId) {
+  return window.ddnsIdToName[ddnsId] || `ID:${ddnsId}`;
+}
+
+// 更新DDNS名称映射的函数
+function updateDDNSNameMapping() {
+  $.get('/api/search-ddns?word=')
+    .done(function(resp) {
+      if (resp.success && resp.results) {
+        window.ddnsIdToName = {};
+        resp.results.forEach(ddns => {
+          window.ddnsIdToName[ddns.value] = ddns.name;
+        });
+      }
+    })
+    .fail(function() {
+      console.warn('无法加载DDNS名称映射');
+    });
+}
+
+// 全局Task ID到名称的映射
+window.taskIdToName = {};
+
+// 获取Task名称的函数
+function getTaskNameById(taskId) {
+  return window.taskIdToName[taskId] || `ID:${taskId}`;
+}
+
+// 更新Task名称映射的函数
+function updateTaskNameMapping() {
+  $.get('/api/search-tasks?word=')
+    .done(function(resp) {
+      if (resp.success && resp.results) {
+        window.taskIdToName = {};
+        resp.results.forEach(task => {
+          window.taskIdToName[task.value] = task.name;
+        });
+      }
+    })
+    .fail(function() {
+      console.warn('无法加载Task名称映射');
+    });
+}
+
+// 在页面加载时初始化所有映射
+$(document).ready(() => {
+  updateServerNameMapping();
+  updateDDNSNameMapping();
+  updateTaskNameMapping();
+});
 function specialOS(i) {
-        // 处理Windows平台
-        if (i && i.toString().toLowerCase().includes('windows')) {
-            return i.replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", "");
-        }
-        
-        // 确保i是字符串并转为小写
-        i = (i || "").toString().toLowerCase();
-        
-        // 使用对象映射代替switch语句
-        const osMapping = {
-            "ubuntu": "Ubuntu",
-            "debian": "Debian",
-            "centos": "CentOS",
-            "darwin": "MacOS",
-            "redhat": "RedHat",
-            "archlinux": "Archlinux",
-            "coreos": "Coreos",
-            "deepin": "Deepin",
-            "fedora": "Fedora",
-            "alpine": "Alpine",
-            "tux": "Tux",
-            "linuxmint": "LinuxMint",
-            "oracle": "Oracle",
-            "slackware": "SlackWare",
-            "raspbian": "Raspbian",
-            "gentoo": "GenToo",
-            "arch": "Arch",
-            "amazon": "Amazon",
-            "xenserver": "XenServer",
-            "scientific": "ScientificSL",
-            "rhel": "Rhel",
-            "rawhide": "RawHide",
-            "cloudlinux": "CloudLinux",
-            "ibm_powerkvm": "IBM",
-            "almalinux": "Almalinux",
-            "suse": "Suse",
-            "opensuse": "OpenSuse",
-            "opensuse-leap": "OpenSuse",
-            "opensuse-tumbleweed": "OpenSuse",
-            "opensuse-tumbleweed-kubic": "OpenSuse",
-            "sles": "Sles",
-            "sled": "Sled",
-            "caasp": "Caasp",
-            "exherbo": "ExherBo",
-            "solus": "Solus"
-        };
-        
-        // 如果在映射中找到匹配项，返回对应的值，否则返回原始输入
-        return osMapping[i] || i;
-    }
-    
-    function specialVir(i) {
-        // 确保i是字符串并转为小写
-        i = (i || "").toString().toLowerCase();
-        
-        // 使用对象映射代替switch语句，包含更多虚拟化平台的优雅显示
-        const virMapping = {
-            "kvm": "KVM",
-            "openvz": "OpenVZ",
-            "lxc": "LXC",
-            "xen": "Xen",
-            "vbox": "VirtualBox",
-            "virtualbox": "VirtualBox",
-            "rkt": "RKT",
-            "docker": "Docker",
-            "vmware": "VMware",
-            "vmware-esxi": "VMware ESXi",
-            "linux-vserver": "VServer",
-            "hyperv": "Hyper-V",
-            "hyper-v": "Hyper-V",
-            "microsoft": "Hyper-V",
-            "qemu": "QEMU",
-            "parallels": "Parallels",
-            "bhyve": "bhyve",
-            "jail": "FreeBSD Jail",
-            "zone": "Solaris Zone",
-            "wsl": "WSL",
-            "podman": "Podman",
-            "containerd": "containerd",
-            "systemd-nspawn": "systemd-nspawn"
-        };
-        
-        // 如果在映射中找到匹配项，返回对应的值，否则返回首字母大写的原始输入
-        if (virMapping[i]) {
-            return virMapping[i];
-        }
-        
-        // 如果没有找到映射，将首字母大写返回
-        return i.charAt(0).toUpperCase() + i.slice(1);
-    }
-    function clearString(i) {
-        if (i != null && i != "") {
-            i = Array.isArray(i) ? i.map(s => s.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")) : [i.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")];
-            return i;
-        }
-        return Array.isArray(i) ? i : [i];
-    }
-    Date.prototype.format = function (format) {
-        var date = {
-            "M+": this.getMonth() + 1,
-            "d+": this.getDate(),
-            "H+": this.getHours(),
-            "m+": this.getMinutes(),
-            "s+": this.getSeconds(),
-            "q+": Math.floor((this.getMonth() + 3) / 3),
-            "S+": this.getMilliseconds()
-        };
-        if (/(y+)/i.test(format)) {
-            format = format.replace(RegExp.$1, (this.getFullYear() + '').substr(4 - RegExp.$1.length));
-        }
-        for (var k in date) {
-            if (new RegExp("(" + k + ")").test(format)) {
-                format = format.replace(RegExp.$1, RegExp.$1.length == 1
-                    ? date[k] : ("00" + date[k]).substr(("" + date[k]).length));
-            }
-        }
-        return format;
-    };
+  // 处理Windows平台
+  if (i && i.toString().toLowerCase().includes('windows')) {
+      return i.replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", "");
+  }
+  
+  // 确保i是字符串并转为小写
+  i = (i || "").toString().toLowerCase();
+  
+  // 使用对象映射代替switch语句
+  const osMapping = {
+      "ubuntu": "Ubuntu",
+      "debian": "Debian",
+      "centos": "CentOS",
+      "darwin": "MacOS",
+      "redhat": "RedHat",
+      "archlinux": "Archlinux",
+      "coreos": "Coreos",
+      "deepin": "Deepin",
+      "fedora": "Fedora",
+      "alpine": "Alpine",
+      "tux": "Tux",
+      "linuxmint": "LinuxMint",
+      "oracle": "Oracle",
+      "slackware": "SlackWare",
+      "raspbian": "Raspbian",
+      "gentoo": "GenToo",
+      "arch": "Arch",
+      "amazon": "Amazon",
+      "xenserver": "XenServer",
+      "scientific": "ScientificSL",
+      "rhel": "Rhel",
+      "rawhide": "RawHide",
+      "cloudlinux": "CloudLinux",
+      "ibm_powerkvm": "IBM",
+      "almalinux": "Almalinux",
+      "suse": "Suse",
+      "opensuse": "OpenSuse",
+      "opensuse-leap": "OpenSuse",
+      "opensuse-tumbleweed": "OpenSuse",
+      "opensuse-tumbleweed-kubic": "OpenSuse",
+      "sles": "Sles",
+      "sled": "Sled",
+      "caasp": "Caasp",
+      "exherbo": "ExherBo",
+      "solus": "Solus"
+  };
+  
+  // 如果在映射中找到匹配项，返回对应的值，否则返回原始输入
+  return osMapping[i] || i;
+}
+
+function specialVir(i) {
+  // 确保i是字符串并转为小写
+  i = (i || "").toString().toLowerCase();
+  
+  // 使用对象映射代替switch语句，包含更多虚拟化平台的优雅显示
+  const virMapping = {
+      "kvm": "KVM",
+      "openvz": "OpenVZ",
+      "lxc": "LXC",
+      "xen": "Xen",
+      "vbox": "VirtualBox",
+      "virtualbox": "VirtualBox",
+      "rkt": "RKT",
+      "docker": "Docker",
+      "vmware": "VMware",
+      "vmware-esxi": "VMware ESXi",
+      "linux-vserver": "VServer",
+      "hyperv": "Hyper-V",
+      "hyper-v": "Hyper-V",
+      "microsoft": "Hyper-V",
+      "qemu": "QEMU",
+      "parallels": "Parallels",
+      "bhyve": "bhyve",
+      "jail": "FreeBSD Jail",
+      "zone": "Solaris Zone",
+      "wsl": "WSL",
+      "podman": "Podman",
+      "containerd": "containerd",
+      "systemd-nspawn": "systemd-nspawn"
+  };
+  
+  // 如果在映射中找到匹配项，返回对应的值，否则返回首字母大写的原始输入
+  if (virMapping[i]) {
+      return virMapping[i];
+  }
+  
+  // 如果没有找到映射，将首字母大写返回
+  return i.charAt(0).toUpperCase() + i.slice(1);
+}
+function clearString(i) {
+  if (i != null && i != "") {
+      i = Array.isArray(i) ? i.map(s => s.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")) : [i.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")];
+      return i;
+  }
+  return Array.isArray(i) ? i : [i];
+}
+Date.prototype.format = function (format) {
+  var date = {
+      "M+": this.getMonth() + 1,
+      "d+": this.getDate(),
+      "H+": this.getHours(),
+      "m+": this.getMinutes(),
+      "s+": this.getSeconds(),
+      "q+": Math.floor((this.getMonth() + 3) / 3),
+      "S+": this.getMilliseconds()
+  };
+  if (/(y+)/i.test(format)) {
+      format = format.replace(RegExp.$1, (this.getFullYear() + '').substr(4 - RegExp.$1.length));
+  }
+  for (var k in date) {
+      if (new RegExp("(" + k + ")").test(format)) {
+          format = format.replace(RegExp.$1, RegExp.$1.length == 1
+              ? date[k] : ("00" + date[k]).substr(("" + date[k]).length));
+      }
+  }
+  return format;
+};
 
 $.suiAlert=function(i){function t(){l=setTimeout(function(){c.transition({animation:e,duration:"2s",onComplete:function(){c.remove()}})},1e3*o.time)}var o=$.extend({title:"Semantic UI Alerts",description:"semantic ui alerts library",type:"error",time:5,position:"top-right",icon:!1},i);o.icon===!1&&("info"==o.type?o.icon="announcement":"success"==o.type?o.icon="checkmark":"error"==o.type?o.icon="remove":"warning"==o.type&&(o.icon="warning circle"));var e="drop";"top-right"==o.position?e="fly left":"top-center"==o.position?e="fly down":"top-left"==o.position?e="fly right":"bottom-right"==o.position?e="fly left":"bottom-center"==o.position?e="fly up":"bottom-left"==o.position&&(e="fly right");var n="",r=$(window).width();r<425&&(n="mini");var s="ui-alerts."+o.position;$("body > ."+s).length||$("body").append('<div class="ui-alerts '+o.position+'"></div>');var c=$('<div class="ui icon floating '+n+" message "+o.type+'" id="alert"> <i class="'+o.icon+' icon"></i> <i class="close icon" id="alertclose"></i> <div class="content"> <div class="header">'+o.title+"</div> <p>"+o.description+"</p> </div> </div>");$("."+s).prepend(c),c.transition("pulse"),$("#alertclose").on("click",function(){$(this).closest("#alert").transition({animation:e,onComplete:function(){c.remove()}})});var l=0;$(c).mouseenter(function(){clearTimeout(l)}).mouseleave(function(){t()}),t()};

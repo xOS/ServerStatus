@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/libdns/libdns"
 	"github.com/xos/serverstatus/model"
@@ -42,6 +44,7 @@ type Provider struct {
 	ipType     string
 	recordType string
 	domain     string
+	serverName string // 添加服务器名称字段
 
 	DDNSProfile *model.DDNSProfile
 }
@@ -60,6 +63,11 @@ func (provider *Provider) SetRecords(ctx context.Context, zone string,
 		}
 		if _, err := utils.HttpClient.Do(req); err != nil {
 			return nil, fmt.Errorf("failed to update a domain: %s. Cause by: %v", provider.domain, err)
+		}
+		
+		// 发送DDNS记录变更通知（如果有服务器名称）
+		if provider.serverName != "" {
+			provider.sendDDNSChangeNotification()
 		}
 	}
 
@@ -177,4 +185,12 @@ func recordToIPType(record string) string {
 	default:
 		return ""
 	}
+}
+
+// sendDDNSChangeNotification 发送DDNS记录变更通知
+func (provider *Provider) sendDDNSChangeNotification() {
+	// 这里需要导入 singleton 包，但会引起循环依赖
+	// 所以我们将在 ddns.go 中处理通知发送
+	log.Printf("DDNS记录已更新: 服务器=%s, 域名=%s, 记录类型=%s, IP=%s",
+		provider.serverName, provider.domain, provider.recordType, provider.ipAddr)
 }
