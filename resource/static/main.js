@@ -397,14 +397,20 @@ function addOrEditServer(server, conf) {
   modal.find("a.ui.label.visible").each((i, el) => {
     el.remove();
   });
-  var ddns;
+  var ddns = "[]";
   if (server) {
-    ddns = server.DDNSProfilesRaw;
+    ddns = server.DDNSProfilesRaw || "[]";
     let serverList;
     try {
       serverList = JSON.parse(ddns);
+      // 确保它是一个数组
+      if (!Array.isArray(serverList)) {
+        console.error("DDNS配置不是数组格式:", ddns);
+        serverList = [];
+      }
     } catch (error) {
-      serverList = "[]";
+      console.error("解析DDNS配置出错:", error);
+      serverList = [];
     }
     const node = modal.find("i.dropdown.icon.ddnsProfiles");
     for (let i = 0; i < serverList.length; i++) {
@@ -418,9 +424,10 @@ function addOrEditServer(server, conf) {
     }
   }
   // 需要在 showFormModal 进一步拼接数组
+  // 正确处理DDNS配置文件数组
   modal
     .find("input[name=DDNSProfilesRaw]")
-    .val(server ? "[]," + ddns.substr(1, ddns.length - 2) : "[]");
+    .val(server ? ddns : "[]");
   modal
     .find("input[name=DisplayIndex]")
     .val(server ? server.DisplayIndex : null);

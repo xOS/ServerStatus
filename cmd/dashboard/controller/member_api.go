@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -356,8 +357,22 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 		s.PublicNote = sf.PublicNote
 		s.HideForGuest = sf.HideForGuest == "on"
 		s.EnableDDNS = sf.EnableDDNS == "on"
+		
+		// 处理DDNSProfilesRaw，确保它是有效的JSON数组
+		if sf.DDNSProfilesRaw == "" {
+			sf.DDNSProfilesRaw = "[]"
+		}
 		s.DDNSProfilesRaw = sf.DDNSProfilesRaw
+		
+		// 尝试解析JSON，如果失败则设置为空数组
 		err = utils.Json.Unmarshal([]byte(sf.DDNSProfilesRaw), &s.DDNSProfiles)
+		if err != nil {
+			log.Printf("解析DDNS配置失败（%s），重置为空数组: %v", sf.DDNSProfilesRaw, err)
+			s.DDNSProfiles = []uint64{}
+			s.DDNSProfilesRaw = "[]"
+			err = nil
+		}
+		
 		if err == nil {
 			if s.ID == 0 {
 				s.Secret, err = utils.GenerateRandomString(18)
