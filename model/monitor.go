@@ -113,10 +113,18 @@ func (m *Monitor) AfterFind(tx *gorm.DB) error {
 
 	// 加载触发任务列表
 	if err := utils.Json.Unmarshal([]byte(m.FailTriggerTasksRaw), &m.FailTriggerTasks); err != nil {
-		return err
+		log.Printf("解析Monitor %s 的FailTriggerTasksRaw失败（%s），重置为空数组: %v", m.Name, m.FailTriggerTasksRaw, err)
+		m.FailTriggerTasks = []uint64{}
+		m.FailTriggerTasksRaw = "[]"
+		// 更新数据库中的无效数据
+		tx.Model(m).Update("fail_trigger_tasks_raw", "[]")
 	}
 	if err := utils.Json.Unmarshal([]byte(m.RecoverTriggerTasksRaw), &m.RecoverTriggerTasks); err != nil {
-		return err
+		log.Printf("解析Monitor %s 的RecoverTriggerTasksRaw失败（%s），重置为空数组: %v", m.Name, m.RecoverTriggerTasksRaw, err)
+		m.RecoverTriggerTasks = []uint64{}
+		m.RecoverTriggerTasksRaw = "[]"
+		// 更新数据库中的无效数据
+		tx.Model(m).Update("recover_trigger_tasks_raw", "[]")
 	}
 
 	return nil

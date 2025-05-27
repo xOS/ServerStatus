@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -358,13 +357,13 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 		s.PublicNote = sf.PublicNote
 		s.HideForGuest = sf.HideForGuest == "on"
 		s.EnableDDNS = sf.EnableDDNS == "on"
-		
+
 		// 处理DDNSProfilesRaw，确保它是有效的JSON数组
 		if sf.DDNSProfilesRaw == "" {
 			sf.DDNSProfilesRaw = "[]"
 		}
 		s.DDNSProfilesRaw = sf.DDNSProfilesRaw
-		
+
 		// 尝试解析JSON，如果失败则设置为空数组
 		err = utils.Json.Unmarshal([]byte(sf.DDNSProfilesRaw), &s.DDNSProfiles)
 		if err != nil {
@@ -373,7 +372,7 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 			s.DDNSProfilesRaw = "[]"
 			err = nil
 		}
-		
+
 		if err == nil {
 			if s.ID == 0 {
 				s.Secret, err = utils.GenerateRandomString(18)
@@ -689,20 +688,14 @@ func (ma *memberAPI) batchUpdateServerGroup(c *gin.Context) {
 }
 
 func (ma *memberAPI) forceUpdate(c *gin.Context) {
-	// 添加调试日志以便比较
-	log.Printf("forceUpdate - Content-Type: %s", c.GetHeader("Content-Type"))
-	
 	var forceUpdateServers []uint64
 	if err := c.ShouldBindJSON(&forceUpdateServers); err != nil {
-		log.Printf("forceUpdate JSON解码失败: %v", err)
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: err.Error(),
 		})
 		return
 	}
-	
-	log.Printf("forceUpdate 成功解析服务器列表: %v", forceUpdateServers)
 
 	var executeResult bytes.Buffer
 
@@ -1128,59 +1121,22 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 }
 
 func (ma *memberAPI) batchDeleteServer(c *gin.Context) {
-	// 记录请求头信息用于调试
-	log.Printf("batchDeleteServer - Content-Type: %s", c.GetHeader("Content-Type"))
-	log.Printf("batchDeleteServer - User-Agent: %s", c.GetHeader("User-Agent"))
-	
-	// 先读取原始请求体进行调试分析
-	bodyBytes, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		log.Printf("读取请求体失败: %v", err)
-		c.JSON(http.StatusOK, model.Response{
-			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("读取请求失败: %v", err),
-		})
-		return
-	}
-	
-	// 记录原始请求体信息
-	log.Printf("原始请求体内容: %q", string(bodyBytes))
-	log.Printf("请求体长度: %d", len(bodyBytes))
-	if len(bodyBytes) > 0 {
-		log.Printf("第一个字符: %q (ASCII: %d)", bodyBytes[0], bodyBytes[0])
-		if len(bodyBytes) > 1 {
-			log.Printf("第二个字符: %q (ASCII: %d)", bodyBytes[1], bodyBytes[1])
-		}
-		if len(bodyBytes) > 2 {
-			log.Printf("第三个字符: %q (ASCII: %d)", bodyBytes[2], bodyBytes[2])
-		}
-	}
-	
-	// 重新设置请求体以供JSON解析
-	c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-	
 	var servers []uint64
 	if err := c.ShouldBindJSON(&servers); err != nil {
-		log.Printf("JSON解码失败: %v", err)
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("JSON解码失败: %v", err),
 		})
 		return
 	}
-	
-	log.Printf("成功解析服务器列表: %v", servers)
-	
-	// 验证服务器ID列表
+
 	if len(servers) == 0 {
-		log.Printf("没有提供要删除的服务器ID")
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: "没有选择要删除的服务器",
 		})
 		return
-	}	
-	log.Printf("准备删除服务器: %v", servers)
+	}
 	if err := singleton.DB.Unscoped().Delete(&model.Server{}, "id in (?)", servers).Error; err != nil {
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,

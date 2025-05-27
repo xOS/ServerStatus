@@ -50,31 +50,13 @@ function showConfirm(title, content, callFn, extData) {
 }
 
 function postJson(url, data) {
-  console.log('postJson 调用:', url, data);
-  console.log('数据类型:', typeof data);
-  console.log('是否为数组:', Array.isArray(data));
-  if (Array.isArray(data)) {
-    console.log('数组长度:', data.length);
-    console.log('数组内容:', data);
-  }
-  
   const jsonString = JSON.stringify(data);
-  console.log('JSON序列化后:', jsonString);
-  console.log('JSON字符串长度:', jsonString.length);
-  if (jsonString.length > 0) {
-    console.log('首字符:', jsonString.charAt(0), '(ASCII:', jsonString.charCodeAt(0), ')');
-    if (jsonString.length > 1) {
-      console.log('次字符:', jsonString.charAt(1), '(ASCII:', jsonString.charCodeAt(1), ')');
-    }
-  }
-  
   return $.ajax({
     url: url,
     type: "POST",
     contentType: "application/json",
     data: jsonString,
   }).done((resp) => {
-    console.log('postJson 响应:', resp);
     if (resp.code == 200) {
       if (resp.message) {
         alert(resp.message);
@@ -88,8 +70,6 @@ function postJson(url, data) {
     }
   })
     .fail((err) => {
-      console.error('postJson 失败:', err);
-      console.error('响应文本:', err.responseText);
       alert("网络错误：" + err.responseText);
     });
 }
@@ -815,12 +795,9 @@ function initWebSocket() {
     const ws = new WebSocket(wsUrl);
     
     ws.onopen = function() {
-        console.log('WebSocket连接已建立');
-        // 发送一个ping消息来测试连接
         try {
             ws.send(JSON.stringify({ type: 'ping' }));
         } catch (e) {
-            console.error('发送ping消息失败:', e);
         }
     };
     
@@ -843,23 +820,15 @@ function initWebSocket() {
                 } else {
                     window.extractTrafficData();
                 }
-                // 打印流量数据调试信息，只显示部分数据
-                if (data.trafficData.length > 0) {
-                    const sample = data.trafficData[0];
-                    console.debug(`流量数据更新: ${data.trafficData.length}个服务器, 示例(ID:${sample.server_id}): ${sample.used_formatted}/${sample.max_formatted}`);
-                }
             }
         } catch (e) {
-            console.error('处理WebSocket消息时出错:', e);
         }
     };
     
     ws.onerror = function(error) {
-        console.error('WebSocket错误:', error);
     };
     
     ws.onclose = function(event) {
-        console.log('WebSocket连接已关闭，5秒后重试...');
         setTimeout(initWebSocket, 5000);
     };
     
@@ -903,9 +872,6 @@ window.extractTrafficData = function() {
                     // 后端提供了字节数据源，直接使用
                     maxBytes = item.max_bytes;
                     usedBytes = item.used_bytes;
-                    
-                    // 记录调试信息
-                    console.debug(`服务器 ${serverId} 流量数据更新: ${usedBytes}/${maxBytes} 字节`);
                     
                     // 从字节数据计算百分比
                     if (maxBytes > 0) {
@@ -963,10 +929,7 @@ window.extractTrafficData = function() {
         if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
             window.statusCards.updateTrafficData();
         }
-        
-        console.log(`已更新 ${updatedCount} 个服务器的流量数据 (WebSocket字节源数据)`);
     } catch (e) {
-        console.error('处理流量数据时出错:', e);
     }
 };
 
@@ -994,7 +957,6 @@ window.parseTrafficToBytes = function(trafficStr) {
   
   // 如果还是没匹配到，返回0
   if (!match) {
-    console.warn('无法解析流量字符串:', trafficStr);
     return 0;
   }
   
@@ -1077,7 +1039,6 @@ class TrafficManager {
     // Process raw traffic data
     processTrafficData(rawData) {
         if (!Array.isArray(rawData) || rawData.length === 0) {
-            console.warn('没有可用的流量数据');
             return;
         }
 
@@ -1096,9 +1057,6 @@ class TrafficManager {
                 // 后端提供了字节数据源，直接使用
                 maxBytes = item.max_bytes;
                 usedBytes = item.used_bytes;
-                
-                // 为调试输出完整信息
-                console.debug(`服务器${serverId}: 收到流量字节数据 used=${usedBytes}, max=${maxBytes}`);
                 
                 // 从字节数据计算百分比
                 if (maxBytes > 0) {
@@ -1157,7 +1115,6 @@ class TrafficManager {
         window.serverTrafficData = newData;
         window.lastTrafficUpdateTime = this.lastUpdateTime;
         
-        console.log(`已更新 ${updatedCount} 个服务器的流量数据 (字节源数据)`);
         this.notifySubscribers();
     }
 
@@ -1205,7 +1162,6 @@ class TrafficManager {
             try {
                 callback(this.trafficData, this.dataVersion);
             } catch (e) {
-                console.error('Error in traffic data subscriber:', e);
             }
         });
     }
@@ -1275,7 +1231,6 @@ function fetchServerTrafficData(serverId) {
             if (data && data.code === 200) {
                 return data.data;
             } else if (data && data.code === 403) {
-                console.warn('需要登录才能访问流量数据');
                 if (window.location.pathname !== '/login') {
                     window.location.href = '/login';
                 }
@@ -1283,7 +1238,6 @@ function fetchServerTrafficData(serverId) {
             return null;
         },
         error: function(err) {
-            console.error('获取服务器流量数据失败:', err);
             return null;
         }
     });
@@ -1370,7 +1324,6 @@ function updateServerNameMapping() {
       }
     })
     .fail(function() {
-      console.warn('无法加载服务器名称映射');
     });
 }
 
@@ -1394,7 +1347,6 @@ function updateDDNSNameMapping() {
       }
     })
     .fail(function() {
-      console.warn('无法加载DDNS名称映射');
     });
 }
 
@@ -1418,7 +1370,6 @@ function updateTaskNameMapping() {
       }
     })
     .fail(function() {
-      console.warn('无法加载Task名称映射');
     });
 }
 

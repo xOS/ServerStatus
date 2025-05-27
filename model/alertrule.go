@@ -59,13 +59,16 @@ func (r *AlertRule) BeforeSave(tx *gorm.DB) error {
 func (r *AlertRule) AfterFind(tx *gorm.DB) error {
 	var err error
 	if err = utils.Json.Unmarshal([]byte(r.RulesRaw), &r.Rules); err != nil {
-		return err
+		// 更新数据库中的无效数据
+		tx.Model(r).Update("rules_raw", "[]")
 	}
 	if err = utils.Json.Unmarshal([]byte(r.FailTriggerTasksRaw), &r.FailTriggerTasks); err != nil {
-		return err
+		// 更新数据库中的无效数据
+		tx.Model(r).Update("fail_trigger_tasks_raw", "[]")
 	}
 	if err = utils.Json.Unmarshal([]byte(r.RecoverTriggerTasksRaw), &r.RecoverTriggerTasks); err != nil {
-		return err
+		// 更新数据库中的无效数据
+		tx.Model(r).Update("recover_trigger_tasks_raw", "[]")
 	}
 	return nil
 }

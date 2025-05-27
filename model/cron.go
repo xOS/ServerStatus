@@ -1,6 +1,7 @@
 package model
 
 import (
+	"log"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -34,5 +35,32 @@ type Cron struct {
 }
 
 func (c *Cron) AfterFind(tx *gorm.DB) error {
-	return utils.Json.Unmarshal([]byte(c.ServersRaw), &c.Servers)
+	if c.ServersRaw == "" {
+		c.ServersRaw = "[]"
+		c.Servers = []uint64{}
+		return nil
+	}
+	
+	// 尝试解析JSON，如果失败则修复格式
+	err := utils.Json.Unmarshal([]byte(c.ServersRaw), &c.Servers)
+	if err != nil {
+		// 检查是否是 "[]," 这种无效格式
+		if c.ServersRaw == "[]," || c.ServersRaw == "," {
+			c.ServersRaw = "[]"
+			c.Servers = []uint64{}
+			// 更新数据库中的无效数据
+			tx.Model(c).Update("servers_raw", "[]")
+			return nil
+		}
+		
+		// 其他格式错误，尝试修复
+		log.Printf("解析Cron任务 %s 的ServersRaw失败（%s），重置为空数组: %v", c.Name, c.ServersRaw, err)
+		c.ServersRaw = "[]"
+		c.Servers = []uint64{}
+		// 更新数据库中的无效数据
+		tx.Model(c).Update("servers_raw", "[]")
+		return nil
+	}
+	
+	return nil
 }

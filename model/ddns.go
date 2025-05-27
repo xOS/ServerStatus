@@ -106,7 +106,7 @@ type DDNSRecordState struct {
 	ServerID   uint64    `gorm:"index:idx_ddns_record,unique" json:"server_id"`
 	Domain     string    `gorm:"index:idx_ddns_record,unique;size:255" json:"domain"`
 	RecordType string    `gorm:"index:idx_ddns_record,unique;size:10" json:"record_type"`
-	LastIP     string    `gorm:"size:45" json:"last_ip"`           // 上次记录的IP地址
+	LastIP     string    `gorm:"size:45" json:"last_ip"`                       // 上次记录的IP地址
 	LastUpdate time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"last_update"` // 上次更新时间
 }
 
