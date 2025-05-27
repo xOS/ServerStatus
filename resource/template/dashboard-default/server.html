@@ -126,7 +126,7 @@
             });
             return
         }
-        $.post('/api/force-update', JSON.stringify(servers))
+        $.post('/api/force-update', JSON.stringify(servers), null, 'application/json')
             .then((resp) => {
                 if (resp.code == 200) {
                     $.suiAlert({
@@ -208,11 +208,31 @@
     }
     function batchDeleteServer() {
         const servers = []
-        checkBoxList.forEach(cb => {
+        console.log('开始构建服务器ID数组');
+        console.log('找到的复选框数量:', checkBoxList.length);
+        
+        checkBoxList.forEach((cb, index) => {
+            console.log(`复选框 ${index}:`, {
+                checked: cb.checked,
+                value: cb.value,
+                parsedValue: parseInt(cb.value),
+                isNaN: isNaN(parseInt(cb.value))
+            });
+            
             if (cb.checked) {
-                servers.push(parseInt(cb.value))
+                const serverId = parseInt(cb.value);
+                if (!isNaN(serverId)) {
+                    servers.push(serverId);
+                    console.log(`添加服务器ID: ${serverId}`);
+                } else {
+                    console.error('无效的服务器ID:', cb.value);
+                }
             }
         })
+        
+        console.log('最终的服务器数组:', servers);
+        console.log('数组JSON表示:', JSON.stringify(servers));
+        
         if (servers.length == 0) {
             $.suiAlert({
                 title: '{{tr "NoServerSelected"}}',

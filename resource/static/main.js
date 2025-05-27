@@ -50,12 +50,31 @@ function showConfirm(title, content, callFn, extData) {
 }
 
 function postJson(url, data) {
+  console.log('postJson 调用:', url, data);
+  console.log('数据类型:', typeof data);
+  console.log('是否为数组:', Array.isArray(data));
+  if (Array.isArray(data)) {
+    console.log('数组长度:', data.length);
+    console.log('数组内容:', data);
+  }
+  
+  const jsonString = JSON.stringify(data);
+  console.log('JSON序列化后:', jsonString);
+  console.log('JSON字符串长度:', jsonString.length);
+  if (jsonString.length > 0) {
+    console.log('首字符:', jsonString.charAt(0), '(ASCII:', jsonString.charCodeAt(0), ')');
+    if (jsonString.length > 1) {
+      console.log('次字符:', jsonString.charAt(1), '(ASCII:', jsonString.charCodeAt(1), ')');
+    }
+  }
+  
   return $.ajax({
     url: url,
     type: "POST",
     contentType: "application/json",
-    data: JSON.stringify(data),
+    data: jsonString,
   }).done((resp) => {
+    console.log('postJson 响应:', resp);
     if (resp.code == 200) {
       if (resp.message) {
         alert(resp.message);
@@ -69,6 +88,8 @@ function postJson(url, data) {
     }
   })
     .fail((err) => {
+      console.error('postJson 失败:', err);
+      console.error('响应文本:', err.responseText);
       alert("网络错误：" + err.responseText);
     });
 }
