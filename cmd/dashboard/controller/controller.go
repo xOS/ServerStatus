@@ -113,6 +113,13 @@ func loadThirdPartyTemplates(tmpl *template.Template) *template.Template {
 			continue
 		}
 
+		// 处理公共模板目录
+		if themeDir == "common" || themeDir == "component" {
+			// load common/component templates
+			ret = loadTemplates(ret, themeDir)
+			continue
+		}
+
 		if !strings.HasPrefix(themeDir, "theme-") {
 			log.Printf("NG>> Invalid theme name: %s", themeDir)
 			continue

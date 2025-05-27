@@ -250,10 +250,10 @@ function addOrEditAlertRule(rule) {
   // 需要在 showFormModal 进一步拼接数组
   modal
     .find("input[name=FailTriggerTasksRaw]")
-    .val(rule ? "[]," + failTriggerTasks.substr(1, failTriggerTasks.length - 2) : "[]");
+    .val(rule ? failTriggerTasks : "[]");
   modal
     .find("input[name=RecoverTriggerTasksRaw]")
-    .val(rule ? "[]," + recoverTriggerTasks.substr(1, recoverTriggerTasks.length - 2) : "[]");
+    .val(rule ? recoverTriggerTasks : "[]");
 
   showFormModal(".rule.modal", "#ruleForm", "/api/alert-rule");
 }
@@ -563,14 +563,14 @@ function addOrEditMonitor(monitor) {
   // 需要在 showFormModal 进一步拼接数组
   modal
     .find("input[name=FailTriggerTasksRaw]")
-    .val(monitor ? "[]," + failTriggerTasks.substr(1, failTriggerTasks.length - 2) : "[]");
+    .val(monitor ? failTriggerTasks : "[]");
   modal
     .find("input[name=RecoverTriggerTasksRaw]")
-    .val(monitor ? "[]," + recoverTriggerTasks.substr(1, recoverTriggerTasks.length - 2) : "[]");
+    .val(monitor ? recoverTriggerTasks : "[]");
 
   modal
     .find("input[name=SkipServersRaw]")
-    .val(monitor ? "[]," + servers.substr(1, servers.length - 2) : "[]");
+    .val(monitor ? servers : "[]");
   showFormModal(".monitor.modal", "#monitorForm", "/api/monitor");
 }
 function addOrEditCron(cron) {
@@ -608,7 +608,7 @@ function addOrEditCron(cron) {
   // 需要在 showFormModal 进一步拼接数组
   modal
     .find("input[name=ServersRaw]")
-    .val(cron ? "[]," + servers.substr(1, servers.length - 2) : "[]");
+    .val(cron ? servers : "[]");
   modal.find("textarea[name=Command]").val(cron ? cron.Command : null);
   if (cron && cron.PushSuccessful) {
     modal.find(".ui.push-successful.checkbox").checkbox("set checked");
