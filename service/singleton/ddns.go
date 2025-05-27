@@ -62,6 +62,7 @@ func GetDDNSProvidersFromProfiles(profileId []uint64, ip *ddns2.IP) ([]*ddns2.Pr
 		case model.ProviderWebHook:
 			webhookProvider := &webhook.Provider{
 				DDNSProfile: profile,
+				NotifyChangeFunc: DDNSChangeNotificationCallback, // 直接在这里设置回调函数
 			}
 			// 将来ServerName和ServerID会通过GetDDNSProvidersFromProfilesWithServer设置
 			provider.Setter = webhookProvider
@@ -115,6 +116,7 @@ func GetDDNSProvidersFromProfilesWithServer(profileId []uint64, ip *ddns2.IP, se
 			if webhookProvider, ok := provider.Setter.(*webhook.Provider); ok {
 				webhookProvider.ServerName = serverName
 				webhookProvider.ServerID = serverID
+				// 回调已在GetDDNSProvidersFromProfiles中设置
 			}
 		}
 	}

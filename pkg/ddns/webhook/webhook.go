@@ -7,12 +7,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/libdns/libdns"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/utils"
-	"github.com/xos/serverstatus/service/singleton"
 )
 
 const (
@@ -38,16 +36,20 @@ var requestTypes = map[uint8]string{
 	methodPUT:    "PUT",
 }
 
+// NotifyDDNSChangeFunc 是DDNS变更通知回调函数类型
+type NotifyDDNSChangeFunc func(serverName string, serverID uint64, domain string, recordType string, oldIP string, newIP string)
+
 // Internal use
 type Provider struct {
 	ipAddr     string
 	ipType     string
 	recordType string
 	domain     string
-	serverName string // 服务器名称
-	serverID   uint64 // 服务器ID
+	ServerName string // 服务器名称 (导出)
+	ServerID   uint64 // 服务器ID (导出)
 
-	DDNSProfile *model.DDNSProfile
+	DDNSProfile       *model.DDNSProfile
+	NotifyChangeFunc  NotifyDDNSChangeFunc // 通知回调函数
 }
 
 func (provider *Provider) SetRecords(ctx context.Context, zone string,
@@ -67,7 +69,7 @@ func (provider *Provider) SetRecords(ctx context.Context, zone string,
 		}
 
 		// 发送DDNS记录变更通知（如果有服务器名称）
-		if provider.serverName != "" {
+		if provider.ServerName != "" {
 			provider.sendDDNSChangeNotification()
 		}
 	}
@@ -190,18 +192,35 @@ func recordToIPType(record string) string {
 
 // sendDDNSChangeNotification 发送DDNS记录变更通知
 func (provider *Provider) sendDDNSChangeNotification() {
-	if provider.DDNSProfile == nil || provider.serverID == 0 || provider.serverName == "" {
+	if provider.DDNSProfile == nil || provider.ServerID == 0 || provider.ServerName == "" || provider.NotifyChangeFunc == nil {
 		return // 缺少必要信息，无法发送通知
 	}
 
-	// 调用singleton包中的通知回调函数
+	// 调用通知回调函数
 	oldIP := "" // 无法获取旧IP，传空字符串
-	singleton.DDNSChangeNotificationCallback(
-		provider.serverName,
-		provider.serverID,
+	provider.NotifyChangeFunc(
+		provider.ServerName,
+		provider.ServerID,
 		provider.domain,
 		provider.recordType,
 		oldIP,
 		provider.ipAddr,
+	)
+}
+
+// SendTestNotification 发送测试通知（仅用于测试）
+func (provider *Provider) SendTestNotification(testDomain, testRecordType, testOldIP, testNewIP string) {
+	if provider.NotifyChangeFunc == nil || provider.ServerName == "" || provider.ServerID == 0 {
+		fmt.Println("警告：无法发送测试通知，缺少必要信息")
+		return
+	}
+
+	provider.NotifyChangeFunc(
+		provider.ServerName,
+		provider.ServerID,
+		testDomain,
+		testRecordType,
+		testOldIP,
+		testNewIP,
 	)
 }
