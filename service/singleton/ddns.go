@@ -2,11 +2,13 @@ package singleton
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/libdns/cloudflare"
 	tencentcloud "github.com/nezhahq/libdns-tencentcloud"
+	"gorm.io/gorm"
 
 	"github.com/xos/serverstatus/model"
 	ddns2 "github.com/xos/serverstatus/pkg/ddns"
@@ -80,13 +82,65 @@ func GetDDNSProvidersFromProfiles(profileId []uint64, ip *ddns2.IP) ([]*ddns2.Pr
 	return providers, nil
 }
 
-// 新增：DDNS变更通知回调函数
+// DDNS变更通知回调函数 - 简化版：直接比较IP变化
 func DDNSChangeNotificationCallback(serverName string, serverID uint64, domain string, recordType string, oldIP string, newIP string) {
 	if !Conf.EnableIPChangeNotification {
 		return
 	}
 
-	// 构建DDNS变更通知消息
+	// 查询或创建DDNS记录状态
+	var recordState model.DDNSRecordState
+	result := DB.Where("server_id = ? AND domain = ? AND record_type = ?", serverID, domain, recordType).First(&recordState)
+	
+	if result.Error != nil {
+		// 记录不存在，创建新记录
+		if result.Error == gorm.ErrRecordNotFound {
+			recordState = model.DDNSRecordState{
+				ServerID:   serverID,
+				Domain:     domain,
+				RecordType: recordType,
+				LastIP:     newIP,
+				LastUpdate: time.Now(),
+			}
+			if err := DB.Create(&recordState).Error; err != nil {
+				log.Printf("创建DDNS记录状态失败: %v", err)
+				return
+			}
+			
+			// 首次创建记录，发送通知（如果有旧IP信息）
+			if oldIP != "" && oldIP != newIP {
+				sendDDNSChangeNotification(serverName, domain, recordType, oldIP, newIP)
+			} else {
+				log.Printf("域名 %s 首次设置 %s 记录，IP: %s", domain, recordType, newIP)
+			}
+		} else {
+			log.Printf("查询DDNS记录状态失败: %v", result.Error)
+		}
+		return
+	}
+
+	// 检查IP是否实际发生了变化
+	if recordState.LastIP == newIP {
+		log.Printf("域名 %s 的 %s 记录IP未发生变化 (%s)，跳过通知", domain, recordType, newIP)
+		return
+	}
+
+	// IP发生了变化，更新记录并发送通知
+	oldLastIP := recordState.LastIP
+	recordState.LastIP = newIP
+	recordState.LastUpdate = time.Now()
+	if err := DB.Save(&recordState).Error; err != nil {
+		log.Printf("更新DDNS记录状态失败: %v", err)
+		return
+	}
+
+	// 发送变更通知
+	log.Printf("检测到IP变化: %s -> %s，发送DDNS变更通知", oldLastIP, newIP)
+	sendDDNSChangeNotification(serverName, domain, recordType, oldLastIP, newIP)
+}
+
+// sendDDNSChangeNotification 发送DDNS变更通知
+func sendDDNSChangeNotification(serverName string, domain string, recordType string, oldIP string, newIP string) {
 	changeTime := time.Now().Format("2006-01-02 15:04:05")
 	message := fmt.Sprintf(
 		"[DDNS记录变更] 服务器: %s, 域名: %s, 记录类型: %s, IP变更: %s => %s, 变更时间: %s",
@@ -94,7 +148,7 @@ func DDNSChangeNotificationCallback(serverName string, serverID uint64, domain s
 	)
 
 	// 使用与IP变更相同的通知组和静音机制
-	muteLabel := NotificationMuteLabel.DDNSChanged(serverID, domain)
+	muteLabel := NotificationMuteLabel.DDNSChanged(0, domain) // 使用0作为通用server ID
 	SendNotification(Conf.IPChangeNotificationTag, message, muteLabel)
 }
 

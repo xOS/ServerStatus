@@ -2,6 +2,7 @@ package model
 
 import (
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -97,4 +98,18 @@ type DDNSProvider struct {
 	WebhookRequestType bool
 	WebhookRequestBody bool
 	WebhookHeaders     bool
+}
+
+// DDNSRecordState 存储DDNS记录的当前状态，用于避免重复通知
+type DDNSRecordState struct {
+	Common
+	ServerID   uint64    `gorm:"index:idx_ddns_record,unique" json:"server_id"`
+	Domain     string    `gorm:"index:idx_ddns_record,unique;size:255" json:"domain"`
+	RecordType string    `gorm:"index:idx_ddns_record,unique;size:10" json:"record_type"`
+	LastIP     string    `gorm:"size:45" json:"last_ip"`           // 上次记录的IP地址
+	LastUpdate time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"last_update"` // 上次更新时间
+}
+
+func (d DDNSRecordState) TableName() string {
+	return "ddns_record_states"
 }

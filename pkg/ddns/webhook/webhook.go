@@ -69,8 +69,16 @@ func (provider *Provider) SetRecords(ctx context.Context, zone string,
 		}
 
 		// 发送DDNS记录变更通知（如果有服务器名称）
-		if provider.ServerName != "" {
-			provider.sendDDNSChangeNotification()
+		// 注意：IP变更检测逻辑已移至主服务中的数据库比较，这里只负责执行webhook调用后的通知
+		if provider.ServerName != "" && provider.NotifyChangeFunc != nil {
+			provider.NotifyChangeFunc(
+				provider.ServerName,
+				provider.ServerID,
+				provider.domain,
+				provider.recordType,
+				"", // 旧IP在主服务中已经处理，这里传空字符串
+				provider.ipAddr,
+			)
 		}
 	}
 

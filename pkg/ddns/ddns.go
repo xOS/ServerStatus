@@ -92,15 +92,21 @@ func (provider *Provider) updateDomain() error {
 }
 
 func (provider *Provider) addDomainRecord() error {
-	// 记录旧IP（如果有的话）
-	var oldIP string
-	if provider.recordType == "A" {
-		oldIP = provider.IPAddrs.Ipv4Addr // 这里可以在将来扩展为查询DNS记录获取当前值
-	} else if provider.recordType == "AAAA" {
-		oldIP = provider.IPAddrs.Ipv6Addr
+	// 查询当前DNS记录的IP地址
+	currentIP, err := provider.queryCurrentDNSRecord()
+	if err != nil {
+		log.Printf("查询当前DNS记录失败: %v", err)
+		// 如果查询失败，继续更新，但使用空字符串作为旧IP
+		currentIP = ""
 	}
 
-	_, err := provider.Setter.SetRecords(provider.ctx, provider.zone,
+	// 检查IP是否实际发生了变化
+	if currentIP != "" && currentIP == provider.ipAddr {
+		log.Printf("域名 %s 的 %s 记录IP未发生变化 (%s)，跳过更新", provider.domain, provider.recordType, currentIP)
+		return nil // IP没有变化，不需要更新
+	}
+
+	_, err = provider.Setter.SetRecords(provider.ctx, provider.zone,
 		[]libdns.Record{
 			{
 				Type:  provider.recordType,
@@ -112,7 +118,7 @@ func (provider *Provider) addDomainRecord() error {
 
 	// 如果DDNS更新成功且有通知回调，发送DDNS变更通知
 	if err == nil && provider.NotifyCallback != nil && provider.ServerName != "" {
-		go provider.NotifyCallback(provider.ServerName, provider.ServerID, provider.domain, provider.recordType, oldIP, provider.ipAddr)
+		go provider.NotifyCallback(provider.ServerName, provider.ServerID, provider.domain, provider.recordType, currentIP, provider.ipAddr)
 	}
 
 	return err
@@ -157,4 +163,52 @@ func getRecordString(isIpv4 bool) string {
 		return "A"
 	}
 	return "AAAA"
+}
+
+// queryCurrentDNSRecord 查询域名当前的DNS记录IP地址
+func (provider *Provider) queryCurrentDNSRecord() (string, error) {
+	c := &dns.Client{Timeout: dnsTimeOut}
+
+	servers := utils.DNSServers
+	if len(customDNSServers) > 0 {
+		servers = customDNSServers
+	}
+
+	// 构建查询消息
+	m := new(dns.Msg)
+	var qtype uint16
+	if provider.recordType == "A" {
+		qtype = dns.TypeA
+	} else if provider.recordType == "AAAA" {
+		qtype = dns.TypeAAAA
+	} else {
+		return "", fmt.Errorf("不支持的记录类型: %s", provider.recordType)
+	}
+
+	m.SetQuestion(dns.Fqdn(provider.domain), qtype)
+
+	// 尝试每个DNS服务器
+	for _, server := range servers {
+		r, _, err := c.Exchange(m, server)
+		if err != nil {
+			continue
+		}
+
+		// 解析响应
+		if len(r.Answer) > 0 {
+			for _, ans := range r.Answer {
+				if provider.recordType == "A" {
+					if a, ok := ans.(*dns.A); ok {
+						return a.A.String(), nil
+					}
+				} else if provider.recordType == "AAAA" {
+					if aaaa, ok := ans.(*dns.AAAA); ok {
+						return aaaa.AAAA.String(), nil
+					}
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("未找到域名 %s 的 %s 记录", provider.domain, provider.recordType)
 }
