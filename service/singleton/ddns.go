@@ -60,7 +60,11 @@ func GetDDNSProvidersFromProfiles(profileId []uint64, ip *ddns2.IP) ([]*ddns2.Pr
 			provider.Setter = &dummy.Provider{}
 			providers = append(providers, provider)
 		case model.ProviderWebHook:
-			provider.Setter = &webhook.Provider{DDNSProfile: profile}
+			webhookProvider := &webhook.Provider{
+				DDNSProfile: profile,
+			}
+			// 将来ServerName和ServerID会通过GetDDNSProvidersFromProfilesWithServer设置
+			provider.Setter = webhookProvider
 			providers = append(providers, provider)
 		case model.ProviderCloudflare:
 			provider.Setter = &cloudflare.Provider{APIToken: profile.AccessSecret}
@@ -105,6 +109,14 @@ func GetDDNSProvidersFromProfilesWithServer(profileId []uint64, ip *ddns2.IP, se
 		provider.ServerName = serverName
 		provider.ServerID = serverID
 		provider.NotifyCallback = DDNSChangeNotificationCallback
+
+		// 特殊处理webhook.Provider，将服务器信息传递给它
+		if provider.DDNSProfile.Provider == model.ProviderWebHook {
+			if webhookProvider, ok := provider.Setter.(*webhook.Provider); ok {
+				webhookProvider.ServerName = serverName
+				webhookProvider.ServerID = serverID
+			}
+		}
 	}
 
 	return providers, nil

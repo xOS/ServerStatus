@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/libdns/libdns"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/utils"
+	"github.com/xos/serverstatus/service/singleton"
 )
 
 const (
@@ -42,7 +44,8 @@ type Provider struct {
 	ipType     string
 	recordType string
 	domain     string
-	serverName string // 添加服务器名称字段
+	serverName string // 服务器名称
+	serverID   uint64 // 服务器ID
 
 	DDNSProfile *model.DDNSProfile
 }
@@ -183,4 +186,22 @@ func recordToIPType(record string) string {
 	default:
 		return ""
 	}
+}
+
+// sendDDNSChangeNotification 发送DDNS记录变更通知
+func (provider *Provider) sendDDNSChangeNotification() {
+	if provider.DDNSProfile == nil || provider.serverID == 0 || provider.serverName == "" {
+		return // 缺少必要信息，无法发送通知
+	}
+
+	// 调用singleton包中的通知回调函数
+	oldIP := "" // 无法获取旧IP，传空字符串
+	singleton.DDNSChangeNotificationCallback(
+		provider.serverName,
+		provider.serverID,
+		provider.domain,
+		provider.recordType,
+		oldIP,
+		provider.ipAddr,
+	)
 }
