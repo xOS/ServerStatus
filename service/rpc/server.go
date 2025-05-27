@@ -126,15 +126,19 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	// 检查是否是服务器重启或网络接口重置
 	isRestart := false
 	if singleton.ServerList[clientID].Host != nil && singleton.ServerList[clientID].State != nil {
-		// 检查是否有显著的流量回退（任何流量显著减少都视为重启/重置）
 		// 获取之前显示的累计流量值
 		prevDisplayIn := singleton.ServerList[clientID].State.NetInTransfer
 		prevDisplayOut := singleton.ServerList[clientID].State.NetOutTransfer
 
-		// 如果当前原始流量远小于之前的显示流量，说明发生了重启
-		// 使用更严格的判断：任何明显的流量回退都认为是重启
-		if (prevDisplayIn > 0 && originalNetInTransfer < prevDisplayIn/2) ||
+		// 修改流量回退检测逻辑，增加容错范围
+		// 如果当前原始流量小于之前的显示流量，但差值在合理范围内（不超过10%），认为是正常波动
+		if (prevDisplayIn > 0 && originalNetInTransfer < prevDisplayIn && float64(prevDisplayIn-originalNetInTransfer)/float64(prevDisplayIn) < 0.1) ||
+			(prevDisplayOut > 0 && originalNetOutTransfer < prevDisplayOut && float64(prevDisplayOut-originalNetOutTransfer)/float64(prevDisplayOut) < 0.1) {
+			// 正常波动，不认为是重启
+			isRestart = false
+		} else if (prevDisplayIn > 0 && originalNetInTransfer < prevDisplayIn/2) ||
 			(prevDisplayOut > 0 && originalNetOutTransfer < prevDisplayOut/2) {
+			// 流量显著减少，认为是重启
 			isRestart = true
 		}
 	}
@@ -174,10 +178,16 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		prevIn := uint64(singleton.ServerList[clientID].PrevTransferInSnapshot)
 		prevOut := uint64(singleton.ServerList[clientID].PrevTransferOutSnapshot)
 
-		// 检查是否有流量回退（可能是计数器重置）
+		// 修改流量回退检测逻辑，增加容错范围
 		if originalNetInTransfer < prevIn {
-			// 流量回退，更新基准点但不增加累计流量
-			singleton.ServerList[clientID].PrevTransferInSnapshot = int64(originalNetInTransfer)
+			// 检查是否是正常波动（差值不超过10%）
+			if float64(prevIn-originalNetInTransfer)/float64(prevIn) < 0.1 {
+				// 正常波动，不更新基准点，也不增加累计流量
+				increaseIn = 0
+			} else {
+				// 流量回退，更新基准点但不增加累计流量
+				singleton.ServerList[clientID].PrevTransferInSnapshot = int64(originalNetInTransfer)
+			}
 		} else {
 			// 正常增量
 			increaseIn = originalNetInTransfer - prevIn
@@ -193,8 +203,14 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		}
 
 		if originalNetOutTransfer < prevOut {
-			// 流量回退，更新基准点但不增加累计流量
-			singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(originalNetOutTransfer)
+			// 检查是否是正常波动（差值不超过10%）
+			if float64(prevOut-originalNetOutTransfer)/float64(prevOut) < 0.1 {
+				// 正常波动，不更新基准点，也不增加累计流量
+				increaseOut = 0
+			} else {
+				// 流量回退，更新基准点但不增加累计流量
+				singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(originalNetOutTransfer)
+			}
 		} else {
 			// 正常增量
 			increaseOut = originalNetOutTransfer - prevOut
