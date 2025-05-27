@@ -201,32 +201,46 @@ func UpdateServer(s *model.Server) error {
 		originalOut := currentOutTransfer
 
 		// 获取之前存储的快照值
-		var prevIn, prevOut int64
+		var prevIn, prevOut uint64
 		if server, ok := ServerList[s.ID]; ok && server != nil {
-			prevIn = server.PrevTransferInSnapshot
-			prevOut = server.PrevTransferOutSnapshot
+			prevIn = uint64(server.PrevTransferInSnapshot)
+			prevOut = uint64(server.PrevTransferOutSnapshot)
 		}
 
 		// 计算增量并更新累计流量
-		if prevIn > 0 && int64(originalIn) > prevIn {
+		if originalIn < prevIn {
+			// 流量回退，更新基准点但不增加累计流量
+			s.PrevTransferInSnapshot = int64(originalIn)
+		} else {
 			// 正常增量
-			increase := uint64(int64(originalIn) - prevIn)
-			s.CumulativeNetInTransfer += increase
-		} else if prevIn > 0 && int64(originalIn) < prevIn {
-			// 流量重置，不增加累计流量，只更新基准点
+			increase := originalIn - prevIn
+			// 检查是否会发生溢出
+			if s.CumulativeNetInTransfer > 0 &&
+				increase > ^uint64(0)-s.CumulativeNetInTransfer {
+				// 如果会发生溢出，保持当前值不变
+				log.Printf("警告：服务器 %s 入站流量累计值即将溢出，保持当前值", s.Name)
+			} else {
+				s.CumulativeNetInTransfer += increase
+			}
+			s.PrevTransferInSnapshot = int64(originalIn)
 		}
 
-		if prevOut > 0 && int64(originalOut) > prevOut {
+		if originalOut < prevOut {
+			// 流量回退，更新基准点但不增加累计流量
+			s.PrevTransferOutSnapshot = int64(originalOut)
+		} else {
 			// 正常增量
-			increase := uint64(int64(originalOut) - prevOut)
-			s.CumulativeNetOutTransfer += increase
-		} else if prevOut > 0 && int64(originalOut) < prevOut {
-			// 流量重置，不增加累计流量，只更新基准点
+			increase := originalOut - prevOut
+			// 检查是否会发生溢出
+			if s.CumulativeNetOutTransfer > 0 &&
+				increase > ^uint64(0)-s.CumulativeNetOutTransfer {
+				// 如果会发生溢出，保持当前值不变
+				log.Printf("警告：服务器 %s 出站流量累计值即将溢出，保持当前值", s.Name)
+			} else {
+				s.CumulativeNetOutTransfer += increase
+			}
+			s.PrevTransferOutSnapshot = int64(originalOut)
 		}
-
-		// 更新基准点
-		s.PrevTransferInSnapshot = int64(originalIn)
-		s.PrevTransferOutSnapshot = int64(originalOut)
 
 		// 更新显示的流量值（只显示累计流量，不加原始流量）
 		s.State.NetInTransfer = s.CumulativeNetInTransfer

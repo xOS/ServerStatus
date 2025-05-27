@@ -170,23 +170,44 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(originalNetOutTransfer)
 		}
 
-		if int64(originalNetInTransfer) > singleton.ServerList[clientID].PrevTransferInSnapshot {
-			increaseIn = uint64(int64(originalNetInTransfer) - singleton.ServerList[clientID].PrevTransferInSnapshot)
-			singleton.ServerList[clientID].CumulativeNetInTransfer += increaseIn
+		// 使用uint64进行所有计算，避免int64溢出
+		prevIn := uint64(singleton.ServerList[clientID].PrevTransferInSnapshot)
+		prevOut := uint64(singleton.ServerList[clientID].PrevTransferOutSnapshot)
+
+		// 检查是否有流量回退（可能是计数器重置）
+		if originalNetInTransfer < prevIn {
+			// 流量回退，更新基准点但不增加累计流量
+			singleton.ServerList[clientID].PrevTransferInSnapshot = int64(originalNetInTransfer)
+		} else {
+			// 正常增量
+			increaseIn = originalNetInTransfer - prevIn
+			// 检查是否会发生溢出
+			if singleton.ServerList[clientID].CumulativeNetInTransfer > 0 &&
+				increaseIn > ^uint64(0)-singleton.ServerList[clientID].CumulativeNetInTransfer {
+				// 如果会发生溢出，保持当前值不变
+				log.Printf("警告：服务器 %d 入站流量累计值即将溢出，保持当前值", clientID)
+			} else {
+				singleton.ServerList[clientID].CumulativeNetInTransfer += increaseIn
+			}
+			singleton.ServerList[clientID].PrevTransferInSnapshot = int64(originalNetInTransfer)
 		}
 
-		if singleton.ServerList[clientID].PrevTransferOutSnapshot == 0 {
+		if originalNetOutTransfer < prevOut {
+			// 流量回退，更新基准点但不增加累计流量
+			singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(originalNetOutTransfer)
+		} else {
+			// 正常增量
+			increaseOut = originalNetOutTransfer - prevOut
+			// 检查是否会发生溢出
+			if singleton.ServerList[clientID].CumulativeNetOutTransfer > 0 &&
+				increaseOut > ^uint64(0)-singleton.ServerList[clientID].CumulativeNetOutTransfer {
+				// 如果会发生溢出，保持当前值不变
+				log.Printf("警告：服务器 %d 出站流量累计值即将溢出，保持当前值", clientID)
+			} else {
+				singleton.ServerList[clientID].CumulativeNetOutTransfer += increaseOut
+			}
 			singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(originalNetOutTransfer)
 		}
-
-		if int64(originalNetOutTransfer) > singleton.ServerList[clientID].PrevTransferOutSnapshot {
-			increaseOut = uint64(int64(originalNetOutTransfer) - singleton.ServerList[clientID].PrevTransferOutSnapshot)
-			singleton.ServerList[clientID].CumulativeNetOutTransfer += increaseOut
-		}
-
-		// 更新基准点
-		singleton.ServerList[clientID].PrevTransferInSnapshot = int64(originalNetInTransfer)
-		singleton.ServerList[clientID].PrevTransferOutSnapshot = int64(originalNetOutTransfer)
 
 		// 显示的流量 = 累计流量（不加原始流量，避免重复计算）
 		state.NetInTransfer = singleton.ServerList[clientID].CumulativeNetInTransfer
