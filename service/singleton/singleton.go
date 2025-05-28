@@ -3,6 +3,7 @@ package singleton
 import (
 	"fmt"
 	"log"
+	"runtime"
 	"time"
 
 	"github.com/patrickmn/go-cache"
@@ -66,6 +67,19 @@ func LoadSingleton() {
 	Cron.AddFunc("0 */10 * * * *", func() {
 		CleanMonitorHistory()
 		Cache.DeleteExpired()
+		CleanupServerState() // 添加服务器状态清理
+		SaveAllTrafficToDB() // 保存流量数据到数据库
+	})
+
+	// 添加内存使用监控任务，每5分钟执行一次
+	Cron.AddFunc("0 */5 * * * *", func() {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		if m.Alloc > 500*1024*1024 { // 如果内存使用超过500MB
+			log.Printf("内存使用警告: %v MB", m.Alloc/1024/1024)
+			// 触发GC
+			runtime.GC()
+		}
 	})
 }
 

@@ -115,10 +115,14 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	singleton.ServerList[clientID].TaskCloseLock.Unlock()
 	singleton.ServerLock.RUnlock()
 
+	// 创建一个带超时的上下文
+	ctx, cancel := context.WithTimeout(stream.Context(), 30*time.Minute)
+	defer cancel()
+
 	// 监听连接状态，当连接断开时自动清理
 	go func() {
 		select {
-		case <-stream.Context().Done():
+		case <-ctx.Done():
 			// 连接断开时清理资源
 			singleton.ServerLock.RLock()
 			if singleton.ServerList[clientID] != nil {
@@ -134,7 +138,7 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 
 			// 安全地发送关闭信号，使用非阻塞发送
 			select {
-			case closeCh <- stream.Context().Err():
+			case closeCh <- ctx.Err():
 			case <-done: // 如果主goroutine已经退出，停止发送
 				return
 			default:
@@ -146,11 +150,9 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 		}
 	}()
 
-	// 设置超时防止无限等待
-	ctx, cancel := context.WithTimeout(stream.Context(), 30*time.Minute)
-	defer cancel()
 	defer close(done) // 确保监控goroutine被通知停止
 
+	// 等待连接关闭或超时
 	select {
 	case err := <-closeCh:
 		return err

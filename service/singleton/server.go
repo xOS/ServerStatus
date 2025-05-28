@@ -1,6 +1,7 @@
 package singleton
 
 import (
+	"fmt"
 	"log"
 	"sort"
 	"sync"
@@ -206,9 +207,29 @@ func CleanupServerState() {
 			server.LastStateBeforeOffline = nil
 			server.TaskStream = nil
 			if server.TaskClose != nil {
+				// 安全关闭通道
+				select {
+				case server.TaskClose <- fmt.Errorf("server state cleanup"):
+				default:
+				}
 				close(server.TaskClose)
 				server.TaskClose = nil
 			}
+		}
+
+		// 清理长时间未活动的连接
+		if server.IsOnline && now.Sub(server.LastActive) > 5*time.Minute {
+			server.TaskCloseLock.Lock()
+			if server.TaskClose != nil {
+				select {
+				case server.TaskClose <- fmt.Errorf("connection timeout"):
+				default:
+				}
+				close(server.TaskClose)
+				server.TaskClose = nil
+			}
+			server.TaskStream = nil
+			server.TaskCloseLock.Unlock()
 		}
 	}
 }
