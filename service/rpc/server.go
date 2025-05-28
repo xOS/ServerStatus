@@ -91,6 +91,8 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 
 	// 使用带缓冲的通道避免阻塞
 	closeCh := make(chan error, 1)
+	// 使用done channel来安全地通知监控goroutine停止
+	done := make(chan struct{})
 
 	singleton.ServerLock.RLock()
 	if singleton.ServerList[clientID] == nil {
@@ -115,34 +117,51 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 
 	// 监听连接状态，当连接断开时自动清理
 	go func() {
-		<-stream.Context().Done()
-		// 连接断开时清理资源
-		singleton.ServerLock.RLock()
-		if singleton.ServerList[clientID] != nil {
-			singleton.ServerList[clientID].TaskCloseLock.Lock()
-			if singleton.ServerList[clientID].TaskClose == closeCh {
-				// 只有当前连接才清理
-				singleton.ServerList[clientID].TaskStream = nil
-				singleton.ServerList[clientID].TaskClose = nil
-			}
-			singleton.ServerList[clientID].TaskCloseLock.Unlock()
-		}
-		singleton.ServerLock.RUnlock()
-
-		// 发送关闭信号
+		defer close(done) // 确保done channel被关闭
+		
 		select {
-		case closeCh <- stream.Context().Err():
-		default:
+		case <-stream.Context().Done():
+			// 连接断开时清理资源
+			singleton.ServerLock.RLock()
+			if singleton.ServerList[clientID] != nil {
+				singleton.ServerList[clientID].TaskCloseLock.Lock()
+				if singleton.ServerList[clientID].TaskClose == closeCh {
+					// 只有当前连接才清理
+					singleton.ServerList[clientID].TaskStream = nil
+					singleton.ServerList[clientID].TaskClose = nil
+				}
+				singleton.ServerList[clientID].TaskCloseLock.Unlock()
+			}
+			singleton.ServerLock.RUnlock()
+
+			// 安全地发送关闭信号，使用非阻塞发送
+			select {
+			case closeCh <- stream.Context().Err():
+			case <-done: // 如果主goroutine已经退出，停止发送
+				return
+			default:
+				// 通道可能已关闭或已满，忽略
+			}
+		case <-done:
+			// 主goroutine要求停止监控
+			return
 		}
-		close(closeCh)
 	}()
 
 	// 设置超时防止无限等待
+	ctx, cancel := context.WithTimeout(stream.Context(), 30*time.Minute)
+	defer cancel()
+	defer close(done) // 确保监控goroutine被通知停止
+
 	select {
 	case err := <-closeCh:
 		return err
-	case <-time.After(30 * time.Minute): // 30分钟超时
-		return fmt.Errorf("request task timeout")
+	case <-ctx.Done():
+		// 超时或连接取消
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("request task timeout after 30 minutes")
+		}
+		return ctx.Err()
 	}
 }
 

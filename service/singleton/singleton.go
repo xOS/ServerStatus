@@ -260,11 +260,14 @@ func CheckServerOnlineStatus() {
 			// 清理任务连接资源，防止内存泄漏
 			server.TaskCloseLock.Lock()
 			if server.TaskClose != nil {
+				// 安全发送关闭信号，避免向已关闭的通道发送
 				select {
 				case server.TaskClose <- fmt.Errorf("server offline"):
 				default:
+					// 通道可能已关闭或已满，忽略
 				}
-				close(server.TaskClose)
+				// 标记通道为nil，但不在这里关闭
+				// 让RequestTask方法的goroutine负责关闭
 				server.TaskClose = nil
 			}
 			server.TaskStream = nil
