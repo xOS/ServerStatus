@@ -117,8 +117,6 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 
 	// 监听连接状态，当连接断开时自动清理
 	go func() {
-		defer close(done) // 确保done channel被关闭
-		
 		select {
 		case <-stream.Context().Done():
 			// 连接断开时清理资源
