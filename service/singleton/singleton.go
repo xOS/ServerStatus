@@ -30,7 +30,18 @@ func InitTimezoneAndCache() {
 		panic(err)
 	}
 
-	Cache = cache.New(5*time.Minute, 10*time.Minute)
+	// 使用更短的缓存时间，并添加定期清理
+	Cache = cache.New(1*time.Minute, 2*time.Minute)
+
+	// 启动定期清理任务
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			Cache.DeleteExpired()
+		}
+	}()
 }
 
 // LoadSingleton 加载子服务并执行
@@ -45,14 +56,17 @@ func LoadSingleton() {
 	// 从数据库同步累计流量数据到内存
 	SyncAllServerTrafficFromDB()
 
-	// 启动定期保存流量数据的协程已移至 cron 任务中，避免额外的 goroutine
-	// 流量保存任务现在由 InitCronTask 中的定时任务处理
-
 	// 添加定时检查在线状态的任务，每分钟检查一次
 	Cron.AddFunc("0 */1 * * * *", CheckServerOnlineStatus)
 
-	// 添加定时验证流量数据一致性的任务，每5分钟检查一次（仅用于调试）
+	// 添加定时验证流量数据一致性的任务，每5分钟检查一次
 	Cron.AddFunc("0 */5 * * * *", VerifyTrafficDataConsistency)
+
+	// 添加定时清理任务，每10分钟执行一次
+	Cron.AddFunc("0 */10 * * * *", func() {
+		CleanMonitorHistory()
+		Cache.DeleteExpired()
+	})
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
@@ -172,59 +186,38 @@ func GetTrafficManager() interface{} {
 	}
 }
 
-// CleanMonitorHistory 清理无效或过时的 监控记录 和 流量记录
+// CleanMonitorHistory 清理无效或过时的监控记录和流量记录
 func CleanMonitorHistory() {
-	// 清理已被删除的服务器的监控记录与流量记录
-	DB.Unscoped().Delete(&model.MonitorHistory{}, "created_at < ? OR monitor_id NOT IN (SELECT `id` FROM monitors)", time.Now().AddDate(0, 0, -30))
-	// 由于网络监控记录的数据较多，并且前端仅使用了 1 天的数据
-	// 考虑到 sqlite 数据量问题，仅保留一天数据，
-	// server_id = 0 的数据会用于/service页面的可用性展示
-	DB.Unscoped().Delete(&model.MonitorHistory{}, "(created_at < ? AND server_id != 0) OR monitor_id NOT IN (SELECT `id` FROM monitors)", time.Now().AddDate(0, 0, -1))
-	DB.Unscoped().Delete(&model.Transfer{}, "server_id NOT IN (SELECT `id` FROM servers)")
-
-	// 清理过期的累计流量数据（保留30天）
-	CleanCumulativeTransferData(30)
-
-	// 计算可清理流量记录的时长
-	var allServerKeep time.Time
-	specialServerKeep := make(map[uint64]time.Time)
-	var specialServerIDs []uint64
-	var alerts []model.AlertRule
-	DB.Find(&alerts)
-	for _, alert := range alerts {
-		for _, rule := range alert.Rules {
-			// 是不是流量记录规则
-			if !rule.IsTransferDurationRule() {
-				continue
-			}
-			dataCouldRemoveBefore := rule.GetTransferDurationStart().UTC()
-			// 判断规则影响的机器范围
-			if rule.Cover == model.RuleCoverAll {
-				// 更新全局可以清理的数据点
-				if allServerKeep.IsZero() || allServerKeep.After(dataCouldRemoveBefore) {
-					allServerKeep = dataCouldRemoveBefore
-				}
-			} else {
-				// 更新特定机器可以清理数据点
-				for id := range rule.Ignore {
-					if specialServerKeep[id].IsZero() || specialServerKeep[id].After(dataCouldRemoveBefore) {
-						specialServerKeep[id] = dataCouldRemoveBefore
-						// 使用 containsUint64 避免重复添加服务器ID
-						if !containsUint64(specialServerIDs, id) {
-							specialServerIDs = append(specialServerIDs, id)
-						}
-					}
-				}
-			}
+	// 使用事务确保数据一致性
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		// 清理30天前的监控记录
+		if err := tx.Unscoped().Delete(&model.MonitorHistory{},
+			"created_at < ? OR monitor_id NOT IN (SELECT `id` FROM monitors)",
+			time.Now().AddDate(0, 0, -30)).Error; err != nil {
+			return err
 		}
-	}
-	for id, couldRemove := range specialServerKeep {
-		DB.Unscoped().Delete(&model.Transfer{}, "server_id = ? AND datetime(`created_at`) < datetime(?)", id, couldRemove)
-	}
-	if allServerKeep.IsZero() {
-		DB.Unscoped().Delete(&model.Transfer{}, "server_id NOT IN (?)", specialServerIDs)
-	} else {
-		DB.Unscoped().Delete(&model.Transfer{}, "server_id NOT IN (?) AND datetime(`created_at`) < datetime(?)", specialServerIDs, allServerKeep)
+
+		// 清理1天前的网络监控记录
+		if err := tx.Unscoped().Delete(&model.MonitorHistory{},
+			"(created_at < ? AND server_id != 0) OR monitor_id NOT IN (SELECT `id` FROM monitors)",
+			time.Now().AddDate(0, 0, -1)).Error; err != nil {
+			return err
+		}
+
+		// 清理无效的流量记录
+		if err := tx.Unscoped().Delete(&model.Transfer{},
+			"server_id NOT IN (SELECT `id` FROM servers)").Error; err != nil {
+			return err
+		}
+
+		// 清理过期的累计流量数据
+		CleanCumulativeTransferData(30)
+
+		return nil
+	})
+
+	if err != nil {
+		log.Printf("清理历史记录失败: %v", err)
 	}
 }
 

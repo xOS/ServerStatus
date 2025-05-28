@@ -66,30 +66,93 @@ func main() {
 
 	initSystem()
 
-	// TODO 使用 cmux 在同一端口服务 HTTP 和 gRPC
+	// 创建用于控制所有后台任务的context
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 启动所有服务
 	singleton.CleanMonitorHistory()
 	go rpc.ServeRPC(singleton.Conf.GRPCPort)
-	serviceSentinelDispatchBus := make(chan model.Monitor) // 用于传递服务监控任务信息的channel
-	go rpc.DispatchTask(serviceSentinelDispatchBus)
-	go rpc.DispatchKeepalive()
-	go singleton.AlertSentinelStart()
+	serviceSentinelDispatchBus := make(chan model.Monitor)
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			rpc.DispatchTask(serviceSentinelDispatchBus)
+		}
+	}()
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			rpc.DispatchKeepalive()
+		}
+	}()
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			singleton.AlertSentinelStart()
+		}
+	}()
 	singleton.NewServiceSentinel(serviceSentinelDispatchBus)
 	srv := controller.ServeWeb(singleton.Conf.HTTPPort)
-	go dispatchReportInfoTask()
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			dispatchReportInfoTask()
+		}
+	}()
+
+	// 优雅关闭处理
 	if err := graceful.Graceful(func() error {
 		return srv.ListenAndServe()
 	}, func(c context.Context) error {
 		log.Println("NG>> Graceful::START")
 
-		// 保存流量数据
-		singleton.RecordTransferHourlyUsage()
+		// 取消所有后台任务
+		cancel()
 
-		// 保存所有服务器的累计流量
-		singleton.SaveAllTrafficToDB()
+		// 等待所有任务完成
+		done := make(chan struct{})
+		go func() {
+			// 保存流量数据
+			singleton.RecordTransferHourlyUsage()
+			singleton.SaveAllTrafficToDB()
 
-		log.Println("NG>> Graceful::END")
-		srv.Shutdown(c)
-		return nil
+			// 关闭所有WebSocket连接
+			singleton.ServerLock.RLock()
+			for _, server := range singleton.ServerList {
+				if server != nil && server.TaskClose != nil {
+					select {
+					case server.TaskClose <- fmt.Errorf("server shutting down"):
+					default:
+					}
+					close(server.TaskClose)
+				}
+			}
+			singleton.ServerLock.RUnlock()
+
+			// 关闭HTTP服务器
+			srv.Shutdown(c)
+
+			close(done)
+		}()
+
+		// 设置超时
+		select {
+		case <-done:
+			log.Println("NG>> Graceful::END")
+			return nil
+		case <-c.Done():
+			log.Println("NG>> Graceful::TIMEOUT")
+			return fmt.Errorf("shutdown timeout")
+		}
 	}); err != nil {
 		log.Printf("NG>> ERROR: %v", err)
 	}

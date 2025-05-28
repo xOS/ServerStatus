@@ -184,12 +184,42 @@ func printServerLoadSummary() {
 	// 服务器状态统计完成
 }
 
+// CleanupServerState 清理服务器状态
+func CleanupServerState() {
+	ServerLock.Lock()
+	defer ServerLock.Unlock()
+
+	now := time.Now()
+	for _, server := range ServerList {
+		// 清理长时间离线的服务器状态
+		if !server.IsOnline && now.Sub(server.LastActive) > 24*time.Hour {
+			// 保存最后状态到数据库
+			if server.State != nil {
+				lastStateJSON, err := utils.Json.Marshal(server.State)
+				if err == nil {
+					DB.Model(server).Update("last_state_json", string(lastStateJSON))
+				}
+			}
+
+			// 清理内存中的状态
+			server.State = nil
+			server.LastStateBeforeOffline = nil
+			server.TaskStream = nil
+			if server.TaskClose != nil {
+				close(server.TaskClose)
+				server.TaskClose = nil
+			}
+		}
+	}
+}
+
 // UpdateServer 更新服务器信息
 func UpdateServer(s *model.Server) error {
 	defer ServerLock.Unlock()
 	ServerLock.Lock()
 
 	s.LastActive = time.Now()
+	s.IsOnline = true
 
 	if s.State != nil {
 		// 获取当前上报的原始流量数据
