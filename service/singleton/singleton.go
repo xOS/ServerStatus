@@ -1,6 +1,7 @@
 package singleton
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -44,13 +45,8 @@ func LoadSingleton() {
 	// 从数据库同步累计流量数据到内存
 	SyncAllServerTrafficFromDB()
 
-	// 启动定期保存流量数据的协程
-	go func() {
-		for {
-			time.Sleep(60 * time.Second) // 每60秒保存一次
-			SaveAllTrafficToDB()
-		}
-	}()
+	// 启动定期保存流量数据的协程已移至 cron 任务中，避免额外的 goroutine
+	// 流量保存任务现在由 InitCronTask 中的定时任务处理
 
 	// 添加定时检查在线状态的任务，每分钟检查一次
 	Cron.AddFunc("0 */1 * * * *", CheckServerOnlineStatus)
@@ -213,7 +209,10 @@ func CleanMonitorHistory() {
 				for id := range rule.Ignore {
 					if specialServerKeep[id].IsZero() || specialServerKeep[id].After(dataCouldRemoveBefore) {
 						specialServerKeep[id] = dataCouldRemoveBefore
-						specialServerIDs = append(specialServerIDs, id)
+						// 使用 containsUint64 避免重复添加服务器ID
+						if !containsUint64(specialServerIDs, id) {
+							specialServerIDs = append(specialServerIDs, id)
+						}
 					}
 				}
 			}
@@ -257,6 +256,19 @@ func CheckServerOnlineStatus() {
 		// 已经标记为在线且长时间未活动，标记为离线
 		if server.IsOnline && now.Sub(server.LastActive) > offlineTimeout {
 			server.IsOnline = false
+
+			// 清理任务连接资源，防止内存泄漏
+			server.TaskCloseLock.Lock()
+			if server.TaskClose != nil {
+				select {
+				case server.TaskClose <- fmt.Errorf("server offline"):
+				default:
+				}
+				close(server.TaskClose)
+				server.TaskClose = nil
+			}
+			server.TaskStream = nil
+			server.TaskCloseLock.Unlock()
 
 			// 如果还没有保存离线前状态，保存当前状态
 			if server.LastStateBeforeOffline == nil && server.State != nil {

@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"context"
 	"errors"
 	"io"
 	"sync"
@@ -96,26 +97,26 @@ func (s *ServerHandler) StartStream(streamId string, timeout time.Duration) erro
 	}
 
 	timeoutTimer := time.NewTimer(timeout)
+	defer timeoutTimer.Stop() // 确保 timer 总是被正确清理
 
-LOOP:
+	// 等待连接建立，使用 select 避免死循环
 	for {
 		select {
 		case <-stream.userIoConnectCh:
 			if stream.agentIo != nil {
-				timeoutTimer.Stop()
-				break LOOP
+				goto CONNECTED
 			}
 		case <-stream.agentIoConnectCh:
 			if stream.userIo != nil {
-				timeoutTimer.Stop()
-				break LOOP
+				goto CONNECTED
 			}
-		case <-time.After(timeout):
-			break LOOP
+		case <-timeoutTimer.C:
+			goto TIMEOUT
 		}
-		time.Sleep(time.Millisecond * 500)
+		time.Sleep(time.Millisecond * 100) // 减少轮询间隔
 	}
 
+TIMEOUT:
 	if stream.userIo == nil && stream.agentIo == nil {
 		return errors.New("timeout: no connection established")
 	}
@@ -126,29 +127,65 @@ LOOP:
 		return errors.New("timeout: agent connection not established")
 	}
 
+CONNECTED:
 	isDone := new(atomic.Bool)
 	endCh := make(chan struct{})
 
+	// 添加流复制超时控制，防止长时间阻塞
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour*24) // 24小时超时
+	defer cancel()
+
 	go func() {
+		defer func() {
+			if isDone.CompareAndSwap(false, true) {
+				close(endCh)
+			}
+		}()
+
 		bp := bufPool.Get().(*bp)
 		defer bufPool.Put(bp)
-		_, innerErr := io.CopyBuffer(stream.userIo, stream.agentIo, bp.buf)
-		if innerErr != nil {
-			err = innerErr
-		}
-		if isDone.CompareAndSwap(false, true) {
-			close(endCh)
+
+		// 使用带超时的复制
+		done := make(chan error, 1)
+		go func() {
+			_, innerErr := io.CopyBuffer(stream.userIo, stream.agentIo, bp.buf)
+			done <- innerErr
+		}()
+
+		select {
+		case innerErr := <-done:
+			if innerErr != nil {
+				err = innerErr
+			}
+		case <-ctx.Done():
+			err = ctx.Err()
 		}
 	}()
+
 	go func() {
+		defer func() {
+			if isDone.CompareAndSwap(false, true) {
+				close(endCh)
+			}
+		}()
+
 		bp := bufPool.Get().(*bp)
 		defer bufPool.Put(bp)
-		_, innerErr := io.CopyBuffer(stream.agentIo, stream.userIo, bp.buf)
-		if innerErr != nil {
-			err = innerErr
-		}
-		if isDone.CompareAndSwap(false, true) {
-			close(endCh)
+
+		// 使用带超时的复制
+		done := make(chan error, 1)
+		go func() {
+			_, innerErr := io.CopyBuffer(stream.agentIo, stream.userIo, bp.buf)
+			done <- innerErr
+		}()
+
+		select {
+		case innerErr := <-done:
+			if innerErr != nil {
+				err = innerErr
+			}
+		case <-ctx.Done():
+			err = ctx.Err()
 		}
 	}()
 

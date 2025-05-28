@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -459,13 +460,24 @@ func (cp *commonPage) terminal(c *gin.Context) {
 	defer wsConn.Close()
 	conn := websocketx.NewConn(wsConn)
 
+	// 使用 context 控制 PING 保活 goroutine 的生命周期
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
 	go func() {
 		// PING 保活
+		ticker := time.NewTicker(time.Second * 10)
+		defer ticker.Stop()
+
 		for {
-			if err = conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+			select {
+			case <-ctx.Done():
 				return
+			case <-ticker.C:
+				if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+					return
+				}
 			}
-			time.Sleep(time.Second * 10)
 		}
 	}()
 
@@ -589,13 +601,24 @@ func (cp *commonPage) fm(c *gin.Context) {
 	defer wsConn.Close()
 	conn := websocketx.NewConn(wsConn)
 
+	// 使用 context 控制 PING 保活 goroutine 的生命周期
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
 	go func() {
 		// PING 保活
+		ticker := time.NewTicker(time.Second * 10)
+		defer ticker.Stop()
+
 		for {
-			if err = conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+			select {
+			case <-ctx.Done():
 				return
+			case <-ticker.C:
+				if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+					return
+				}
 			}
-			time.Sleep(time.Second * 10)
 		}
 	}()
 

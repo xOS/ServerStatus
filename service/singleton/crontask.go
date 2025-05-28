@@ -21,7 +21,7 @@ var (
 func InitCronTask() {
 	Cron = cron.New(cron.WithSeconds(), cron.WithLocation(Loc))
 	Crons = make(map[uint64]*model.Cron)
-	
+
 	// 添加基础的系统定时任务
 	// 每分钟保存一次流量数据
 	if _, err := Cron.AddFunc("0 * * * * *", RecordTransferHourlyUsage); err != nil {
@@ -47,6 +47,11 @@ func InitCronTask() {
 
 	// 每10分钟同步一次所有服务器的累计流量
 	if _, err := Cron.AddFunc("0 */10 * * * *", SyncAllServerTrafficFromDB); err != nil {
+		panic(err)
+	}
+
+	// 每分钟保存一次流量数据到数据库
+	if _, err := Cron.AddFunc("0 * * * * *", SaveAllTrafficToDB); err != nil {
 		panic(err)
 	}
 }

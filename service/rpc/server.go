@@ -88,18 +88,62 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	if clientID, err = s.Auth.Check(stream.Context()); err != nil {
 		return err
 	}
-	closeCh := make(chan error)
+
+	// 使用带缓冲的通道避免阻塞
+	closeCh := make(chan error, 1)
+
 	singleton.ServerLock.RLock()
+	if singleton.ServerList[clientID] == nil {
+		singleton.ServerLock.RUnlock()
+		return fmt.Errorf("server not found: %d", clientID)
+	}
+
 	singleton.ServerList[clientID].TaskCloseLock.Lock()
 	// 修复不断的请求 task 但是没有 return 导致内存泄漏
 	if singleton.ServerList[clientID].TaskClose != nil {
+		// 安全关闭旧的通道
+		select {
+		case singleton.ServerList[clientID].TaskClose <- fmt.Errorf("connection replaced"):
+		default:
+		}
 		close(singleton.ServerList[clientID].TaskClose)
 	}
 	singleton.ServerList[clientID].TaskStream = stream
 	singleton.ServerList[clientID].TaskClose = closeCh
 	singleton.ServerList[clientID].TaskCloseLock.Unlock()
 	singleton.ServerLock.RUnlock()
-	return <-closeCh
+
+	// 监听连接状态，当连接断开时自动清理
+	go func() {
+		<-stream.Context().Done()
+		// 连接断开时清理资源
+		singleton.ServerLock.RLock()
+		if singleton.ServerList[clientID] != nil {
+			singleton.ServerList[clientID].TaskCloseLock.Lock()
+			if singleton.ServerList[clientID].TaskClose == closeCh {
+				// 只有当前连接才清理
+				singleton.ServerList[clientID].TaskStream = nil
+				singleton.ServerList[clientID].TaskClose = nil
+			}
+			singleton.ServerList[clientID].TaskCloseLock.Unlock()
+		}
+		singleton.ServerLock.RUnlock()
+
+		// 发送关闭信号
+		select {
+		case closeCh <- stream.Context().Err():
+		default:
+		}
+		close(closeCh)
+	}()
+
+	// 设置超时防止无限等待
+	select {
+	case err := <-closeCh:
+		return err
+	case <-time.After(30 * time.Minute): // 30分钟超时
+		return fmt.Errorf("request task timeout")
+	}
 }
 
 func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.Receipt, error) {
