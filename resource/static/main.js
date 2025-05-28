@@ -1379,124 +1379,131 @@ $(document).ready(() => {
   updateDDNSNameMapping();
   updateTaskNameMapping();
 });
+
+// 统一的系统信息格式化
+const SystemInfoFormatter = {
+    os: {
+        windows: i => (i || "").replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", ""),
+        default: i => {
+            if (!i) return "";
+            const osMapping = {
+                "ubuntu": "Ubuntu",
+                "debian": "Debian",
+                "centos": "CentOS",
+                "darwin": "MacOS",
+                "redhat": "RedHat",
+                "archlinux": "Archlinux",
+                "coreos": "Coreos",
+                "deepin": "Deepin",
+                "fedora": "Fedora",
+                "alpine": "Alpine",
+                "tux": "Tux",
+                "linuxmint": "LinuxMint",
+                "oracle": "Oracle",
+                "slackware": "SlackWare",
+                "raspbian": "Raspbian",
+                "gentoo": "GenToo",
+                "arch": "Arch",
+                "amazon": "Amazon",
+                "xenserver": "XenServer",
+                "scientific": "ScientificSL",
+                "rhel": "Rhel",
+                "rawhide": "RawHide",
+                "cloudlinux": "CloudLinux",
+                "ibm_powerkvm": "IBM",
+                "almalinux": "Almalinux",
+                "suse": "Suse",
+                "opensuse": "OpenSuse",
+                "opensuse-leap": "OpenSuse",
+                "opensuse-tumbleweed": "OpenSuse",
+                "opensuse-tumbleweed-kubic": "OpenSuse",
+                "sles": "Sles",
+                "sled": "Sled",
+                "caasp": "Caasp",
+                "exherbo": "ExherBo",
+                "solus": "Solus"
+            };
+            return osMapping[(i || "").toLowerCase()] || i;
+        }
+    },
+    
+    virtualization: {
+        mapping: {
+            "kvm": "KVM",
+            "openvz": "OpenVZ",
+            "lxc": "LXC",
+            "xen": "Xen",
+            "vbox": "VirtualBox",
+            "virtualbox": "VirtualBox",
+            "rkt": "RKT",
+            "docker": "Docker",
+            "vmware": "VMware",
+            "vmware-esxi": "VMware ESXi",
+            "linux-vserver": "VServer",
+            "hyperv": "Hyper-V",
+            "hyper-v": "Hyper-V",
+            "microsoft": "Hyper-V",
+            "qemu": "QEMU",
+            "parallels": "Parallels",
+            "bhyve": "bhyve",
+            "jail": "FreeBSD Jail",
+            "zone": "Solaris Zone",
+            "wsl": "WSL",
+            "podman": "Podman",
+            "containerd": "containerd",
+            "systemd-nspawn": "systemd-nspawn"
+        },
+        format: function(i) {
+            if (!i) return "";
+            const normalized = (i || "").toString().toLowerCase();
+            return this.mapping[normalized] || (normalized.charAt(0).toUpperCase() + normalized.slice(1));
+        }
+    }
+};
+
+// 简化的系统信息格式化函数
 function specialOS(i) {
-  // 处理Windows平台
-  if (i && i.toString().toLowerCase().includes('windows')) {
-      return i.replace("Microsoft ", "").replace("Datacenter", "").replace("Service Pack 1", "");
-  }
-  
-  // 确保i是字符串并转为小写
-  i = (i || "").toString().toLowerCase();
-  
-  // 使用对象映射代替switch语句
-  const osMapping = {
-      "ubuntu": "Ubuntu",
-      "debian": "Debian",
-      "centos": "CentOS",
-      "darwin": "MacOS",
-      "redhat": "RedHat",
-      "archlinux": "Archlinux",
-      "coreos": "Coreos",
-      "deepin": "Deepin",
-      "fedora": "Fedora",
-      "alpine": "Alpine",
-      "tux": "Tux",
-      "linuxmint": "LinuxMint",
-      "oracle": "Oracle",
-      "slackware": "SlackWare",
-      "raspbian": "Raspbian",
-      "gentoo": "GenToo",
-      "arch": "Arch",
-      "amazon": "Amazon",
-      "xenserver": "XenServer",
-      "scientific": "ScientificSL",
-      "rhel": "Rhel",
-      "rawhide": "RawHide",
-      "cloudlinux": "CloudLinux",
-      "ibm_powerkvm": "IBM",
-      "almalinux": "Almalinux",
-      "suse": "Suse",
-      "opensuse": "OpenSuse",
-      "opensuse-leap": "OpenSuse",
-      "opensuse-tumbleweed": "OpenSuse",
-      "opensuse-tumbleweed-kubic": "OpenSuse",
-      "sles": "Sles",
-      "sled": "Sled",
-      "caasp": "Caasp",
-      "exherbo": "ExherBo",
-      "solus": "Solus"
-  };
-  
-  // 如果在映射中找到匹配项，返回对应的值，否则返回原始输入
-  return osMapping[i] || i;
+    if (!i) return "";
+    const normalized = i.toString().toLowerCase();
+    if (normalized.includes('windows')) {
+        return SystemInfoFormatter.os.windows(i);
+    }
+    return SystemInfoFormatter.os.default(i);
 }
 
 function specialVir(i) {
-  // 确保i是字符串并转为小写
-  i = (i || "").toString().toLowerCase();
-  
-  // 使用对象映射代替switch语句，包含更多虚拟化平台的优雅显示
-  const virMapping = {
-      "kvm": "KVM",
-      "openvz": "OpenVZ",
-      "lxc": "LXC",
-      "xen": "Xen",
-      "vbox": "VirtualBox",
-      "virtualbox": "VirtualBox",
-      "rkt": "RKT",
-      "docker": "Docker",
-      "vmware": "VMware",
-      "vmware-esxi": "VMware ESXi",
-      "linux-vserver": "VServer",
-      "hyperv": "Hyper-V",
-      "hyper-v": "Hyper-V",
-      "microsoft": "Hyper-V",
-      "qemu": "QEMU",
-      "parallels": "Parallels",
-      "bhyve": "bhyve",
-      "jail": "FreeBSD Jail",
-      "zone": "Solaris Zone",
-      "wsl": "WSL",
-      "podman": "Podman",
-      "containerd": "containerd",
-      "systemd-nspawn": "systemd-nspawn"
-  };
-  
-  // 如果在映射中找到匹配项，返回对应的值，否则返回首字母大写的原始输入
-  if (virMapping[i]) {
-      return virMapping[i];
-  }
-  
-  // 如果没有找到映射，将首字母大写返回
-  return i.charAt(0).toUpperCase() + i.slice(1);
+    if (!i) return "";
+    return SystemInfoFormatter.virtualization.format(i);
 }
+
+// 简化的字符串清理函数
 function clearString(i) {
-  if (i != null && i != "") {
-      i = Array.isArray(i) ? i.map(s => s.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")) : [i.toString().replace(/(\r|\n|\"|\]|\[)/ig, "").replace(/(\\)/ig, "")];
-      return i;
-  }
-  return Array.isArray(i) ? i : [i];
+    if (!i) return Array.isArray(i) ? i : [i];
+    const clean = s => (s || "").toString().replace(/(\r|\n|\"|\]|\[|\\)/ig, "");
+    return Array.isArray(i) ? i.map(clean) : [clean(i)];
 }
-Date.prototype.format = function (format) {
-  var date = {
-      "M+": this.getMonth() + 1,
-      "d+": this.getDate(),
-      "H+": this.getHours(),
-      "m+": this.getMinutes(),
-      "s+": this.getSeconds(),
-      "q+": Math.floor((this.getMonth() + 3) / 3),
-      "S+": this.getMilliseconds()
-  };
-  if (/(y+)/i.test(format)) {
-      format = format.replace(RegExp.$1, (this.getFullYear() + '').substr(4 - RegExp.$1.length));
-  }
-  for (var k in date) {
-      if (new RegExp("(" + k + ")").test(format)) {
-          format = format.replace(RegExp.$1, RegExp.$1.length == 1
-              ? date[k] : ("00" + date[k]).substr(("" + date[k]).length));
-      }
-  }
-  return format;
+
+// 使用更现代的日期格式化
+const DateFormatter = {
+    format: function(date, format) {
+        const pad = (n) => n.toString().padStart(2, '0');
+        const replacements = {
+            'yyyy': date.getFullYear(),
+            'MM': pad(date.getMonth() + 1),
+            'dd': pad(date.getDate()),
+            'HH': pad(date.getHours()),
+            'mm': pad(date.getMinutes()),
+            'ss': pad(date.getSeconds()),
+            'S': date.getMilliseconds()
+        };
+        
+        return format.replace(/yyyy|MM|dd|HH|mm|ss|S/g, match => replacements[match]);
+    }
+};
+
+// 更新Date原型方法
+Date.prototype.format = function(format) {
+    return DateFormatter.format(this, format);
 };
 
 $.suiAlert=function(i){function t(){l=setTimeout(function(){c.transition({animation:e,duration:"2s",onComplete:function(){c.remove()}})},1e3*o.time)}var o=$.extend({title:"Semantic UI Alerts",description:"semantic ui alerts library",type:"error",time:5,position:"top-right",icon:!1},i);o.icon===!1&&("info"==o.type?o.icon="announcement":"success"==o.type?o.icon="checkmark":"error"==o.type?o.icon="remove":"warning"==o.type&&(o.icon="warning circle"));var e="drop";"top-right"==o.position?e="fly left":"top-center"==o.position?e="fly down":"top-left"==o.position?e="fly right":"bottom-right"==o.position?e="fly left":"bottom-center"==o.position?e="fly up":"bottom-left"==o.position&&(e="fly right");var n="",r=$(window).width();r<425&&(n="mini");var s="ui-alerts."+o.position;$("body > ."+s).length||$("body").append('<div class="ui-alerts '+o.position+'"></div>');var c=$('<div class="ui icon floating '+n+" message "+o.type+'" id="alert"> <i class="'+o.icon+' icon"></i> <i class="close icon" id="alertclose"></i> <div class="content"> <div class="header">'+o.title+"</div> <p>"+o.description+"</p> </div> </div>");$("."+s).prepend(c),c.transition("pulse"),$("#alertclose").on("click",function(){$(this).closest("#alert").transition({animation:e,onComplete:function(){c.remove()}})});var l=0;$(c).mouseenter(function(){clearTimeout(l)}).mouseleave(function(){t()}),t()};
