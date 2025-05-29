@@ -75,11 +75,11 @@ type ServiceSentinel struct {
 	// 服务监控任务调度通道
 	dispatchBus chan<- model.Monitor
 
-	serviceResponseDataStoreLock            sync.RWMutex
-	serviceStatusToday                      map[uint64]*_TodayStatsOfMonitor // [monitor_id] -> _TodayStatsOfMonitor
-	serviceCurrentStatusIndex               map[uint64]*indexStore           // [monitor_id] -> 该监控ID对应的 serviceCurrentStatusData 的最新索引下标
-	serviceCurrentStatusData                map[uint64][]*pb.TaskResult      // [monitor_id] -> []model.MonitorHistory
-	
+	serviceResponseDataStoreLock sync.RWMutex
+	serviceStatusToday           map[uint64]*_TodayStatsOfMonitor // [monitor_id] -> _TodayStatsOfMonitor
+	serviceCurrentStatusIndex    map[uint64]*indexStore           // [monitor_id] -> 该监控ID对应的 serviceCurrentStatusData 的最新索引下标
+	serviceCurrentStatusData     map[uint64][]*pb.TaskResult      // [monitor_id] -> []model.MonitorHistory
+
 	// 优化：限制数据存储大小，防止无限增长
 	serviceResponseDataStoreCurrentUp       map[uint64]uint64                // [monitor_id] -> 当前服务在线计数
 	serviceResponseDataStoreCurrentDown     map[uint64]uint64                // [monitor_id] -> 当前服务离线计数
@@ -94,7 +94,7 @@ type ServiceSentinel struct {
 	// 30天数据缓存 - 添加定期清理机制
 	monthlyStatusLock sync.Mutex
 	monthlyStatus     map[uint64]*model.ServiceItemResponse // [monitor_id] -> model.ServiceItemResponse
-	
+
 	// 添加缓存管理
 	lastCleanupTime time.Time
 }
@@ -328,36 +328,36 @@ func (ss *ServiceSentinel) worker() {
 			go ss.worker()
 		}
 	}()
-	
-	// 定期清理旧数据，更频繁的清理
-	cleanupTicker := time.NewTicker(30 * time.Minute) // 改为30分钟
+
+	// 定期清理旧数据，大幅降低清理频率
+	cleanupTicker := time.NewTicker(1 * time.Hour) // 改为12小时
 	defer cleanupTicker.Stop()
-	
-	// 添加紧急清理触发器
-	emergencyCleanupTicker := time.NewTicker(5 * time.Minute) // 每5分钟检查是否需要紧急清理
+
+	// 添加紧急清理触发器，降低检查频率
+	emergencyCleanupTicker := time.NewTicker(1 * time.Hour) // 每2小时检查是否需要紧急清理
 	defer emergencyCleanupTicker.Stop()
-	
+
 	// 内存压力计数器
 	memoryPressureCounter := 0
-	
+
 	for {
 		select {
 		case <-cleanupTicker.C:
 			// 定期清理内存数据
 			ss.cleanupOldData()
 			ss.limitDataSize()
-			
+
 		case <-emergencyCleanupTicker.C:
 			// 检查内存压力，决定是否进行紧急清理
 			if GetMemoryPressureLevel() >= 2 {
 				log.Printf("内存压力较高，ServiceSentinel执行紧急清理")
 				ss.limitDataSize() // 使用limitDataSize代替aggressiveCleanup
 			}
-			
+
 		case r := <-ss.serviceReportChannel:
 			// 处理服务监控数据
 			ss.handleServiceReport(r)
-			
+
 			// 动态调整清理频率：如果内存压力高，则更频繁地清理
 			if GetMemoryPressureLevel() >= 1 {
 				// 高内存压力下，每处理100个报告就清理一次
@@ -379,266 +379,266 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 		log.Printf("NG>> 错误的服务监控上报 %+v", r)
 		return
 	}
-	
+
 	mh := r.Data
-		if mh.Type == model.TaskTypeTCPPing || mh.Type == model.TaskTypeICMPPing {
-			monitorTcpMap, ok := ss.serviceResponsePing[mh.GetId()]
-			if !ok {
-				monitorTcpMap = make(map[uint64]*pingStore)
-				ss.serviceResponsePing[mh.GetId()] = monitorTcpMap
-			}
-			ts, ok := monitorTcpMap[r.Reporter]
-			if !ok {
-				ts = &pingStore{}
-			}
-			ts.count++
-			ts.ping = (ts.ping*float32(ts.count-1) + mh.Delay) / float32(ts.count)
-			if ts.count == Conf.AvgPingCount {
-				if ts.ping > float32(Conf.MaxTCPPingValue) {
-					ts.ping = float32(Conf.MaxTCPPingValue)
-				}
-				ts.count = 0
-				if err := DB.Create(&model.MonitorHistory{
-					MonitorID: mh.GetId(),
-					AvgDelay:  ts.ping,
-					Data:      mh.Data,
-					ServerID:  r.Reporter,
-				}).Error; err != nil {
-					log.Println("NG>> 服务监控数据持久化失败：", err)
-				}
-			}
-			monitorTcpMap[r.Reporter] = ts
+	if mh.Type == model.TaskTypeTCPPing || mh.Type == model.TaskTypeICMPPing {
+		monitorTcpMap, ok := ss.serviceResponsePing[mh.GetId()]
+		if !ok {
+			monitorTcpMap = make(map[uint64]*pingStore)
+			ss.serviceResponsePing[mh.GetId()] = monitorTcpMap
 		}
-		ss.serviceResponseDataStoreLock.Lock()
-		// 写入当天状态
-		if ss.serviceStatusToday[mh.GetId()] == nil {
-			ss.serviceStatusToday[mh.GetId()] = &_TodayStatsOfMonitor{
-				Up:    0,
-				Down:  0,
-				Delay: 0,
+		ts, ok := monitorTcpMap[r.Reporter]
+		if !ok {
+			ts = &pingStore{}
+		}
+		ts.count++
+		ts.ping = (ts.ping*float32(ts.count-1) + mh.Delay) / float32(ts.count)
+		if ts.count == Conf.AvgPingCount {
+			if ts.ping > float32(Conf.MaxTCPPingValue) {
+				ts.ping = float32(Conf.MaxTCPPingValue)
 			}
-		}
-
-		if mh.Successful {
-			ss.serviceStatusToday[mh.GetId()].Delay = (ss.serviceStatusToday[mh.
-				GetId()].Delay*float32(ss.serviceStatusToday[mh.GetId()].Up) +
-				mh.Delay) / float32(ss.serviceStatusToday[mh.GetId()].Up+1)
-			ss.serviceStatusToday[mh.GetId()].Up++
-		} else {
-			ss.serviceStatusToday[mh.GetId()].Down++
-		}
-
-		currentTime := time.Now()
-		if ss.serviceCurrentStatusIndex[mh.GetId()] == nil {
-			ss.serviceCurrentStatusIndex[mh.GetId()] = &indexStore{
-				t:     currentTime,
-				index: 0,
-			}
-		}
-		// 写入当前数据
-		if ss.serviceCurrentStatusIndex[mh.GetId()].t.Before(currentTime) {
-			ss.serviceCurrentStatusIndex[mh.GetId()].t = currentTime.Add(30 * time.Second)
-
-			// 确保 serviceCurrentStatusData 已初始化
-			if ss.serviceCurrentStatusData[mh.GetId()] == nil {
-				ss.serviceCurrentStatusData[mh.GetId()] = make([]*pb.TaskResult, _CurrentStatusSize)
-			}
-
-			ss.serviceCurrentStatusData[mh.GetId()][ss.serviceCurrentStatusIndex[mh.GetId()].index] = mh
-			ss.serviceCurrentStatusIndex[mh.GetId()].index++
-		}
-
-		// 更新当前状态
-		ss.serviceResponseDataStoreCurrentUp[mh.GetId()] = 0
-		ss.serviceResponseDataStoreCurrentDown[mh.GetId()] = 0
-		ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()] = 0
-
-		// 永远是最新的 30 个数据的状态 [01:00, 02:00, 03:00] -> [04:00, 02:00, 03: 00]
-		for i := 0; i < len(ss.serviceCurrentStatusData[mh.GetId()]); i++ {
-			if ss.serviceCurrentStatusData[mh.GetId()][i].GetId() > 0 {
-				if ss.serviceCurrentStatusData[mh.GetId()][i].Successful {
-					ss.serviceResponseDataStoreCurrentUp[mh.GetId()]++
-					ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()] = (ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()]*float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()-1]) + ss.serviceCurrentStatusData[mh.GetId()][i].Delay) / float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()])
-				} else {
-					ss.serviceResponseDataStoreCurrentDown[mh.GetId()]++
-				}
-			}
-		}
-
-		// 计算在线率，
-		var upPercent uint64 = 0
-		if ss.serviceResponseDataStoreCurrentDown[mh.GetId()]+ss.serviceResponseDataStoreCurrentUp[mh.GetId()] > 0 {
-			upPercent = ss.serviceResponseDataStoreCurrentUp[mh.GetId()] * 100 / (ss.serviceResponseDataStoreCurrentDown[mh.GetId()] + ss.serviceResponseDataStoreCurrentUp[mh.GetId()])
-		}
-		stateCode := GetStatusCode(upPercent)
-
-		// 数据持久化
-		if ss.serviceCurrentStatusIndex[mh.GetId()].index == _CurrentStatusSize {
-			ss.serviceCurrentStatusIndex[mh.GetId()] = &indexStore{
-				index: 0,
-				t:     currentTime,
-			}
+			ts.count = 0
 			if err := DB.Create(&model.MonitorHistory{
 				MonitorID: mh.GetId(),
-				AvgDelay:  ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()],
+				AvgDelay:  ts.ping,
 				Data:      mh.Data,
-				Up:        ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
-				Down:      ss.serviceResponseDataStoreCurrentDown[mh.GetId()],
+				ServerID:  r.Reporter,
 			}).Error; err != nil {
 				log.Println("NG>> 服务监控数据持久化失败：", err)
 			}
 		}
+		monitorTcpMap[r.Reporter] = ts
+	}
+	ss.serviceResponseDataStoreLock.Lock()
+	// 写入当天状态
+	if ss.serviceStatusToday[mh.GetId()] == nil {
+		ss.serviceStatusToday[mh.GetId()] = &_TodayStatsOfMonitor{
+			Up:    0,
+			Down:  0,
+			Delay: 0,
+		}
+	}
 
-		// 延迟报警
-		if mh.Delay > 0 {
+	if mh.Successful {
+		ss.serviceStatusToday[mh.GetId()].Delay = (ss.serviceStatusToday[mh.
+			GetId()].Delay*float32(ss.serviceStatusToday[mh.GetId()].Up) +
+			mh.Delay) / float32(ss.serviceStatusToday[mh.GetId()].Up+1)
+		ss.serviceStatusToday[mh.GetId()].Up++
+	} else {
+		ss.serviceStatusToday[mh.GetId()].Down++
+	}
+
+	currentTime := time.Now()
+	if ss.serviceCurrentStatusIndex[mh.GetId()] == nil {
+		ss.serviceCurrentStatusIndex[mh.GetId()] = &indexStore{
+			t:     currentTime,
+			index: 0,
+		}
+	}
+	// 写入当前数据
+	if ss.serviceCurrentStatusIndex[mh.GetId()].t.Before(currentTime) {
+		ss.serviceCurrentStatusIndex[mh.GetId()].t = currentTime.Add(30 * time.Second)
+
+		// 确保 serviceCurrentStatusData 已初始化
+		if ss.serviceCurrentStatusData[mh.GetId()] == nil {
+			ss.serviceCurrentStatusData[mh.GetId()] = make([]*pb.TaskResult, _CurrentStatusSize)
+		}
+
+		ss.serviceCurrentStatusData[mh.GetId()][ss.serviceCurrentStatusIndex[mh.GetId()].index] = mh
+		ss.serviceCurrentStatusIndex[mh.GetId()].index++
+	}
+
+	// 更新当前状态
+	ss.serviceResponseDataStoreCurrentUp[mh.GetId()] = 0
+	ss.serviceResponseDataStoreCurrentDown[mh.GetId()] = 0
+	ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()] = 0
+
+	// 永远是最新的 30 个数据的状态 [01:00, 02:00, 03:00] -> [04:00, 02:00, 03: 00]
+	for i := 0; i < len(ss.serviceCurrentStatusData[mh.GetId()]); i++ {
+		if ss.serviceCurrentStatusData[mh.GetId()][i].GetId() > 0 {
+			if ss.serviceCurrentStatusData[mh.GetId()][i].Successful {
+				ss.serviceResponseDataStoreCurrentUp[mh.GetId()]++
+				ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()] = (ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()]*float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()-1]) + ss.serviceCurrentStatusData[mh.GetId()][i].Delay) / float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()])
+			} else {
+				ss.serviceResponseDataStoreCurrentDown[mh.GetId()]++
+			}
+		}
+	}
+
+	// 计算在线率，
+	var upPercent uint64 = 0
+	if ss.serviceResponseDataStoreCurrentDown[mh.GetId()]+ss.serviceResponseDataStoreCurrentUp[mh.GetId()] > 0 {
+		upPercent = ss.serviceResponseDataStoreCurrentUp[mh.GetId()] * 100 / (ss.serviceResponseDataStoreCurrentDown[mh.GetId()] + ss.serviceResponseDataStoreCurrentUp[mh.GetId()])
+	}
+	stateCode := GetStatusCode(upPercent)
+
+	// 数据持久化
+	if ss.serviceCurrentStatusIndex[mh.GetId()].index == _CurrentStatusSize {
+		ss.serviceCurrentStatusIndex[mh.GetId()] = &indexStore{
+			index: 0,
+			t:     currentTime,
+		}
+		if err := DB.Create(&model.MonitorHistory{
+			MonitorID: mh.GetId(),
+			AvgDelay:  ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()],
+			Data:      mh.Data,
+			Up:        ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
+			Down:      ss.serviceResponseDataStoreCurrentDown[mh.GetId()],
+		}).Error; err != nil {
+			log.Println("NG>> 服务监控数据持久化失败：", err)
+		}
+	}
+
+	// 延迟报警
+	if mh.Delay > 0 {
+		ss.monitorsLock.RLock()
+		if ss.monitors[mh.GetId()].LatencyNotify {
+			notificationTag := ss.monitors[mh.GetId()].NotificationTag
+			minMuteLabel := NotificationMuteLabel.ServiceLatencyMin(mh.GetId())
+			maxMuteLabel := NotificationMuteLabel.ServiceLatencyMax(mh.GetId())
+			if mh.Delay > ss.monitors[mh.GetId()].MaxLatency {
+				// 延迟超过最大值
+				ServerLock.RLock()
+				reporterServer := ServerList[r.Reporter]
+				msg := fmt.Sprintf("[Latency] %s %2f > %2f, Reporter: %s", ss.monitors[mh.GetId()].Name, mh.Delay, ss.monitors[mh.GetId()].MaxLatency, reporterServer.Name)
+				go SendNotification(notificationTag, msg, minMuteLabel)
+				ServerLock.RUnlock()
+			} else if mh.Delay < ss.monitors[mh.GetId()].MinLatency {
+				// 延迟低于最小值
+				ServerLock.RLock()
+				reporterServer := ServerList[r.Reporter]
+				msg := fmt.Sprintf("[Latency] %s %2f < %2f, Reporter: %s", ss.monitors[mh.GetId()].Name, mh.Delay, ss.monitors[mh.GetId()].MinLatency, reporterServer.Name)
+				go SendNotification(notificationTag, msg, maxMuteLabel)
+				ServerLock.RUnlock()
+			} else {
+				// 正常延迟， 清除静音缓存
+				UnMuteNotification(notificationTag, minMuteLabel)
+				UnMuteNotification(notificationTag, maxMuteLabel)
+			}
+		}
+		ss.monitorsLock.RUnlock()
+	}
+
+	// 状态变更报警+触发任务执行
+	if stateCode == StatusDown || stateCode != ss.lastStatus[mh.GetId()] {
+		ss.monitorsLock.Lock()
+		lastStatus := ss.lastStatus[mh.GetId()]
+		// 存储新的状态值
+		ss.lastStatus[mh.GetId()] = stateCode
+
+		// 判断是否需要发送通知
+		isNeedSendNotification := ss.monitors[mh.GetId()].Notify && (lastStatus != 0 || stateCode == StatusDown)
+		if isNeedSendNotification {
+			ServerLock.RLock()
+
+			reporterServer := ServerList[r.Reporter]
+			notificationTag := ss.monitors[mh.GetId()].NotificationTag
+			notificationMsg := fmt.Sprintf("[%s] %s Reporter: %s, Error: %s", StatusCodeToString(stateCode), ss.monitors[mh.GetId()].Name, reporterServer.Name, mh.Data)
+			muteLabel := NotificationMuteLabel.ServiceStateChanged(mh.GetId())
+
+			// 状态变更时，清除静音缓存
+			if stateCode != lastStatus {
+				UnMuteNotification(notificationTag, muteLabel)
+			}
+
+			go SendNotification(notificationTag, notificationMsg, muteLabel)
+			ServerLock.RUnlock()
+		}
+
+		// 判断是否需要触发任务
+		isNeedTriggerTask := ss.monitors[mh.GetId()].EnableTriggerTask && lastStatus != 0
+		if isNeedTriggerTask {
+			ServerLock.RLock()
+			reporterServer := ServerList[r.Reporter]
+			ServerLock.RUnlock()
+
+			if stateCode == StatusGood && lastStatus != stateCode {
+				// 当前状态正常 前序状态非正常时 触发恢复任务
+				go SendTriggerTasks(ss.monitors[mh.GetId()].RecoverTriggerTasks, reporterServer.ID)
+			} else if lastStatus == StatusGood && lastStatus != stateCode {
+				// 前序状态正常 当前状态非正常时 触发失败任务
+				go SendTriggerTasks(ss.monitors[mh.GetId()].FailTriggerTasks, reporterServer.ID)
+			}
+		}
+
+		ss.monitorsLock.Unlock()
+	}
+	ss.serviceResponseDataStoreLock.Unlock()
+
+	// SSL 证书报警
+	var errMsg string
+	if strings.HasPrefix(mh.Data, "SSL证书错误：") {
+		// i/o timeout、connection timeout、EOF 错误
+		if !strings.HasSuffix(mh.Data, "timeout") &&
+			!strings.HasSuffix(mh.Data, "EOF") &&
+			!strings.HasSuffix(mh.Data, "timed out") {
+			errMsg = mh.Data
 			ss.monitorsLock.RLock()
-			if ss.monitors[mh.GetId()].LatencyNotify {
-				notificationTag := ss.monitors[mh.GetId()].NotificationTag
-				minMuteLabel := NotificationMuteLabel.ServiceLatencyMin(mh.GetId())
-				maxMuteLabel := NotificationMuteLabel.ServiceLatencyMax(mh.GetId())
-				if mh.Delay > ss.monitors[mh.GetId()].MaxLatency {
-					// 延迟超过最大值
-					ServerLock.RLock()
-					reporterServer := ServerList[r.Reporter]
-					msg := fmt.Sprintf("[Latency] %s %2f > %2f, Reporter: %s", ss.monitors[mh.GetId()].Name, mh.Delay, ss.monitors[mh.GetId()].MaxLatency, reporterServer.Name)
-					go SendNotification(notificationTag, msg, minMuteLabel)
-					ServerLock.RUnlock()
-				} else if mh.Delay < ss.monitors[mh.GetId()].MinLatency {
-					// 延迟低于最小值
-					ServerLock.RLock()
-					reporterServer := ServerList[r.Reporter]
-					msg := fmt.Sprintf("[Latency] %s %2f < %2f, Reporter: %s", ss.monitors[mh.GetId()].Name, mh.Delay, ss.monitors[mh.GetId()].MinLatency, reporterServer.Name)
-					go SendNotification(notificationTag, msg, maxMuteLabel)
-					ServerLock.RUnlock()
-				} else {
-					// 正常延迟， 清除静音缓存
-					UnMuteNotification(notificationTag, minMuteLabel)
-					UnMuteNotification(notificationTag, maxMuteLabel)
-				}
+			if ss.monitors[mh.GetId()].Notify {
+				muteLabel := NotificationMuteLabel.ServiceSSL(mh.GetId(), "network")
+				go SendNotification(ss.monitors[mh.GetId()].NotificationTag, fmt.Sprintf("[SSL] Fetch cert info failed, %s %s", ss.monitors[mh.GetId()].Name, errMsg), muteLabel)
 			}
 			ss.monitorsLock.RUnlock()
-		}
 
-		// 状态变更报警+触发任务执行
-		if stateCode == StatusDown || stateCode != ss.lastStatus[mh.GetId()] {
+		}
+	} else {
+		// 清除网络错误静音缓存
+		UnMuteNotification(ss.monitors[mh.GetId()].NotificationTag, NotificationMuteLabel.ServiceSSL(mh.GetId(), "network"))
+
+		var newCert = strings.Split(mh.Data, "|")
+		if len(newCert) > 1 {
 			ss.monitorsLock.Lock()
-			lastStatus := ss.lastStatus[mh.GetId()]
-			// 存储新的状态值
-			ss.lastStatus[mh.GetId()] = stateCode
+			enableNotify := ss.monitors[mh.GetId()].Notify
 
-			// 判断是否需要发送通知
-			isNeedSendNotification := ss.monitors[mh.GetId()].Notify && (lastStatus != 0 || stateCode == StatusDown)
-			if isNeedSendNotification {
-				ServerLock.RLock()
-
-				reporterServer := ServerList[r.Reporter]
-				notificationTag := ss.monitors[mh.GetId()].NotificationTag
-				notificationMsg := fmt.Sprintf("[%s] %s Reporter: %s, Error: %s", StatusCodeToString(stateCode), ss.monitors[mh.GetId()].Name, reporterServer.Name, mh.Data)
-				muteLabel := NotificationMuteLabel.ServiceStateChanged(mh.GetId())
-
-				// 状态变更时，清除静音缓存
-				if stateCode != lastStatus {
-					UnMuteNotification(notificationTag, muteLabel)
-				}
-
-				go SendNotification(notificationTag, notificationMsg, muteLabel)
-				ServerLock.RUnlock()
+			// 首次获取证书信息时，缓存证书信息
+			if ss.sslCertCache[mh.GetId()] == "" {
+				ss.sslCertCache[mh.GetId()] = mh.Data
 			}
 
-			// 判断是否需要触发任务
-			isNeedTriggerTask := ss.monitors[mh.GetId()].EnableTriggerTask && lastStatus != 0
-			if isNeedTriggerTask {
-				ServerLock.RLock()
-				reporterServer := ServerList[r.Reporter]
-				ServerLock.RUnlock()
+			oldCert := strings.Split(ss.sslCertCache[mh.GetId()], "|")
+			isCertChanged := false
+			expiresOld, _ := time.Parse("2006-01-02 15:04:05 -0700 MST", oldCert[1])
+			expiresNew, _ := time.Parse("2006-01-02 15:04:05 -0700 MST", newCert[1])
 
-				if stateCode == StatusGood && lastStatus != stateCode {
-					// 当前状态正常 前序状态非正常时 触发恢复任务
-					go SendTriggerTasks(ss.monitors[mh.GetId()].RecoverTriggerTasks, reporterServer.ID)
-				} else if lastStatus == StatusGood && lastStatus != stateCode {
-					// 前序状态正常 当前状态非正常时 触发失败任务
-					go SendTriggerTasks(ss.monitors[mh.GetId()].FailTriggerTasks, reporterServer.ID)
-				}
+			// 证书变更时，更新缓存
+			if oldCert[0] != newCert[0] && !expiresNew.Equal(expiresOld) {
+				isCertChanged = true
+				ss.sslCertCache[mh.GetId()] = mh.Data
 			}
 
+			notificationTag := ss.monitors[mh.GetId()].NotificationTag
+			serviceName := ss.monitors[mh.GetId()].Name
 			ss.monitorsLock.Unlock()
-		}
-		ss.serviceResponseDataStoreLock.Unlock()
 
-		// SSL 证书报警
-		var errMsg string
-		if strings.HasPrefix(mh.Data, "SSL证书错误：") {
-			// i/o timeout、connection timeout、EOF 错误
-			if !strings.HasSuffix(mh.Data, "timeout") &&
-				!strings.HasSuffix(mh.Data, "EOF") &&
-				!strings.HasSuffix(mh.Data, "timed out") {
-				errMsg = mh.Data
-				ss.monitorsLock.RLock()
-				if ss.monitors[mh.GetId()].Notify {
-					muteLabel := NotificationMuteLabel.ServiceSSL(mh.GetId(), "network")
-					go SendNotification(ss.monitors[mh.GetId()].NotificationTag, fmt.Sprintf("[SSL] Fetch cert info failed, %s %s", ss.monitors[mh.GetId()].Name, errMsg), muteLabel)
-				}
-				ss.monitorsLock.RUnlock()
+			// 需要发送提醒
+			if enableNotify {
+				// 证书过期提醒
+				if expiresNew.Before(time.Now().AddDate(0, 0, 7)) {
+					expiresTimeStr := expiresNew.Format("2006-01-02 15:04:05")
+					errMsg = fmt.Sprintf(
+						"The SSL certificate will expire within seven days. Expiration time: %s",
+						expiresTimeStr,
+					)
 
-			}
-		} else {
-			// 清除网络错误静音缓存
-			UnMuteNotification(ss.monitors[mh.GetId()].NotificationTag, NotificationMuteLabel.ServiceSSL(mh.GetId(), "network"))
-
-			var newCert = strings.Split(mh.Data, "|")
-			if len(newCert) > 1 {
-				ss.monitorsLock.Lock()
-				enableNotify := ss.monitors[mh.GetId()].Notify
-
-				// 首次获取证书信息时，缓存证书信息
-				if ss.sslCertCache[mh.GetId()] == "" {
-					ss.sslCertCache[mh.GetId()] = mh.Data
+					// 静音规则： 服务id+证书过期时间
+					// 用于避免多个监测点对相同证书同时报警
+					muteLabel := NotificationMuteLabel.ServiceSSL(mh.GetId(), fmt.Sprintf("expire_%s", expiresTimeStr))
+					go SendNotification(notificationTag, fmt.Sprintf("[SSL] %s %s", serviceName, errMsg), muteLabel)
 				}
 
-				oldCert := strings.Split(ss.sslCertCache[mh.GetId()], "|")
-				isCertChanged := false
-				expiresOld, _ := time.Parse("2006-01-02 15:04:05 -0700 MST", oldCert[1])
-				expiresNew, _ := time.Parse("2006-01-02 15:04:05 -0700 MST", newCert[1])
+				// 证书变更提醒
+				if isCertChanged {
+					errMsg = fmt.Sprintf(
+						"SSL certificate changed, old: %s, %s expired; new: %s, %s expired.",
+						oldCert[0], expiresOld.Format("2006-01-02 15:04:05"), newCert[0], expiresNew.Format("2006-01-02 15:04:05"))
 
-				// 证书变更时，更新缓存
-				if oldCert[0] != newCert[0] && !expiresNew.Equal(expiresOld) {
-					isCertChanged = true
-					ss.sslCertCache[mh.GetId()] = mh.Data
-				}
-
-				notificationTag := ss.monitors[mh.GetId()].NotificationTag
-				serviceName := ss.monitors[mh.GetId()].Name
-				ss.monitorsLock.Unlock()
-
-				// 需要发送提醒
-				if enableNotify {
-					// 证书过期提醒
-					if expiresNew.Before(time.Now().AddDate(0, 0, 7)) {
-						expiresTimeStr := expiresNew.Format("2006-01-02 15:04:05")
-						errMsg = fmt.Sprintf(
-							"The SSL certificate will expire within seven days. Expiration time: %s",
-							expiresTimeStr,
-						)
-
-						// 静音规则： 服务id+证书过期时间
-						// 用于避免多个监测点对相同证书同时报警
-						muteLabel := NotificationMuteLabel.ServiceSSL(mh.GetId(), fmt.Sprintf("expire_%s", expiresTimeStr))
-						go SendNotification(notificationTag, fmt.Sprintf("[SSL] %s %s", serviceName, errMsg), muteLabel)
-					}
-
-					// 证书变更提醒
-					if isCertChanged {
-						errMsg = fmt.Sprintf(
-							"SSL certificate changed, old: %s, %s expired; new: %s, %s expired.",
-							oldCert[0], expiresOld.Format("2006-01-02 15:04:05"), newCert[0], expiresNew.Format("2006-01-02 15:04:05"))
-
-						// 证书变更后会自动更新缓存，所以不需要静音
-						go SendNotification(notificationTag, fmt.Sprintf("[SSL] %s %s", serviceName, errMsg), nil)
-					}
+					// 证书变更后会自动更新缓存，所以不需要静音
+					go SendNotification(notificationTag, fmt.Sprintf("[SSL] %s %s", serviceName, errMsg), nil)
 				}
 			}
 		}
 	}
+}
 
 const (
 	_ = iota
@@ -680,22 +680,22 @@ func StatusCodeToString(statusCode int) string {
 func (ss *ServiceSentinel) cleanupOldData() {
 	ss.serviceResponseDataStoreLock.Lock()
 	defer ss.serviceResponseDataStoreLock.Unlock()
-	
+
 	now := time.Now()
-	
+
 	// 只有超过1小时才进行清理，避免频繁清理
 	if now.Sub(ss.lastCleanupTime) < time.Hour {
 		return
 	}
 	ss.lastCleanupTime = now
-	
+
 	// 清理SSL证书缓存，只保留最近活跃的监控项
 	for monitorID := range ss.sslCertCache {
 		if _, exists := ss.monitors[monitorID]; !exists {
 			delete(ss.sslCertCache, monitorID)
 		}
 	}
-	
+
 	// 清理ping数据，限制每个监控项的ping存储
 	for monitorID, pingMap := range ss.serviceResponsePing {
 		if len(pingMap) > 100 { // 限制每个监控项最多100个ping记录
@@ -713,7 +713,7 @@ func (ss *ServiceSentinel) cleanupOldData() {
 			delete(ss.serviceResponsePing, monitorID)
 		}
 	}
-	
+
 	log.Printf("内存清理完成，清理时间：%v", now)
 }
 
@@ -721,11 +721,11 @@ func (ss *ServiceSentinel) cleanupOldData() {
 func (ss *ServiceSentinel) limitDataSize() {
 	ss.serviceResponseDataStoreLock.Lock()
 	defer ss.serviceResponseDataStoreLock.Unlock()
-	
-	const maxStatusRecords = 5    // 每个监控项最多5条状态记录
-	const maxPingRecords = 10     // 每个监控项最多10条ping记录
-	const maxMonitors = 1000      // 全局最多1000个监控项
-	
+
+	const maxStatusRecords = 5 // 每个监控项最多5条状态记录
+	const maxPingRecords = 10  // 每个监控项最多10条ping记录
+	const maxMonitors = 1000   // 全局最多1000个监控项
+
 	// 限制状态数据大小
 	totalStatusRecords := 0
 	for monitorID, statusData := range ss.serviceCurrentStatusData {
@@ -737,7 +737,7 @@ func (ss *ServiceSentinel) limitDataSize() {
 			totalStatusRecords += len(ss.serviceCurrentStatusData[monitorID])
 		}
 	}
-	
+
 	// 如果总记录数过多，清理一些旧监控项
 	if totalStatusRecords > maxMonitors*maxStatusRecords {
 		monitorsToClean := (totalStatusRecords - maxMonitors*maxStatusRecords) / maxStatusRecords
@@ -760,7 +760,7 @@ func (ss *ServiceSentinel) limitDataSize() {
 			}
 		}
 	}
-	
+
 	// 限制ping数据大小
 	for monitorID, pingMap := range ss.serviceResponsePing {
 		if len(pingMap) > maxPingRecords {
@@ -769,19 +769,19 @@ func (ss *ServiceSentinel) limitDataSize() {
 			for k := range pingMap {
 				keys = append(keys, k)
 			}
-			
+
 			// 删除多余的记录
 			for i := maxPingRecords; i < len(keys); i++ {
 				delete(pingMap, keys[i])
 			}
 		}
-		
+
 		// 如果监控项不存在，删除整个ping映射
 		if _, exists := ss.monitors[monitorID]; !exists {
 			delete(ss.serviceResponsePing, monitorID)
 		}
 	}
-	
+
 	// 清理月度状态数据中的无效监控项
 	ss.monthlyStatusLock.Lock()
 	for monitorID := range ss.monthlyStatus {
@@ -790,7 +790,7 @@ func (ss *ServiceSentinel) limitDataSize() {
 		}
 	}
 	ss.monthlyStatusLock.Unlock()
-	
+
 	log.Printf("数据大小限制完成: 状态记录=%d, 监控项=%d", totalStatusRecords, len(ss.serviceCurrentStatusData))
 }
 
@@ -798,18 +798,18 @@ func (ss *ServiceSentinel) limitDataSize() {
 func (ss *ServiceSentinel) getMemoryUsageEstimate() map[string]int {
 	ss.serviceResponseDataStoreLock.RLock()
 	defer ss.serviceResponseDataStoreLock.RUnlock()
-	
+
 	usage := map[string]int{
-		"status_records":   len(ss.serviceCurrentStatusData),
-		"ping_records":     0,
-		"monthly_records":  len(ss.monthlyStatus),
-		"monitors":         len(ss.monitors),
-		"ssl_cache":        len(ss.sslCertCache),
+		"status_records":  len(ss.serviceCurrentStatusData),
+		"ping_records":    0,
+		"monthly_records": len(ss.monthlyStatus),
+		"monitors":        len(ss.monitors),
+		"ssl_cache":       len(ss.sslCertCache),
 	}
-	
+
 	for _, pingMap := range ss.serviceResponsePing {
 		usage["ping_records"] += len(pingMap)
 	}
-	
+
 	return usage
 }

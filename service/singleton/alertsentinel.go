@@ -84,7 +84,7 @@ func AlertSentinelStart() {
 	var lastPrint time.Time
 	var checkCount uint64
 
-	// 内存清理计时器 - 更频繁的清理，每20分钟清理一次
+	// 内存清理计时器 - 调整为每1小时清理一次，降低清理频率
 	lastCleanupTime := time.Now()
 
 	for {
@@ -92,19 +92,18 @@ func AlertSentinelStart() {
 		checkStatus()
 		checkCount++
 
-		// 更频繁的内存清理 - 从1小时改为20分钟
-		if startedAt.Sub(lastCleanupTime) >= 20*time.Minute {
+		if startedAt.Sub(lastCleanupTime) >= 1*time.Hour {
 			cleanupAlertMemoryData()
 			lastCleanupTime = startedAt
 		}
 
-		// 检查内存使用量，如果超过150MB立即触发清理
+		// 调整内存使用阈值，如果超过200MB才立即触发清理
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
-		if m.Alloc > 150*1024*1024 { // 150MB阈值
+		if m.Alloc > 200*1024*1024 { // 200MB阈值，适中设置
 			log.Printf("AlertSentinel内存使用过高: %dMB，立即执行清理", m.Alloc/1024/1024)
 			cleanupAlertMemoryData()
-			runtime.GC() // 强制垃圾回收
+			runtime.GC()                // 强制垃圾回收
 			lastCleanupTime = startedAt // 更新清理时间，避免频繁清理
 		}
 
@@ -496,7 +495,7 @@ func cleanupAlertMemoryData() {
 
 	cleanedAlerts := 0
 	cleanedServers := 0
-	
+
 	// 获取当前内存使用情况
 	var memBefore runtime.MemStats
 	runtime.ReadMemStats(&memBefore)
@@ -540,7 +539,7 @@ func cleanupAlertMemoryData() {
 				cleanedServers++
 			}
 		}
-		
+
 		// 如果服务器映射为空，清理整个报警项
 		if len(serverMap) == 0 {
 			delete(alertsStore, alertID)
@@ -573,16 +572,16 @@ func cleanupAlertMemoryData() {
 			delete(AlertsCycleTransferStatsStore, alertID)
 		}
 	}
-	
+
 	// 强制垃圾回收
 	runtime.GC()
-	
+
 	// 获取清理后的内存使用情况
 	var memAfter runtime.MemStats
 	runtime.ReadMemStats(&memAfter)
-	
+
 	memFreed := int64(memBefore.Alloc) - int64(memAfter.Alloc)
-	
-	log.Printf("报警系统内存清理完成: 清理了 %d 个失效报警规则, %d 个服务器历史记录, 释放内存 %dMB", 
+
+	log.Printf("报警系统内存清理完成: 清理了 %d 个失效报警规则, %d 个服务器历史记录, 释放内存 %dMB",
 		cleanedAlerts, cleanedServers, memFreed/1024/1024)
 }

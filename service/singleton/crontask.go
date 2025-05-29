@@ -23,8 +23,8 @@ func InitCronTask() {
 	Crons = make(map[uint64]*model.Cron)
 
 	// 添加基础的系统定时任务
-	// 每分钟保存一次流量数据
-	if _, err := Cron.AddFunc("0 * * * * *", RecordTransferHourlyUsage); err != nil {
+	// 改为每5分钟保存一次流量数据，降低频率
+	if _, err := Cron.AddFunc("0 */5 * * * *", RecordTransferHourlyUsage); err != nil {
 		panic(err)
 	}
 
@@ -40,18 +40,18 @@ func InitCronTask() {
 		panic(err)
 	}
 
-	// 每小时对流量记录进行打点 (注意：这里不重复每分钟的任务)
-	if _, err := Cron.AddFunc("0 0 * * * *", RecordTransferHourlyUsage); err != nil {
+	// 改为每2小时对流量记录进行打点，降低频率
+	if _, err := Cron.AddFunc("0 0 */2 * * *", RecordTransferHourlyUsage); err != nil {
 		panic(err)
 	}
 
-	// 每10分钟同步一次所有服务器的累计流量
-	if _, err := Cron.AddFunc("0 */10 * * * *", SyncAllServerTrafficFromDB); err != nil {
+	// 改为每30分钟同步一次所有服务器的累计流量，降低频率
+	if _, err := Cron.AddFunc("0 */30 * * * *", SyncAllServerTrafficFromDB); err != nil {
 		panic(err)
 	}
 
-	// 每分钟保存一次流量数据到数据库
-	if _, err := Cron.AddFunc("0 * * * * *", SaveAllTrafficToDB); err != nil {
+	// 改为每5分钟保存一次流量数据到数据库，降低频率
+	if _, err := Cron.AddFunc("0 */5 * * * *", SaveAllTrafficToDB); err != nil {
 		panic(err)
 	}
 }
