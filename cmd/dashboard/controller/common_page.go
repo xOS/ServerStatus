@@ -294,7 +294,7 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 			}
 		}
 
-		// 回退机制：如果没有警报规则数据，直接从ServerList获取累积流量数据
+		// 回退机制：为没有警报规则的服务器创建默认流量数据（10TB月配额）
 		if len(trafficData) == 0 {
 			singleton.ServerLock.RLock()
 			for serverID, server := range singleton.ServerList {
@@ -318,20 +318,47 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 					continue
 				}
 
-				// 计算总累积流量
-				totalTransfer := server.CumulativeNetInTransfer + server.CumulativeNetOutTransfer
+				// 创建默认的月流量配额（10TB = 10 * 1024^4 bytes）
+				defaultQuota := uint64(10 * 1024 * 1024 * 1024 * 1024) // 10TB
 
-				// 构建回退流量数据项，显示累积流量但没有限额
+				// 计算当前月的开始和结束时间（每月1号开始）
+				now := time.Now()
+				currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+				nextMonthStart := currentMonthStart.AddDate(0, 1, 0)
+
+				// 计算当月累积流量（模拟月度重置）
+				var monthlyTransfer uint64
+				
+				// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
+				if !server.LastActive.IsZero() && server.LastActive.After(currentMonthStart) {
+					monthlyTransfer = server.CumulativeNetInTransfer + server.CumulativeNetOutTransfer
+				} else {
+					// 如果服务器在本月开始前就不活跃，或者没有记录，流量从0开始
+					monthlyTransfer = 0
+				}
+
+				// 计算使用百分比
+				usedPercent := float64(0)
+				if defaultQuota > 0 {
+					usedPercent = (float64(monthlyTransfer) / float64(defaultQuota)) * 100
+					usedPercent = math.Max(0, math.Min(100, usedPercent))
+				}
+
+				// 构建默认流量数据项，显示月度配额
 				trafficItem := map[string]interface{}{
 					"server_id":       serverID,
 					"server_name":     server.Name,
-					"max_bytes":       uint64(0),  // 没有限额
-					"used_bytes":      totalTransfer,
-					"max_formatted":   "无限制",
-					"used_formatted":  bytefmt.ByteSize(totalTransfer),
-					"used_percent":    float64(0), // 没有限额，使用百分比为0
-					"cycle_name":      "累积流量",
-					"cycle_id":        "fallback",
+					"max_bytes":       defaultQuota,
+					"used_bytes":      monthlyTransfer,
+					"max_formatted":   bytefmt.ByteSize(defaultQuota),
+					"used_formatted":  bytefmt.ByteSize(monthlyTransfer),
+					"used_percent":    math.Round(usedPercent*100) / 100,
+					"cycle_name":      "默认月流量配额",
+					"cycle_id":        "default-monthly",
+					"cycle_start":     currentMonthStart.Format(time.RFC3339),
+					"cycle_end":       nextMonthStart.Format(time.RFC3339),
+					"cycle_unit":      "month",
+					"cycle_interval":  1,
 					"is_bytes_source": true,
 				}
 				trafficData = append(trafficData, trafficItem)
@@ -395,7 +422,7 @@ func (cp *commonPage) home(c *gin.Context) {
 		}
 	}
 
-	// 回退机制：如果没有警报规则数据，直接从ServerList获取累积流量数据
+	// 回退机制：为没有警报规则的服务器创建默认流量数据（10TB月配额）
 	if len(trafficData) == 0 {
 		// 获取当前用户的权限状态
 		_, authorized := c.Get(model.CtxKeyAuthorizedUser)
@@ -419,20 +446,47 @@ func (cp *commonPage) home(c *gin.Context) {
 			serverID := server.ID
 			// 检查服务器是否在ServerList中存在
 			if actualServer := singleton.ServerList[serverID]; actualServer != nil {
-				// 计算总累积流量
-				totalTransfer := actualServer.CumulativeNetInTransfer + actualServer.CumulativeNetOutTransfer
+				// 创建默认的月流量配额（10TB = 10 * 1024^4 bytes）
+				defaultQuota := uint64(10 * 1024 * 1024 * 1024 * 1024) // 10TB
 
-				// 构建回退流量数据项，显示累积流量但没有限额
+				// 计算当前月的开始和结束时间（每月1号开始）
+				now := time.Now()
+				currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+				nextMonthStart := currentMonthStart.AddDate(0, 1, 0)
+
+				// 计算当月累积流量（模拟月度重置）
+				var monthlyTransfer uint64
+				
+				// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
+				if !actualServer.LastActive.IsZero() && actualServer.LastActive.After(currentMonthStart) {
+					monthlyTransfer = actualServer.CumulativeNetInTransfer + actualServer.CumulativeNetOutTransfer
+				} else {
+					// 如果服务器在本月开始前就不活跃，或者没有记录，流量从0开始
+					monthlyTransfer = 0
+				}
+
+				// 计算使用百分比
+				usedPercent := float64(0)
+				if defaultQuota > 0 {
+					usedPercent = (float64(monthlyTransfer) / float64(defaultQuota)) * 100
+					usedPercent = math.Max(0, math.Min(100, usedPercent))
+				}
+
+				// 构建默认流量数据项，显示月度配额
 				trafficItem := map[string]interface{}{
 					"server_id":       serverID,
 					"server_name":     actualServer.Name,
-					"max_bytes":       uint64(0),  // 没有限额
-					"used_bytes":      totalTransfer,
-					"max_formatted":   "无限制",
-					"used_formatted":  bytefmt.ByteSize(totalTransfer),
-					"used_percent":    float64(0), // 没有限额，使用百分比为0
-					"cycle_name":      "累积流量",
-					"cycle_id":        "fallback",
+					"max_bytes":       defaultQuota,
+					"used_bytes":      monthlyTransfer,
+					"max_formatted":   bytefmt.ByteSize(defaultQuota),
+					"used_formatted":  bytefmt.ByteSize(monthlyTransfer),
+					"used_percent":    math.Round(usedPercent*100) / 100,
+					"cycle_name":      "默认月流量配额",
+					"cycle_id":        "default-monthly",
+					"cycle_start":     currentMonthStart.Format(time.RFC3339),
+					"cycle_end":       nextMonthStart.Format(time.RFC3339),
+					"cycle_unit":      "month",
+					"cycle_interval":  1,
 					"is_bytes_source": true,
 				}
 				trafficData = append(trafficData, trafficItem)
@@ -893,7 +947,7 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 		}
 	}
 
-	// 回退机制：如果没有警报规则数据，直接从ServerList获取累积流量数据
+	// 回退机制：为没有警报规则的服务器创建默认流量数据（10TB月配额）
 	if len(trafficData) == 0 {
 		// 根据权限获取服务器列表
 		var serverList []*model.Server
@@ -912,20 +966,47 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 			serverID := server.ID
 			// 检查服务器是否在ServerList中存在
 			if actualServer := singleton.ServerList[serverID]; actualServer != nil {
-				// 计算总累积流量
-				totalTransfer := actualServer.CumulativeNetInTransfer + actualServer.CumulativeNetOutTransfer
+				// 创建默认的月流量配额（10TB = 10 * 1024^4 bytes）
+				defaultQuota := uint64(10 * 1024 * 1024 * 1024 * 1024) // 10TB
 
-				// 构建回退流量数据项，显示累积流量但没有限额
+				// 计算当前月的开始和结束时间（每月1号开始）
+				now := time.Now()
+				currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+				nextMonthStart := currentMonthStart.AddDate(0, 1, 0)
+
+				// 计算当月累积流量（模拟月度重置）
+				var monthlyTransfer uint64
+				
+				// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
+				if !actualServer.LastActive.IsZero() && actualServer.LastActive.After(currentMonthStart) {
+					monthlyTransfer = actualServer.CumulativeNetInTransfer + actualServer.CumulativeNetOutTransfer
+				} else {
+					// 如果服务器在本月开始前就不活跃，或者没有记录，流量从0开始
+					monthlyTransfer = 0
+				}
+
+				// 计算使用百分比
+				usedPercent := float64(0)
+				if defaultQuota > 0 {
+					usedPercent = (float64(monthlyTransfer) / float64(defaultQuota)) * 100
+					usedPercent = math.Max(0, math.Min(100, usedPercent))
+				}
+
+				// 构建默认流量数据项，显示月度配额
 				trafficItem := map[string]interface{}{
 					"server_id":       serverID,
 					"server_name":     actualServer.Name,
-					"max_bytes":       uint64(0),  // 没有限额
-					"used_bytes":      totalTransfer,
-					"max_formatted":   "无限制",
-					"used_formatted":  bytefmt.ByteSize(totalTransfer),
-					"used_percent":    float64(0), // 没有限额，使用百分比为0
-					"cycle_name":      "累积流量",
-					"cycle_id":        "fallback",
+					"max_bytes":       defaultQuota,
+					"used_bytes":      monthlyTransfer,
+					"max_formatted":   bytefmt.ByteSize(defaultQuota),
+					"used_formatted":  bytefmt.ByteSize(monthlyTransfer),
+					"used_percent":    math.Round(usedPercent*100) / 100,
+					"cycle_name":      "默认月流量配额",
+					"cycle_id":        "default-monthly",
+					"cycle_start":     currentMonthStart.Format(time.RFC3339),
+					"cycle_end":       nextMonthStart.Format(time.RFC3339),
+					"cycle_unit":      "month",
+					"cycle_interval":  1,
 					"is_bytes_source": true,
 				}
 				trafficData = append(trafficData, trafficItem)
@@ -1017,22 +1098,49 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 		}
 	}
 
-	// 回退机制：如果没有警报规则数据，直接从ServerList获取累积流量数据
+	// 回退机制：为没有警报规则的服务器创建默认流量数据（10TB月配额）
 	if len(trafficData) == 0 && server != nil {
-		// 计算总累积流量
-		totalTransfer := server.CumulativeNetInTransfer + server.CumulativeNetOutTransfer
+		// 创建默认的月流量配额（10TB = 10 * 1024^4 bytes）
+		defaultQuota := uint64(10 * 1024 * 1024 * 1024 * 1024) // 10TB
 
-		// 构建回退流量数据项，显示累积流量但没有限额
+		// 计算当前月的开始和结束时间（每月1号开始）
+		now := time.Now()
+		currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		nextMonthStart := currentMonthStart.AddDate(0, 1, 0)
+
+		// 计算当月累积流量（模拟月度重置）
+		var monthlyTransfer uint64
+		
+		// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
+		if !server.LastActive.IsZero() && server.LastActive.After(currentMonthStart) {
+			monthlyTransfer = server.CumulativeNetInTransfer + server.CumulativeNetOutTransfer
+		} else {
+			// 如果服务器在本月开始前就不活跃，或者没有记录，流量从0开始
+			monthlyTransfer = 0
+		}
+
+		// 计算使用百分比
+		usedPercent := float64(0)
+		if defaultQuota > 0 {
+			usedPercent = (float64(monthlyTransfer) / float64(defaultQuota)) * 100
+			usedPercent = math.Max(0, math.Min(100, usedPercent))
+		}
+
+		// 构建默认流量数据项，显示月度配额
 		trafficItem := map[string]interface{}{
 			"server_id":       serverID,
 			"server_name":     server.Name,
-			"max_bytes":       uint64(0),  // 没有限额
-			"used_bytes":      totalTransfer,
-			"max_formatted":   "无限制",
-			"used_formatted":  bytefmt.ByteSize(totalTransfer),
-			"used_percent":    float64(0), // 没有限额，使用百分比为0
-			"cycle_name":      "累积流量",
-			"cycle_id":        "fallback",
+			"max_bytes":       defaultQuota,
+			"used_bytes":      monthlyTransfer,
+			"max_formatted":   bytefmt.ByteSize(defaultQuota),
+			"used_formatted":  bytefmt.ByteSize(monthlyTransfer),
+			"used_percent":    math.Round(usedPercent*100) / 100,
+			"cycle_name":      "默认月流量配额",
+			"cycle_id":        "default-monthly",
+			"cycle_start":     currentMonthStart.Format(time.RFC3339),
+			"cycle_end":       nextMonthStart.Format(time.RFC3339),
+			"cycle_unit":      "month",
+			"cycle_interval":  1,
 			"is_bytes_source": true,
 		}
 		trafficData = append(trafficData, trafficItem)
