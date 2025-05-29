@@ -69,6 +69,7 @@ func main() {
 	// 创建用于控制所有后台任务的context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	_ = ctx // 将来可能用于goroutine控制
 
 	// 启动所有服务
 	singleton.CleanMonitorHistory()

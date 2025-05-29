@@ -108,11 +108,11 @@ func (provider *Provider) addDomainRecord() error {
 
 	_, err = provider.Setter.SetRecords(provider.ctx, provider.zone,
 		[]libdns.Record{
-			{
-				Type:  provider.recordType,
-				Name:  provider.prefix,
-				Value: provider.ipAddr,
-				TTL:   time.Minute,
+			libdns.RR{
+				Type: provider.recordType,
+				Name: provider.prefix,
+				Data: provider.ipAddr,
+				TTL:  time.Minute,
 			},
 		})
 
