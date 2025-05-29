@@ -185,8 +185,8 @@ func checkStatus() {
 					// 生成详细的报警消息
 					message := generateDetailedAlertMessage(alert, server, alertsStore[alert.ID][server.ID])
 
-					go SendTriggerTasks(alert.FailTriggerTasks, curServer.ID)
-					go SendNotification(alert.NotificationTag, message, NotificationMuteLabel.ServerIncident(alert.ID, server.ID), &curServer)
+					SafeSendTriggerTasks(alert.FailTriggerTasks, curServer.ID)
+					SafeSendNotification(alert.NotificationTag, message, NotificationMuteLabel.ServerIncident(alert.ID, server.ID), &curServer)
 					// 清除恢复通知的静音缓存
 					UnMuteNotification(alert.NotificationTag, NotificationMuteLabel.ServerIncidentResolved(alert.ID, server.ID))
 				}
@@ -203,8 +203,8 @@ func checkStatus() {
 						Localizer.MustLocalize(&i18n.LocalizeConfig{
 							MessageID: "Rule",
 						}), alert.Name)
-					go SendTriggerTasks(alert.RecoverTriggerTasks, curServer.ID)
-					go SendNotification(alert.NotificationTag, message, NotificationMuteLabel.ServerIncidentResolved(alert.ID, server.ID), &curServer)
+					SafeSendTriggerTasks(alert.RecoverTriggerTasks, curServer.ID)
+					SafeSendNotification(alert.NotificationTag, message, NotificationMuteLabel.ServerIncidentResolved(alert.ID, server.ID), &curServer)
 					// 清除失败通知的静音缓存
 					UnMuteNotification(alert.NotificationTag, NotificationMuteLabel.ServerIncident(alert.ID, server.ID))
 				}

@@ -3,6 +3,7 @@ package singleton
 import (
 	"fmt"
 	"log"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -330,15 +331,19 @@ func (ss *ServiceSentinel) worker() {
 	}()
 
 	// 定期清理旧数据，大幅降低清理频率
-	cleanupTicker := time.NewTicker(1 * time.Hour) // 改为12小时
+	cleanupTicker := time.NewTicker(30 * time.Minute) // 改为30分钟
 	defer cleanupTicker.Stop()
 
 	// 添加紧急清理触发器，降低检查频率
-	emergencyCleanupTicker := time.NewTicker(1 * time.Hour) // 每2小时检查是否需要紧急清理
+	emergencyCleanupTicker := time.NewTicker(5 * time.Minute) // 每5分钟检查内存压力
 	defer emergencyCleanupTicker.Stop()
 
 	// 内存压力计数器
 	memoryPressureCounter := 0
+	
+	// 添加内存监控
+	memoryCheckTicker := time.NewTicker(1 * time.Minute) // 每分钟检查内存
+	defer memoryCheckTicker.Stop()
 
 	for {
 		select {
@@ -352,6 +357,25 @@ func (ss *ServiceSentinel) worker() {
 			if GetMemoryPressureLevel() >= 2 {
 				log.Printf("内存压力较高，ServiceSentinel执行紧急清理")
 				ss.limitDataSize() // 使用limitDataSize代替aggressiveCleanup
+			}
+
+		case <-memoryCheckTicker.C:
+			// 每分钟检查内存使用情况
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			currentMemMB := m.Alloc / 1024 / 1024
+			
+			if currentMemMB > 250 { // 如果内存超过250MB
+				log.Printf("ServiceSentinel检测到高内存使用: %dMB，执行清理", currentMemMB)
+				ss.limitDataSize()
+				ss.cleanupOldData()
+				
+				// 如果内存仍然很高，强制GC
+				if currentMemMB > 300 {
+					runtime.GC()
+					runtime.ReadMemStats(&m)
+					log.Printf("强制GC后内存: %dMB", m.Alloc/1024/1024)
+				}
 			}
 
 		case r := <-ss.serviceReportChannel:
@@ -381,6 +405,12 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 	}
 
 	mh := r.Data
+	
+	// 添加边界检查，防止panic
+	if mh.GetId() == 0 {
+		log.Printf("NG>> 无效的监控ID: %+v", r)
+		return
+	}
 	if mh.Type == model.TaskTypeTCPPing || mh.Type == model.TaskTypeICMPPing {
 		monitorTcpMap, ok := ss.serviceResponsePing[mh.GetId()]
 		if !ok {
@@ -444,6 +474,11 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 			ss.serviceCurrentStatusData[mh.GetId()] = make([]*pb.TaskResult, _CurrentStatusSize)
 		}
 
+		// 边界检查：确保索引不会超出数组范围
+		if ss.serviceCurrentStatusIndex[mh.GetId()].index >= _CurrentStatusSize {
+			ss.serviceCurrentStatusIndex[mh.GetId()].index = 0
+		}
+
 		ss.serviceCurrentStatusData[mh.GetId()][ss.serviceCurrentStatusIndex[mh.GetId()].index] = mh
 		ss.serviceCurrentStatusIndex[mh.GetId()].index++
 	}
@@ -455,10 +490,15 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 
 	// 永远是最新的 30 个数据的状态 [01:00, 02:00, 03:00] -> [04:00, 02:00, 03: 00]
 	for i := 0; i < len(ss.serviceCurrentStatusData[mh.GetId()]); i++ {
-		if ss.serviceCurrentStatusData[mh.GetId()][i].GetId() > 0 {
+		if ss.serviceCurrentStatusData[mh.GetId()][i] != nil && ss.serviceCurrentStatusData[mh.GetId()][i].GetId() > 0 {
 			if ss.serviceCurrentStatusData[mh.GetId()][i].Successful {
 				ss.serviceResponseDataStoreCurrentUp[mh.GetId()]++
-				ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()] = (ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()]*float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()-1]) + ss.serviceCurrentStatusData[mh.GetId()][i].Delay) / float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()])
+				// 修复算术表达式错误：应该是 (当前计数-1) 而不是 (ID-1)
+				if ss.serviceResponseDataStoreCurrentUp[mh.GetId()] > 1 {
+					ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()] = (ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()]*float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()]-1) + ss.serviceCurrentStatusData[mh.GetId()][i].Delay) / float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()])
+				} else {
+					ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()] = ss.serviceCurrentStatusData[mh.GetId()][i].Delay
+				}
 			} else {
 				ss.serviceResponseDataStoreCurrentDown[mh.GetId()]++
 			}
@@ -472,8 +512,8 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 	}
 	stateCode := GetStatusCode(upPercent)
 
-	// 数据持久化
-	if ss.serviceCurrentStatusIndex[mh.GetId()].index == _CurrentStatusSize {
+	// 数据持久化 - 在index达到上限之前检查并重置
+	if ss.serviceCurrentStatusIndex[mh.GetId()].index >= _CurrentStatusSize {
 		ss.serviceCurrentStatusIndex[mh.GetId()] = &indexStore{
 			index: 0,
 			t:     currentTime,
@@ -501,14 +541,14 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 				ServerLock.RLock()
 				reporterServer := ServerList[r.Reporter]
 				msg := fmt.Sprintf("[Latency] %s %2f > %2f, Reporter: %s", ss.monitors[mh.GetId()].Name, mh.Delay, ss.monitors[mh.GetId()].MaxLatency, reporterServer.Name)
-				go SendNotification(notificationTag, msg, minMuteLabel)
+				SafeSendNotification(notificationTag, msg, minMuteLabel)
 				ServerLock.RUnlock()
 			} else if mh.Delay < ss.monitors[mh.GetId()].MinLatency {
 				// 延迟低于最小值
 				ServerLock.RLock()
 				reporterServer := ServerList[r.Reporter]
 				msg := fmt.Sprintf("[Latency] %s %2f < %2f, Reporter: %s", ss.monitors[mh.GetId()].Name, mh.Delay, ss.monitors[mh.GetId()].MinLatency, reporterServer.Name)
-				go SendNotification(notificationTag, msg, maxMuteLabel)
+				SafeSendNotification(notificationTag, msg, maxMuteLabel)
 				ServerLock.RUnlock()
 			} else {
 				// 正常延迟， 清除静音缓存
@@ -541,7 +581,8 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 				UnMuteNotification(notificationTag, muteLabel)
 			}
 
-			go SendNotification(notificationTag, notificationMsg, muteLabel)
+			// 使用Goroutine池发送通知，防止泄漏
+			SafeSendNotification(notificationTag, notificationMsg, muteLabel)
 			ServerLock.RUnlock()
 		}
 
@@ -554,10 +595,10 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 
 			if stateCode == StatusGood && lastStatus != stateCode {
 				// 当前状态正常 前序状态非正常时 触发恢复任务
-				go SendTriggerTasks(ss.monitors[mh.GetId()].RecoverTriggerTasks, reporterServer.ID)
+				SafeSendTriggerTasks(ss.monitors[mh.GetId()].RecoverTriggerTasks, reporterServer.ID)
 			} else if lastStatus == StatusGood && lastStatus != stateCode {
 				// 前序状态正常 当前状态非正常时 触发失败任务
-				go SendTriggerTasks(ss.monitors[mh.GetId()].FailTriggerTasks, reporterServer.ID)
+				SafeSendTriggerTasks(ss.monitors[mh.GetId()].FailTriggerTasks, reporterServer.ID)
 			}
 		}
 
@@ -576,7 +617,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 			ss.monitorsLock.RLock()
 			if ss.monitors[mh.GetId()].Notify {
 				muteLabel := NotificationMuteLabel.ServiceSSL(mh.GetId(), "network")
-				go SendNotification(ss.monitors[mh.GetId()].NotificationTag, fmt.Sprintf("[SSL] Fetch cert info failed, %s %s", ss.monitors[mh.GetId()].Name, errMsg), muteLabel)
+				SafeSendNotification(ss.monitors[mh.GetId()].NotificationTag, fmt.Sprintf("[SSL] Fetch cert info failed, %s %s", ss.monitors[mh.GetId()].Name, errMsg), muteLabel)
 			}
 			ss.monitorsLock.RUnlock()
 
@@ -623,7 +664,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 					// 静音规则： 服务id+证书过期时间
 					// 用于避免多个监测点对相同证书同时报警
 					muteLabel := NotificationMuteLabel.ServiceSSL(mh.GetId(), fmt.Sprintf("expire_%s", expiresTimeStr))
-					go SendNotification(notificationTag, fmt.Sprintf("[SSL] %s %s", serviceName, errMsg), muteLabel)
+					SafeSendNotification(notificationTag, fmt.Sprintf("[SSL] %s %s", serviceName, errMsg), muteLabel)
 				}
 
 				// 证书变更提醒
@@ -633,7 +674,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 						oldCert[0], expiresOld.Format("2006-01-02 15:04:05"), newCert[0], expiresNew.Format("2006-01-02 15:04:05"))
 
 					// 证书变更后会自动更新缓存，所以不需要静音
-					go SendNotification(notificationTag, fmt.Sprintf("[SSL] %s %s", serviceName, errMsg), nil)
+					SafeSendNotification(notificationTag, fmt.Sprintf("[SSL] %s %s", serviceName, errMsg), nil)
 				}
 			}
 		}

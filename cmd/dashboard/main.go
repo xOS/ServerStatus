@@ -64,6 +64,9 @@ func main() {
 	singleton.InitDBFromPath(dashboardCliParam.DatebaseLocation)
 	singleton.InitLocalizer()
 
+	// 初始化Goroutine池，防止内存泄漏
+	singleton.InitGoroutinePools()
+
 	initSystem()
 
 	// 创建用于控制所有后台任务的context
@@ -131,6 +134,9 @@ func main() {
 			// 保存流量数据
 			singleton.RecordTransferHourlyUsage()
 			singleton.SaveAllTrafficToDB()
+
+			// 清理Goroutine池，防止内存泄漏
+			singleton.CleanupGoroutinePools()
 
 			// 关闭所有WebSocket连接
 			singleton.ServerLock.RLock()

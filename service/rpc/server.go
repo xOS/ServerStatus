@@ -642,8 +642,8 @@ func checkAndResetCycleTraffic(clientID uint64) {
 			// 创建流量重置通知的静音标签，避免短时间内重复发送
 			resetMuteLabel := fmt.Sprintf("traffic-reset-%d-%d", alert.ID, clientID)
 
-			// 发送通知到流量周期报警规则对应的通知组
-			go singleton.SendNotification(alert.NotificationTag, resetMessage, &resetMuteLabel, server)
+			// 使用安全的通知发送方式，防止Goroutine泄漏
+			singleton.SafeSendNotification(alert.NotificationTag, resetMessage, &resetMuteLabel, server)
 		}
 
 		// 只处理第一个匹配的规则

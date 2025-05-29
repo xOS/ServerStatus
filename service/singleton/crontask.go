@@ -113,7 +113,21 @@ func SendTriggerTasks(taskIDs []uint64, triggerServer uint64) {
 
 	// 依次调用CronTrigger发送任务
 	for _, c := range cronLists {
-		go CronTrigger(*c, triggerServer)()
+		// 使用Goroutine池执行CronTrigger，防止泄漏
+		func(cron *model.Cron) {
+			if TriggerTaskPool != nil {
+				task := func() {
+					CronTrigger(*cron, triggerServer)()
+				}
+				if !TriggerTaskPool.Submit(task) {
+					// 如果池满了，直接执行但不创建新goroutine
+					CronTrigger(*cron, triggerServer)()
+				}
+			} else {
+				// 如果池还未初始化，直接执行
+				CronTrigger(*cron, triggerServer)()
+			}
+		}(c)
 	}
 }
 
