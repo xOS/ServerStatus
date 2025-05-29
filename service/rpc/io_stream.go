@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,12 +21,25 @@ type bp struct {
 	buf []byte
 }
 
+// 优化缓冲池配置，减少内存占用
 var bufPool = sync.Pool{
 	New: func() any {
 		return &bp{
-			buf: make([]byte, 1024*1024),
+			buf: make([]byte, 32*1024), // 降低到32KB，减少内存占用
 		}
 	},
+}
+
+// 清理函数，定期清理缓冲池中的大缓冲区
+func cleanupBufferPool() {
+	// 强制回收所有缓冲区，让sync.Pool重新创建
+	bufPool = sync.Pool{
+		New: func() any {
+			return &bp{
+				buf: make([]byte, 32*1024),
+			}
+		},
+	}
 }
 
 func (s *ServerHandler) CreateStream(streamId string) {
@@ -64,6 +78,46 @@ func (s *ServerHandler) CloseStream(streamId string) error {
 	}
 
 	return nil
+}
+
+// CleanupStaleStreams 清理过期的流连接，防止内存泄漏
+func (s *ServerHandler) CleanupStaleStreams() {
+	s.ioStreamMutex.Lock()
+	defer s.ioStreamMutex.Unlock()
+	
+	staleStreams := make([]string, 0)
+	
+	for streamId, ctx := range s.ioStreams {
+		// 检查流是否已经超时未使用
+		if ctx.userIo == nil && ctx.agentIo == nil {
+			// 简单的启发式检查：如果通道都已关闭但流仍存在，可能是泄漏
+			select {
+			case <-ctx.userIoConnectCh:
+			case <-ctx.agentIoConnectCh:
+			default:
+				// 通道都未关闭，说明可能是新创建的流，给更多时间
+				continue
+			}
+			staleStreams = append(staleStreams, streamId)
+		}
+	}
+	
+	// 清理过期流
+	for _, streamId := range staleStreams {
+		if ctx, ok := s.ioStreams[streamId]; ok {
+			if ctx.userIo != nil {
+				ctx.userIo.Close()
+			}
+			if ctx.agentIo != nil {
+				ctx.agentIo.Close()
+			}
+			delete(s.ioStreams, streamId)
+		}
+	}
+	
+	if len(staleStreams) > 0 {
+		log.Printf("清理了 %d 个过期的IO流连接", len(staleStreams))
+	}
 }
 
 func (s *ServerHandler) UserConnected(streamId string, userIo io.ReadWriteCloser) error {

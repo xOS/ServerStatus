@@ -115,12 +115,19 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	singleton.ServerList[clientID].TaskCloseLock.Unlock()
 	singleton.ServerLock.RUnlock()
 
-	// 创建一个带超时的上下文
-	ctx, cancel := context.WithTimeout(stream.Context(), 30*time.Minute)
+	// 创建一个带超时的上下文，减少超时时间以防止长时间占用资源
+	ctx, cancel := context.WithTimeout(stream.Context(), 10*time.Minute)
 	defer cancel()
 
 	// 监听连接状态，当连接断开时自动清理
 	go func() {
+		defer func() {
+			// 确保监控goroutine退出时进行最终清理
+			if r := recover(); r != nil {
+				log.Printf("RequestTask监控goroutine panic恢复: %v", r)
+			}
+		}()
+		
 		select {
 		case <-ctx.Done():
 			// 连接断开时清理资源
@@ -150,7 +157,20 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 		}
 	}()
 
-	defer close(done) // 确保监控goroutine被通知停止
+	defer func() {
+		close(done) // 确保监控goroutine被通知停止
+		// 额外的清理工作确保资源释放
+		singleton.ServerLock.RLock()
+		if singleton.ServerList[clientID] != nil {
+			singleton.ServerList[clientID].TaskCloseLock.Lock()
+			if singleton.ServerList[clientID].TaskClose == closeCh {
+				singleton.ServerList[clientID].TaskStream = nil
+				singleton.ServerList[clientID].TaskClose = nil
+			}
+			singleton.ServerList[clientID].TaskCloseLock.Unlock()
+		}
+		singleton.ServerLock.RUnlock()
+	}()
 
 	// 等待连接关闭或超时
 	select {
@@ -159,7 +179,7 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	case <-ctx.Done():
 		// 超时或连接取消
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("request task timeout after 30 minutes")
+			return fmt.Errorf("request task timeout after 10 minutes")
 		}
 		return ctx.Err()
 	}

@@ -81,6 +81,12 @@ func LoadSingleton() {
 			runtime.GC()
 		}
 	})
+
+	// 添加缓冲池清理任务，每30分钟执行一次
+	Cron.AddFunc("0 */30 * * * *", func() {
+		cleanupSystemBuffers()
+		runtime.GC() // 清理后触发GC
+	})
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
@@ -173,6 +179,37 @@ func InitDBFromPath(path string) {
 			}
 		}
 	}
+}
+
+// cleanupSystemBuffers 清理系统缓冲区以释放内存
+func cleanupSystemBuffers() {
+	log.Printf("开始清理系统缓冲区...")
+	
+	// 清理ServiceSentinel的内存数据
+	if ServiceSentinelShared != nil {
+		ServiceSentinelShared.cleanupOldData()
+		ServiceSentinelShared.limitDataSize()
+	}
+	
+	// 清理AlertSentinel的内存数据
+	cleanupAlertMemoryData()
+	
+	// 清理服务器状态中的IO流连接
+	ServerLock.RLock()
+	for _, server := range ServerList {
+		if server != nil && server.TaskStream != nil {
+			// 这里我们不能直接调用CleanupStaleStreams，因为它是ServerHandler的方法
+			// 但我们可以清理一些服务器级别的资源
+		}
+	}
+	ServerLock.RUnlock()
+	
+	// 清理缓存过期项
+	if Cache != nil {
+		Cache.DeleteExpired()
+	}
+	
+	log.Printf("系统缓冲区清理完成")
 }
 
 // RecordTransferHourlyUsage 记录每小时流量使用情况

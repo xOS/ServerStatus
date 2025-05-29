@@ -79,6 +79,8 @@ type ServiceSentinel struct {
 	serviceStatusToday                      map[uint64]*_TodayStatsOfMonitor // [monitor_id] -> _TodayStatsOfMonitor
 	serviceCurrentStatusIndex               map[uint64]*indexStore           // [monitor_id] -> 该监控ID对应的 serviceCurrentStatusData 的最新索引下标
 	serviceCurrentStatusData                map[uint64][]*pb.TaskResult      // [monitor_id] -> []model.MonitorHistory
+	
+	// 优化：限制数据存储大小，防止无限增长
 	serviceResponseDataStoreCurrentUp       map[uint64]uint64                // [monitor_id] -> 当前服务在线计数
 	serviceResponseDataStoreCurrentDown     map[uint64]uint64                // [monitor_id] -> 当前服务离线计数
 	serviceResponseDataStoreCurrentAvgDelay map[uint64]float32               // [monitor_id] -> 当前服务离线计数
@@ -89,9 +91,12 @@ type ServiceSentinel struct {
 	monitorsLock sync.RWMutex
 	monitors     map[uint64]*model.Monitor // [monitor_id] -> model.Monitor
 
-	// 30天数据缓存
+	// 30天数据缓存 - 添加定期清理机制
 	monthlyStatusLock sync.Mutex
 	monthlyStatus     map[uint64]*model.ServiceItemResponse // [monitor_id] -> model.ServiceItemResponse
+	
+	// 添加缓存管理
+	lastCleanupTime time.Time
 }
 
 type indexStore struct {
@@ -316,13 +321,40 @@ func (ss *ServiceSentinel) LoadStats() map[uint64]*model.ServiceItemResponse {
 
 // worker 服务监控的实际工作流程
 func (ss *ServiceSentinel) worker() {
-	// 从服务状态汇报管道获取汇报的服务数据
-	for r := range ss.serviceReportChannel {
-		if ss.monitors[r.Data.GetId()] == nil || ss.monitors[r.Data.GetId()].ID == 0 {
-			log.Printf("NG>> 错误的服务监控上报 %+v", r)
-			continue
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("ServiceSentinel worker panic恢复: %v", r)
+			// 重启worker
+			go ss.worker()
 		}
-		mh := r.Data
+	}()
+	
+	// 定期清理旧数据
+	cleanupTicker := time.NewTicker(time.Hour)
+	defer cleanupTicker.Stop()
+	
+	for {
+		select {
+		case <-cleanupTicker.C:
+			// 定期清理内存数据
+			ss.cleanupOldData()
+			ss.limitDataSize()
+			
+		case r := <-ss.serviceReportChannel:
+			// 处理服务监控数据
+			ss.handleServiceReport(r)
+		}
+	}
+}
+
+// handleServiceReport 处理单个服务监控报告
+func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
+	if ss.monitors[r.Data.GetId()] == nil || ss.monitors[r.Data.GetId()].ID == 0 {
+		log.Printf("NG>> 错误的服务监控上报 %+v", r)
+		return
+	}
+	
+	mh := r.Data
 		if mh.Type == model.TaskTypeTCPPing || mh.Type == model.TaskTypeICMPPing {
 			monitorTcpMap, ok := ss.serviceResponsePing[mh.GetId()]
 			if !ok {
@@ -400,7 +432,7 @@ func (ss *ServiceSentinel) worker() {
 			if ss.serviceCurrentStatusData[mh.GetId()][i].GetId() > 0 {
 				if ss.serviceCurrentStatusData[mh.GetId()][i].Successful {
 					ss.serviceResponseDataStoreCurrentUp[mh.GetId()]++
-					ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()] = (ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()]*float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()]-1) + ss.serviceCurrentStatusData[mh.GetId()][i].Delay) / float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()])
+					ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()] = (ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()]*float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()-1]) + ss.serviceCurrentStatusData[mh.GetId()][i].Delay) / float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()])
 				} else {
 					ss.serviceResponseDataStoreCurrentDown[mh.GetId()]++
 				}
@@ -581,7 +613,6 @@ func (ss *ServiceSentinel) worker() {
 			}
 		}
 	}
-}
 
 const (
 	_ = iota
@@ -616,5 +647,77 @@ func StatusCodeToString(statusCode int) string {
 		return Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "StatusDown"})
 	default:
 		return ""
+	}
+}
+
+// cleanupOldData 清理旧的缓存数据以防止内存泄漏
+func (ss *ServiceSentinel) cleanupOldData() {
+	ss.serviceResponseDataStoreLock.Lock()
+	defer ss.serviceResponseDataStoreLock.Unlock()
+	
+	now := time.Now()
+	
+	// 只有超过1小时才进行清理，避免频繁清理
+	if now.Sub(ss.lastCleanupTime) < time.Hour {
+		return
+	}
+	ss.lastCleanupTime = now
+	
+	// 清理SSL证书缓存，只保留最近活跃的监控项
+	for monitorID := range ss.sslCertCache {
+		if _, exists := ss.monitors[monitorID]; !exists {
+			delete(ss.sslCertCache, monitorID)
+		}
+	}
+	
+	// 清理ping数据，限制每个监控项的ping存储
+	for monitorID, pingMap := range ss.serviceResponsePing {
+		if len(pingMap) > 100 { // 限制每个监控项最多100个ping记录
+			// 删除超出限制的ping记录
+			count := 0
+			for reporterID := range pingMap {
+				if count >= 50 { // 只保留最新的50个
+					delete(pingMap, reporterID)
+				}
+				count++
+			}
+		}
+		// 清理不存在的监控项
+		if _, exists := ss.monitors[monitorID]; !exists {
+			delete(ss.serviceResponsePing, monitorID)
+		}
+	}
+	
+	log.Printf("内存清理完成，清理时间：%v", now)
+}
+
+// limitDataSize 限制数据结构的大小以防止无限增长
+func (ss *ServiceSentinel) limitDataSize() {
+	ss.serviceResponseDataStoreLock.Lock()
+	defer ss.serviceResponseDataStoreLock.Unlock()
+	
+	const maxMonitors = 1000 // 最大监控项数量
+	const maxDataPerMonitor = _CurrentStatusSize // 每个监控项最大数据量
+	
+	// 限制服务状态数据的大小
+	if len(ss.serviceCurrentStatusData) > maxMonitors {
+		log.Printf("警告：监控项数量过多（%d），可能存在内存泄漏", len(ss.serviceCurrentStatusData))
+	}
+	
+	// 确保每个监控项的数据不超过限制
+	for monitorID, statusData := range ss.serviceCurrentStatusData {
+		if statusData != nil && len(statusData) > maxDataPerMonitor {
+			// 只保留最新的数据
+			newData := make([]*pb.TaskResult, maxDataPerMonitor)
+			copy(newData, statusData[len(statusData)-maxDataPerMonitor:])
+			ss.serviceCurrentStatusData[monitorID] = newData
+		}
+	}
+	
+	// 清理无效的监控索引
+	for monitorID := range ss.serviceCurrentStatusIndex {
+		if _, exists := ss.monitors[monitorID]; !exists {
+			delete(ss.serviceCurrentStatusIndex, monitorID)
+		}
 	}
 }

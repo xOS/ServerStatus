@@ -82,10 +82,21 @@ func AlertSentinelStart() {
 	time.Sleep(time.Second * 10)
 	var lastPrint time.Time
 	var checkCount uint64
+
+	// 内存清理计时器 - 每小时清理一次
+	lastCleanupTime := time.Now()
+
 	for {
 		startedAt := time.Now()
 		checkStatus()
 		checkCount++
+
+		// 定期清理内存数据
+		if startedAt.Sub(lastCleanupTime) >= time.Hour {
+			cleanupAlertMemoryData()
+			lastCleanupTime = startedAt
+		}
+
 		if lastPrint.Before(startedAt.Add(-1 * time.Hour)) {
 			if Conf.Debug {
 				log.Println("NG>> 报警规则检测每小时", checkCount, "次", startedAt, time.Now())
@@ -460,5 +471,86 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%.1f小时", d.Hours())
 	} else {
 		return fmt.Sprintf("%.1f天", d.Hours()/24)
+	}
+}
+
+// cleanupAlertMemoryData 清理报警系统的内存数据
+func cleanupAlertMemoryData() {
+	AlertsLock.Lock()
+	defer AlertsLock.Unlock()
+
+	const maxHistoryPerAlert = 100 // 每个报警规则最多保留100条历史记录
+	const maxHistoryPerServer = 50  // 每个服务器最多保留50条历史记录
+
+	cleanedAlerts := 0
+	cleanedServers := 0
+
+	// 清理alertsStore中的历史数据
+	for alertID, serverMap := range alertsStore {
+		// 检查报警规则是否还存在
+		alertExists := false
+		for _, alert := range Alerts {
+			if alert.ID == alertID {
+				alertExists = true
+				break
+			}
+		}
+
+		if !alertExists {
+			delete(alertsStore, alertID)
+			delete(alertsPrevState, alertID)
+			delete(AlertsCycleTransferStatsStore, alertID)
+			cleanedAlerts++
+			continue
+		}
+
+		// 清理每个服务器的历史数据
+		for serverID, history := range serverMap {
+			if len(history) > maxHistoryPerServer {
+				// 只保留最新的历史记录
+				alertsStore[alertID][serverID] = history[len(history)-maxHistoryPerServer:]
+				cleanedServers++
+			}
+
+			// 检查服务器是否还存在
+			ServerLock.RLock()
+			serverExists := ServerList[serverID] != nil
+			ServerLock.RUnlock()
+
+			if !serverExists {
+				delete(alertsStore[alertID], serverID)
+				delete(alertsPrevState[alertID], serverID)
+				cleanedServers++
+			}
+		}
+	}
+
+	// 清理AlertsCycleTransferStatsStore中无效的服务器数据
+	for alertID, stats := range AlertsCycleTransferStatsStore {
+		if stats == nil {
+			continue
+		}
+
+		// 清理不存在的服务器
+		for serverID := range stats.Transfer {
+			ServerLock.RLock()
+			serverExists := ServerList[serverID] != nil
+			ServerLock.RUnlock()
+
+			if !serverExists {
+				delete(stats.Transfer, serverID)
+				delete(stats.ServerName, serverID)
+				delete(stats.NextUpdate, serverID)
+			}
+		}
+
+		// 如果所有服务器都被清理了，删除整个统计记录
+		if len(stats.Transfer) == 0 {
+			delete(AlertsCycleTransferStatsStore, alertID)
+		}
+	}
+
+	if Conf.Debug {
+		log.Printf("报警系统内存清理完成: 清理了 %d 个失效报警规则, %d 个服务器历史记录", cleanedAlerts, cleanedServers)
 	}
 }
