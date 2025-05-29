@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
+	
+	"github.com/xos/serverstatus/model"
 )
 
 // GoroutinePool 管理Goroutine池以防止泄漏
