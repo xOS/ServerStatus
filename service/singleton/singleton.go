@@ -38,7 +38,7 @@ func InitTimezoneAndCache() {
 
 	// 启动适度的定期清理任务
 	go func() {
-		ticker := time.NewTicker(20 * time.Minute) // 改为2分钟清理一次
+		ticker := time.NewTicker(30 * time.Minute) // 改为2分钟清理一次
 		defer ticker.Stop()
 
 		for range ticker.C {
@@ -78,8 +78,8 @@ func LoadSingleton() {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 
-		// 更低的内存阈值，160MB就开始清理
-		if m.Alloc > 160*1024*1024 {
+		// 更低的内存阈值，600MB就开始清理
+		if m.Alloc > 600*1024*1024 {
 			log.Printf("内存使用警告: %v MB，开始激进清理", m.Alloc/1024/1024)
 
 			// 立即执行系统清理
@@ -95,8 +95,8 @@ func LoadSingleton() {
 		}
 	})
 
-	// 缓冲池清理任务，改为每30小时执行一次，降低清理频率
-	Cron.AddFunc("0 0 */30 * * *", func() {
+	// 缓冲池清理任务，改为每30分钟执行一次，降低清理频率
+	Cron.AddFunc("0 */30 * * * *", func() {
 		cleanupSystemBuffers()
 
 		// 清理Go内存池
@@ -625,8 +625,8 @@ var (
 
 func NewMemoryMonitor() *MemoryMonitor {
 	return &MemoryMonitor{
-		emergencyThreshold: 300,  // 200MB紧急阈值
-		warningThreshold:   160,  // 160MB警告阈值，与主清理阈值一致
+		emergencyThreshold: 600,  // 200MB紧急阈值
+		warningThreshold:   320,  // 160MB警告阈值，与主清理阈值一致
 		maxGoroutines:      1000, // 提高到最大1000个goroutine
 		isEmergencyMode:    false,
 	}
@@ -731,7 +731,7 @@ func (mm *MemoryMonitor) emergencyCleanup() {
 		if err == nil {
 			sqlDB.SetMaxOpenConns(1) // 紧急状态下只保留1个连接
 			sqlDB.SetMaxIdleConns(0) // 不保留空闲连接
-			sqlDB.SetConnMaxLifetime(1 * time.Minute)
+			sqlDB.SetConnMaxLifetime(10 * time.Minute)
 		}
 	}
 
