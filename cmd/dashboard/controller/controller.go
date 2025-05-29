@@ -491,6 +491,42 @@ func buildTrafficData() []map[string]interface{} {
 		}
 	}
 
+	// 回退机制：如果没有警报规则数据，直接从ServerList获取累积流量数据
+	if len(trafficData) == 0 {
+		singleton.ServerLock.RLock()
+		defer singleton.ServerLock.RUnlock()
+
+		for serverID, server := range singleton.ServerList {
+			if server == nil || !server.IsOnline {
+				continue
+			}
+
+			// 计算总累积流量
+			totalTransfer := server.CumulativeNetInTransfer + server.CumulativeNetOutTransfer
+
+			// 构建回退流量数据项，显示累积流量但没有限额
+			trafficItem := map[string]interface{}{
+				"server_id":       serverID,
+				"server_name":     server.Name,
+				"max_bytes":       uint64(0),  // 没有限额
+				"used_bytes":      totalTransfer,
+				"max_formatted":   "无限制",
+				"used_formatted":  formatBytes(totalTransfer),
+				"used_percent":    float64(0), // 没有限额，使用百分比为0
+				"cycle_name":      "累积流量",
+				"cycle_id":        "fallback",
+				"cycle_start":     server.LastActive.Format(time.RFC3339),
+				"cycle_end":       time.Now().Format(time.RFC3339),
+				"cycle_unit":      "total",
+				"cycle_interval":  0,
+				"is_bytes_source": true,
+				"now":             time.Now().Unix() * 1000,
+			}
+
+			trafficData = append(trafficData, trafficItem)
+		}
+	}
+
 	return trafficData
 }
 

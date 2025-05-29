@@ -292,6 +292,51 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 			}
 		}
 
+		// 回退机制：如果没有警报规则数据，直接从ServerList获取累积流量数据
+		if len(trafficData) == 0 {
+			singleton.ServerLock.RLock()
+			for serverID, server := range singleton.ServerList {
+				if server == nil || !server.IsOnline {
+					continue
+				}
+
+				// 检查当前用户是否有权限查看此服务器
+				serverAuthorized := authorized
+				if !authorized {
+					// 对于未授权用户，检查服务器是否在guest列表中
+					for _, guestServer := range serverList {
+						if guestServer.ID == serverID {
+							serverAuthorized = true
+							break
+						}
+					}
+				}
+
+				if !serverAuthorized {
+					continue
+				}
+
+				// 计算总累积流量
+				totalTransfer := server.CumulativeNetInTransfer + server.CumulativeNetOutTransfer
+
+				// 构建回退流量数据项，显示累积流量但没有限额
+				trafficItem := map[string]interface{}{
+					"server_id":       serverID,
+					"server_name":     server.Name,
+					"max_bytes":       uint64(0),  // 没有限额
+					"used_bytes":      totalTransfer,
+					"max_formatted":   "无限制",
+					"used_formatted":  bytefmt.ByteSize(totalTransfer),
+					"used_percent":    float64(0), // 没有限额，使用百分比为0
+					"cycle_name":      "累积流量",
+					"cycle_id":        "fallback",
+					"is_bytes_source": true,
+				}
+				trafficData = append(trafficData, trafficItem)
+			}
+			singleton.ServerLock.RUnlock()
+		}
+
 		return utils.Json.Marshal(Data{
 			Now:         time.Now().Unix() * 1000,
 			Servers:     servers,
@@ -346,6 +391,52 @@ func (cp *commonPage) home(c *gin.Context) {
 				trafficData = append(trafficData, trafficItem)
 			}
 		}
+	}
+
+	// 回退机制：如果没有警报规则数据，直接从ServerList获取累积流量数据
+	if len(trafficData) == 0 {
+		// 获取当前用户的权限状态
+		_, authorized := c.Get(model.CtxKeyAuthorizedUser)
+		_, isViewPasswordVerified := c.Get(model.CtxKeyViewPasswordVerified)
+		isAuthorized := authorized || isViewPasswordVerified
+
+		// 根据权限获取服务器列表
+		var serverList []*model.Server
+		if isAuthorized {
+			serverList = singleton.SortedServerList
+		} else {
+			serverList = singleton.SortedServerListForGuest
+		}
+
+		singleton.ServerLock.RLock()
+		for _, server := range serverList {
+			if server == nil || !server.IsOnline {
+				continue
+			}
+
+			serverID := server.ID
+			// 检查服务器是否在ServerList中存在
+			if actualServer := singleton.ServerList[serverID]; actualServer != nil {
+				// 计算总累积流量
+				totalTransfer := actualServer.CumulativeNetInTransfer + actualServer.CumulativeNetOutTransfer
+
+				// 构建回退流量数据项，显示累积流量但没有限额
+				trafficItem := map[string]interface{}{
+					"server_id":       serverID,
+					"server_name":     actualServer.Name,
+					"max_bytes":       uint64(0),  // 没有限额
+					"used_bytes":      totalTransfer,
+					"max_formatted":   "无限制",
+					"used_formatted":  bytefmt.ByteSize(totalTransfer),
+					"used_percent":    float64(0), // 没有限额，使用百分比为0
+					"cycle_name":      "累积流量",
+					"cycle_id":        "fallback",
+					"is_bytes_source": true,
+				}
+				trafficData = append(trafficData, trafficItem)
+			}
+		}
+		singleton.ServerLock.RUnlock()
 	}
 
 	trafficDataJSON, _ := utils.Json.Marshal(trafficData)
@@ -761,6 +852,47 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 			}
 		}
 	}
+
+	// 回退机制：如果没有警报规则数据，直接从ServerList获取累积流量数据
+	if len(trafficData) == 0 {
+		// 根据权限获取服务器列表
+		var serverList []*model.Server
+		if isMember || isViewPasswordVerified {
+			serverList = singleton.SortedServerList
+		} else {
+			serverList = singleton.SortedServerListForGuest
+		}
+
+		singleton.ServerLock.RLock()
+		for _, server := range serverList {
+			if server == nil || !server.IsOnline {
+				continue
+			}
+
+			serverID := server.ID
+			// 检查服务器是否在ServerList中存在
+			if actualServer := singleton.ServerList[serverID]; actualServer != nil {
+				// 计算总累积流量
+				totalTransfer := actualServer.CumulativeNetInTransfer + actualServer.CumulativeNetOutTransfer
+
+				// 构建回退流量数据项，显示累积流量但没有限额
+				trafficItem := map[string]interface{}{
+					"server_id":       serverID,
+					"server_name":     actualServer.Name,
+					"max_bytes":       uint64(0),  // 没有限额
+					"used_bytes":      totalTransfer,
+					"max_formatted":   "无限制",
+					"used_formatted":  bytefmt.ByteSize(totalTransfer),
+					"used_percent":    float64(0), // 没有限额，使用百分比为0
+					"cycle_name":      "累积流量",
+					"cycle_id":        "fallback",
+					"is_bytes_source": true,
+				}
+				trafficData = append(trafficData, trafficItem)
+			}
+		}
+		singleton.ServerLock.RUnlock()
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
 		"data": trafficData,
@@ -843,6 +975,27 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 				trafficData = append(trafficData, trafficItem)
 			}
 		}
+	}
+
+	// 回退机制：如果没有警报规则数据，直接从ServerList获取累积流量数据
+	if len(trafficData) == 0 && server != nil {
+		// 计算总累积流量
+		totalTransfer := server.CumulativeNetInTransfer + server.CumulativeNetOutTransfer
+
+		// 构建回退流量数据项，显示累积流量但没有限额
+		trafficItem := map[string]interface{}{
+			"server_id":       serverID,
+			"server_name":     server.Name,
+			"max_bytes":       uint64(0),  // 没有限额
+			"used_bytes":      totalTransfer,
+			"max_formatted":   "无限制",
+			"used_formatted":  bytefmt.ByteSize(totalTransfer),
+			"used_percent":    float64(0), // 没有限额，使用百分比为0
+			"cycle_name":      "累积流量",
+			"cycle_id":        "fallback",
+			"is_bytes_source": true,
+		}
+		trafficData = append(trafficData, trafficItem)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
