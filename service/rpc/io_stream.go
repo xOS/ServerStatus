@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"sync"
@@ -191,6 +192,9 @@ CONNECTED:
 
 	go func() {
 		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("IO stream copy panic恢复: %v", r)
+			}
 			if isDone.CompareAndSwap(false, true) {
 				close(endCh)
 			}
@@ -199,10 +203,19 @@ CONNECTED:
 		bp := bufPool.Get().(*bp)
 		defer bufPool.Put(bp)
 
-		// 使用带超时的复制
+		// 使用带超时的复制和内存限制
 		done := make(chan error, 1)
 		go func() {
-			_, innerErr := io.CopyBuffer(stream.userIo, stream.agentIo, bp.buf)
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("IO copy goroutine panic恢复: %v", r)
+					done <- fmt.Errorf("copy panic: %v", r)
+				}
+			}()
+			
+			// 限制复制的数据量，防止内存泄漏
+			limitedReader := &io.LimitedReader{R: stream.agentIo, N: 100 * 1024 * 1024} // 100MB限制
+			_, innerErr := io.CopyBuffer(stream.userIo, limitedReader, bp.buf)
 			done <- innerErr
 		}()
 
@@ -213,11 +226,16 @@ CONNECTED:
 			}
 		case <-ctx.Done():
 			err = ctx.Err()
+		case <-time.After(30 * time.Second): // 30秒超时
+			err = fmt.Errorf("IO stream copy timeout")
 		}
 	}()
 
 	go func() {
 		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("IO stream copy panic恢复: %v", r)
+			}
 			if isDone.CompareAndSwap(false, true) {
 				close(endCh)
 			}
@@ -226,10 +244,19 @@ CONNECTED:
 		bp := bufPool.Get().(*bp)
 		defer bufPool.Put(bp)
 
-		// 使用带超时的复制
+		// 使用带超时的复制和内存限制
 		done := make(chan error, 1)
 		go func() {
-			_, innerErr := io.CopyBuffer(stream.agentIo, stream.userIo, bp.buf)
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("IO copy goroutine panic恢复: %v", r)
+					done <- fmt.Errorf("copy panic: %v", r)
+				}
+			}()
+			
+			// 限制复制的数据量，防止内存泄漏
+			limitedReader := &io.LimitedReader{R: stream.userIo, N: 100 * 1024 * 1024} // 100MB限制
+			_, innerErr := io.CopyBuffer(stream.agentIo, limitedReader, bp.buf)
 			done <- innerErr
 		}()
 
@@ -240,9 +267,24 @@ CONNECTED:
 			}
 		case <-ctx.Done():
 			err = ctx.Err()
+		case <-time.After(30 * time.Second): // 30秒超时
+			err = fmt.Errorf("IO stream copy timeout")
 		}
 	}()
 
 	<-endCh
 	return err
+}
+
+// 启动定期IO流清理任务
+func (s *ServerHandler) StartIOStreamCleanup() {
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute) // 每5分钟清理一次
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			s.CleanupStaleStreams()
+			cleanupBufferPool() // 清理缓冲池
+		}
+	}()
 }

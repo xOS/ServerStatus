@@ -74,39 +74,45 @@ func main() {
 	singleton.CleanMonitorHistory()
 	go rpc.ServeRPC(singleton.Conf.GRPCPort)
 	serviceSentinelDispatchBus := make(chan model.Monitor)
+	
+	// 修复goroutine泄漏：使用正确的context模式
 	go func() {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			rpc.DispatchTask(serviceSentinelDispatchBus)
-		}
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("DispatchTask goroutine panic恢复: %v", r)
+			}
+		}()
+		rpc.DispatchTask(serviceSentinelDispatchBus)
 	}()
+	
 	go func() {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			rpc.DispatchKeepalive()
-		}
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("DispatchKeepalive goroutine panic恢复: %v", r)
+			}
+		}()
+		rpc.DispatchKeepalive()
 	}()
+	
 	go func() {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			singleton.AlertSentinelStart()
-		}
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("AlertSentinelStart goroutine panic恢复: %v", r)
+			}
+		}()
+		singleton.AlertSentinelStart()
 	}()
+	
 	singleton.NewServiceSentinel(serviceSentinelDispatchBus)
 	srv := controller.ServeWeb(singleton.Conf.HTTPPort)
+	
 	go func() {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			dispatchReportInfoTask()
-		}
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("DispatchReportInfoTask goroutine panic恢复: %v", r)
+			}
+		}()
+		dispatchReportInfoTask()
 	}()
 
 	// 优雅关闭处理

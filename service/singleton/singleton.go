@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"runtime/debug"
+	"sync/atomic"
 	"time"
 
 	"github.com/patrickmn/go-cache"
@@ -71,22 +73,53 @@ func LoadSingleton() {
 		SaveAllTrafficToDB() // 保存流量数据到数据库
 	})
 
-	// 添加内存使用监控任务，每5分钟执行一次
-	Cron.AddFunc("0 */5 * * * *", func() {
+	// 添加内存使用监控任务，每1分钟执行一次，更激进的内存管理
+	Cron.AddFunc("0 */1 * * * *", func() {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
-		if m.Alloc > 500*1024*1024 { // 如果内存使用超过500MB
-			log.Printf("内存使用警告: %v MB", m.Alloc/1024/1024)
-			// 触发GC
+		
+		// 更低的内存阈值，200MB就开始清理
+		if m.Alloc > 200*1024*1024 {
+			log.Printf("内存使用警告: %v MB，开始激进清理", m.Alloc/1024/1024)
+			
+			// 立即执行系统清理
+			cleanupSystemBuffers()
+			
+			// 强制执行多次GC
 			runtime.GC()
+			runtime.GC()
+			
+			// 检查清理后的内存使用
+			runtime.ReadMemStats(&m)
+			log.Printf("清理后内存使用: %v MB", m.Alloc/1024/1024)
 		}
 	})
 
-	// 添加缓冲池清理任务，每30分钟执行一次
-	Cron.AddFunc("0 */30 * * * *", func() {
+	// 缓冲池清理任务，每10分钟执行一次，更频繁的清理
+	Cron.AddFunc("0 */10 * * * *", func() {
 		cleanupSystemBuffers()
-		runtime.GC() // 清理后触发GC
+		
+		// 清理Go内存池
+		debug.FreeOSMemory()
+		runtime.GC()
+		
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		log.Printf("定期清理完成，当前内存使用: %v MB", m.Alloc/1024/1024)
 	})
+
+	// 数据库优化任务，每30分钟执行一次
+	Cron.AddFunc("0 */30 * * * *", func() {
+		OptimizeDatabase()
+		
+		// 输出数据库状态
+		stats := GetDatabaseStats()
+		log.Printf("数据库状态: %+v", stats)
+	})
+
+	// 启动内存监控
+	globalMemoryMonitor = NewMemoryMonitor()
+	globalMemoryMonitor.Start()
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
@@ -102,11 +135,32 @@ func InitConfigFromPath(path string) {
 func InitDBFromPath(path string) {
 	var err error
 	DB, err = gorm.Open(sqlite.Open(path), &gorm.Config{
-		CreateBatchSize: 200,
+		CreateBatchSize: 50, // 减少批处理大小以降低内存使用
+		PrepareStmt:     true, // 启用预处理语句以提高性能
 	})
 	if err != nil {
 		panic(err)
 	}
+	
+	// 配置SQLite连接以优化内存使用
+	sqlDB, err := DB.DB()
+	if err != nil {
+		panic(err)
+	}
+	
+	// 设置严格的连接池限制
+	sqlDB.SetMaxOpenConns(3)                  // 最多3个连接
+	sqlDB.SetMaxIdleConns(1)                  // 最多1个空闲连接
+	sqlDB.SetConnMaxLifetime(2 * time.Minute) // 连接最大生命周期2分钟
+	sqlDB.SetConnMaxIdleTime(30 * time.Second) // 空闲连接最大时间30秒
+	
+	// 执行SQLite优化配置
+	DB.Exec("PRAGMA cache_size = -2000")    // 设置2MB缓存
+	DB.Exec("PRAGMA temp_store = MEMORY")   // 临时表存储在内存中
+	DB.Exec("PRAGMA synchronous = NORMAL")  // 平衡性能和安全
+	DB.Exec("PRAGMA journal_mode = WAL")    // 使用WAL模式提高并发
+	DB.Exec("PRAGMA mmap_size = 67108864")  // 64MB内存映射大小
+	
 	err = DB.AutoMigrate(model.Server{}, model.User{},
 		model.Notification{}, model.AlertRule{}, model.Monitor{},
 		model.MonitorHistory{}, model.Cron{}, model.Transfer{},
@@ -183,7 +237,7 @@ func InitDBFromPath(path string) {
 
 // cleanupSystemBuffers 清理系统缓冲区以释放内存
 func cleanupSystemBuffers() {
-	log.Printf("开始清理系统缓冲区...")
+	log.Printf("开始激进内存清理...")
 	
 	// 清理ServiceSentinel的内存数据
 	if ServiceSentinelShared != nil {
@@ -194,22 +248,31 @@ func cleanupSystemBuffers() {
 	// 清理AlertSentinel的内存数据
 	cleanupAlertMemoryData()
 	
-	// 清理服务器状态中的IO流连接
-	ServerLock.RLock()
-	for _, server := range ServerList {
-		if server != nil && server.TaskStream != nil {
-			// 这里我们不能直接调用CleanupStaleStreams，因为它是ServerHandler的方法
-			// 但我们可以清理一些服务器级别的资源
-		}
-	}
-	ServerLock.RUnlock()
+	// 清理服务器连接和状态
+	CleanupServerState()
 	
 	// 清理缓存过期项
 	if Cache != nil {
-		Cache.DeleteExpired()
+		Cache.Flush() // 完全清空缓存
+		Cache = cache.New(30*time.Second, 1*time.Minute) // 重建更小的缓存
 	}
 	
-	log.Printf("系统缓冲区清理完成")
+	// 清理数据库连接池
+	if DB != nil {
+		sqlDB, err := DB.DB()
+		if err == nil {
+			sqlDB.SetMaxOpenConns(5)  // 减少最大连接数
+			sqlDB.SetMaxIdleConns(2)  // 减少空闲连接数
+			sqlDB.SetConnMaxLifetime(5 * time.Minute) // 减少连接生命周期
+		}
+	}
+	
+	// 强制清理Go运行时内存
+	debug.FreeOSMemory()
+	runtime.GC()
+	runtime.GC() // 连续两次GC确保彻底清理
+	
+	log.Printf("激进内存清理完成")
 }
 
 // RecordTransferHourlyUsage 记录每小时流量使用情况
@@ -239,37 +302,88 @@ func GetTrafficManager() interface{} {
 
 // CleanMonitorHistory 清理无效或过时的监控记录和流量记录
 func CleanMonitorHistory() {
-	// 使用事务确保数据一致性
+	log.Printf("开始清理历史监控数据...")
+	
+	// 使用更小的事务批次和分批处理，避免内存峰值
+	var totalCleaned int64
+	
+	// 分批清理30天前的监控记录
+	batchSize := 1000
+	for {
+		var count int64
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			// 批量删除30天前的监控记录
+			result := tx.Unscoped().Where("created_at < ?", time.Now().AddDate(0, 0, -30)).
+				Limit(batchSize).Delete(&model.MonitorHistory{})
+			if result.Error != nil {
+				return result.Error
+			}
+			count = result.RowsAffected
+			return nil
+		})
+		
+		if err != nil {
+			log.Printf("清理监控历史记录失败: %v", err)
+			break
+		}
+		
+		totalCleaned += count
+		if count < int64(batchSize) {
+			break // 没有更多记录要删除
+		}
+		
+		// 在批次之间稍作休息，减少内存压力
+		time.Sleep(50 * time.Millisecond)
+		runtime.GC() // 强制清理内存
+	}
+	
+	// 分批清理孤立的监控记录
+	for {
+		var count int64
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			result := tx.Unscoped().Where("monitor_id NOT IN (SELECT id FROM monitors)").
+				Limit(batchSize).Delete(&model.MonitorHistory{})
+			if result.Error != nil {
+				return result.Error
+			}
+			count = result.RowsAffected
+			return nil
+		})
+		
+		if err != nil {
+			log.Printf("清理孤立监控记录失败: %v", err)
+			break
+		}
+		
+		totalCleaned += count
+		if count < int64(batchSize) {
+			break
+		}
+		
+		time.Sleep(50 * time.Millisecond)
+		runtime.GC()
+	}
+	
+	// 清理无效的流量记录
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		// 清理30天前的监控记录
-		if err := tx.Unscoped().Delete(&model.MonitorHistory{},
-			"created_at < ? OR monitor_id NOT IN (SELECT `id` FROM monitors)",
-			time.Now().AddDate(0, 0, -30)).Error; err != nil {
-			return err
+		result := tx.Unscoped().Where("server_id NOT IN (SELECT id FROM servers)").
+			Delete(&model.Transfer{})
+		if result.Error != nil {
+			return result.Error
 		}
-
-		// 清理1天前的网络监控记录
-		if err := tx.Unscoped().Delete(&model.MonitorHistory{},
-			"(created_at < ? AND server_id != 0) OR monitor_id NOT IN (SELECT `id` FROM monitors)",
-			time.Now().AddDate(0, 0, -1)).Error; err != nil {
-			return err
-		}
-
-		// 清理无效的流量记录
-		if err := tx.Unscoped().Delete(&model.Transfer{},
-			"server_id NOT IN (SELECT `id` FROM servers)").Error; err != nil {
-			return err
-		}
-
-		// 清理过期的累计流量数据
-		CleanCumulativeTransferData(30)
-
+		totalCleaned += result.RowsAffected
 		return nil
 	})
-
+	
 	if err != nil {
-		log.Printf("清理历史记录失败: %v", err)
+		log.Printf("清理流量记录失败: %v", err)
+	} else {
+		log.Printf("历史数据清理完成，共清理 %d 条记录", totalCleaned)
 	}
+	
+	// 清理后优化数据库
+	DB.Exec("VACUUM")
+	DB.Exec("ANALYZE")
 }
 
 // CleanCumulativeTransferData 清理累计流量数据
@@ -489,4 +603,255 @@ func VerifyTrafficDataConsistency() {
 	}
 
 	// 流量数据一致性验证完成
+}
+
+// MemoryMonitor 激进内存监控器
+type MemoryMonitor struct {
+	ticker             *time.Ticker
+	emergencyThreshold uint64 // 紧急内存阈值(MB)
+	warningThreshold   uint64 // 警告内存阈值(MB)
+	maxGoroutines      int64  // 最大goroutine数量
+	isEmergencyMode    bool
+}
+
+var (
+	memoryPressureLevel int64 // 内存压力等级：0=正常，1=警告，2=严重，3=紧急
+	lastForceGCTime     time.Time
+	goroutineCount      int64
+)
+
+func NewMemoryMonitor() *MemoryMonitor {
+	return &MemoryMonitor{
+		emergencyThreshold: 150,  // 150MB紧急阈值
+		warningThreshold:   100,  // 100MB警告阈值
+		maxGoroutines:      500,  // 最大500个goroutine
+		isEmergencyMode:    false,
+	}
+}
+
+func (mm *MemoryMonitor) Start() {
+	mm.ticker = time.NewTicker(10 * time.Second) // 每10秒检查一次
+	
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("MemoryMonitor panic恢复: %v", r)
+				time.Sleep(5 * time.Second)
+				mm.Start() // 重启监控
+			}
+		}()
+		
+		for range mm.ticker.C {
+			mm.checkMemoryPressure()
+		}
+	}()
+}
+
+func (mm *MemoryMonitor) Stop() {
+	if mm.ticker != nil {
+		mm.ticker.Stop()
+	}
+}
+
+func (mm *MemoryMonitor) checkMemoryPressure() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	
+	currentMemMB := m.Alloc / 1024 / 1024
+	currentGoroutines := int64(runtime.NumGoroutine())
+	atomic.StoreInt64(&goroutineCount, currentGoroutines)
+	
+	// 计算内存压力等级
+	newPressureLevel := int64(0)
+	if currentMemMB > mm.emergencyThreshold {
+		newPressureLevel = 3 // 紧急
+	} else if currentMemMB > mm.warningThreshold {
+		newPressureLevel = 2 // 严重  
+	} else if currentMemMB > mm.warningThreshold/2 {
+		newPressureLevel = 1 // 警告
+	}
+	
+	atomic.StoreInt64(&memoryPressureLevel, newPressureLevel)
+	
+	// 检查是否需要进入紧急模式
+	if newPressureLevel >= 3 || currentGoroutines > mm.maxGoroutines {
+		if !mm.isEmergencyMode {
+			log.Printf("进入内存紧急模式: 内存=%dMB, Goroutines=%d", currentMemMB, currentGoroutines)
+			mm.isEmergencyMode = true
+		}
+		mm.emergencyCleanup()
+	} else if newPressureLevel >= 2 {
+		mm.aggressiveCleanup()
+	} else if newPressureLevel >= 1 {
+		mm.normalCleanup()
+	} else {
+		mm.isEmergencyMode = false
+	}
+	
+	// 限制GC频率，避免过度GC影响性能
+	if time.Since(lastForceGCTime) > 30*time.Second && newPressureLevel > 0 {
+		runtime.GC()
+		debug.FreeOSMemory()
+		lastForceGCTime = time.Now()
+	}
+}
+
+func (mm *MemoryMonitor) emergencyCleanup() {
+	log.Printf("执行紧急内存清理...")
+	
+	// 清空所有缓存
+	if Cache != nil {
+		Cache.Flush()
+		Cache = cache.New(10*time.Second, 20*time.Second) // 极短缓存时间
+	}
+	
+	// 激进清理ServiceSentinel
+	if ServiceSentinelShared != nil {
+		ServiceSentinelShared.limitDataSize() // 使用limitDataSize代替aggressiveCleanup
+		
+		// 强制限制监控数据大小
+		ServiceSentinelShared.serviceResponseDataStoreLock.Lock()
+		for monitorID, statusData := range ServiceSentinelShared.serviceCurrentStatusData {
+			if statusData != nil && len(statusData) > 5 {
+				ServiceSentinelShared.serviceCurrentStatusData[monitorID] = statusData[len(statusData)-5:]
+			}
+		}
+		ServiceSentinelShared.serviceResponseDataStoreLock.Unlock()
+	}
+	
+	// 强制清理报警数据
+	cleanupAlertMemoryData()
+	
+	// 清理数据库连接
+	if DB != nil {
+		sqlDB, err := DB.DB()
+		if err == nil {
+			sqlDB.SetMaxOpenConns(1)  // 紧急状态下只保留1个连接
+			sqlDB.SetMaxIdleConns(0)  // 不保留空闲连接
+			sqlDB.SetConnMaxLifetime(1 * time.Minute)
+		}
+	}
+	
+	// 强制多次GC
+	for i := 0; i < 3; i++ {
+		runtime.GC()
+		time.Sleep(10 * time.Millisecond)
+	}
+	debug.FreeOSMemory()
+	
+	// 设置更严格的GC目标
+	debug.SetGCPercent(50) // 降低GC阈值
+}
+
+func (mm *MemoryMonitor) aggressiveCleanup() {
+	cleanupSystemBuffers()
+	if ServiceSentinelShared != nil {
+		ServiceSentinelShared.limitDataSize()
+	}
+	runtime.GC()
+}
+
+func (mm *MemoryMonitor) normalCleanup() {
+	if Cache != nil {
+		Cache.DeleteExpired()
+	}
+}
+
+// GetMemoryPressureLevel 获取当前内存压力等级
+func GetMemoryPressureLevel() int64 {
+	return atomic.LoadInt64(&memoryPressureLevel)
+}
+
+// GetGoroutineCount 获取当前goroutine数量
+func GetGoroutineCount() int64 {
+	return atomic.LoadInt64(&goroutineCount)
+}
+
+var globalMemoryMonitor *MemoryMonitor
+
+// OptimizeDatabase 优化数据库性能并减少内存占用
+func OptimizeDatabase() {
+	log.Printf("开始数据库优化...")
+	
+	// 检查数据库连接状态
+	sqlDB, err := DB.DB()
+	if err != nil {
+		log.Printf("获取数据库连接失败: %v", err)
+		return
+	}
+	
+	// 获取连接池状态
+	stats := sqlDB.Stats()
+	log.Printf("数据库连接池状态: 打开连接=%d, 使用中=%d, 空闲=%d", 
+		stats.OpenConnections, stats.InUse, stats.Idle)
+	
+	// 执行数据库维护命令
+	maintenanceCommands := []string{
+		"PRAGMA optimize",           // 自动优化查询计划
+		"PRAGMA incremental_vacuum", // 增量清理空闲页面
+		"PRAGMA wal_checkpoint(TRUNCATE)", // 清理WAL文件
+	}
+	
+	for _, cmd := range maintenanceCommands {
+		if err := DB.Exec(cmd).Error; err != nil {
+			log.Printf("执行数据库维护命令 '%s' 失败: %v", cmd, err)
+		}
+	}
+	
+	// 重新分析表统计信息
+	tables := []string{"servers", "monitors", "monitor_histories", "transfers"}
+	for _, table := range tables {
+		DB.Exec("ANALYZE " + table)
+	}
+	
+	// 检查并调整连接池设置（基于内存压力）
+	pressureLevel := GetMemoryPressureLevel()
+	if pressureLevel >= 2 {
+		// 高内存压力下减少连接数
+		sqlDB.SetMaxOpenConns(1)
+		sqlDB.SetMaxIdleConns(0)
+		sqlDB.SetConnMaxLifetime(1 * time.Minute)
+		log.Printf("数据库连接池已调整为内存节约模式")
+	} else if pressureLevel >= 1 {
+		// 中等内存压力
+		sqlDB.SetMaxOpenConns(2)
+		sqlDB.SetMaxIdleConns(1)
+		sqlDB.SetConnMaxLifetime(90 * time.Second)
+	} else {
+		// 正常模式
+		sqlDB.SetMaxOpenConns(3)
+		sqlDB.SetMaxIdleConns(1)
+		sqlDB.SetConnMaxLifetime(2 * time.Minute)
+	}
+	
+	log.Printf("数据库优化完成")
+}
+
+// GetDatabaseStats 获取数据库统计信息用于监控
+func GetDatabaseStats() map[string]interface{} {
+	stats := make(map[string]interface{})
+	
+	sqlDB, err := DB.DB()
+	if err != nil {
+		stats["error"] = err.Error()
+		return stats
+	}
+	
+	dbStats := sqlDB.Stats()
+	stats["open_connections"] = dbStats.OpenConnections
+	stats["in_use"] = dbStats.InUse
+	stats["idle"] = dbStats.Idle
+	stats["wait_count"] = dbStats.WaitCount
+	stats["wait_duration"] = dbStats.WaitDuration.String()
+	stats["max_idle_closed"] = dbStats.MaxIdleClosed
+	stats["max_lifetime_closed"] = dbStats.MaxLifetimeClosed
+	
+	// 获取数据库文件大小（如果可能）
+	var dbSize int64
+	if err := DB.Raw("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()").
+		Scan(&dbSize).Error; err == nil {
+		stats["db_size_mb"] = dbSize / 1024 / 1024
+	}
+	
+	return stats
 }

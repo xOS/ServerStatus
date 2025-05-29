@@ -329,9 +329,16 @@ func (ss *ServiceSentinel) worker() {
 		}
 	}()
 	
-	// 定期清理旧数据
-	cleanupTicker := time.NewTicker(time.Hour)
+	// 定期清理旧数据，更频繁的清理
+	cleanupTicker := time.NewTicker(30 * time.Minute) // 改为30分钟
 	defer cleanupTicker.Stop()
+	
+	// 添加紧急清理触发器
+	emergencyCleanupTicker := time.NewTicker(5 * time.Minute) // 每5分钟检查是否需要紧急清理
+	defer emergencyCleanupTicker.Stop()
+	
+	// 内存压力计数器
+	memoryPressureCounter := 0
 	
 	for {
 		select {
@@ -340,9 +347,28 @@ func (ss *ServiceSentinel) worker() {
 			ss.cleanupOldData()
 			ss.limitDataSize()
 			
+		case <-emergencyCleanupTicker.C:
+			// 检查内存压力，决定是否进行紧急清理
+			if GetMemoryPressureLevel() >= 2 {
+				log.Printf("内存压力较高，ServiceSentinel执行紧急清理")
+				ss.limitDataSize() // 使用limitDataSize代替aggressiveCleanup
+			}
+			
 		case r := <-ss.serviceReportChannel:
 			// 处理服务监控数据
 			ss.handleServiceReport(r)
+			
+			// 动态调整清理频率：如果内存压力高，则更频繁地清理
+			if GetMemoryPressureLevel() >= 1 {
+				// 高内存压力下，每处理100个报告就清理一次
+				memoryPressureCounter++
+				if memoryPressureCounter >= 100 {
+					ss.limitDataSize()
+					memoryPressureCounter = 0
+				}
+			} else {
+				memoryPressureCounter = 0 // 重置计数器
+			}
 		}
 	}
 }
@@ -691,33 +717,99 @@ func (ss *ServiceSentinel) cleanupOldData() {
 	log.Printf("内存清理完成，清理时间：%v", now)
 }
 
-// limitDataSize 限制数据结构的大小以防止无限增长
+// limitDataSize 强制限制数据结构大小，防止内存无限增长
 func (ss *ServiceSentinel) limitDataSize() {
 	ss.serviceResponseDataStoreLock.Lock()
 	defer ss.serviceResponseDataStoreLock.Unlock()
 	
-	const maxMonitors = 1000 // 最大监控项数量
-	const maxDataPerMonitor = _CurrentStatusSize // 每个监控项最大数据量
+	const maxStatusRecords = 5    // 每个监控项最多5条状态记录
+	const maxPingRecords = 10     // 每个监控项最多10条ping记录
+	const maxMonitors = 1000      // 全局最多1000个监控项
 	
-	// 限制服务状态数据的大小
-	if len(ss.serviceCurrentStatusData) > maxMonitors {
-		log.Printf("警告：监控项数量过多（%d），可能存在内存泄漏", len(ss.serviceCurrentStatusData))
-	}
-	
-	// 确保每个监控项的数据不超过限制
+	// 限制状态数据大小
+	totalStatusRecords := 0
 	for monitorID, statusData := range ss.serviceCurrentStatusData {
-		if statusData != nil && len(statusData) > maxDataPerMonitor {
-			// 只保留最新的数据
-			newData := make([]*pb.TaskResult, maxDataPerMonitor)
-			copy(newData, statusData[len(statusData)-maxDataPerMonitor:])
-			ss.serviceCurrentStatusData[monitorID] = newData
+		if statusData != nil {
+			if len(statusData) > maxStatusRecords {
+				// 只保留最新的记录
+				ss.serviceCurrentStatusData[monitorID] = statusData[len(statusData)-maxStatusRecords:]
+			}
+			totalStatusRecords += len(ss.serviceCurrentStatusData[monitorID])
 		}
 	}
 	
-	// 清理无效的监控索引
-	for monitorID := range ss.serviceCurrentStatusIndex {
-		if _, exists := ss.monitors[monitorID]; !exists {
-			delete(ss.serviceCurrentStatusIndex, monitorID)
+	// 如果总记录数过多，清理一些旧监控项
+	if totalStatusRecords > maxMonitors*maxStatusRecords {
+		monitorsToClean := (totalStatusRecords - maxMonitors*maxStatusRecords) / maxStatusRecords
+		count := 0
+		for monitorID := range ss.serviceCurrentStatusData {
+			if count >= monitorsToClean {
+				break
+			}
+			// 检查监控项是否仍然存在
+			if _, exists := ss.monitors[monitorID]; !exists {
+				delete(ss.serviceCurrentStatusData, monitorID)
+				delete(ss.serviceStatusToday, monitorID)
+				delete(ss.serviceResponseDataStoreCurrentUp, monitorID)
+				delete(ss.serviceResponseDataStoreCurrentDown, monitorID)
+				delete(ss.serviceResponseDataStoreCurrentAvgDelay, monitorID)
+				delete(ss.serviceResponsePing, monitorID)
+				delete(ss.lastStatus, monitorID)
+				delete(ss.sslCertCache, monitorID)
+				count++
+			}
 		}
 	}
+	
+	// 限制ping数据大小
+	for monitorID, pingMap := range ss.serviceResponsePing {
+		if len(pingMap) > maxPingRecords {
+			// 清理超出限制的ping记录，保留最新的
+			keys := make([]uint64, 0, len(pingMap))
+			for k := range pingMap {
+				keys = append(keys, k)
+			}
+			
+			// 删除多余的记录
+			for i := maxPingRecords; i < len(keys); i++ {
+				delete(pingMap, keys[i])
+			}
+		}
+		
+		// 如果监控项不存在，删除整个ping映射
+		if _, exists := ss.monitors[monitorID]; !exists {
+			delete(ss.serviceResponsePing, monitorID)
+		}
+	}
+	
+	// 清理月度状态数据中的无效监控项
+	ss.monthlyStatusLock.Lock()
+	for monitorID := range ss.monthlyStatus {
+		if _, exists := ss.monitors[monitorID]; !exists {
+			delete(ss.monthlyStatus, monitorID)
+		}
+	}
+	ss.monthlyStatusLock.Unlock()
+	
+	log.Printf("数据大小限制完成: 状态记录=%d, 监控项=%d", totalStatusRecords, len(ss.serviceCurrentStatusData))
+}
+
+// getMemoryUsageEstimate 估算当前内存使用量（仅用于调试）
+func (ss *ServiceSentinel) getMemoryUsageEstimate() map[string]int {
+	ss.serviceResponseDataStoreLock.RLock()
+	defer ss.serviceResponseDataStoreLock.RUnlock()
+	
+	usage := map[string]int{
+		"status_records":   len(ss.serviceCurrentStatusData),
+		"ping_records":     0,
+		"monthly_records":  len(ss.monthlyStatus),
+		"monitors":         len(ss.monitors),
+		"ssl_cache":        len(ss.sslCertCache),
+	}
+	
+	for _, pingMap := range ss.serviceResponsePing {
+		usage["ping_records"] += len(pingMap)
+	}
+	
+	return usage
 }

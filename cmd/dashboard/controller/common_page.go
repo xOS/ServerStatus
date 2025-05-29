@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -479,45 +481,69 @@ func (cp *commonPage) ws(c *gin.Context) {
 		}, true)
 		return
 	}
-	defer conn.Close()
+	defer func() {
+		conn.Close()
+		// 强制触发GC清理连接相关内存
+		runtime.GC()
+	}()
+	
+	// 设置连接超时和大小限制
+	conn.SetReadLimit(512 * 1024) // 512KB 限制
+	conn.SetPongHandler(func(appData string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+	
+	// 使用context控制连接生命周期
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Minute)
+	defer cancel()
+	
 	count := 0
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
-	// 使用更高频率的单一数据流 - 每秒更新一次
+	// 使用ticker而非sleep循环，减少goroutine占用
 	for {
-		// 获取服务器状态数据
-		stat, err := cp.getServerStat(c, false)
-		if err != nil {
-			time.Sleep(time.Second)
-			continue
-		}
-
-		// 增强数据：添加最新流量信息
-		var data Data
-		if err := utils.Json.Unmarshal(stat, &data); err == nil {
-			// 添加流量数据
-			data.TrafficData = buildTrafficData() // 获取最新周期性流量数据
-
-			// 重新序列化
-			enhancedStat, enhancedErr := utils.Json.Marshal(data)
-			if enhancedErr == nil {
-				stat = enhancedStat
-			}
-		}
-
-		if err := conn.WriteMessage(websocket.TextMessage, stat); err != nil {
-			break
-		}
-
-		count += 1
-		if count%4 == 0 {
-			err = conn.WriteMessage(websocket.PingMessage, []byte{})
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// 获取服务器状态数据
+			stat, err := cp.getServerStat(c, false)
 			if err != nil {
-				break
+				continue
+			}
+
+			// 增强数据：添加最新流量信息
+			var data Data
+			if err := utils.Json.Unmarshal(stat, &data); err == nil {
+				// 添加流量数据
+				data.TrafficData = buildTrafficData() // 获取最新周期性流量数据
+
+				// 重新序列化
+				enhancedStat, enhancedErr := utils.Json.Marshal(data)
+				if enhancedErr == nil {
+					stat = enhancedStat
+				}
+			}
+
+			if err := conn.WriteMessage(websocket.TextMessage, stat); err != nil {
+				return
+			}
+
+			count += 1
+			if count%4 == 0 {
+				err = conn.WriteMessage(websocket.PingMessage, []byte{})
+				if err != nil {
+					return
+				}
+			}
+
+			// 定期强制GC，清理连接相关内存
+			if count%60 == 0 { // 每分钟清理一次
+				runtime.GC()
 			}
 		}
-
-		// 减少更新间隔，提高实时性
-		time.Sleep(time.Second)
 	}
 }
 
@@ -674,7 +700,10 @@ func (cp *commonPage) fm(c *gin.Context) {
 		}, true)
 		return
 	}
-	defer rpc.ServerHandlerSingleton.CloseStream(streamId)
+	defer func() {
+		rpc.ServerHandlerSingleton.CloseStream(streamId)
+		runtime.GC() // 强制GC清理连接内存
+	}()
 
 	wsConn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -690,6 +719,12 @@ func (cp *commonPage) fm(c *gin.Context) {
 		return
 	}
 	defer wsConn.Close()
+	
+	// 设置连接限制和超时
+	wsConn.SetReadLimit(1024 * 1024) // 1MB 限制
+	wsConn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	wsConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	
 	conn := websocketx.NewConn(wsConn)
 
 	// 使用 context 控制 PING 保活 goroutine 的生命周期
@@ -697,6 +732,11 @@ func (cp *commonPage) fm(c *gin.Context) {
 	defer cancel()
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("FM ping goroutine panic: %v", r)
+			}
+		}()
 		// PING 保活
 		ticker := time.NewTicker(time.Second * 10)
 		defer ticker.Stop()
