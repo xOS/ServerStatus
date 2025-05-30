@@ -65,14 +65,25 @@ func AlertSentinelStart() {
 	alertsPrevState = make(map[uint64]map[uint64]uint)
 	AlertsCycleTransferStatsStore = make(map[uint64]*model.CycleTransferStats)
 	AlertsLock.Lock()
-	if err := DB.Find(&Alerts).Error; err != nil {
-		panic(err)
+	
+	// 使用重试机制防止数据库锁定
+	err := executeWithRetry(func() error {
+		return DB.Find(&Alerts).Error
+	})
+	if err != nil {
+		log.Printf("AlertSentinelStart 初始化失败: %v", err)
+		AlertsLock.Unlock()
+		return // 不要panic，而是返回并稍后重试
 	}
+	
 	for _, alert := range Alerts {
 		// 旧版本可能不存在通知组 为其添加默认值
 		if alert.NotificationTag == "" {
 			alert.NotificationTag = "default"
-			DB.Save(alert)
+			// 使用重试机制保存
+			executeWithRetry(func() error {
+				return DB.Save(alert).Error
+			})
 		}
 		alertsStore[alert.ID] = make(map[uint64][][]interface{})
 		alertsPrevState[alert.ID] = make(map[uint64]uint)

@@ -17,7 +17,6 @@ import (
 
 	"github.com/jinzhu/copier"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
-	"gorm.io/gorm"
 
 	"github.com/xos/serverstatus/model"
 	pb "github.com/xos/serverstatus/proto"
@@ -435,23 +434,21 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		}
 		
 		if shouldUpdate {
-			// 使用安全的异步更新，增加重试机制和超时控制
+			// 使用非事务的异步更新，减少锁竞争
 			go func() {
-				maxRetries := 3
-				baseDelay := 100 * time.Millisecond
+				maxRetries := 2  // 减少重试次数
+				baseDelay := 50 * time.Millisecond  // 减少延迟时间
 				
 				for retry := 0; retry < maxRetries; retry++ {
 					startTime := time.Now()
 					
-					// 使用事务和超时控制
-					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					
-					err := singleton.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-						return tx.Model(server).Updates(map[string]interface{}{
-							"last_state_json": server.LastStateJSON,
-							"last_online":     server.LastOnline,
-						}).Error
-					})
+					// 使用超时控制但不使用事务
+					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+						// 直接更新，不使用事务减少锁竞争
+					err := singleton.DB.WithContext(ctx).Model(server).Updates(map[string]interface{}{
+						"last_state_json": server.LastStateJSON,
+						"last_online":     server.LastOnline,
+					}).Error
 					
 					cancel()
 					queryDuration := time.Since(startTime)

@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -163,11 +162,11 @@ func InitDBFromPath(path string) {
 		panic(err)
 	}
 
-	// SQLite特定优化：单连接模式避免锁竞争
-	sqlDB.SetMaxOpenConns(1)                   // SQLite只支持单写，强制单连接
-	sqlDB.SetMaxIdleConns(1)                   // 单个空闲连接
-	sqlDB.SetConnMaxLifetime(1 * time.Hour)    // 延长连接生命周期减少重连
-	sqlDB.SetConnMaxIdleTime(5 * time.Minute)  // 空闲连接保持5分钟
+	// SQLite WAL模式优化：支持多读一写的并发模式
+	sqlDB.SetMaxOpenConns(8)                   // WAL模式支持多个并发连接
+	sqlDB.SetMaxIdleConns(4)                   // 保持4个空闲连接
+	sqlDB.SetConnMaxLifetime(30 * time.Minute) // 30分钟连接生命周期
+	sqlDB.SetConnMaxIdleTime(10 * time.Minute) // 空闲连接保持10分钟
 
 	// SQLite性能和锁管理优化配置
 	DB.Exec("PRAGMA synchronous = NORMAL")        // 平衡性能和安全性
@@ -188,10 +187,14 @@ func InitDBFromPath(path string) {
 	}
 	log.Println("数据库表迁移完成")
 	
-	// 迁移完成后切换到WAL模式
-	DB.Exec("PRAGMA journal_mode = WAL")          // 使用WAL模式，减少锁竞争
-	DB.Exec("PRAGMA wal_autocheckpoint = 2000")   // 增加WAL自动检查点阈值
-	DB.Exec("PRAGMA mmap_size = 134217728")       // 增加到128MB内存映射大小
+	// 迁移完成后切换到WAL模式并优化并发设置
+	DB.Exec("PRAGMA journal_mode = WAL")          // 使用WAL模式，支持多读一写
+	DB.Exec("PRAGMA synchronous = NORMAL")        // 平衡性能和安全性
+	DB.Exec("PRAGMA cache_size = -32000")         // 32MB缓存
+	DB.Exec("PRAGMA temp_store = MEMORY")         // 临时表存储在内存中
+	DB.Exec("PRAGMA mmap_size = 134217728")       // 128MB内存映射
+	DB.Exec("PRAGMA wal_autocheckpoint = 1000")   // WAL文件1000页时自动检查点
+	DB.Exec("PRAGMA busy_timeout = 5000")         // 5秒超时，避免长时间阻塞
 	DB.Exec("PRAGMA threads = 4")                 // 启用多线程支持
 	log.Println("数据库配置完成")
 
@@ -286,8 +289,7 @@ func GetTrafficManager() interface{} {
 	}
 }
 
-// 数据库操作锁 - 全局数据库操作锁
-var dbOperationMutex sync.RWMutex
+// 数据库并发控制 - 移除全局锁，使用SQLite WAL模式的原生并发控制
 
 // isSystemBusy 检查系统是否处于繁忙状态
 func isSystemBusy() bool {
@@ -304,35 +306,56 @@ func isSystemBusy() bool {
 		return true
 	}
 	
-	// 检查是否有其他数据库操作正在进行
-	// 尝试获取锁，如果无法立即获取则说明系统繁忙
-	tryLock := make(chan bool, 1)
-	go func() {
-		dbOperationMutex.RLock()
-		dbOperationMutex.RUnlock()
-		tryLock <- true
-	}()
-	
-	select {
-	case <-tryLock:
-		return false // 能够获取锁，系统不繁忙
-	case <-time.After(100 * time.Millisecond):
-		return true // 100ms内无法获取锁，系统繁忙
+	// 检查数据库连接池状态来判断系统繁忙程度
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return true
 	}
+	
+	stats := sqlDB.Stats()
+	// 如果所有连接都在使用且等待队列不为空，说明系统繁忙
+	if stats.InUse >= stats.OpenConnections && stats.WaitCount > 0 {
+		return true
+	}
+	
+	return false
 }
 
-// executeWithLock 在锁保护下执行数据库操作
-func executeWithLock(operation func() error) error {
-	dbOperationMutex.Lock()
-	defer dbOperationMutex.Unlock()
+// executeWithoutLock 直接执行数据库操作，依赖SQLite WAL模式的并发控制
+func executeWithoutLock(operation func() error) error {
 	return operation()
 }
 
-// executeReadWithLock 在读锁保护下执行数据库读取操作
-func executeReadWithLock(operation func() error) error {
-	dbOperationMutex.RLock()
-	defer dbOperationMutex.RUnlock()
-	return operation()
+// executeWithRetry 带重试机制的数据库操作，用于处理临时的数据库锁定
+func executeWithRetry(operation func() error) error {
+	const maxRetries = 3
+	const baseDelay = 50 * time.Millisecond
+	
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err := operation()
+		if err == nil {
+			return nil
+		}
+		
+		// 检查是否是数据库锁定错误
+		if strings.Contains(err.Error(), "database is locked") || 
+		   strings.Contains(err.Error(), "SQL statements in progress") ||
+		   strings.Contains(err.Error(), "cannot commit transaction") {
+			
+			if attempt < maxRetries-1 {
+				// 指数退避延迟
+				delay := baseDelay * time.Duration(1<<attempt)
+				log.Printf("数据库操作重试 %d/%d，延迟 %v: %v", attempt+1, maxRetries, delay, err)
+				time.Sleep(delay)
+				continue
+			}
+		}
+		
+		// 非数据库锁定错误或已达到最大重试次数
+		return err
+	}
+	
+	return fmt.Errorf("数据库操作在 %d 次重试后失败", maxRetries)
 }
 
 // CleanMonitorHistory 清理无效或过时的监控记录和流量记录
@@ -348,8 +371,8 @@ func CleanMonitorHistory() {
 
 	log.Printf("开始清理历史监控数据...")
 
-	// 使用全局锁执行清理操作，避免并发冲突
-	err := executeWithLock(func() error {
+	// 使用无锁方式执行清理操作，依赖SQLite WAL模式的并发控制
+	err := executeWithoutLock(func() error {
 		var totalCleaned int64
 		batchSize := 20     // 更小的批次大小，避免长时间锁定
 		maxRetries := 3     // 减少重试次数，更快失败
@@ -669,8 +692,8 @@ func SaveAllTrafficToDB() {
 		return
 	}
 
-	// 使用数据库操作锁进行批量更新
-	err := executeWithLock(func() error {
+	// 使用无锁方式进行批量更新，依赖SQLite WAL模式处理并发
+	err := executeWithoutLock(func() error {
 		savedCount := 0
 		maxRetries := 3
 
@@ -921,8 +944,8 @@ func GetGoroutineCount() int64 {
 
 // OptimizeDatabase 优化数据库性能的公共函数
 func OptimizeDatabase() {
-	// 使用数据库操作锁确保不会与其他操作冲突
-	err := executeWithLock(func() error {
+	// 使用无锁方式优化数据库，依赖SQLite WAL模式处理并发
+	err := executeWithoutLock(func() error {
 		optimizeDatabase()
 		return nil
 	})
@@ -969,7 +992,7 @@ func executeDatabaseOperation(operation func() error, operationName string, maxR
 // SafeDatabaseUpdate 安全的数据库更新操作
 func SafeDatabaseUpdate(tableName string, updateData map[string]interface{}, whereClause string, args ...interface{}) error {
 	return executeDatabaseOperation(func() error {
-		return executeWithLock(func() error {
+		return executeWithoutLock(func() error {
 			// 使用事务确保操作的原子性
 			return DB.Transaction(func(tx *gorm.DB) error {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -985,7 +1008,7 @@ func SafeDatabaseUpdate(tableName string, updateData map[string]interface{}, whe
 // SafeDatabaseDelete 安全的数据库删除操作
 func SafeDatabaseDelete(model interface{}, whereClause string, args ...interface{}) error {
 	return executeDatabaseOperation(func() error {
-		return executeWithLock(func() error {
+		return executeWithoutLock(func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			
