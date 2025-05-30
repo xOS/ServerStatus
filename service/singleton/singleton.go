@@ -628,7 +628,7 @@ func NewMemoryMonitor() *MemoryMonitor {
 	return &MemoryMonitor{
 		emergencyThreshold: 800, // 800MB紧急阈值 - 根据用户要求调整
 		warningThreshold:   300, // 300MB警告阈值 - 根据用户要求调整
-		maxGoroutines:      300, // 最大300个goroutine - 保持严格限制
+		maxGoroutines:      300, // 最大300个goroutine - 严格限制
 		isEmergencyMode:    false,
 	}
 }
