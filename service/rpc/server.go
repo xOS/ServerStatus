@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -376,8 +377,8 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		state.NetInTransfer = singleton.ServerList[clientID].CumulativeNetInTransfer
 		state.NetOutTransfer = singleton.ServerList[clientID].CumulativeNetOutTransfer
 
-		// 定期保存到数据库（5分钟间隔），添加查询时间监控
-		if time.Since(singleton.ServerList[clientID].LastFlowSaveTime).Minutes() > 5 {
+		// 定期保存到数据库（10分钟间隔），添加查询时间监控
+		if time.Since(singleton.ServerList[clientID].LastFlowSaveTime).Minutes() > 10 {
 			go func() {
 				startTime := time.Now()
 				updateSQL := "UPDATE servers SET cumulative_net_in_transfer = ?, cumulative_net_out_transfer = ? WHERE id = ?"
@@ -409,25 +410,25 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		singleton.ServerList[clientID].LastStateJSON = string(lastStateJSON)
 		singleton.ServerList[clientID].LastOnline = singleton.ServerList[clientID].LastActive
 
-		// 批量更新策略：只有在状态数据有显著变化或距离上次更新超过5分钟时才写入数据库
+		// 批量更新策略：只有在状态数据有显著变化或距离上次更新超过15分钟时才写入数据库
 		now := time.Now()
 		server := singleton.ServerList[clientID]
 		shouldUpdate := false
 		
 		// 检查是否需要更新数据库：
-		// 1. 首次更新 2. 超过5分钟 3. 服务器状态有重大变化
-		if server.LastDBUpdateTime.IsZero() || now.Sub(server.LastDBUpdateTime) > 5*time.Minute {
+		// 1. 首次更新 2. 超过15分钟 3. 服务器状态有重大变化
+		if server.LastDBUpdateTime.IsZero() || now.Sub(server.LastDBUpdateTime) > 15*time.Minute {
 			shouldUpdate = true
 		} else if server.State != nil {
-			// 检查关键状态变化：CPU、内存、磁盘使用率等
+			// 检查关键状态变化：CPU、内存、磁盘使用率等（进一步提高变化阈值）
 			prevState := server.State
-			if state.CPU != prevState.CPU || 
-			   state.MemUsed != prevState.MemUsed ||
-			   state.SwapUsed != prevState.SwapUsed ||
-			   state.DiskUsed != prevState.DiskUsed ||
-			   state.Load1 != prevState.Load1 {
-				// 状态有显著变化时立即更新（但限制频率为最多每分钟一次）
-				if now.Sub(server.LastDBUpdateTime) > time.Minute {
+			if math.Abs(float64(state.CPU-prevState.CPU)) > 20 ||  // CPU变化超过20%
+			   math.Abs(float64(state.MemUsed-prevState.MemUsed)) > (2*1024*1024*1024) ||  // 内存变化超过2GB
+			   math.Abs(float64(state.SwapUsed-prevState.SwapUsed)) > (1024*1024*1024) ||  // 交换内存变化超过1GB
+			   math.Abs(float64(state.DiskUsed-prevState.DiskUsed)) > (10*1024*1024*1024) || // 磁盘变化超过10GB
+			   math.Abs(float64(state.Load1-prevState.Load1)) > 2.0 { // 负载变化超过2.0
+				// 状态有显著变化时立即更新（但限制频率为最多每5分钟一次）
+				if now.Sub(server.LastDBUpdateTime) > 5*time.Minute {
 					shouldUpdate = true
 				}
 			}

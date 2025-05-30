@@ -169,21 +169,30 @@ func InitDBFromPath(path string) {
 	sqlDB.SetConnMaxIdleTime(5 * time.Minute)  // 空闲连接保持5分钟
 
 	// SQLite性能和锁管理优化配置
-	DB.Exec("PRAGMA synchronous = NORMAL")     // 平衡性能和安全性
-	DB.Exec("PRAGMA cache_size = 10000")       // 增加缓存到10MB
-	DB.Exec("PRAGMA temp_store = memory")      // 临时表存储在内存
-	DB.Exec("PRAGMA journal_mode = WAL")       // 使用WAL模式，减少锁竞争
-	DB.Exec("PRAGMA busy_timeout = 30000")     // 30秒锁等待超时
-	DB.Exec("PRAGMA wal_autocheckpoint = 1000") // WAL自动检查点
-	DB.Exec("PRAGMA mmap_size = 67108864")     // 64MB内存映射大小
-
+	DB.Exec("PRAGMA synchronous = NORMAL")        // 平衡性能和安全性
+	DB.Exec("PRAGMA cache_size = 20000")          // 增加缓存到20MB
+	DB.Exec("PRAGMA temp_store = memory")         // 临时表存储在内存
+	DB.Exec("PRAGMA busy_timeout = 60000")        // 增加到60秒锁等待超时
+	DB.Exec("PRAGMA optimize")                    // 启用查询优化器
+	// 迁移时先使用DELETE模式，避免WAL锁竞争
+	
+	log.Println("开始数据库表迁移...")
 	err = DB.AutoMigrate(model.Server{}, model.User{},
 		model.Notification{}, model.AlertRule{}, model.Monitor{},
 		model.MonitorHistory{}, model.Cron{}, model.Transfer{},
 		model.ApiToken{}, model.NAT{}, model.DDNSProfile{}, model.DDNSRecordState{})
 	if err != nil {
+		log.Printf("数据库迁移失败: %v", err)
 		panic(err)
 	}
+	log.Println("数据库表迁移完成")
+	
+	// 迁移完成后切换到WAL模式
+	DB.Exec("PRAGMA journal_mode = WAL")          // 使用WAL模式，减少锁竞争
+	DB.Exec("PRAGMA wal_autocheckpoint = 2000")   // 增加WAL自动检查点阈值
+	DB.Exec("PRAGMA mmap_size = 134217728")       // 增加到128MB内存映射大小
+	DB.Exec("PRAGMA threads = 4")                 // 启用多线程支持
+	log.Println("数据库配置完成")
 
 	// 检查并添加新字段
 	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {

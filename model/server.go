@@ -35,6 +35,7 @@ type Server struct {
 	// 持久化保存的最后状态
 	LastStateJSON string    `gorm:"type:text" json:"-"` // 最后一次状态的JSON格式
 	LastOnline    time.Time // 最后一次在线时间
+	HostJSON      string    `gorm:"type:text" json:"-"` // 主机信息的JSON格式
 
 	TaskClose     chan error                         `gorm:"-" json:"-"`
 	TaskCloseLock *sync.Mutex                        `gorm:"-" json:"-"`

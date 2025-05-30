@@ -504,10 +504,10 @@ func UpdateServer(s *model.Server) error {
 			server.PrevTransferOutSnapshot = s.PrevTransferOutSnapshot
 		}
 
-		// 定期保存到数据库
+		// 定期保存到数据库（改为10分钟间隔）
 		shouldSave := false
 		if server, ok := ServerList[s.ID]; ok && server != nil {
-			shouldSave = time.Since(server.LastFlowSaveTime).Minutes() > 1
+			shouldSave = time.Since(server.LastFlowSaveTime).Minutes() > 10
 		} else {
 			shouldSave = true // 首次保存
 		}

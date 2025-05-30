@@ -45,8 +45,8 @@ func InitCronTask() {
 		panic(err)
 	}
 
-	// 改为每5分钟保存一次流量数据到数据库，降低频率
-	if _, err := Cron.AddFunc("0 */5 * * * *", SaveAllTrafficToDB); err != nil {
+	// 改为每15分钟保存一次流量数据到数据库，进一步降低频率
+	if _, err := Cron.AddFunc("0 */15 * * * *", SaveAllTrafficToDB); err != nil {
 		panic(err)
 	}
 }
