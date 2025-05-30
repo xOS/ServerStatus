@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -134,6 +136,9 @@ func LoadSingleton() {
 	// 启动内存监控
 	globalMemoryMonitor = NewMemoryMonitor()
 	globalMemoryMonitor.Start()
+
+	// 启动连接池监控
+	StartConnectionPoolMonitor()
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
@@ -163,16 +168,16 @@ func InitDBFromPath(path string) {
 	}
 
 	// SQLite WAL模式优化：支持多读一写的并发模式
-	sqlDB.SetMaxOpenConns(8)                   // WAL模式支持多个并发连接
-	sqlDB.SetMaxIdleConns(4)                   // 保持4个空闲连接
+	sqlDB.SetMaxOpenConns(16)                  // 增加到16个并发连接以减少锁竞争
+	sqlDB.SetMaxIdleConns(8)                   // 保持8个空闲连接
 	sqlDB.SetConnMaxLifetime(30 * time.Minute) // 30分钟连接生命周期
 	sqlDB.SetConnMaxIdleTime(10 * time.Minute) // 空闲连接保持10分钟
 
 	// SQLite性能和锁管理优化配置
 	DB.Exec("PRAGMA synchronous = NORMAL")        // 平衡性能和安全性
-	DB.Exec("PRAGMA cache_size = 20000")          // 增加缓存到20MB
+	DB.Exec("PRAGMA cache_size = -40000")         // 增加缓存到40MB
 	DB.Exec("PRAGMA temp_store = memory")         // 临时表存储在内存
-	DB.Exec("PRAGMA busy_timeout = 60000")        // 增加到60秒锁等待超时
+	DB.Exec("PRAGMA busy_timeout = 10000")        // 增加到10秒锁等待超时
 	DB.Exec("PRAGMA optimize")                    // 启用查询优化器
 	// 迁移时先使用DELETE模式，避免WAL锁竞争
 	
@@ -190,13 +195,21 @@ func InitDBFromPath(path string) {
 	// 迁移完成后切换到WAL模式并优化并发设置
 	DB.Exec("PRAGMA journal_mode = WAL")          // 使用WAL模式，支持多读一写
 	DB.Exec("PRAGMA synchronous = NORMAL")        // 平衡性能和安全性
-	DB.Exec("PRAGMA cache_size = -32000")         // 32MB缓存
+	DB.Exec("PRAGMA cache_size = -40000")         // 40MB缓存
 	DB.Exec("PRAGMA temp_store = MEMORY")         // 临时表存储在内存中
-	DB.Exec("PRAGMA mmap_size = 134217728")       // 128MB内存映射
-	DB.Exec("PRAGMA wal_autocheckpoint = 1000")   // WAL文件1000页时自动检查点
-	DB.Exec("PRAGMA busy_timeout = 5000")         // 5秒超时，避免长时间阻塞
+	DB.Exec("PRAGMA mmap_size = 268435456")       // 增加到256MB内存映射
+	DB.Exec("PRAGMA wal_autocheckpoint = 2000")   // WAL文件2000页时自动检查点，减少检查点频率
+	DB.Exec("PRAGMA busy_timeout = 10000")        // 10秒超时，给更多时间处理锁竞争
 	DB.Exec("PRAGMA threads = 4")                 // 启用多线程支持
+	DB.Exec("PRAGMA wal_checkpoint(PASSIVE)")     // 执行被动检查点
 	log.Println("数据库配置完成")
+	
+	// 启动连接池监控
+	StartConnectionPoolMonitor()
+	LogConnectionPoolStats() // 立即记录一次连接池状态
+	
+	// 预热数据库连接池
+	WarmupDatabase()
 
 	// 检查并添加新字段
 	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {
@@ -328,8 +341,9 @@ func executeWithoutLock(operation func() error) error {
 
 // ExecuteWithRetry 带重试机制的数据库操作，用于处理临时的数据库锁定（导出版本）
 func ExecuteWithRetry(operation func() error) error {
-	const maxRetries = 3
-	const baseDelay = 50 * time.Millisecond
+	const maxRetries = 5                      // 增加重试次数到5次
+	const baseDelay = 25 * time.Millisecond   // 减少基础延迟
+	const maxDelay = 500 * time.Millisecond   // 最大延迟500ms
 	
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		err := operation()
@@ -340,11 +354,19 @@ func ExecuteWithRetry(operation func() error) error {
 		// 检查是否是数据库锁定错误
 		if strings.Contains(err.Error(), "database is locked") || 
 		   strings.Contains(err.Error(), "SQL statements in progress") ||
-		   strings.Contains(err.Error(), "cannot commit transaction") {
+		   strings.Contains(err.Error(), "cannot commit transaction") ||
+		   strings.Contains(err.Error(), "database table is locked") {
 			
 			if attempt < maxRetries-1 {
-				// 指数退避延迟
+				// 更智能的延迟策略：随机化指数退避
 				delay := baseDelay * time.Duration(1<<attempt)
+				if delay > maxDelay {
+					delay = maxDelay
+				}
+				// 添加随机抖动，避免雷群效应
+				jitter := time.Duration(rand.Int63n(int64(delay) / 4))
+				delay += jitter
+				
 				log.Printf("数据库操作重试 %d/%d，延迟 %v: %v", attempt+1, maxRetries, delay, err)
 				time.Sleep(delay)
 				continue
@@ -1093,4 +1115,54 @@ func GetDatabaseStats() map[string]interface{} {
 	}
 
 	return stats
+}
+
+// LogConnectionPoolStats 记录数据库连接池统计信息
+func LogConnectionPoolStats() {
+	if DB != nil {
+		sqlDB, err := DB.DB()
+		if err == nil {
+			stats := sqlDB.Stats()
+			log.Printf("数据库连接池状态: 最大连接=%d, 当前打开=%d, 使用中=%d, 空闲=%d, 等待连接=%d",
+				stats.MaxOpenConnections,
+				stats.OpenConnections,
+				stats.InUse,
+				stats.Idle,
+				stats.WaitCount)
+		}
+	}
+}
+
+// StartConnectionPoolMonitor 启动连接池监控
+func StartConnectionPoolMonitor() {
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			LogConnectionPoolStats()
+		}
+	}()
+}
+
+// WarmupDatabase 预热数据库连接池，减少首次访问时的锁竞争
+func WarmupDatabase() {
+	log.Println("开始数据库连接池预热...")
+	
+	// 预热连接池
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			
+			// 执行简单查询来预热连接
+			var count int64
+			DB.Model(&model.Server{}).Count(&count)
+			log.Printf("预热连接 %d 完成，服务器数量: %d", index, count)
+		}(i)
+	}
+	
+	wg.Wait()
+	log.Println("数据库连接池预热完成")
 }

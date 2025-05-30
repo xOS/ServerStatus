@@ -376,28 +376,32 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		state.NetInTransfer = singleton.ServerList[clientID].CumulativeNetInTransfer
 		state.NetOutTransfer = singleton.ServerList[clientID].CumulativeNetOutTransfer
 
-		// 定期保存到数据库（10分钟间隔），添加查询时间监控
+		// 定期保存到数据库（10分钟间隔），添加查询时间监控，避免并发冲突
 		if time.Since(singleton.ServerList[clientID].LastFlowSaveTime).Minutes() > 10 {
-			go func() {
+			// 使用延迟执行减少同时写入的概率
+			delay := time.Duration(clientID%5) * 100 * time.Millisecond
+			go func(serverID uint64, inTransfer, outTransfer uint64) {
+				time.Sleep(delay) // 错开不同服务器的更新时间
+				
 				startTime := time.Now()
 				updateSQL := "UPDATE servers SET cumulative_net_in_transfer = ?, cumulative_net_out_transfer = ? WHERE id = ?"
 				
 				// 使用重试机制防止数据库锁定
 				err := singleton.ExecuteWithRetry(func() error {
-					return singleton.DB.Exec(updateSQL, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer, clientID).Error
+					return singleton.DB.Exec(updateSQL, inTransfer, outTransfer, serverID).Error
 				})
 				
 				if err == nil {
-					singleton.ServerList[clientID].LastFlowSaveTime = time.Now()
+					singleton.ServerList[serverID].LastFlowSaveTime = time.Now()
 				} else {
-					log.Printf("更新服务器 %d 流量数据失败: %v", clientID, err)
+					log.Printf("更新服务器 %d 流量数据失败: %v", serverID, err)
 				}
 				
 				queryDuration := time.Since(startTime)
 				if queryDuration > 200*time.Millisecond {
-					log.Printf("慢SQL查询警告: 更新服务器 %d 流量数据耗时 %v", clientID, queryDuration)
+					log.Printf("慢SQL查询警告: 更新服务器 %d 流量数据耗时 %v", serverID, queryDuration)
 				}
-			}()
+			}(clientID, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer)
 		}
 	}
 
@@ -443,20 +447,23 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		}
 		
 		if shouldUpdate {
-			// 使用非事务的异步更新，减少锁竞争
-			go func() {
+			// 使用非事务的异步更新，减少锁竞争，并错开更新时间
+			delay := time.Duration(clientID%10) * 50 * time.Millisecond // 错开不同服务器的更新时间
+			go func(serverID uint64, stateJSON string, lastOnline time.Time) {
+				time.Sleep(delay) // 延迟执行以减少并发冲突
+				
 				startTime := time.Now()
 				
 				// 使用重试机制替代手动重试逻辑
 				err := singleton.ExecuteWithRetry(func() error {
 					// 使用超时控制但不使用事务
-					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer cancel()
 					
 					// 直接更新，不使用事务减少锁竞争
-					return singleton.DB.WithContext(ctx).Model(server).Updates(map[string]interface{}{
-						"last_state_json": server.LastStateJSON,
-						"last_online":     server.LastOnline,
+					return singleton.DB.WithContext(ctx).Model(&model.Server{}).Where("id = ?", serverID).Updates(map[string]interface{}{
+						"last_state_json": stateJSON,
+						"last_online":     lastOnline,
 					}).Error
 				})
 				
@@ -465,13 +472,13 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 				if err == nil {
 					// 成功更新
 					if queryDuration > 200*time.Millisecond {
-						log.Printf("慢SQL查询警告: 更新服务器 %d 状态耗时 %v", clientID, queryDuration)
+						log.Printf("慢SQL查询警告: 更新服务器 %d 状态耗时 %v", serverID, queryDuration)
 					}
 					server.LastDBUpdateTime = time.Now()
 				} else {
-					log.Printf("更新服务器 %d 状态到数据库失败: %v", clientID, err)
+					log.Printf("更新服务器 %d 状态到数据库失败: %v", serverID, err)
 				}
-			}()
+			}(clientID, server.LastStateJSON, server.LastOnline)
 		}
 	} else {
 		// 静默处理序列化失败，避免日志干扰
