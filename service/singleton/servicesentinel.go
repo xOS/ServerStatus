@@ -389,13 +389,13 @@ func (ss *ServiceSentinel) worker() {
 			runtime.ReadMemStats(&m)
 			currentMemMB := m.Alloc / 1024 / 1024
 			
-			if currentMemMB > 250 { // 如果内存超过250MB
+			if currentMemMB > 300 { // 如果内存超过300MB
 				log.Printf("ServiceSentinel检测到高内存使用: %dMB，执行清理", currentMemMB)
 				ss.limitDataSize()
 				ss.cleanupOldData()
 				
 				// 如果内存仍然很高，强制GC
-				if currentMemMB > 300 {
+				if currentMemMB > 400 {
 					runtime.GC()
 					runtime.ReadMemStats(&m)
 					log.Printf("强制GC后内存: %dMB", m.Alloc/1024/1024)
@@ -765,11 +765,11 @@ func (ss *ServiceSentinel) cleanupOldData() {
 
 	// 清理ping数据，限制每个监控项的ping存储
 	for monitorID, pingMap := range ss.serviceResponsePing {
-		if len(pingMap) > 100 { // 限制每个监控项最多100个ping记录
+		if len(pingMap) > 120 { // 限制每个监控项最多120个ping记录（从100增加）
 			// 删除超出限制的ping记录
 			count := 0
 			for reporterID := range pingMap {
-				if count >= 50 { // 只保留最新的50个
+				if count >= 60 { // 只保留最新的60个（从50增加）
 					delete(pingMap, reporterID)
 				}
 				count++
@@ -789,9 +789,9 @@ func (ss *ServiceSentinel) limitDataSize() {
 	ss.serviceResponseDataStoreLock.Lock()
 	defer ss.serviceResponseDataStoreLock.Unlock()
 
-	const maxStatusRecords = 5 // 每个监控项最多5条状态记录
-	const maxPingRecords = 10  // 每个监控项最多10条ping记录
-	const maxMonitors = 1000   // 全局最多1000个监控项
+	const maxStatusRecords = 6 // 每个监控项最多6条状态记录（从5增加）
+	const maxPingRecords = 12  // 每个监控项最多12条ping记录（从10增加）
+	const maxMonitors = 1200   // 全局最多1200个监控项（从1000增加）
 
 	// 限制状态数据大小
 	totalStatusRecords := 0

@@ -434,11 +434,11 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		} else if server.State != nil {
 			// 检查关键状态变化：CPU、内存、磁盘使用率等（进一步提高变化阈值）
 			prevState := server.State
-			if math.Abs(float64(state.CPU-prevState.CPU)) > 20 ||  // CPU变化超过20%
-			   math.Abs(float64(state.MemUsed-prevState.MemUsed)) > (2*1024*1024*1024) ||  // 内存变化超过2GB
-			   math.Abs(float64(state.SwapUsed-prevState.SwapUsed)) > (1024*1024*1024) ||  // 交换内存变化超过1GB
-			   math.Abs(float64(state.DiskUsed-prevState.DiskUsed)) > (10*1024*1024*1024) || // 磁盘变化超过10GB
-			   math.Abs(float64(state.Load1-prevState.Load1)) > 2.0 { // 负载变化超过2.0
+			if math.Abs(float64(state.CPU-prevState.CPU)) > 25 ||  // CPU变化超过25%
+			   math.Abs(float64(state.MemUsed-prevState.MemUsed)) > (3*1024*1024*1024) ||  // 内存变化超过3GB
+			   math.Abs(float64(state.SwapUsed-prevState.SwapUsed)) > (1536*1024*1024) ||  // 交换内存变化超过1.5GB
+			   math.Abs(float64(state.DiskUsed-prevState.DiskUsed)) > (12*1024*1024*1024) || // 磁盘变化超过12GB
+			   math.Abs(float64(state.Load1-prevState.Load1)) > 2.5 { // 负载变化超过2.5
 				// 状态有显著变化时立即更新（但限制频率为最多每5分钟一次）
 				if now.Sub(server.LastDBUpdateTime) > 5*time.Minute {
 					shouldUpdate = true

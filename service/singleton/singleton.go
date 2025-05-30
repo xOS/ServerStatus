@@ -40,11 +40,11 @@ func InitTimezoneAndCache() {
 	}
 
 	// 使用合理的缓存时间，并适度调整清理频率
-	Cache = cache.New(5*time.Minute, 10*time.Minute)
+	Cache = cache.New(6*time.Minute, 12*time.Minute) // 增加缓存时间（从5/10分钟增加到6/12分钟）
 
 	// 启动适度的定期清理任务
 	go func() {
-		ticker := time.NewTicker(30 * time.Minute) // 改为2分钟清理一次
+		ticker := time.NewTicker(35 * time.Minute) // 改为35分钟清理一次（从30分钟增加）
 		defer ticker.Stop()
 
 		for range ticker.C {
@@ -155,7 +155,7 @@ func InitConfigFromPath(path string) {
 func InitDBFromPath(path string) {
 	var err error
 	DB, err = gorm.Open(sqlite.Open(path), &gorm.Config{
-		CreateBatchSize: 50,   // 减少批处理大小以降低内存使用
+		CreateBatchSize: 60,   // 增加批处理大小到60（从50增加）
 		PrepareStmt:     true, // 启用预处理语句以提高性能
 	})
 	if err != nil {
@@ -169,14 +169,14 @@ func InitDBFromPath(path string) {
 	}
 
 	// SQLite WAL模式优化：支持多读一写的并发模式
-	sqlDB.SetMaxOpenConns(16)                  // 增加到16个并发连接以减少锁竞争
-	sqlDB.SetMaxIdleConns(8)                   // 保持8个空闲连接
+	sqlDB.SetMaxOpenConns(18)                  // 增加到18个并发连接（从16增加）
+	sqlDB.SetMaxIdleConns(9)                   // 保持9个空闲连接（从8增加）
 	sqlDB.SetConnMaxLifetime(30 * time.Minute) // 30分钟连接生命周期
 	sqlDB.SetConnMaxIdleTime(10 * time.Minute) // 空闲连接保持10分钟
 
 	// SQLite性能和锁管理优化配置
 	DB.Exec("PRAGMA synchronous = NORMAL")        // 平衡性能和安全性
-	DB.Exec("PRAGMA cache_size = -40000")         // 增加缓存到40MB
+	DB.Exec("PRAGMA cache_size = -45000")         // 增加缓存到45MB（从40MB增加）
 	DB.Exec("PRAGMA temp_store = memory")         // 临时表存储在内存
 	DB.Exec("PRAGMA busy_timeout = 10000")        // 增加到10秒锁等待超时
 	DB.Exec("PRAGMA optimize")                    // 启用查询优化器
@@ -198,8 +198,8 @@ func InitDBFromPath(path string) {
 	DB.Exec("PRAGMA synchronous = NORMAL")        // 平衡性能和安全性
 	DB.Exec("PRAGMA cache_size = -40000")         // 40MB缓存
 	DB.Exec("PRAGMA temp_store = MEMORY")         // 临时表存储在内存中
-	DB.Exec("PRAGMA mmap_size = 268435456")       // 增加到256MB内存映射
-	DB.Exec("PRAGMA wal_autocheckpoint = 2000")   // WAL文件2000页时自动检查点，减少检查点频率
+	DB.Exec("PRAGMA mmap_size = 301989888")       // 增加到288MB内存映射（从256MB增加）
+	DB.Exec("PRAGMA wal_autocheckpoint = 2200")   // WAL文件2200页时自动检查点（从2000增加）
 	DB.Exec("PRAGMA busy_timeout = 10000")        // 10秒超时，给更多时间处理锁竞争
 	DB.Exec("PRAGMA threads = 4")                 // 启用多线程支持
 	DB.Exec("PRAGMA wal_checkpoint(PASSIVE)")     // 执行被动检查点
@@ -310,13 +310,13 @@ func isSystemBusy() bool {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	
-	// 检查内存使用是否超过阈值 (300MB)
-	if m.Alloc > 300*1024*1024 {
+	// 检查内存使用是否超过阈值 (800MB)
+	if m.Alloc > 800*1024*1024 {
 		return true
 	}
 	
 	// 检查Goroutine数量是否过多
-	if runtime.NumGoroutine() > 300 {
+	if runtime.NumGoroutine() > 400 {
 		return true
 	}
 	
@@ -408,7 +408,7 @@ func CleanMonitorHistory() {
 	// 使用无锁方式执行清理操作，依赖SQLite WAL模式的并发控制
 	err := executeWithoutLock(func() error {
 		var totalCleaned int64
-		batchSize := 20     // 更小的批次大小，避免长时间锁定
+		batchSize := 25     // 增加批次大小到25（从20增加）
 		maxRetries := 3     // 减少重试次数，更快失败
 		cutoffDate := time.Now().AddDate(0, 0, -30)
 
@@ -836,8 +836,8 @@ var (
 func NewMemoryMonitor() *MemoryMonitor {
 	return &MemoryMonitor{
 		highThreshold:    800, // 800MB高内存阈值 - 根据用户要求调整
-		warningThreshold: 300, // 300MB警告阈值 - 根据用户要求调整
-		maxGoroutines:    300, // 最大300个goroutine - 严格限制
+		warningThreshold: 400, // 400MB警告阈值 - 根据用户要求调整  
+		maxGoroutines:    400, // 最大400个goroutine - 稍微提高限制
 		isHighPressure:   false,
 	}
 }
@@ -886,9 +886,9 @@ func (mm *MemoryMonitor) checkMemoryPressure() {
 
 	atomic.StoreInt64(&memoryPressureLevel, newPressureLevel)
 
-	// 硬性内存限制 - 超过900MB强制退出让systemd重启
-	if currentMemMB > 900 {
-		log.Printf("内存使用超过900MB (%dMB)，程序即将强制退出避免系统崩溃", currentMemMB)
+	// 硬性内存限制 - 超过1000MB强制退出让systemd重启
+	if currentMemMB > 1000 {
+		log.Printf("内存使用超过1000MB (%dMB)，程序即将强制退出避免系统崩溃", currentMemMB)
 		log.Printf("Goroutine数量: %d", currentGoroutines)
 		log.Printf("堆内存: %dMB", m.HeapAlloc/1024/1024)
 		log.Printf("系统内存: %dMB", m.Sys/1024/1024)
