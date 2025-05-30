@@ -47,6 +47,7 @@ type Server struct {
 	CumulativeNetInTransfer  uint64    `gorm:"default:0" json:"cumulative_net_in_transfer"`  // 累计入站使用量
 	CumulativeNetOutTransfer uint64    `gorm:"default:0" json:"cumulative_net_out_transfer"` // 累计出站使用量
 	LastFlowSaveTime         time.Time `gorm:"-" json:"-"`                                   // 最后一次保存流量数据的时间
+	LastDBUpdateTime         time.Time `gorm:"-" json:"-"`                                   // 最后一次数据库更新时间
 }
 
 func (s *Server) CopyFromRunningServer(old *Server) {

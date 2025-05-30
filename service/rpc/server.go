@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,32 @@ import (
 	pb "github.com/xos/serverstatus/proto"
 	"github.com/xos/serverstatus/service/singleton"
 )
+
+// isConnectionError 检查是否为网络连接错误（broken pipe等）
+func isConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	errStr := err.Error()
+	connectionErrors := []string{
+		"broken pipe",
+		"connection reset by peer",
+		"connection refused",
+		"network is unreachable",
+		"no route to host",
+		"connection timed out",
+		"EOF",
+	}
+	
+	for _, connErr := range connectionErrors {
+		if strings.Contains(strings.ToLower(errStr), connErr) {
+			return true
+		}
+	}
+	
+	return false
+}
 
 var ServerHandlerSingleton *ServerHandler
 
@@ -130,7 +157,16 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 		
 		select {
 		case <-ctx.Done():
-			// 连接断开时清理资源
+			// 连接断开时清理资源，增强错误处理
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				// 检查是否为broken pipe或connection reset错误
+				if isConnectionError(ctxErr) {
+					// 静默处理网络连接错误，避免日志干扰
+				} else {
+					log.Printf("RequestTask连接上下文错误: %v", ctxErr)
+				}
+			}
+			
 			singleton.ServerLock.RLock()
 			if singleton.ServerList[clientID] != nil {
 				singleton.ServerList[clientID].TaskCloseLock.Lock()
@@ -312,12 +348,19 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		state.NetInTransfer = singleton.ServerList[clientID].CumulativeNetInTransfer
 		state.NetOutTransfer = singleton.ServerList[clientID].CumulativeNetOutTransfer
 
-		// 定期保存到数据库（5分钟间隔）
+		// 定期保存到数据库（5分钟间隔），添加查询时间监控
 		if time.Since(singleton.ServerList[clientID].LastFlowSaveTime).Minutes() > 5 {
-			updateSQL := "UPDATE servers SET cumulative_net_in_transfer = ?, cumulative_net_out_transfer = ? WHERE id = ?"
-			if err := singleton.DB.Exec(updateSQL, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer, clientID).Error; err == nil {
-				singleton.ServerList[clientID].LastFlowSaveTime = time.Now()
-			}
+			go func() {
+				startTime := time.Now()
+				updateSQL := "UPDATE servers SET cumulative_net_in_transfer = ?, cumulative_net_out_transfer = ? WHERE id = ?"
+				if err := singleton.DB.Exec(updateSQL, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer, clientID).Error; err == nil {
+					singleton.ServerList[clientID].LastFlowSaveTime = time.Now()
+				}
+				queryDuration := time.Since(startTime)
+				if queryDuration > 200*time.Millisecond {
+					log.Printf("慢SQL查询警告: 更新服务器 %d 流量数据耗时 %v", clientID, queryDuration)
+				}
+			}()
 		}
 	}
 
@@ -338,11 +381,47 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		singleton.ServerList[clientID].LastStateJSON = string(lastStateJSON)
 		singleton.ServerList[clientID].LastOnline = singleton.ServerList[clientID].LastActive
 
-		// 立即更新到数据库
-		singleton.DB.Model(singleton.ServerList[clientID]).Updates(map[string]interface{}{
-			"last_state_json": singleton.ServerList[clientID].LastStateJSON,
-			"last_online":     singleton.ServerList[clientID].LastOnline,
-		})
+		// 批量更新策略：只有在状态数据有显著变化或距离上次更新超过5分钟时才写入数据库
+		now := time.Now()
+		server := singleton.ServerList[clientID]
+		shouldUpdate := false
+		
+		// 检查是否需要更新数据库：
+		// 1. 首次更新 2. 超过5分钟 3. 服务器状态有重大变化
+		if server.LastDBUpdateTime.IsZero() || now.Sub(server.LastDBUpdateTime) > 5*time.Minute {
+			shouldUpdate = true
+		} else if server.State != nil {
+			// 检查关键状态变化：CPU、内存、磁盘使用率等
+			prevState := server.State
+			if state.CPU != prevState.CPU || 
+			   state.MemUsed != prevState.MemUsed ||
+			   state.SwapUsed != prevState.SwapUsed ||
+			   state.DiskUsed != prevState.DiskUsed ||
+			   state.Load1 != prevState.Load1 {
+				// 状态有显著变化时立即更新（但限制频率为最多每分钟一次）
+				if now.Sub(server.LastDBUpdateTime) > time.Minute {
+					shouldUpdate = true
+				}
+			}
+		}
+		
+		if shouldUpdate {
+			// 使用异步更新避免阻塞主流程，添加查询时间监控
+			go func() {
+				startTime := time.Now()
+				if err := singleton.DB.Model(server).Updates(map[string]interface{}{
+					"last_state_json": server.LastStateJSON,
+					"last_online":     server.LastOnline,
+				}).Error; err != nil {
+					log.Printf("更新服务器 %d 状态到数据库失败: %v", clientID, err)
+				}
+				queryDuration := time.Since(startTime)
+				if queryDuration > 200*time.Millisecond {
+					log.Printf("慢SQL查询警告: 更新服务器 %d 状态耗时 %v", clientID, queryDuration)
+				}
+			}()
+			server.LastDBUpdateTime = now
+		}
 	} else {
 		// 静默处理序列化失败，避免日志干扰
 	}

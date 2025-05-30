@@ -206,14 +206,21 @@ func CleanupServerState() {
 			server.State = nil
 			server.LastStateBeforeOffline = nil
 			server.TaskStream = nil
+			
+			// 安全关闭通道，防止死锁
 			if server.TaskClose != nil {
-				// 安全关闭通道
-				select {
-				case server.TaskClose <- fmt.Errorf("server state cleanup"):
-				default:
+				server.TaskCloseLock.Lock()
+				if server.TaskClose != nil {
+					// 使用非阻塞发送，避免死锁
+					select {
+					case server.TaskClose <- fmt.Errorf("server state cleanup"):
+					default:
+						// 通道可能已满或已关闭，直接关闭
+					}
+					close(server.TaskClose)
+					server.TaskClose = nil
 				}
-				close(server.TaskClose)
-				server.TaskClose = nil
+				server.TaskCloseLock.Unlock()
 			}
 		}
 
@@ -221,9 +228,11 @@ func CleanupServerState() {
 		if server.IsOnline && now.Sub(server.LastActive) > 5*time.Minute {
 			server.TaskCloseLock.Lock()
 			if server.TaskClose != nil {
+				// 使用非阻塞发送，避免死锁
 				select {
 				case server.TaskClose <- fmt.Errorf("connection timeout"):
 				default:
+					// 通道可能已满或已关闭，直接关闭
 				}
 				close(server.TaskClose)
 				server.TaskClose = nil

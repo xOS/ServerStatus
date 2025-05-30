@@ -221,6 +221,14 @@ func checkStatus() {
 // UpdateTrafficStats 更新服务器流量统计到AlertsCycleTransferStatsStore
 // 这个函数直接更新流量数据，确保前端显示正确
 func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
+	// 修复死锁问题：先获取ServerLock，再获取AlertsLock，确保锁顺序一致
+	ServerLock.RLock()
+	var serverName string
+	if server := ServerList[serverID]; server != nil {
+		serverName = server.Name
+	}
+	ServerLock.RUnlock()
+
 	// 使用轻量级的锁定以提高效率
 	AlertsLock.RLock()
 	defer AlertsLock.RUnlock()
@@ -229,14 +237,6 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 	if len(Alerts) == 0 || AlertsCycleTransferStatsStore == nil {
 		return
 	}
-
-	// 查找服务器名称
-	var serverName string
-	ServerLock.RLock()
-	if server := ServerList[serverID]; server != nil {
-		serverName = server.Name
-	}
-	ServerLock.RUnlock()
 
 	// 流量总计
 	totalTransfer := inTransfer + outTransfer
@@ -286,16 +286,6 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 			}
 		}
 	}
-}
-
-// containsUint64 检查切片中是否包含指定的uint64值
-func containsUint64(slice []uint64, val uint64) bool {
-	for _, item := range slice {
-		if item == val {
-			return true
-		}
-	}
-	return false
 }
 
 // formatBytes 格式化字节大小为易读形式
@@ -394,9 +384,22 @@ func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, 
 				message += fmt.Sprintf("• 进程数过多: %d (阈值: %.0f)\n",
 					server.State.ProcessCount, rule.Max)
 			case ruleType == "offline":
-				lastSeen := time.Unix(int64(server.State.Uptime), 0)
-				message += fmt.Sprintf("• 服务器离线: 最后在线时间 %s\n",
-					lastSeen.Format("2006-01-02 15:04:05"))
+				// 使用正确的最后在线时间字段
+				var lastSeenTime time.Time
+				if !server.LastOnline.IsZero() {
+					lastSeenTime = server.LastOnline
+				} else if !server.LastActive.IsZero() {
+					lastSeenTime = server.LastActive
+				} else {
+					lastSeenTime = time.Now().Add(-24 * time.Hour) // 默认24小时前
+				}
+				
+				// 计算离线时长
+				offlineDuration := time.Since(lastSeenTime)
+				
+				message += fmt.Sprintf("• 服务器离线: 最后在线时间 %s (离线时长: %s)\n",
+					lastSeenTime.Format("2006-01-02 15:04:05"),
+					formatDuration(offlineDuration))
 			default:
 				message += fmt.Sprintf("• %s 超限 (阈值: %.2f)\n", ruleType, rule.Max)
 			}
@@ -486,11 +489,19 @@ func formatDuration(d time.Duration) string {
 
 // cleanupAlertMemoryData 清理报警系统的内存数据
 func cleanupAlertMemoryData() {
+	// 修复死锁问题：先获取ServerLock，再获取AlertsLock，确保锁顺序一致
+	ServerLock.RLock()
+	// 快速复制ServerList避免长时间持有锁
+	activeServerIDs := make(map[uint64]bool)
+	for serverID := range ServerList {
+		activeServerIDs[serverID] = true
+	}
+	ServerLock.RUnlock()
+
 	AlertsLock.Lock()
 	defer AlertsLock.Unlock()
 
 	// 更激进的清理策略，减少历史记录保留数量
-	const maxHistoryPerAlert = 50  // 从100减少到50
 	const maxHistoryPerServer = 20 // 从50减少到20
 
 	cleanedAlerts := 0
@@ -528,12 +539,8 @@ func cleanupAlertMemoryData() {
 				cleanedServers++
 			}
 
-			// 检查服务器是否还存在
-			ServerLock.RLock()
-			serverExists := ServerList[serverID] != nil
-			ServerLock.RUnlock()
-
-			if !serverExists {
+			// 使用复制的ServerList检查服务器是否还存在，避免嵌套锁
+			if !activeServerIDs[serverID] {
 				delete(alertsStore[alertID], serverID)
 				delete(alertsPrevState[alertID], serverID)
 				cleanedServers++
@@ -554,13 +561,9 @@ func cleanupAlertMemoryData() {
 			continue
 		}
 
-		// 清理不存在的服务器
+		// 清理不存在的服务器，使用复制的列表避免嵌套锁
 		for serverID := range stats.Transfer {
-			ServerLock.RLock()
-			serverExists := ServerList[serverID] != nil
-			ServerLock.RUnlock()
-
-			if !serverExists {
+			if !activeServerIDs[serverID] {
 				delete(stats.Transfer, serverID)
 				delete(stats.ServerName, serverID)
 				delete(stats.NextUpdate, serverID)
