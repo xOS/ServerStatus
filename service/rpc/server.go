@@ -381,9 +381,18 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 			go func() {
 				startTime := time.Now()
 				updateSQL := "UPDATE servers SET cumulative_net_in_transfer = ?, cumulative_net_out_transfer = ? WHERE id = ?"
-				if err := singleton.DB.Exec(updateSQL, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer, clientID).Error; err == nil {
+				
+				// 使用重试机制防止数据库锁定
+				err := singleton.ExecuteWithRetry(func() error {
+					return singleton.DB.Exec(updateSQL, singleton.ServerList[clientID].CumulativeNetInTransfer, singleton.ServerList[clientID].CumulativeNetOutTransfer, clientID).Error
+				})
+				
+				if err == nil {
 					singleton.ServerList[clientID].LastFlowSaveTime = time.Now()
+				} else {
+					log.Printf("更新服务器 %d 流量数据失败: %v", clientID, err)
 				}
+				
 				queryDuration := time.Since(startTime)
 				if queryDuration > 200*time.Millisecond {
 					log.Printf("慢SQL查询警告: 更新服务器 %d 流量数据耗时 %v", clientID, queryDuration)
@@ -436,46 +445,31 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		if shouldUpdate {
 			// 使用非事务的异步更新，减少锁竞争
 			go func() {
-				maxRetries := 2  // 减少重试次数
-				baseDelay := 50 * time.Millisecond  // 减少延迟时间
+				startTime := time.Now()
 				
-				for retry := 0; retry < maxRetries; retry++ {
-					startTime := time.Now()
-					
+				// 使用重试机制替代手动重试逻辑
+				err := singleton.ExecuteWithRetry(func() error {
 					// 使用超时控制但不使用事务
 					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-						// 直接更新，不使用事务减少锁竞争
-					err := singleton.DB.WithContext(ctx).Model(server).Updates(map[string]interface{}{
+					defer cancel()
+					
+					// 直接更新，不使用事务减少锁竞争
+					return singleton.DB.WithContext(ctx).Model(server).Updates(map[string]interface{}{
 						"last_state_json": server.LastStateJSON,
 						"last_online":     server.LastOnline,
 					}).Error
-					
-					cancel()
-					queryDuration := time.Since(startTime)
-					
-					if err == nil {
-						// 成功更新
-						if queryDuration > 200*time.Millisecond {
-							log.Printf("慢SQL查询警告: 更新服务器 %d 状态耗时 %v", clientID, queryDuration)
-						}
-						server.LastDBUpdateTime = time.Now()
-						break
+				})
+				
+				queryDuration := time.Since(startTime)
+				
+				if err == nil {
+					// 成功更新
+					if queryDuration > 200*time.Millisecond {
+						log.Printf("慢SQL查询警告: 更新服务器 %d 状态耗时 %v", clientID, queryDuration)
 					}
-					
-					// 检查是否为数据库锁错误
-					if strings.Contains(err.Error(), "database is locked") ||
-					   strings.Contains(err.Error(), "SQL statements in progress") ||
-					   strings.Contains(err.Error(), "cannot commit transaction") {
-						if retry < maxRetries-1 {
-							delay := baseDelay * time.Duration(1<<retry) // 指数退避
-							log.Printf("数据库忙碌，%v 后重试更新服务器 %d 状态 (%d/%d)", delay, clientID, retry+1, maxRetries)
-							time.Sleep(delay)
-							continue
-						}
-					}
-					
+					server.LastDBUpdateTime = time.Now()
+				} else {
 					log.Printf("更新服务器 %d 状态到数据库失败: %v", clientID, err)
-					break
 				}
 			}()
 		}

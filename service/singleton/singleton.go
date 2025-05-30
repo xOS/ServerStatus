@@ -326,8 +326,8 @@ func executeWithoutLock(operation func() error) error {
 	return operation()
 }
 
-// executeWithRetry 带重试机制的数据库操作，用于处理临时的数据库锁定
-func executeWithRetry(operation func() error) error {
+// ExecuteWithRetry 带重试机制的数据库操作，用于处理临时的数据库锁定（导出版本）
+func ExecuteWithRetry(operation func() error) error {
 	const maxRetries = 3
 	const baseDelay = 50 * time.Millisecond
 	
@@ -356,6 +356,11 @@ func executeWithRetry(operation func() error) error {
 	}
 	
 	return fmt.Errorf("数据库操作在 %d 次重试后失败", maxRetries)
+}
+
+// executeWithRetry 带重试机制的数据库操作，用于处理临时的数据库锁定
+func executeWithRetry(operation func() error) error {
+	return ExecuteWithRetry(operation)
 }
 
 // CleanMonitorHistory 清理无效或过时的监控记录和流量记录
