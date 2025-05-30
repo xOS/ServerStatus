@@ -498,18 +498,19 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 			ss.serviceCurrentStatusData[mh.GetId()] = make([]*pb.TaskResult, _CurrentStatusSize)
 		}
 
-		// 边界检查：确保索引不会超出数组范围
-		if ss.serviceCurrentStatusIndex[mh.GetId()].index >= _CurrentStatusSize {
-			ss.serviceCurrentStatusIndex[mh.GetId()].index = 0
-		}
+	// 边界检查：确保索引不会超出当前数组的实际长度
+	currentArrayLength := len(ss.serviceCurrentStatusData[mh.GetId()])
+	if ss.serviceCurrentStatusIndex[mh.GetId()].index >= currentArrayLength {
+		ss.serviceCurrentStatusIndex[mh.GetId()].index = 0
+	}
 
-		ss.serviceCurrentStatusData[mh.GetId()][ss.serviceCurrentStatusIndex[mh.GetId()].index] = mh
-		ss.serviceCurrentStatusIndex[mh.GetId()].index++
-		
-		// 立即检查并重置index以防止越界
-		if ss.serviceCurrentStatusIndex[mh.GetId()].index >= _CurrentStatusSize {
-			ss.serviceCurrentStatusIndex[mh.GetId()].index = 0
-		}
+	ss.serviceCurrentStatusData[mh.GetId()][ss.serviceCurrentStatusIndex[mh.GetId()].index] = mh
+	ss.serviceCurrentStatusIndex[mh.GetId()].index++
+	
+	// 立即检查并重置index以防止越界，使用实际数组长度
+	if ss.serviceCurrentStatusIndex[mh.GetId()].index >= currentArrayLength {
+		ss.serviceCurrentStatusIndex[mh.GetId()].index = 0
+	}
 	}
 
 	// 更新当前状态
@@ -799,6 +800,12 @@ func (ss *ServiceSentinel) limitDataSize() {
 			if len(statusData) > maxStatusRecords {
 				// 只保留最新的记录
 				ss.serviceCurrentStatusData[monitorID] = statusData[len(statusData)-maxStatusRecords:]
+				
+				// 重要：当数组被缩减时，必须重置索引以防止越界
+				if ss.serviceCurrentStatusIndex[monitorID] != nil && 
+				   ss.serviceCurrentStatusIndex[monitorID].index >= maxStatusRecords {
+					ss.serviceCurrentStatusIndex[monitorID].index = 0
+				}
 			}
 			totalStatusRecords += len(ss.serviceCurrentStatusData[monitorID])
 		}
@@ -815,6 +822,7 @@ func (ss *ServiceSentinel) limitDataSize() {
 			// 检查监控项是否仍然存在
 			if _, exists := ss.monitors[monitorID]; !exists {
 				delete(ss.serviceCurrentStatusData, monitorID)
+				delete(ss.serviceCurrentStatusIndex, monitorID) // 清理索引
 				delete(ss.serviceStatusToday, monitorID)
 				delete(ss.serviceResponseDataStoreCurrentUp, monitorID)
 				delete(ss.serviceResponseDataStoreCurrentDown, monitorID)

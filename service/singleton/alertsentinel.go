@@ -193,16 +193,9 @@ func checkStatus() {
 			} else {
 				// 本次通过检查但上一次的状态为失败，则发送恢复通知
 				if alertsPrevState[alert.ID][server.ID] == _RuleCheckFail {
-					message := fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s[%s]"+"\n"+"%s%s",
-						Localizer.MustLocalize(&i18n.LocalizeConfig{
-							MessageID: "Notify",
-						}),
-						Localizer.MustLocalize(&i18n.LocalizeConfig{
-							MessageID: "Resolved",
-						}), server.Name, IPDesensitize(server.Host.IP),
-						Localizer.MustLocalize(&i18n.LocalizeConfig{
-							MessageID: "Rule",
-						}), alert.Name)
+					// 生成详细的恢复消息
+					message := generateDetailedRecoveryMessage(alert, server)
+					
 					SafeSendTriggerTasks(alert.RecoverTriggerTasks, curServer.ID)
 					SafeSendNotification(alert.NotificationTag, message, NotificationMuteLabel.ServerIncidentResolved(alert.ID, server.ID), &curServer)
 					// 清除失败通知的静音缓存
@@ -587,4 +580,64 @@ func cleanupAlertMemoryData() {
 
 	log.Printf("报警系统内存清理完成: 清理了 %d 个失效报警规则, %d 个服务器历史记录, 释放内存 %dMB",
 		cleanedAlerts, cleanedServers, memFreed/1024/1024)
+}
+
+// generateDetailedRecoveryMessage 生成详细的恢复通知消息
+func generateDetailedRecoveryMessage(alert *model.AlertRule, server *model.Server) string {
+	now := time.Now()
+
+	// 基础恢复信息
+	message := fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s[%s]"+"\n"+"服务器ID: %d"+"\n"+"恢复时间: %s"+"\n",
+		Localizer.MustLocalize(&i18n.LocalizeConfig{
+			MessageID: "Notify",
+		}),
+		Localizer.MustLocalize(&i18n.LocalizeConfig{
+			MessageID: "Resolved",
+		}),
+		server.Name, IPDesensitize(server.Host.IP),
+		server.ID,
+		now.Format("2006-01-02 15:04:05"))
+
+	// 添加规则基本信息
+	message += fmt.Sprintf("报警规则: %s\n", alert.Name)
+
+	// 检查是否包含离线规则，如果是则计算离线时长
+	hasOfflineRule := false
+	for _, rule := range alert.Rules {
+		if rule.Type == "offline" {
+			hasOfflineRule = true
+			break
+		}
+	}
+
+	if hasOfflineRule {
+		// 使用正确的最后在线时间字段
+		var lastSeenTime time.Time
+		if !server.LastOnline.IsZero() {
+			lastSeenTime = server.LastOnline
+		} else if !server.LastActive.IsZero() {
+			lastSeenTime = server.LastActive
+		} else {
+			lastSeenTime = now.Add(-time.Hour) // 默认1小时前
+		}
+		
+		// 计算离线时长（从离线到恢复）
+		offlineDuration := now.Sub(lastSeenTime)
+		
+		message += fmt.Sprintf("• 服务器已恢复上线: 上次离线时间 %s (离线时长: %s)\n",
+			lastSeenTime.Format("2006-01-02 15:04:05"),
+			formatDuration(offlineDuration))
+	} else {
+		message += "• 服务器监控指标已恢复正常\n"
+	}
+
+	// 添加当前服务器状态信息
+	if server.State != nil {
+		message += fmt.Sprintf("• 当前状态: CPU %.2f%%, 内存 %.2fMB, 磁盘 %.2fGB\n",
+			server.State.CPU,
+			float64(server.State.MemUsed)/1024/1024,
+			float64(server.State.DiskUsed)/1024/1024/1024)
+	}
+
+	return message
 }

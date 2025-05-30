@@ -82,19 +82,34 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 			// 保存当前服务器状态信息
 			curServer := model.Server{}
 			copier.Copy(&curServer, singleton.ServerList[clientID])
+			
+			// 计算执行时间
+			startTime := time.Now().Add(time.Second * -1 * time.Duration(r.GetDelay()))
+			endTime := time.Now()
+			
 			if cr.PushSuccessful && r.GetSuccessful() {
-				singleton.SendNotification(cr.NotificationTag, fmt.Sprintf("[%s] %s, %s\n%s", singleton.Localizer.MustLocalize(
-					&i18n.LocalizeConfig{
+				message := fmt.Sprintf("[%s]\n任务名称: %s\n执行设备: %s (ID:%d)\n开始时间: %s\n结束时间: %s\n执行结果: 成功\n执行详情:\n%s", 
+					singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
 						MessageID: "ScheduledTaskExecutedSuccessfully",
-					},
-				), cr.Name, singleton.ServerList[clientID].Name, r.GetData()), nil, &curServer)
+					}),
+					cr.Name,
+					singleton.ServerList[clientID].Name, clientID,
+					startTime.Format("2006-01-02 15:04:05"),
+					endTime.Format("2006-01-02 15:04:05"),
+					r.GetData())
+				singleton.SendNotification(cr.NotificationTag, message, nil, &curServer)
 			}
 			if !r.GetSuccessful() {
-				singleton.SendNotification(cr.NotificationTag, fmt.Sprintf("[%s] %s, %s\n%s", singleton.Localizer.MustLocalize(
-					&i18n.LocalizeConfig{
+				message := fmt.Sprintf("[%s]\n任务名称: %s\n执行设备: %s (ID:%d)\n开始时间: %s\n结束时间: %s\n执行结果: 失败\n错误详情:\n%s", 
+					singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
 						MessageID: "ScheduledTaskExecutedFailed",
-					},
-				), cr.Name, singleton.ServerList[clientID].Name, r.GetData()), nil, &curServer)
+					}),
+					cr.Name,
+					singleton.ServerList[clientID].Name, clientID,
+					startTime.Format("2006-01-02 15:04:05"),
+					endTime.Format("2006-01-02 15:04:05"),
+					r.GetData())
+				singleton.SendNotification(cr.NotificationTag, message, nil, &curServer)
 			}
 			singleton.DB.Model(cr).Updates(model.Cron{
 				LastExecutedAt: time.Now().Add(time.Second * -1 * time.Duration(r.GetDelay())),
@@ -521,14 +536,15 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 
 		// 使用IP变更通知的静音标签来实现节流
 		muteLabel := singleton.NotificationMuteLabel.IPChanged(clientID)
+		changeTime := time.Now().Format("2006-01-02 15:04:05")
 		singleton.SendNotification(singleton.Conf.IPChangeNotificationTag,
 			fmt.Sprintf(
-				"[%s] %s, %s => %s",
+				"[%s] %s (ID:%d), %s => %s\n变更时间: %s",
 				singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
 					MessageID: "IPChanged",
 				}),
-				singleton.ServerList[clientID].Name, singleton.IPDesensitize(singleton.ServerList[clientID].Host.IP),
-				singleton.IPDesensitize(host.IP),
+				singleton.ServerList[clientID].Name, clientID, singleton.IPDesensitize(singleton.ServerList[clientID].Host.IP),
+				singleton.IPDesensitize(host.IP), changeTime,
 			),
 			muteLabel)
 	}
