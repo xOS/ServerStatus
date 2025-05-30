@@ -501,7 +501,7 @@ func cleanupAlertMemoryData() {
 	AlertsLock.Lock()
 	defer AlertsLock.Unlock()
 
-	// 更激进的清理策略，减少历史记录保留数量
+	// 温和的清理策略，适度减少历史记录保留数量
 	const maxHistoryPerServer = 20 // 从50减少到20
 
 	cleanedAlerts := 0
@@ -532,7 +532,7 @@ func cleanupAlertMemoryData() {
 
 		// 清理每个服务器的历史数据
 		for serverID, history := range serverMap {
-			// 更激进地清理历史记录
+			// 温和地清理历史记录
 			if len(history) > maxHistoryPerServer {
 				// 只保留最新的历史记录
 				alertsStore[alertID][serverID] = history[len(history)-maxHistoryPerServer:]

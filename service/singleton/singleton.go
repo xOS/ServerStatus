@@ -74,21 +74,22 @@ func LoadSingleton() {
 		SaveAllTrafficToDB() // 保存流量数据到数据库
 	})
 
-	// 添加内存使用监控任务，每1分钟执行一次，更激进的内存管理
+	// 添加内存使用监控任务，每1分钟执行一次，温和的内存管理
 	Cron.AddFunc("0 */1 * * * *", func() {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 
-		// 更低的内存阈值，600MB就开始清理
-		if m.Alloc > 600*1024*1024 {
-			log.Printf("内存使用警告: %v MB，开始激进清理", m.Alloc/1024/1024)
+	// 温和的内存阈值检查，800MB时进行基础清理
+	if m.Alloc > 800*1024*1024 {
+		log.Printf("内存使用提醒: %v MB，执行温和清理", m.Alloc/1024/1024)
 
-			// 立即执行系统清理
-			cleanupSystemBuffers()
-
-			// 强制执行多次GC
-			runtime.GC()
-			runtime.GC()
+		// 执行温和的清理操作
+		if Cache != nil {
+			Cache.DeleteExpired() // 只清理过期项
+		}
+		
+		// 单次GC即可
+		runtime.GC()
 
 			// 检查清理后的内存使用
 			runtime.ReadMemStats(&m)
@@ -96,17 +97,27 @@ func LoadSingleton() {
 		}
 	})
 
-	// 缓冲池清理任务，改为每30分钟执行一次，降低清理频率
-	Cron.AddFunc("0 */30 * * * *", func() {
-		cleanupSystemBuffers()
+	// 定期温和清理任务，改为每小时执行一次
+	Cron.AddFunc("0 0 * * * *", func() {
+		// 执行温和的清理操作
+		if Cache != nil {
+			Cache.DeleteExpired() // 只清理过期项
+		}
 
-		// 清理Go内存池
-		debug.FreeOSMemory()
+		// 清理ServiceSentinel的旧数据
+		if ServiceSentinelShared != nil {
+			ServiceSentinelShared.cleanupOldData()
+		}
+
+		// 清理AlertSentinel的内存数据
+		cleanupAlertMemoryData()
+
+		// 温和的GC
 		runtime.GC()
 
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
-		log.Printf("定期清理完成，当前内存使用: %v MB", m.Alloc/1024/1024)
+		log.Printf("定期温和清理完成，当前内存使用: %v MB", m.Alloc/1024/1024)
 	})
 
 	// 数据库优化任务，改为每1小时执行一次，降低清理频率
@@ -234,49 +245,6 @@ func InitDBFromPath(path string) {
 			}
 		}
 	}
-}
-
-// cleanupSystemBuffers 清理系统缓冲区以释放内存
-func cleanupSystemBuffers() {
-	log.Printf("开始激进内存清理...")
-
-	// 清理ServiceSentinel的内存数据
-	if ServiceSentinelShared != nil {
-		ServiceSentinelShared.cleanupOldData()
-		ServiceSentinelShared.limitDataSize()
-	}
-
-	// 清理AlertSentinel的内存数据
-	cleanupAlertMemoryData()
-
-	// 清理服务器连接和状态
-	CleanupServerState()
-
-	// 适度清理缓存过期项
-	if Cache != nil {
-		Cache.DeleteExpired() // 只删除过期项，不完全清空
-		// 如果缓存项过多，创建新的缓存实例
-		if Cache.ItemCount() > 1000 {
-			Cache = cache.New(5*time.Minute, 10*time.Minute) // 适度的缓存时间
-		}
-	}
-
-	// 适度调整数据库连接池配置
-	if DB != nil {
-		sqlDB, err := DB.DB()
-		if err == nil {
-			sqlDB.SetMaxOpenConns(10)                  // 增加最大连接数
-			sqlDB.SetMaxIdleConns(5)                   // 增加空闲连接数
-			sqlDB.SetConnMaxLifetime(15 * time.Minute) // 增加连接生命周期
-		}
-	}
-
-	// 强制清理Go运行时内存
-	debug.FreeOSMemory()
-	runtime.GC()
-	runtime.GC() // 连续两次GC确保彻底清理
-
-	log.Printf("激进内存清理完成")
 }
 
 // RecordTransferHourlyUsage 记录每小时流量使用情况
@@ -609,13 +577,13 @@ func VerifyTrafficDataConsistency() {
 	// 流量数据一致性验证完成
 }
 
-// MemoryMonitor 激进内存监控器
+// MemoryMonitor 温和内存监控器
 type MemoryMonitor struct {
-	ticker             *time.Ticker
-	emergencyThreshold uint64 // 紧急内存阈值(MB)
-	warningThreshold   uint64 // 警告内存阈值(MB)
-	maxGoroutines      int64  // 最大goroutine数量
-	isEmergencyMode    bool
+	ticker           *time.Ticker
+	highThreshold    uint64 // 高内存阈值(MB)
+	warningThreshold uint64 // 警告内存阈值(MB)
+	maxGoroutines    int64  // 最大goroutine数量
+	isHighPressure   bool
 }
 
 var (
@@ -626,10 +594,10 @@ var (
 
 func NewMemoryMonitor() *MemoryMonitor {
 	return &MemoryMonitor{
-		emergencyThreshold: 800, // 800MB紧急阈值 - 根据用户要求调整
-		warningThreshold:   300, // 300MB警告阈值 - 根据用户要求调整
-		maxGoroutines:      300, // 最大300个goroutine - 严格限制
-		isEmergencyMode:    false,
+		highThreshold:    800, // 800MB高内存阈值 - 根据用户要求调整
+		warningThreshold: 300, // 300MB警告阈值 - 根据用户要求调整
+		maxGoroutines:    300, // 最大300个goroutine - 严格限制
+		isHighPressure:   false,
 	}
 }
 
@@ -667,8 +635,8 @@ func (mm *MemoryMonitor) checkMemoryPressure() {
 
 	// 计算内存压力等级
 	newPressureLevel := int64(0)
-	if currentMemMB > mm.emergencyThreshold {
-		newPressureLevel = 3 // 紧急
+	if currentMemMB > mm.highThreshold {
+		newPressureLevel = 3 // 高压
 	} else if currentMemMB > mm.warningThreshold {
 		newPressureLevel = 2 // 严重
 	} else if currentMemMB > mm.warningThreshold/2 {
@@ -692,19 +660,19 @@ func (mm *MemoryMonitor) checkMemoryPressure() {
 		os.Exit(1)
 	}
 
-	// 检查是否需要进入紧急模式
+	// 检查是否需要进入高压模式
 	if newPressureLevel >= 3 || currentGoroutines > mm.maxGoroutines {
-		if !mm.isEmergencyMode {
-			log.Printf("进入内存紧急模式: 内存=%dMB, Goroutines=%d", currentMemMB, currentGoroutines)
-			mm.isEmergencyMode = true
+		if !mm.isHighPressure {
+			log.Printf("进入内存高压模式: 内存=%dMB, Goroutines=%d", currentMemMB, currentGoroutines)
+			mm.isHighPressure = true
 		}
-		mm.emergencyCleanup()
+		mm.moderateCleanup()
 	} else if newPressureLevel >= 2 {
-		mm.aggressiveCleanup()
+		mm.lightCleanup()
 	} else if newPressureLevel >= 1 {
 		mm.normalCleanup()
 	} else {
-		mm.isEmergencyMode = false
+		mm.isHighPressure = false
 	}
 
 	// 限制GC频率，避免过度GC影响性能
@@ -715,70 +683,39 @@ func (mm *MemoryMonitor) checkMemoryPressure() {
 	}
 }
 
-func (mm *MemoryMonitor) emergencyCleanup() {
-	log.Printf("执行紧急内存清理...")
+func (mm *MemoryMonitor) moderateCleanup() {
+	log.Printf("执行适度内存清理...")
 
-	// 清空所有缓存
+	// 清理过期缓存
 	if Cache != nil {
-		Cache.Flush()
-		Cache = cache.New(10*time.Second, 20*time.Second) // 极短缓存时间
+		Cache.DeleteExpired()
 	}
 
-	// 激进清理ServiceSentinel
+	// 清理ServiceSentinel的旧数据
 	if ServiceSentinelShared != nil {
-		ServiceSentinelShared.limitDataSize() // 使用limitDataSize代替aggressiveCleanup
-
-		// 强制限制监控数据大小
-		ServiceSentinelShared.serviceResponseDataStoreLock.Lock()
-		for monitorID, statusData := range ServiceSentinelShared.serviceCurrentStatusData {
-			if statusData != nil && len(statusData) > 5 {
-				ServiceSentinelShared.serviceCurrentStatusData[monitorID] = statusData[len(statusData)-5:]
-			}
-		}
-		ServiceSentinelShared.serviceResponseDataStoreLock.Unlock()
+		ServiceSentinelShared.cleanupOldData()
 	}
 
-	// 强制清理报警数据
+	// 清理报警数据
 	cleanupAlertMemoryData()
 
-	// 清理数据库连接
-	if DB != nil {
-		sqlDB, err := DB.DB()
-		if err == nil {
-			sqlDB.SetMaxOpenConns(1) // 紧急状态下只保留1个连接
-			sqlDB.SetMaxIdleConns(0) // 不保留空闲连接
-			sqlDB.SetConnMaxLifetime(10 * time.Minute)
-		}
-	}
+	// 适度的GC
+	runtime.GC()
 
-	// 强制清理Goroutine池
-	if NotificationPool != nil {
-		NotificationPool.Clear()
-		NotificationPool.ForceReduceWorkers(2) // 强制减少到2个worker
-	}
-	if TriggerTaskPool != nil {
-		TriggerTaskPool.Clear()
-		TriggerTaskPool.ForceReduceWorkers(1) // 强制减少到1个worker
-	}
-
-	// 强制多次GC
-	for i := 0; i < 5; i++ { // 增加到5次GC
-		runtime.GC()
-		time.Sleep(10 * time.Millisecond)
-	}
-	debug.FreeOSMemory()
-
-	// 设置更严格的GC目标
-	debug.SetGCPercent(20) // 进一步降低GC阈值到20%
-
-	log.Printf("紧急内存清理完成")
+	log.Printf("适度内存清理完成")
 }
 
-func (mm *MemoryMonitor) aggressiveCleanup() {
-	cleanupSystemBuffers()
+func (mm *MemoryMonitor) lightCleanup() {
+	// 轻度清理，只清理过期项
+	if Cache != nil {
+		Cache.DeleteExpired()
+	}
+	
+	// 清理ServiceSentinel
 	if ServiceSentinelShared != nil {
 		ServiceSentinelShared.limitDataSize()
 	}
+	
 	runtime.GC()
 }
 

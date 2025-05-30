@@ -334,9 +334,9 @@ func (ss *ServiceSentinel) worker() {
 	cleanupTicker := time.NewTicker(30 * time.Minute) // 改为30分钟
 	defer cleanupTicker.Stop()
 
-	// 添加紧急清理触发器，降低检查频率
-	emergencyCleanupTicker := time.NewTicker(5 * time.Minute) // 每5分钟检查内存压力
-	defer emergencyCleanupTicker.Stop()
+	// 添加内存压力检查器，每5分钟检查内存压力
+	memoryPressureTicker := time.NewTicker(5 * time.Minute) // 每5分钟检查内存压力
+	defer memoryPressureTicker.Stop()
 
 	// 内存压力计数器
 	memoryPressureCounter := 0
@@ -352,11 +352,11 @@ func (ss *ServiceSentinel) worker() {
 			ss.cleanupOldData()
 			ss.limitDataSize()
 
-		case <-emergencyCleanupTicker.C:
-			// 检查内存压力，决定是否进行紧急清理
+		case <-memoryPressureTicker.C:
+			// 检查内存压力，决定是否进行温和清理
 			if GetMemoryPressureLevel() >= 2 {
-				log.Printf("内存压力较高，ServiceSentinel执行紧急清理")
-				ss.limitDataSize() // 使用limitDataSize代替aggressiveCleanup
+				log.Printf("内存压力较高，ServiceSentinel执行温和清理")
+				ss.limitDataSize()
 			}
 
 		case <-memoryCheckTicker.C:

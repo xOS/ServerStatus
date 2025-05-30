@@ -187,11 +187,22 @@ func printServerLoadSummary() {
 
 // CleanupServerState 清理服务器状态
 func CleanupServerState() {
-	ServerLock.Lock()
-	defer ServerLock.Unlock()
-
+	// 修复死锁问题：先复制需要清理的服务器列表，避免长时间持有ServerLock
+	ServerLock.RLock()
+	var serversToCleanup []*model.Server
 	now := time.Now()
+	
 	for _, server := range ServerList {
+		// 需要清理的条件：长时间离线或长时间未活动
+		if (!server.IsOnline && now.Sub(server.LastActive) > 24*time.Hour) ||
+		   (server.IsOnline && now.Sub(server.LastActive) > 5*time.Minute) {
+			serversToCleanup = append(serversToCleanup, server)
+		}
+	}
+	ServerLock.RUnlock()
+
+	// 处理需要清理的服务器，不持有ServerLock，避免死锁
+	for _, server := range serversToCleanup {
 		// 清理长时间离线的服务器状态
 		if !server.IsOnline && now.Sub(server.LastActive) > 24*time.Hour {
 			// 保存最后状态到数据库
@@ -202,45 +213,224 @@ func CleanupServerState() {
 				}
 			}
 
-			// 清理内存中的状态
+			// 清理内存中的状态（无需锁，因为是单独操作）
 			server.State = nil
 			server.LastStateBeforeOffline = nil
 			server.TaskStream = nil
 			
-			// 安全关闭通道，防止死锁
-			if server.TaskClose != nil {
-				server.TaskCloseLock.Lock()
-				if server.TaskClose != nil {
-					// 使用非阻塞发送，避免死锁
+			// 安全关闭通道，使用异步处理防止死锁
+			if server.TaskClose != nil && server.TaskCloseLock != nil {
+				go func(s *model.Server) {
+					// 使用带超时的锁获取，避免永久阻塞
+					done := make(chan bool, 1)
+					go func() {
+						s.TaskCloseLock.Lock()
+						done <- true
+					}()
+					
 					select {
-					case server.TaskClose <- fmt.Errorf("server state cleanup"):
-					default:
-						// 通道可能已满或已关闭，直接关闭
+					case <-done:
+						defer s.TaskCloseLock.Unlock()
+						if s.TaskClose != nil {
+							// 使用非阻塞发送，避免死锁
+							select {
+							case s.TaskClose <- fmt.Errorf("server state cleanup"):
+							default:
+								// 通道可能已满或已关闭，直接关闭
+							}
+							close(s.TaskClose)
+							s.TaskClose = nil
+						}
+					case <-time.After(100 * time.Millisecond):
+						// 超时后跳过这次清理
+						return
 					}
-					close(server.TaskClose)
-					server.TaskClose = nil
-				}
-				server.TaskCloseLock.Unlock()
+				}(server)
 			}
 		}
 
 		// 清理长时间未活动的连接
 		if server.IsOnline && now.Sub(server.LastActive) > 5*time.Minute {
-			server.TaskCloseLock.Lock()
-			if server.TaskClose != nil {
-				// 使用非阻塞发送，避免死锁
-				select {
-				case server.TaskClose <- fmt.Errorf("connection timeout"):
-				default:
-					// 通道可能已满或已关闭，直接关闭
+			// 使用异步处理防止死锁
+			if server.TaskCloseLock != nil {
+				go func(s *model.Server) {
+					// 使用带超时的锁获取，避免永久阻塞
+					done := make(chan bool, 1)
+					go func() {
+						s.TaskCloseLock.Lock()
+						done <- true
+					}()
+					
+					select {
+					case <-done:
+						defer s.TaskCloseLock.Unlock()
+						if s.TaskClose != nil {
+							// 使用非阻塞发送，避免死锁
+							select {
+							case s.TaskClose <- fmt.Errorf("connection timeout"):
+							default:
+								// 通道可能已满或已关闭，直接关闭
+							}
+							close(s.TaskClose)
+							s.TaskClose = nil
+						}
+						s.TaskStream = nil
+					case <-time.After(100 * time.Millisecond):
+						// 超时后跳过这次清理
+						return
+					}
+				}(server)
+			}
+		}
+	}
+}
+
+// SafeCleanupServerState 安全的、同步的服务器状态清理函数
+// 这个函数专门设计为防死锁，使用超时机制和非阻塞操作
+func SafeCleanupServerState() {
+	log.Printf("开始安全服务器状态清理...")
+	
+	// 使用带超时的Server锁获取
+	type lockResult struct {
+		acquired bool
+		servers  []*model.Server
+	}
+	
+	lockCh := make(chan lockResult, 1)
+	
+	// 尝试获取锁的goroutine
+	go func() {
+		result := lockResult{acquired: false}
+		
+		// 尝试在500ms内获取锁
+		done := make(chan bool, 1)
+		go func() {
+			ServerLock.RLock()
+			done <- true
+		}()
+		
+		select {
+		case <-done:
+			// 成功获取锁，快速复制服务器列表
+			defer ServerLock.RUnlock()
+			
+			now := time.Now()
+			for _, server := range ServerList {
+				if server != nil && 
+				   ((!server.IsOnline && now.Sub(server.LastActive) > 12*time.Hour) ||
+					(server.IsOnline && now.Sub(server.LastActive) > 3*time.Minute)) {
+					result.servers = append(result.servers, server)
 				}
+			}
+			result.acquired = true
+			
+		case <-time.After(500 * time.Millisecond):
+			// 超时，跳过这次清理
+			log.Printf("SafeCleanupServerState: 获取ServerLock超时，跳过清理")
+		}
+		
+		lockCh <- result
+	}()
+	
+	// 等待锁获取结果
+	select {
+	case result := <-lockCh:
+		if !result.acquired {
+			log.Printf("SafeCleanupServerState: 无法获取锁，清理跳过")
+			return
+		}
+		
+		log.Printf("SafeCleanupServerState: 发现 %d 个需要清理的服务器", len(result.servers))
+		
+		// 同步清理每个服务器，使用超时保护
+		cleanedCount := 0
+		skippedCount := 0
+		
+		for _, server := range result.servers {
+			cleaned := cleanupSingleServerState(server)
+			if cleaned {
+				cleanedCount++
+			} else {
+				skippedCount++
+			}
+		}
+		
+		log.Printf("SafeCleanupServerState: 清理完成，成功清理 %d 个，跳过 %d 个", cleanedCount, skippedCount)
+		
+	case <-time.After(1 * time.Second):
+		log.Printf("SafeCleanupServerState: 整体操作超时")
+	}
+}
+
+// cleanupSingleServerState 清理单个服务器状态的同步函数
+func cleanupSingleServerState(server *model.Server) bool {
+	if server == nil {
+		return false
+	}
+	
+	now := time.Now()
+	cleaned := false
+	
+	// 清理长时间离线的服务器状态
+	if !server.IsOnline && now.Sub(server.LastActive) > 12*time.Hour {
+		// 保存最后状态到数据库（非阻塞）
+		if server.State != nil {
+			if lastStateJSON, err := utils.Json.Marshal(server.State); err == nil {
+				// 使用非阻塞的数据库更新
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							log.Printf("保存服务器状态时panic: %v", r)
+						}
+					}()
+					DB.Model(server).Update("last_state_json", string(lastStateJSON))
+				}()
+			}
+		}
+		
+		// 清理内存状态
+		server.State = nil
+		server.LastStateBeforeOffline = nil
+		cleaned = true
+	}
+	
+	// 清理任务连接（使用超时锁）
+	if server.TaskCloseLock != nil {
+		lockAcquired := make(chan bool, 1)
+		
+		// 尝试获取TaskCloseLock
+		go func() {
+			server.TaskCloseLock.Lock()
+			lockAcquired <- true
+		}()
+		
+		select {
+		case <-lockAcquired:
+			defer server.TaskCloseLock.Unlock()
+			
+			if server.TaskClose != nil {
+				// 非阻塞发送关闭信号
+				select {
+				case server.TaskClose <- fmt.Errorf("safe cleanup"):
+					log.Printf("向服务器 %s 发送关闭信号", server.Name)
+				default:
+					log.Printf("服务器 %s 的任务通道已满或已关闭，直接关闭", server.Name)
+				}
+				
+				// 安全关闭通道
 				close(server.TaskClose)
 				server.TaskClose = nil
 			}
+			
 			server.TaskStream = nil
-			server.TaskCloseLock.Unlock()
+			cleaned = true
+			
+		case <-time.After(100 * time.Millisecond):
+			log.Printf("获取服务器 %s 的TaskCloseLock超时，跳过任务清理", server.Name)
 		}
 	}
+	
+	return cleaned
 }
 
 // UpdateServer 更新服务器信息
