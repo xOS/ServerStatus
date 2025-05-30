@@ -1,11 +1,13 @@
 package singleton
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -154,24 +156,26 @@ func InitDBFromPath(path string) {
 		panic(err)
 	}
 
-	// 配置SQLite连接以优化内存使用
+	// 配置SQLite连接以避免锁死问题
 	sqlDB, err := DB.DB()
 	if err != nil {
 		panic(err)
 	}
 
-	// 设置严格的连接池限制
-	sqlDB.SetMaxOpenConns(3)                   // 最多3个连接
-	sqlDB.SetMaxIdleConns(1)                   // 最多1个空闲连接
-	sqlDB.SetConnMaxLifetime(2 * time.Minute)  // 连接最大生命周期2分钟
-	sqlDB.SetConnMaxIdleTime(30 * time.Second) // 空闲连接最大时间30秒
+	// SQLite特定优化：单连接模式避免锁竞争
+	sqlDB.SetMaxOpenConns(1)                   // SQLite只支持单写，强制单连接
+	sqlDB.SetMaxIdleConns(1)                   // 单个空闲连接
+	sqlDB.SetConnMaxLifetime(1 * time.Hour)    // 延长连接生命周期减少重连
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)  // 空闲连接保持5分钟
 
-	// 执行SQLite优化配置
-	DB.Exec("PRAGMA cache_size = -2000")   // 设置2MB缓存
-	DB.Exec("PRAGMA temp_store = MEMORY")  // 临时表存储在内存中
-	DB.Exec("PRAGMA synchronous = NORMAL") // 平衡性能和安全
-	DB.Exec("PRAGMA journal_mode = WAL")   // 使用WAL模式提高并发
-	DB.Exec("PRAGMA mmap_size = 67108864") // 64MB内存映射大小
+	// SQLite性能和锁管理优化配置
+	DB.Exec("PRAGMA synchronous = NORMAL")     // 平衡性能和安全性
+	DB.Exec("PRAGMA cache_size = 10000")       // 增加缓存到10MB
+	DB.Exec("PRAGMA temp_store = memory")      // 临时表存储在内存
+	DB.Exec("PRAGMA journal_mode = WAL")       // 使用WAL模式，减少锁竞争
+	DB.Exec("PRAGMA busy_timeout = 30000")     // 30秒锁等待超时
+	DB.Exec("PRAGMA wal_autocheckpoint = 1000") // WAL自动检查点
+	DB.Exec("PRAGMA mmap_size = 67108864")     // 64MB内存映射大小
 
 	err = DB.AutoMigrate(model.Server{}, model.User{},
 		model.Notification{}, model.AlertRule{}, model.Monitor{},
@@ -276,23 +280,62 @@ func GetTrafficManager() interface{} {
 func CleanMonitorHistory() {
 	log.Printf("开始清理历史监控数据...")
 
-	// 使用更小的事务批次和分批处理，避免内存峰值
-	var totalCleaned int64
+	// 检查是否有其他重要操作正在进行
+	if isSystemBusy() {
+		log.Printf("系统繁忙，延迟历史数据清理")
+		// 延迟30分钟后重试
+		time.AfterFunc(30*time.Minute, func() {
+			CleanMonitorHistory()
+		})
+		return
+	}
 
-	// 分批清理30天前的监控记录
-	batchSize := 1000
+	// 使用更小的批次和重试机制，避免锁死
+	var totalCleaned int64
+	batchSize := 500    // 减小批次大小
+	maxRetries := 3     // 最大重试次数
+
+	// 分批清理30天前的监控记录，增加重试机制
 	for {
 		var count int64
-		err := DB.Transaction(func(tx *gorm.DB) error {
-			// 批量删除30天前的监控记录
-			result := tx.Unscoped().Where("created_at < ?", time.Now().AddDate(0, 0, -30)).
-				Limit(batchSize).Delete(&model.MonitorHistory{})
-			if result.Error != nil {
-				return result.Error
+		var err error
+		
+		// 重试机制处理数据库锁
+		for retry := 0; retry < maxRetries; retry++ {
+			err = DB.Transaction(func(tx *gorm.DB) error {
+				// 设置事务超时
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				
+				result := tx.WithContext(ctx).Unscoped().Where("created_at < ?", time.Now().AddDate(0, 0, -30)).
+					Limit(batchSize).Delete(&model.MonitorHistory{})
+					
+				if result.Error != nil {
+					return result.Error
+				}
+				count = result.RowsAffected
+				return nil
+			})
+			
+			if err == nil {
+				break // 成功，退出重试循环
 			}
-			count = result.RowsAffected
-			return nil
-		})
+			
+			// 检查是否为数据库锁错误
+			if strings.Contains(err.Error(), "database is locked") || 
+			   strings.Contains(err.Error(), "SQL statements in progress") ||
+			   strings.Contains(err.Error(), "cannot commit transaction") {
+				if retry < maxRetries-1 {
+					backoffDelay := time.Duration(retry+1) * 2 * time.Second
+					log.Printf("数据库忙碌，%v 后重试历史数据清理 (%d/%d)", backoffDelay, retry+1, maxRetries)
+					time.Sleep(backoffDelay)
+					continue
+				}
+			}
+			
+			log.Printf("清理监控历史记录失败: %v", err)
+			break
+		}
 
 		if err != nil {
 			log.Printf("清理监控历史记录失败: %v", err)
@@ -304,23 +347,46 @@ func CleanMonitorHistory() {
 			break // 没有更多记录要删除
 		}
 
-		// 在批次之间稍作休息，减少内存压力
-		time.Sleep(50 * time.Millisecond)
-		runtime.GC() // 强制清理内存
+		// 增加批次间隔，减少数据库压力
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	// 分批清理孤立的监控记录
 	for {
 		var count int64
-		err := DB.Transaction(func(tx *gorm.DB) error {
-			result := tx.Unscoped().Where("monitor_id NOT IN (SELECT id FROM monitors)").
-				Limit(batchSize).Delete(&model.MonitorHistory{})
-			if result.Error != nil {
-				return result.Error
+		var err error
+
+		for retry := 0; retry < maxRetries; retry++ {
+			err = DB.Transaction(func(tx *gorm.DB) error {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				
+				result := tx.WithContext(ctx).Unscoped().Where("monitor_id NOT IN (SELECT id FROM monitors)").
+					Limit(batchSize).Delete(&model.MonitorHistory{})
+				if result.Error != nil {
+					return result.Error
+				}
+				count = result.RowsAffected
+				return nil
+			})
+
+			if err == nil {
+				break
 			}
-			count = result.RowsAffected
-			return nil
-		})
+
+			if strings.Contains(err.Error(), "database is locked") || 
+			   strings.Contains(err.Error(), "SQL statements in progress") {
+				if retry < maxRetries-1 {
+					backoffDelay := time.Duration(retry+1) * 2 * time.Second
+					log.Printf("数据库忙碌，%v 后重试孤立记录清理 (%d/%d)", backoffDelay, retry+1, maxRetries)
+					time.Sleep(backoffDelay)
+					continue
+				}
+			}
+			
+			log.Printf("清理孤立监控记录失败: %v", err)
+			break
+		}
 
 		if err != nil {
 			log.Printf("清理孤立监控记录失败: %v", err)
@@ -332,30 +398,55 @@ func CleanMonitorHistory() {
 			break
 		}
 
-		time.Sleep(50 * time.Millisecond)
-		runtime.GC()
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	// 清理无效的流量记录
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		result := tx.Unscoped().Where("server_id NOT IN (SELECT id FROM servers)").
-			Delete(&model.Transfer{})
-		if result.Error != nil {
-			return result.Error
-		}
-		totalCleaned += result.RowsAffected
-		return nil
-	})
+	for retry := 0; retry < maxRetries; retry++ {
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			
+			result := tx.WithContext(ctx).Unscoped().Where("server_id NOT IN (SELECT id FROM servers)").
+				Delete(&model.Transfer{})
+			if result.Error != nil {
+				return result.Error
+			}
+			totalCleaned += result.RowsAffected
+			return nil
+		})
 
-	if err != nil {
+		if err == nil {
+			break
+		}
+
+		if strings.Contains(err.Error(), "database is locked") || 
+		   strings.Contains(err.Error(), "SQL statements in progress") {
+			if retry < maxRetries-1 {
+				backoffDelay := time.Duration(retry+1) * 2 * time.Second
+				log.Printf("数据库忙碌，%v 后重试流量记录清理 (%d/%d)", backoffDelay, retry+1, maxRetries)
+				time.Sleep(backoffDelay)
+				continue
+			}
+		}
+
 		log.Printf("清理流量记录失败: %v", err)
-	} else {
+		break
+	}
+
+	if totalCleaned > 0 {
 		log.Printf("历史数据清理完成，共清理 %d 条记录", totalCleaned)
 	}
 
-	// 清理后优化数据库
-	DB.Exec("VACUUM")
-	DB.Exec("ANALYZE")
+	// 延迟执行数据库优化，避免与其他操作冲突
+	go func() {
+		time.Sleep(30 * time.Second) // 等待30秒确保没有其他操作
+		if !isSystemBusy() {
+			optimizeDatabase()
+		} else {
+			log.Printf("系统繁忙，跳过数据库优化")
+		}
+	}()
 }
 
 // CleanCumulativeTransferData 清理累计流量数据
@@ -792,6 +883,63 @@ func OptimizeDatabase() {
 		sqlDB.SetConnMaxLifetime(2 * time.Minute)
 	}
 
+	log.Printf("数据库优化完成")
+}
+
+// isSystemBusy 检查系统是否繁忙，避免在高负载时进行清理操作
+func isSystemBusy() bool {
+	// 检查内存使用情况
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	if m.Alloc > 500*1024*1024 { // 超过500MB认为繁忙
+		return true
+	}
+	
+	// 检查goroutine数量
+	if runtime.NumGoroutine() > 200 {
+		return true
+	}
+	
+	return false
+}
+
+// optimizeDatabase 安全地优化数据库，避免锁竞争
+func optimizeDatabase() {
+	log.Printf("开始数据库优化...")
+	
+	// 检查数据库连接状态
+	sqlDB, err := DB.DB()
+	if err != nil {
+		log.Printf("获取数据库连接失败: %v", err)
+		return
+	}
+	
+	// 检查连接池状态
+	stats := sqlDB.Stats()
+	if stats.InUse > 0 {
+		log.Printf("数据库有活跃连接，跳过VACUUM操作")
+		return
+	}
+	
+	// 只在没有活跃连接时执行VACUUM
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	
+	if err := DB.WithContext(ctx).Exec("VACUUM").Error; err != nil {
+		if !strings.Contains(err.Error(), "SQL statements in progress") &&
+		   !strings.Contains(err.Error(), "database is locked") {
+			log.Printf("数据库VACUUM失败: %v", err)
+		} else {
+			log.Printf("数据库忙碌，跳过VACUUM操作")
+		}
+		return
+	}
+	
+	// 执行ANALYZE更新统计信息
+	if err := DB.WithContext(ctx).Exec("ANALYZE").Error; err != nil {
+		log.Printf("数据库ANALYZE失败: %v", err)
+	}
+	
 	log.Printf("数据库优化完成")
 }
 

@@ -1,6 +1,7 @@
 package singleton
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"runtime"
@@ -208,9 +209,32 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 		}
 	}
 
-	// 加载服务监控历史记录
+	// 加载服务监控历史记录，优化查询性能
 	var mhs []model.MonitorHistory
-	DB.Where("created_at > ? AND created_at < ?", today.AddDate(0, 0, -29), today).Find(&mhs)
+	
+	// 添加查询优化和超时控制
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	
+	startTime := time.Now()
+	
+	// 使用更高效的查询，添加排序和限制结果数量
+	err = DB.WithContext(ctx).
+		Where("created_at > ? AND created_at < ?", today.AddDate(0, 0, -29), today).
+		Order("created_at DESC").  // 添加索引友好的排序
+		Limit(50000).             // 限制查询结果数量，避免内存过载
+		Find(&mhs).Error
+		
+	queryDuration := time.Since(startTime)
+	
+	if err != nil {
+		log.Printf("加载月度监控数据失败: %v", err)
+		return
+	}
+	
+	if queryDuration > 200*time.Millisecond {
+		log.Printf("慢SQL查询警告: 加载月度数据耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
+	}
 	var delayCount = make(map[int]int)
 	for i := 0; i < len(mhs); i++ {
 		dayIndex := 28 - (int(today.Sub(mhs[i].CreatedAt).Hours()) / 24)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/jinzhu/copier"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"gorm.io/gorm"
 
 	"github.com/xos/serverstatus/model"
 	pb "github.com/xos/serverstatus/proto"
@@ -418,21 +419,52 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		}
 		
 		if shouldUpdate {
-			// 使用异步更新避免阻塞主流程，添加查询时间监控
+			// 使用安全的异步更新，增加重试机制和超时控制
 			go func() {
-				startTime := time.Now()
-				if err := singleton.DB.Model(server).Updates(map[string]interface{}{
-					"last_state_json": server.LastStateJSON,
-					"last_online":     server.LastOnline,
-				}).Error; err != nil {
+				maxRetries := 3
+				baseDelay := 100 * time.Millisecond
+				
+				for retry := 0; retry < maxRetries; retry++ {
+					startTime := time.Now()
+					
+					// 使用事务和超时控制
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					
+					err := singleton.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+						return tx.Model(server).Updates(map[string]interface{}{
+							"last_state_json": server.LastStateJSON,
+							"last_online":     server.LastOnline,
+						}).Error
+					})
+					
+					cancel()
+					queryDuration := time.Since(startTime)
+					
+					if err == nil {
+						// 成功更新
+						if queryDuration > 200*time.Millisecond {
+							log.Printf("慢SQL查询警告: 更新服务器 %d 状态耗时 %v", clientID, queryDuration)
+						}
+						server.LastDBUpdateTime = time.Now()
+						break
+					}
+					
+					// 检查是否为数据库锁错误
+					if strings.Contains(err.Error(), "database is locked") ||
+					   strings.Contains(err.Error(), "SQL statements in progress") ||
+					   strings.Contains(err.Error(), "cannot commit transaction") {
+						if retry < maxRetries-1 {
+							delay := baseDelay * time.Duration(1<<retry) // 指数退避
+							log.Printf("数据库忙碌，%v 后重试更新服务器 %d 状态 (%d/%d)", delay, clientID, retry+1, maxRetries)
+							time.Sleep(delay)
+							continue
+						}
+					}
+					
 					log.Printf("更新服务器 %d 状态到数据库失败: %v", clientID, err)
-				}
-				queryDuration := time.Since(startTime)
-				if queryDuration > 200*time.Millisecond {
-					log.Printf("慢SQL查询警告: 更新服务器 %d 状态耗时 %v", clientID, queryDuration)
+					break
 				}
 			}()
-			server.LastDBUpdateTime = now
 		}
 	} else {
 		// 静默处理序列化失败，避免日志干扰
