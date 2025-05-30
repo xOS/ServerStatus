@@ -22,12 +22,7 @@ func InitCronTask() {
 	Cron = cron.New(cron.WithSeconds(), cron.WithLocation(Loc))
 	Crons = make(map[uint64]*model.Cron)
 
-	// 添加基础的系统定时任务
-	// 改为每5分钟保存一次流量数据，降低频率
-	if _, err := Cron.AddFunc("0 */5 * * * *", RecordTransferHourlyUsage); err != nil {
-		panic(err)
-	}
-
+	// 添加基础的系统定时任务 - 修复重复任务注册问题
 	// 每天凌晨3点清理30天前的数据
 	if _, err := Cron.AddFunc("0 0 3 * * *", func() {
 		CleanCumulativeTransferData(30)
@@ -40,8 +35,8 @@ func InitCronTask() {
 		panic(err)
 	}
 
-	// 改为每2小时对流量记录进行打点，降低频率
-	if _, err := Cron.AddFunc("0 0 */2 * * *", RecordTransferHourlyUsage); err != nil {
+	// 每1小时对流量记录进行打点 - 只注册一次
+	if _, err := Cron.AddFunc("0 0 */1 * * *", RecordTransferHourlyUsage); err != nil {
 		panic(err)
 	}
 
@@ -89,10 +84,10 @@ func loadCronTasks() {
 			notificationMsgMap[crons[i].NotificationTag].WriteString(fmt.Sprintf("%d,", crons[i].ID))
 		}
 	}
-	// 向注册错误的计划任务所在通知组发送通知
+	// 向注册错误的计划任务所在通知组发送通知 - 使用安全通知池
 	for _, tag := range notificationTagList {
 		notificationMsgMap[tag].WriteString("] 这些任务将无法正常执行,请进入后点重新修改保存。")
-		SendNotification(tag, notificationMsgMap[tag].String(), nil)
+		SafeSendNotification(tag, notificationMsgMap[tag].String(), nil)
 	}
 	Cron.Start()
 }
@@ -154,7 +149,7 @@ func CronTrigger(cr model.Cron, triggerServer ...uint64) func() {
 					// 保存当前服务器状态信息
 					curServer := model.Server{}
 					copier.Copy(&curServer, s)
-					SendNotification(cr.NotificationTag, fmt.Sprintf("[任务失败] %s，服务器 %s 离线，无法执行。", cr.Name, s.Name), nil, &curServer)
+					SafeSendNotification(cr.NotificationTag, fmt.Sprintf("[任务失败] %s，服务器 %s 离线，无法执行。", cr.Name, s.Name), nil, &curServer)
 				}
 			}
 			return
@@ -179,7 +174,7 @@ func CronTrigger(cr model.Cron, triggerServer ...uint64) func() {
 				// 保存当前服务器状态信息
 				curServer := model.Server{}
 				copier.Copy(&curServer, s)
-				SendNotification(cr.NotificationTag, fmt.Sprintf("[任务失败] %s，服务器 %s 离线，无法执行。", cr.Name, s.Name), nil, &curServer)
+				SafeSendNotification(cr.NotificationTag, fmt.Sprintf("[任务失败] %s，服务器 %s 离线，无法执行。", cr.Name, s.Name), nil, &curServer)
 			}
 		}
 	}

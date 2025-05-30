@@ -481,6 +481,11 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 
 		ss.serviceCurrentStatusData[mh.GetId()][ss.serviceCurrentStatusIndex[mh.GetId()].index] = mh
 		ss.serviceCurrentStatusIndex[mh.GetId()].index++
+		
+		// 立即检查并重置index以防止越界
+		if ss.serviceCurrentStatusIndex[mh.GetId()].index >= _CurrentStatusSize {
+			ss.serviceCurrentStatusIndex[mh.GetId()].index = 0
+		}
 	}
 
 	// 更新当前状态
@@ -512,12 +517,8 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 	}
 	stateCode := GetStatusCode(upPercent)
 
-	// 数据持久化 - 在index达到上限之前检查并重置
-	if ss.serviceCurrentStatusIndex[mh.GetId()].index >= _CurrentStatusSize {
-		ss.serviceCurrentStatusIndex[mh.GetId()] = &indexStore{
-			index: 0,
-			t:     currentTime,
-		}
+	// 数据持久化 - 改为基于计数器而不是index检查
+	if ss.serviceCurrentStatusIndex[mh.GetId()].index == 0 { // 当index重置为0时执行持久化
 		if err := DB.Create(&model.MonitorHistory{
 			MonitorID: mh.GetId(),
 			AvgDelay:  ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()],

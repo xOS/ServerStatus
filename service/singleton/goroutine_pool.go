@@ -242,3 +242,50 @@ func CleanupGoroutinePools() {
 	}
 	log.Printf("Goroutine池清理完成")
 }
+
+// Clear 强制清理池中的任务队列（紧急情况使用）
+func (p *GoroutinePool) Clear() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	
+	// 清空队列中的等待任务
+	cleared := 0
+	for {
+		select {
+		case <-p.queue:
+			cleared++
+		default:
+			goto done
+		}
+	}
+	done:
+	if cleared > 0 {
+		log.Printf("Goroutine池强制清理了 %d 个等待任务", cleared)
+	}
+}
+
+// ForceReduceWorkers 强制减少worker数量（内存压力时使用）
+func (p *GoroutinePool) ForceReduceWorkers(targetWorkers int64) {
+	p.mu.RLock()
+	current := p.workers
+	p.mu.RUnlock()
+	
+	if current <= targetWorkers {
+		return
+	}
+	
+	// 通过取消context来强制部分worker退出
+	log.Printf("强制减少Goroutine池worker从 %d 到 %d", current, targetWorkers)
+	
+	// 创建新的context来重置池
+	p.mu.Lock()
+	p.cancel() // 停止当前所有worker
+	p.ctx, p.cancel = context.WithCancel(context.Background())
+	p.workers = 0 // 重置worker计数
+	p.mu.Unlock()
+	
+	// 启动最小数量的worker
+	for i := int64(0); i < p.minWorkers && i < targetWorkers; i++ {
+		p.startWorker()
+	}
+}

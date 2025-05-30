@@ -3,6 +3,7 @@ package singleton
 import (
 	"fmt"
 	"log"
+	"os"
 	"runtime"
 	"runtime/debug"
 	"sync/atomic"
@@ -625,9 +626,9 @@ var (
 
 func NewMemoryMonitor() *MemoryMonitor {
 	return &MemoryMonitor{
-		emergencyThreshold: 600,  // 200MB紧急阈值
-		warningThreshold:   320,  // 160MB警告阈值，与主清理阈值一致
-		maxGoroutines:      1000, // 提高到最大1000个goroutine
+		emergencyThreshold: 800, // 800MB紧急阈值 - 根据用户要求调整
+		warningThreshold:   300, // 300MB警告阈值 - 根据用户要求调整
+		maxGoroutines:      300, // 最大300个goroutine - 保持严格限制
 		isEmergencyMode:    false,
 	}
 }
@@ -675,6 +676,21 @@ func (mm *MemoryMonitor) checkMemoryPressure() {
 	}
 
 	atomic.StoreInt64(&memoryPressureLevel, newPressureLevel)
+
+	// 硬性内存限制 - 超过900MB强制退出让systemd重启
+	if currentMemMB > 900 {
+		log.Printf("内存使用超过900MB (%dMB)，程序即将强制退出避免系统崩溃", currentMemMB)
+		log.Printf("Goroutine数量: %d", currentGoroutines)
+		log.Printf("堆内存: %dMB", m.HeapAlloc/1024/1024)
+		log.Printf("系统内存: %dMB", m.Sys/1024/1024)
+
+		// 快速清理尝试
+		runtime.GC()
+		runtime.GC()
+
+		// 强制退出，让systemd重启
+		os.Exit(1)
+	}
 
 	// 检查是否需要进入紧急模式
 	if newPressureLevel >= 3 || currentGoroutines > mm.maxGoroutines {
@@ -735,15 +751,27 @@ func (mm *MemoryMonitor) emergencyCleanup() {
 		}
 	}
 
+	// 强制清理Goroutine池
+	if NotificationPool != nil {
+		NotificationPool.Clear()
+		NotificationPool.ForceReduceWorkers(2) // 强制减少到2个worker
+	}
+	if TriggerTaskPool != nil {
+		TriggerTaskPool.Clear()
+		TriggerTaskPool.ForceReduceWorkers(1) // 强制减少到1个worker
+	}
+
 	// 强制多次GC
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 5; i++ { // 增加到5次GC
 		runtime.GC()
 		time.Sleep(10 * time.Millisecond)
 	}
 	debug.FreeOSMemory()
 
 	// 设置更严格的GC目标
-	debug.SetGCPercent(50) // 降低GC阈值
+	debug.SetGCPercent(20) // 进一步降低GC阈值到20%
+
+	log.Printf("紧急内存清理完成")
 }
 
 func (mm *MemoryMonitor) aggressiveCleanup() {
