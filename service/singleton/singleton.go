@@ -2,9 +2,10 @@ package singleton
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"log"
-	"math/rand"
+	"math/big"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -363,9 +364,15 @@ func ExecuteWithRetry(operation func() error) error {
 				if delay > maxDelay {
 					delay = maxDelay
 				}
-				// 添加随机抖动，避免雷群效应
-				jitter := time.Duration(rand.Int63n(int64(delay) / 4))
-				delay += jitter
+				// 添加安全的随机抖动，避免雷群效应
+				maxJitter := int64(delay) / 4
+				if maxJitter > 0 {
+					jitterBig, err := rand.Int(rand.Reader, big.NewInt(maxJitter))
+					if err == nil {
+						jitter := time.Duration(jitterBig.Int64())
+						delay += jitter
+					}
+				}
 				
 				log.Printf("数据库操作重试 %d/%d，延迟 %v: %v", attempt+1, maxRetries, delay, err)
 				time.Sleep(delay)
