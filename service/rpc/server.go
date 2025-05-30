@@ -142,8 +142,8 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	singleton.ServerList[clientID].TaskCloseLock.Unlock()
 	singleton.ServerLock.RUnlock()
 
-	// 创建一个带超时的上下文，减少超时时间以防止长时间占用资源
-	ctx, cancel := context.WithTimeout(stream.Context(), 10*time.Minute)
+	// 创建一个带超时的上下文，增加超时时间以减少频繁超时错误
+	ctx, cancel := context.WithTimeout(stream.Context(), 20*time.Minute)
 	defer cancel()
 
 	// 监听连接状态，当连接断开时自动清理
@@ -159,9 +159,10 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 		case <-ctx.Done():
 			// 连接断开时清理资源，增强错误处理
 			if ctxErr := ctx.Err(); ctxErr != nil {
-				// 检查是否为broken pipe或connection reset错误
-				if isConnectionError(ctxErr) {
-					// 静默处理网络连接错误，避免日志干扰
+				// 检查是否为网络连接错误或超时错误
+				if isConnectionError(ctxErr) || ctxErr == context.DeadlineExceeded {
+					// 静默处理网络连接错误和正常超时，避免日志干扰
+					log.Printf("RequestTask连接正常断开: 客户端ID %d", clientID)
 				} else {
 					log.Printf("RequestTask连接上下文错误: %v", ctxErr)
 				}
@@ -211,11 +212,22 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	// 等待连接关闭或超时
 	select {
 	case err := <-closeCh:
+		// 检查是否为网络连接错误
+		if isConnectionError(err) {
+			log.Printf("客户端 %d 网络连接中断: %v", clientID, err)
+			return nil // 将网络连接错误视为正常断开
+		}
 		return err
 	case <-ctx.Done():
-		// 超时或连接取消
+		// 超时或连接取消，增强错误分类
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("request task timeout after 10 minutes")
+			log.Printf("客户端 %d RequestTask连接超时 (20分钟)", clientID)
+			return fmt.Errorf("request task timeout after 20 minutes")
+		}
+		// 检查是否为网络连接错误
+		if isConnectionError(ctx.Err()) {
+			log.Printf("客户端 %d 网络连接异常: %v", clientID, ctx.Err())
+			return nil // 将网络连接错误视为正常断开
 		}
 		return ctx.Err()
 	}

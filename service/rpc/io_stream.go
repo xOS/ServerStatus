@@ -226,7 +226,7 @@ CONNECTED:
 			}
 		case <-ctx.Done():
 			err = ctx.Err()
-		case <-time.After(30 * time.Second): // 30秒超时
+		case <-time.After(60 * time.Second): // 增加到60秒超时，减少误报
 			err = fmt.Errorf("IO stream copy timeout")
 		}
 	}()
@@ -267,7 +267,7 @@ CONNECTED:
 			}
 		case <-ctx.Done():
 			err = ctx.Err()
-		case <-time.After(30 * time.Second): // 30秒超时
+		case <-time.After(60 * time.Second): // 增加到60秒超时，减少误报
 			err = fmt.Errorf("IO stream copy timeout")
 		}
 	}()

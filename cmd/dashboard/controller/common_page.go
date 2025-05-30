@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"code.cloudfoundry.org/bytefmt"
@@ -562,8 +563,8 @@ func (cp *commonPage) ws(c *gin.Context) {
 		return nil
 	})
 	
-	// 使用context控制连接生命周期
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Minute)
+	// 使用context控制连接生命周期，增加超时时间
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 45*time.Minute)
 	defer cancel()
 	
 	count := 0
@@ -596,6 +597,14 @@ func (cp *commonPage) ws(c *gin.Context) {
 			}
 
 			if err := conn.WriteMessage(websocket.TextMessage, stat); err != nil {
+				// 检查是否为网络连接错误
+				if strings.Contains(err.Error(), "broken pipe") || 
+				   strings.Contains(err.Error(), "connection reset") ||
+				   strings.Contains(err.Error(), "use of closed network connection") {
+					// 静默处理网络连接错误，客户端可能已断开
+					return
+				}
+				log.Printf("WebSocket写入错误: %v", err)
 				return
 			}
 
@@ -603,6 +612,14 @@ func (cp *commonPage) ws(c *gin.Context) {
 			if count%4 == 0 {
 				err = conn.WriteMessage(websocket.PingMessage, []byte{})
 				if err != nil {
+					// 检查是否为网络连接错误
+					if strings.Contains(err.Error(), "broken pipe") || 
+					   strings.Contains(err.Error(), "connection reset") ||
+					   strings.Contains(err.Error(), "use of closed network connection") {
+						// 静默处理网络连接错误
+						return
+					}
+					log.Printf("WebSocket Ping错误: %v", err)
 					return
 				}
 			}
