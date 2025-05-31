@@ -1,6 +1,7 @@
 package singleton
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -376,6 +377,16 @@ func (s *ServerAPIService) Register(rs *RegisterServer) *ServerRegisterResponse 
 }
 
 func (m *MonitorAPIService) GetMonitorHistories(query map[string]any) *MonitorInfoResponse {
+	// 生成缓存键
+	cacheKey := fmt.Sprintf("monitor_histories_%v", query)
+	
+	// 尝试从缓存获取
+	if cached, found := Cache.Get(cacheKey); found {
+		if cachedResponse, ok := cached.(*MonitorInfoResponse); ok {
+			return cachedResponse
+		}
+	}
+	
 	var (
 		resultMap        = make(map[uint64]*MonitorInfo)
 		monitorHistories []*model.MonitorHistory
@@ -387,8 +398,17 @@ func (m *MonitorAPIService) GetMonitorHistories(query map[string]any) *MonitorIn
 			Message: "success",
 		},
 	}
-	if err := DB.Model(&model.MonitorHistory{}).Select("monitor_id, created_at, server_id, avg_delay").
-		Where(query).Where("created_at >= ?", time.Now().Add(-72*time.Hour)).Order("monitor_id, created_at").
+	
+	// 优化查询：减少查询时间范围，添加合理的限制
+	timeRange := 24 * time.Hour // 从72小时减少到24小时
+	queryLimit := 5000 // 限制最大记录数，防止数据过大
+	
+	if err := DB.Model(&model.MonitorHistory{}).
+		Select("monitor_id, created_at, server_id, avg_delay").
+		Where(query).
+		Where("created_at >= ?", time.Now().Add(-timeRange)).
+		Order("monitor_id, created_at DESC").
+		Limit(queryLimit).
 		Scan(&monitorHistories).Error; err != nil {
 		res.CommonResponse = CommonResponse{
 			Code:    500,
@@ -445,6 +465,9 @@ func (m *MonitorAPIService) GetMonitorHistories(query map[string]any) *MonitorIn
 		for _, monitorID := range sortedMonitorIDs {
 			res.Result = append(res.Result, resultMap[monitorID])
 		}
+		
+		// 缓存结果（缓存2分钟）
+		Cache.Set(cacheKey, res, 2*time.Minute)
 	}
 	return res
 }

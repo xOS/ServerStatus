@@ -219,45 +219,19 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 	
 	startTime := time.Now()
 	
-	// 使用分批加载，避免大量数据导致的锁竞争
-	batchSize := 5000
-	var allMhs []model.MonitorHistory
-	
+	// 直接查询月度数据，系统启动时需要快速加载
 	fromDate := today.AddDate(0, 0, -29)
 	toDate := today
 	
-	// 分批查询，减少数据库锁时间
-	for offset := 0; ; offset += batchSize {
-		var batchMhs []model.MonitorHistory
+	err = DB.WithContext(ctx).
+		Where("created_at > ? AND created_at < ?", fromDate, toDate).
+		Order("created_at DESC").
+		Find(&mhs).Error
 		
-		err = DB.WithContext(ctx).
-			Where("created_at > ? AND created_at < ?", fromDate, toDate).
-			Order("created_at DESC").
-			Offset(offset).
-			Limit(batchSize).
-			Find(&batchMhs).Error
-			
-		if err != nil {
-			log.Printf("加载月度监控数据失败 (批次 %d): %v", offset/batchSize+1, err)
-			return
-		}
-		
-		if len(batchMhs) == 0 {
-			break // 没有更多数据
-		}
-		
-		allMhs = append(allMhs, batchMhs...)
-		
-		// 如果这一批数据少于批次大小，说明已经是最后一批
-		if len(batchMhs) < batchSize {
-			break
-		}
-		
-		// 批次间短暂暂停，让其他操作有机会执行
-		time.Sleep(10 * time.Millisecond)
+	if err != nil {
+		log.Printf("加载月度监控数据失败: %v", err)
+		return
 	}
-	
-	mhs = allMhs
 	queryDuration := time.Since(startTime)
 	
 	if queryDuration > 500*time.Millisecond {
