@@ -102,8 +102,9 @@ type ServiceSentinel struct {
 }
 
 type indexStore struct {
-	index int
-	t     time.Time
+	index        int
+	t            time.Time
+	lastSaveTime time.Time // 添加最后保存时间字段
 }
 
 type pingStore struct {
@@ -389,13 +390,13 @@ func (ss *ServiceSentinel) worker() {
 			runtime.ReadMemStats(&m)
 			currentMemMB := m.Alloc / 1024 / 1024
 			
-			if currentMemMB > 300 { // 如果内存超过300MB
+			if currentMemMB > 500 { // 如果内存超过500MB（从300MB提高）
 				log.Printf("ServiceSentinel检测到高内存使用: %dMB，执行清理", currentMemMB)
 				ss.limitDataSize()
 				ss.cleanupOldData()
 				
 				// 如果内存仍然很高，强制GC
-				if currentMemMB > 400 {
+				if currentMemMB > 800 { // 从400MB提高到800MB
 					runtime.GC()
 					runtime.ReadMemStats(&m)
 					log.Printf("强制GC后内存: %dMB", m.Alloc/1024/1024)
@@ -485,8 +486,9 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 	currentTime := time.Now()
 	if ss.serviceCurrentStatusIndex[mh.GetId()] == nil {
 		ss.serviceCurrentStatusIndex[mh.GetId()] = &indexStore{
-			t:     currentTime,
-			index: 0,
+			t:            currentTime,
+			index:        0,
+			lastSaveTime: time.Time{}, // 初始化为零值
 		}
 	}
 	// 写入当前数据
@@ -542,16 +544,43 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 	}
 	stateCode := GetStatusCode(upPercent)
 
-	// 数据持久化 - 改为基于计数器而不是index检查
-	if ss.serviceCurrentStatusIndex[mh.GetId()].index == 0 { // 当index重置为0时执行持久化
-		if err := DB.Create(&model.MonitorHistory{
-			MonitorID: mh.GetId(),
-			AvgDelay:  ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()],
-			Data:      mh.Data,
-			Up:        ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
-			Down:      ss.serviceResponseDataStoreCurrentDown[mh.GetId()],
-		}).Error; err != nil {
-			log.Println("NG>> 服务监控数据持久化失败：", err)
+	// 数据持久化 - 修复保存逻辑，确保数据不丢失
+	// 改为基于时间间隔的保存策略，而不是依赖不可靠的计数器
+	now := time.Now()
+	shouldSave := false
+	
+	// 检查是否需要保存数据
+	if ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime.IsZero() {
+		// 首次保存
+		shouldSave = true
+	} else if now.Sub(ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime) >= 15*time.Minute {
+		// 超过15分钟未保存
+		shouldSave = true
+	} else if ss.serviceCurrentStatusIndex[mh.GetId()].index%_CurrentStatusSize == 0 && 
+			  ss.serviceCurrentStatusIndex[mh.GetId()].index > 0 {
+		// 当计数器完成一个周期时也保存
+		shouldSave = true
+	}
+	
+	if shouldSave {
+		// 确保有数据才保存
+		totalChecks := ss.serviceResponseDataStoreCurrentUp[mh.GetId()] + ss.serviceResponseDataStoreCurrentDown[mh.GetId()]
+		if totalChecks > 0 {
+			if err := DB.Create(&model.MonitorHistory{
+				MonitorID: mh.GetId(),
+				AvgDelay:  ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()],
+				Data:      mh.Data,
+				Up:        ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
+				Down:      ss.serviceResponseDataStoreCurrentDown[mh.GetId()],
+			}).Error; err != nil {
+				log.Printf("NG>> 服务监控数据持久化失败 (MonitorID: %d): %v", mh.GetId(), err)
+			} else {
+				ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime = now
+				log.Printf("监控数据已保存 (MonitorID: %d, Up: %d, Down: %d)", 
+					mh.GetId(), 
+					ss.serviceResponseDataStoreCurrentUp[mh.GetId()], 
+					ss.serviceResponseDataStoreCurrentDown[mh.GetId()])
+			}
 		}
 	}
 

@@ -111,7 +111,7 @@ func AlertSentinelStart() {
 		// 调整内存使用阈值，与全局内存策略保持一致
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
-		if m.Alloc > 800*1024*1024 { // 800MB阈值，与全局策略协调
+		if m.Alloc > 1200*1024*1024 { // 1200MB阈值，与全局策略协调
 			log.Printf("AlertSentinel内存使用过高: %dMB，立即执行清理", m.Alloc/1024/1024)
 			cleanupAlertMemoryData()
 			runtime.GC()                // 强制垃圾回收

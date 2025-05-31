@@ -388,7 +388,7 @@ func (m *MonitorAPIService) GetMonitorHistories(query map[string]any) *MonitorIn
 		},
 	}
 	if err := DB.Model(&model.MonitorHistory{}).Select("monitor_id, created_at, server_id, avg_delay").
-		Where(query).Where("created_at >= ?", time.Now().Add(-24*time.Hour)).Order("monitor_id, created_at").
+		Where(query).Where("created_at >= ?", time.Now().Add(-72*time.Hour)).Order("monitor_id, created_at").
 		Scan(&monitorHistories).Error; err != nil {
 		res.CommonResponse = CommonResponse{
 			Code:    500,

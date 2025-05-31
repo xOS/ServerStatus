@@ -71,8 +71,8 @@ func LoadSingleton() {
 	// 添加定时验证流量数据一致性的任务，每5分钟检查一次
 	Cron.AddFunc("0 */5 * * * *", VerifyTrafficDataConsistency)
 
-	// 添加定时清理任务，每10分钟执行一次
-	Cron.AddFunc("0 */10 * * * *", func() {
+	// 添加定时清理任务，减少频率到每4小时执行一次，避免干扰数据保存
+	Cron.AddFunc("0 0 */4 * * *", func() {
 		CleanMonitorHistory()
 		Cache.DeleteExpired()
 		CleanupServerState() // 添加服务器状态清理
@@ -84,8 +84,8 @@ func LoadSingleton() {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 
-	// 温和的内存阈值检查，800MB时进行基础清理
-	if m.Alloc > 800*1024*1024 {
+	// 温和的内存阈值检查，提高到1200MB时进行基础清理，与其他组件保持一致
+	if m.Alloc > 1200*1024*1024 {
 		log.Printf("内存使用提醒: %v MB，执行温和清理", m.Alloc/1024/1024)
 
 		// 执行温和的清理操作
@@ -310,13 +310,13 @@ func isSystemBusy() bool {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	
-	// 检查内存使用是否超过阈值 (800MB)
-	if m.Alloc > 800*1024*1024 {
+	// 检查内存使用是否超过阈值 (1200MB)
+	if m.Alloc > 1200*1024*1024 {
 		return true
 	}
 	
 	// 检查Goroutine数量是否过多
-	if runtime.NumGoroutine() > 400 {
+	if runtime.NumGoroutine() > 600 {
 		return true
 	}
 	
@@ -410,10 +410,10 @@ func CleanMonitorHistory() {
 		var totalCleaned int64
 		batchSize := 25     // 增加批次大小到25（从20增加）
 		maxRetries := 3     // 减少重试次数，更快失败
-		cutoffDate := time.Now().AddDate(0, 0, -30)
+		cutoffDate := time.Now().AddDate(0, 0, -60)  // 延长到60天，避免误删除有效历史数据
 
 		// 使用非事务方式分批清理，避免长时间事务锁定
-		// 清理30天前的监控记录
+		// 清理60天前的监控记录
 		for {
 			var count int64
 			var err error
@@ -835,9 +835,9 @@ var (
 
 func NewMemoryMonitor() *MemoryMonitor {
 	return &MemoryMonitor{
-		highThreshold:    800, // 800MB高内存阈值 - 根据用户要求调整
-		warningThreshold: 400, // 400MB警告阈值 - 根据用户要求调整  
-		maxGoroutines:    400, // 最大400个goroutine - 稍微提高限制
+		highThreshold:    1200, // 提高到1200MB，减少误触发清理
+		warningThreshold: 600,  // 提高到600MB警告阈值  
+		maxGoroutines:    600,  // 提高到600个goroutine限制
 		isHighPressure:   false,
 	}
 }
