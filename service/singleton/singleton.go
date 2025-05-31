@@ -159,37 +159,32 @@ func LoadSingleton() {
 
 	// 检查并添加新字段
 	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {
-		err = DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_in_transfer")
-		if err != nil {
+		if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_in_transfer"); err != nil {
 			log.Println("添加cumulative_net_in_transfer字段失败:", err)
 		}
 	}
 
 	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_out_transfer") {
-		err = DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_out_transfer")
-		if err != nil {
+		if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_out_transfer"); err != nil {
 			log.Println("添加cumulative_net_out_transfer字段失败:", err)
 		}
 	}
 
 	if !DB.Migrator().HasColumn(&model.Server{}, "last_state_json") {
-		err = DB.Migrator().AddColumn(&model.Server{}, "last_state_json")
-		if err != nil {
+		if err := DB.Migrator().AddColumn(&model.Server{}, "last_state_json"); err != nil {
 			log.Println("添加last_state_json字段失败:", err)
 		}
 	}
 
 	if !DB.Migrator().HasColumn(&model.Server{}, "last_online") {
-		err = DB.Migrator().AddColumn(&model.Server{}, "last_online")
-		if err != nil {
+		if err := DB.Migrator().AddColumn(&model.Server{}, "last_online"); err != nil {
 			log.Println("添加last_online字段失败:", err)
 		}
 	}
 
 	// 检查host_json字段是否存在，如果不存在则添加
 	if !DB.Migrator().HasColumn(&model.Server{}, "host_json") {
-		err = DB.Migrator().AddColumn(&model.Server{}, "host_json")
-		if err != nil {
+		if err := DB.Migrator().AddColumn(&model.Server{}, "host_json"); err != nil {
 			log.Println("添加host_json字段失败:", err)
 		}
 	}
@@ -307,37 +302,32 @@ func InitDBFromPath(path string) {
 
 	// 检查并添加新字段
 	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {
-		err = DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_in_transfer")
-		if err != nil {
+		if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_in_transfer"); err != nil {
 			log.Println("添加cumulative_net_in_transfer字段失败:", err)
 		}
 	}
 
 	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_out_transfer") {
-		err = DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_out_transfer")
-		if err != nil {
+		if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_out_transfer"); err != nil {
 			log.Println("添加cumulative_net_out_transfer字段失败:", err)
 		}
 	}
 
 	if !DB.Migrator().HasColumn(&model.Server{}, "last_state_json") {
-		err = DB.Migrator().AddColumn(&model.Server{}, "last_state_json")
-		if err != nil {
+		if err := DB.Migrator().AddColumn(&model.Server{}, "last_state_json"); err != nil {
 			log.Println("添加last_state_json字段失败:", err)
 		}
 	}
 
 	if !DB.Migrator().HasColumn(&model.Server{}, "last_online") {
-		err = DB.Migrator().AddColumn(&model.Server{}, "last_online")
-		if err != nil {
+		if err := DB.Migrator().AddColumn(&model.Server{}, "last_online"); err != nil {
 			log.Println("添加last_online字段失败:", err)
 		}
 	}
 
 	// 检查host_json字段是否存在，如果不存在则添加
 	if !DB.Migrator().HasColumn(&model.Server{}, "host_json") {
-		err = DB.Migrator().AddColumn(&model.Server{}, "host_json")
-		if err != nil {
+		if err := DB.Migrator().AddColumn(&model.Server{}, "host_json"); err != nil {
 			log.Println("添加host_json字段失败:", err)
 		}
 	}
