@@ -369,8 +369,19 @@ func isSystemBusy() bool {
 	}
 
 	stats := sqlDB.Stats()
-	// 如果所有连接都在使用且等待队列不为空，说明系统繁忙
-	if stats.InUse >= stats.OpenConnections && stats.WaitCount > 0 {
+	// 更严格的繁忙条件判断
+	if float64(stats.InUse) >= float64(stats.OpenConnections)*0.8 ||
+		(stats.InUse > 0 && stats.WaitCount > 10) ||
+		stats.WaitDuration > 1*time.Second {
+		return true
+	}
+
+	// 快速检查是否存在数据库锁
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	var result int
+	err = DB.WithContext(ctx).Raw("SELECT 1").Scan(&result).Error
+	if err != nil && strings.Contains(err.Error(), "database is locked") {
 		return true
 	}
 
@@ -384,7 +395,7 @@ func executeWithoutLock(operation func() error) error {
 
 // ExecuteWithRetry 带重试机制的数据库操作，用于处理临时的数据库锁定（导出版本）
 func ExecuteWithRetry(operation func() error) error {
-	return executeWithAdvancedRetry(operation, 8, 10*time.Millisecond, 10*time.Second)
+	return executeWithAdvancedRetry(operation, 5, 50*time.Millisecond, 5*time.Second)
 }
 
 // executeWithAdvancedRetry 实现指数退避重试机制
@@ -835,38 +846,77 @@ func AutoSyncTraffic() {
 	// 功能已移除
 }
 
-// VerifyTrafficDataConsistency 验证流量数据一致性（调试用）
+// VerifyTrafficDataConsistency 验证流量数据一致性，添加重试机制
 func VerifyTrafficDataConsistency() {
-	ServerLock.RLock()
-	defer ServerLock.RUnlock()
+	// 检查系统负载
+	if isSystemBusy() {
+		log.Printf("系统繁忙，跳过流量数据一致性检查")
+		return
+	}
 
+	// 使用读锁安全获取服务器列表
+	ServerLock.RLock()
+	serverIDs := make([]uint64, 0, len(ServerList))
 	for serverID, server := range ServerList {
 		if server == nil {
 			continue
 		}
+		serverIDs = append(serverIDs, serverID)
+	}
+	ServerLock.RUnlock()
 
-		// 从数据库读取数据
-		var dbServer model.Server
-		if err := DB.First(&dbServer, serverID).Error; err != nil {
-			log.Printf("无法从数据库读取服务器 %d: %v", serverID, err)
-			continue
+	// 分批处理，每批最多处理5个服务器
+	batchSize := 5
+	for i := 0; i < len(serverIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(serverIDs) {
+			end = len(serverIDs)
 		}
 
-		// 比较内存和数据库中的数据
-		memoryIn := server.CumulativeNetInTransfer
-		memoryOut := server.CumulativeNetOutTransfer
-		dbIn := dbServer.CumulativeNetInTransfer
-		dbOut := dbServer.CumulativeNetOutTransfer
+		currentBatch := serverIDs[i:end]
 
-		if memoryIn != dbIn || memoryOut != dbOut {
-			log.Printf("[不一致] 服务器 %s (ID:%d) - 内存: 入站=%d 出站=%d, 数据库: 入站=%d 出站=%d",
-				server.Name, serverID,
-				memoryIn, memoryOut,
-				dbIn, dbOut)
+		// 处理当前批次
+		for _, serverID := range currentBatch {
+			// 使用读锁获取内存中的服务器数据
+			ServerLock.RLock()
+			server := ServerList[serverID]
+			if server == nil {
+				ServerLock.RUnlock()
+				continue
+			}
+
+			memoryIn := server.CumulativeNetInTransfer
+			memoryOut := server.CumulativeNetOutTransfer
+			ServerLock.RUnlock()
+
+			// 从数据库读取数据，使用重试机制
+			var dbServer model.Server
+			err := executeWithAdvancedRetry(func() error {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				return DB.WithContext(ctx).First(&dbServer, serverID).Error
+			}, 3, 100*time.Millisecond, 1*time.Second)
+
+			if err != nil {
+				log.Printf("无法从数据库读取服务器 %d: %v", serverID, err)
+				continue
+			}
+
+			// 比较内存和数据库中的数据
+			dbIn := dbServer.CumulativeNetInTransfer
+			dbOut := dbServer.CumulativeNetOutTransfer
+
+			if memoryIn != dbIn || memoryOut != dbOut {
+				log.Printf("[不一致] 服务器 %s (ID:%d) - 内存: 入站=%d 出站=%d, 数据库: 入站=%d 出站=%d",
+					server.Name, serverID,
+					memoryIn, memoryOut,
+					dbIn, dbOut)
+			}
+
+			// 添加短暂延迟，避免同时访问导致锁争用
+			time.Sleep(50 * time.Millisecond)
 		}
 	}
-
-	// 流量数据一致性验证完成
 }
 
 // MemoryMonitor 温和内存监控器
@@ -1046,47 +1096,65 @@ func OptimizeDatabase() {
 	// 记录连接池状态
 	LogConnectionPoolStats()
 
-	// 创建清理索引任务的上下文
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// 只进行轻量级优化操作，避免长时间锁定
+	err = executeWithAdvancedRetry(func() error {
+		// 使用短超时执行optimize
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return DB.WithContext(ctx).Exec("PRAGMA optimize").Error
+	}, 3, 100*time.Millisecond, 500*time.Millisecond)
 
-	// 重建索引
-	if err := DB.WithContext(ctx).Exec("PRAGMA optimize").Error; err != nil {
-		log.Printf("重建索引失败: %v", err)
+	if err != nil {
+		log.Printf("数据库优化失败: %v", err)
 	}
 
-	// 清理长时间未使用的连接
-	sqlDB.SetMaxIdleConns(5)
-	time.Sleep(1 * time.Second) // 等待连接池调整
-	sqlDB.SetMaxIdleConns(10)   // 恢复设置
+	// 安排低峰期执行WAL检查点和VACUUM，避免立即执行
+	hour := time.Now().Hour()
+	// 只在深夜3-5点之间尝试执行完整优化
+	if hour >= 3 && hour <= 5 && !isSystemBusy() {
+		go func() {
+			// 在后台线程中执行，等待更长时间确保无其他操作
+			time.Sleep(30 * time.Second)
 
-	// 执行WAL检查点，合并WAL文件
-	if err := DB.WithContext(ctx).Exec("PRAGMA wal_checkpoint(RESTART)").Error; err != nil {
-		log.Printf("执行WAL检查点失败: %v", err)
+			// 再次检查系统负载
+			if isSystemBusy() {
+				log.Printf("系统繁忙，跳过深度优化")
+				return
+			}
+
+			// 重新获取连接状态
+			stats := sqlDB.Stats()
+			if stats.InUse > 2 {
+				log.Printf("数据库有%d个活跃连接，跳过深度优化", stats.InUse)
+				return
+			}
+
+			// 执行WAL检查点（被动模式，不阻塞其他操作）
+			err := executeWithAdvancedRetry(func() error {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				return DB.WithContext(ctx).Exec("PRAGMA wal_checkpoint(PASSIVE)").Error
+			}, 3, 100*time.Millisecond, 500*time.Millisecond)
+
+			if err != nil {
+				log.Printf("WAL检查点失败: %v", err)
+				return
+			}
+
+			// 仅在确认系统极度空闲时执行VACUUM
+			if runtime.NumGoroutine() < 200 && !isSystemBusy() {
+				log.Println("系统空闲，开始执行VACUUM操作...")
+				vacCtx, vacCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				defer vacCancel()
+
+				if err := DB.WithContext(vacCtx).Exec("VACUUM").Error; err != nil {
+					log.Printf("VACUUM操作失败: %v", err)
+				} else {
+					log.Println("VACUUM操作完成")
+				}
+			}
+		}()
 	}
-
-	// 安全执行VACUUM操作
-	go func() {
-		// 在后台线程中执行，避免阻塞主线程
-		time.Sleep(5 * time.Second) // 等待其他操作完成
-
-		// 检查是否有活跃连接
-		stats := sqlDB.Stats()
-		if stats.InUse > 3 {
-			log.Printf("数据库有%d个活跃连接，跳过VACUUM", stats.InUse)
-			return
-		}
-
-		vacCtx, vacCancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer vacCancel()
-
-		log.Println("开始执行VACUUM操作...")
-		if err := DB.WithContext(vacCtx).Exec("VACUUM").Error; err != nil {
-			log.Printf("VACUUM操作失败: %v", err)
-		} else {
-			log.Println("VACUUM操作完成")
-		}
-	}()
 
 	log.Println("数据库优化任务已安排")
 }
@@ -1698,9 +1766,16 @@ func GetCachedServerStatus(serverID uint64) (*model.Server, error) {
 		}
 	}
 
-	// 缓存未命中，从数据库加载
+	// 缓存未命中，从数据库加载，使用重试机制
 	var server model.Server
-	if err := DB.First(&server, serverID).Error; err != nil {
+	err := executeWithAdvancedRetry(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
+		return DB.WithContext(ctx).First(&server, serverID).Error
+	}, 3, 100*time.Millisecond, 1*time.Second)
+
+	if err != nil {
 		return nil, err
 	}
 
@@ -2041,15 +2116,20 @@ func VerifyMonitorHistoryConsistency() {
 
 	log.Printf("执行监控历史记录一致性检查...")
 
-	// 检查最近30分钟内添加的ICMP/TCP监控记录
+	// 使用重试机制执行数据库查询
 	var count int64
-	checkTime := time.Now().Add(-30 * time.Minute)
+	err := executeWithAdvancedRetry(func() error {
+		// 检查最近30分钟内添加的ICMP/TCP监控记录
+		checkTime := time.Now().Add(-30 * time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-	err := DB.Model(&model.MonitorHistory{}).
-		Where("created_at > ? AND monitor_id IN (?, ?)",
-			checkTime.Format("2006-01-02 15:04:05"),
-			model.TaskTypeICMPPing, model.TaskTypeTCPPing).
-		Count(&count).Error
+		return DB.WithContext(ctx).Model(&model.MonitorHistory{}).
+			Where("created_at > ? AND monitor_id IN (?, ?)",
+				checkTime.Format("2006-01-02 15:04:05"),
+				model.TaskTypeICMPPing, model.TaskTypeTCPPing).
+			Count(&count).Error
+	}, 5, 200*time.Millisecond, 2*time.Second)
 
 	if err != nil {
 		log.Printf("检查监控历史记录失败: %v", err)
@@ -2065,19 +2145,27 @@ func VerifyMonitorHistoryConsistency() {
 		// 记录警告日志，不通过通知系统发送，避免依赖错误
 		log.Printf("监控历史记录一致性警告: 最近30分钟内仅有 %d 条ICMP/TCP监控记录，可能存在数据丢失", count)
 
-		// 强制执行数据库优化
+		// 强制执行数据库优化，延迟执行避免冲突
 		go func() {
-			time.Sleep(5 * time.Second)
-			optimizeDatabase()
+			time.Sleep(30 * time.Second)
+			if !isSystemBusy() {
+				optimizeDatabase()
+			}
 		}()
 	}
 
 	// 检查空数据记录
 	var emptyCount int64
-	err = DB.Model(&model.MonitorHistory{}).
-		Where("created_at > ? AND (data = '' OR data IS NULL)",
-			checkTime.Format("2006-01-02 15:04:05")).
-		Count(&emptyCount).Error
+	err = executeWithAdvancedRetry(func() error {
+		checkTime := time.Now().Add(-30 * time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		return DB.WithContext(ctx).Model(&model.MonitorHistory{}).
+			Where("created_at > ? AND (data = '' OR data IS NULL)",
+				checkTime.Format("2006-01-02 15:04:05")).
+			Count(&emptyCount).Error
+	}, 5, 200*time.Millisecond, 2*time.Second)
 
 	if err != nil {
 		log.Printf("检查空数据记录失败: %v", err)
