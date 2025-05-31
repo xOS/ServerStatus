@@ -1471,22 +1471,117 @@ func StartMonitorHistoryWorker() {
 				delete(req.Data, "@id")
 			}
 
+			// 增加更多字段检查和验证
+			var monitorID uint64
+			if mid, ok := req.Data["monitor_id"]; ok {
+				if midVal, ok := mid.(uint64); ok {
+					monitorID = midVal
+				}
+			}
+
 			// 简单地重试几次，然后放弃
 			var err error
-			for retry := 0; retry < 3; retry++ {
-				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-				err = DB.WithContext(ctx).Table("monitor_histories").Create(req.Data).Error
-				cancel()
+			for retry := 0; retry < 5; retry++ { // 增加重试次数
+				func() {
+					// 使用函数包装以确保cancel被调用
+					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					defer cancel()
+
+					// 不使用事务，直接执行插入
+					sqlStr := "INSERT INTO monitor_histories (monitor_id, server_id, avg_delay, data, up, down, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+
+					// 准备参数
+					now := time.Now()
+					var serverID uint64
+					var avgDelay float32
+					var data string
+					var up, down uint64
+
+					if v, ok := req.Data["monitor_id"]; ok {
+						if val, ok := v.(uint64); ok {
+							monitorID = val
+						}
+					}
+					if v, ok := req.Data["server_id"]; ok {
+						if val, ok := v.(uint64); ok {
+							serverID = val
+						}
+					}
+					if v, ok := req.Data["avg_delay"]; ok {
+						if val, ok := v.(float32); ok {
+							avgDelay = val
+						} else if val, ok := v.(float64); ok {
+							avgDelay = float32(val)
+						}
+					}
+					if v, ok := req.Data["data"]; ok {
+						if val, ok := v.(string); ok {
+							data = val
+						}
+					}
+					if v, ok := req.Data["up"]; ok {
+						if val, ok := v.(uint64); ok {
+							up = val
+						} else if val, ok := v.(int); ok {
+							up = uint64(val)
+						}
+					}
+					if v, ok := req.Data["down"]; ok {
+						if val, ok := v.(uint64); ok {
+							down = val
+						} else if val, ok := v.(int); ok {
+							down = uint64(val)
+						}
+					}
+
+					// 直接执行SQL，避免GORM的自动化处理
+					err = DB.WithContext(ctx).Exec(sqlStr, monitorID, serverID, avgDelay, data, up, down, now, now).Error
+				}()
 
 				if err == nil {
 					break
 				}
 
-				if retry < 2 {
-					// 使用简单的延迟策略，避免过度复杂的重试逻辑
-					delay := time.Duration(50*(retry+1)) * time.Millisecond
-					time.Sleep(delay)
+				// 只对特定错误进行重试
+				if strings.Contains(err.Error(), "database is locked") ||
+					strings.Contains(err.Error(), "SQL statements in progress") ||
+					strings.Contains(err.Error(), "cannot commit transaction") {
+					if retry < 4 {
+						// 使用简单的延迟策略，避免过度复杂的重试逻辑
+						delay := time.Duration(100*(retry+1)) * time.Millisecond
+						time.Sleep(delay)
+						log.Printf("监控历史记录插入失败 (MonitorID: %d)，重试 %d/5: %v", monitorID, retry+1, err)
+						continue
+					}
+				} else if strings.Contains(err.Error(), "no column named @id") {
+					// 如果是@id列错误，记录日志但不重试
+					log.Printf("监控历史记录插入遇到@id列错误 (MonitorID: %d): %v", monitorID, err)
+					// 尝试直接使用Map创建，避免使用@id
+					if retry < 4 {
+						// 清理数据
+						cleanData := make(map[string]interface{})
+						for k, v := range req.Data {
+							if k != "@id" {
+								cleanData[k] = v
+							}
+						}
+
+						ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+						err = DB.WithContext(ctx).Table("monitor_histories").Create(cleanData).Error
+						cancel()
+
+						if err == nil {
+							break
+						}
+
+						delay := time.Duration(100*(retry+1)) * time.Millisecond
+						time.Sleep(delay)
+						continue
+					}
 				}
+
+				// 其他错误不重试
+				break
 			}
 
 			if req.Callback != nil {

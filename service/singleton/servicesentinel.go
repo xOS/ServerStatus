@@ -220,28 +220,28 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 
 	// 加载服务监控历史记录，优化查询性能
 	var mhs []model.MonitorHistory
-	
+
 	// 添加查询优化和超时控制
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	startTime := time.Now()
-	
+
 	// 直接查询月度数据，系统启动时需要快速加载
 	fromDate := today.AddDate(0, 0, -29)
 	toDate := today
-	
+
 	err = DB.WithContext(ctx).
 		Where("created_at > ? AND created_at < ?", fromDate, toDate).
 		Order("created_at DESC").
 		Find(&mhs).Error
-		
+
 	if err != nil {
 		log.Printf("加载月度监控数据失败: %v", err)
 		return
 	}
 	queryDuration := time.Since(startTime)
-	
+
 	if queryDuration > 500*time.Millisecond {
 		log.Printf("慢SQL查询警告: 分批加载月度数据耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
 	} else {
@@ -376,7 +376,7 @@ func (ss *ServiceSentinel) worker() {
 
 	// 内存压力计数器
 	memoryPressureCounter := 0
-	
+
 	// 添加内存监控
 	memoryCheckTicker := time.NewTicker(1 * time.Minute) // 每分钟检查内存
 	defer memoryCheckTicker.Stop()
@@ -400,12 +400,12 @@ func (ss *ServiceSentinel) worker() {
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
 			currentMemMB := m.Alloc / 1024 / 1024
-			
+
 			if currentMemMB > 500 { // 如果内存超过500MB（从300MB提高）
 				log.Printf("ServiceSentinel检测到高内存使用: %dMB，执行清理", currentMemMB)
 				ss.limitDataSize()
 				ss.cleanupOldData()
-				
+
 				// 如果内存仍然很高，强制GC
 				if currentMemMB > 800 { // 从400MB提高到800MB
 					runtime.GC()
@@ -441,7 +441,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 	}
 
 	mh := r.Data
-	
+
 	// 添加边界检查，防止panic
 	if mh.GetId() == 0 {
 		log.Printf("NG>> 无效的监控ID: %+v", r)
@@ -464,7 +464,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 				ts.ping = float32(Conf.MaxTCPPingValue)
 			}
 			ts.count = 0
-			
+
 			// 使用异步数据库插入队列来保存监控数据，避免并发冲突
 			monitorData := map[string]interface{}{
 				"monitor_id": mh.GetId(),
@@ -472,7 +472,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 				"data":       mh.Data,
 				"server_id":  r.Reporter,
 			}
-			
+
 			// 使用异步插入避免数据库锁冲突
 			AsyncDBInsert("monitor_histories", monitorData, func(err error) {
 				if err != nil {
@@ -518,19 +518,19 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 			ss.serviceCurrentStatusData[mh.GetId()] = make([]*pb.TaskResult, _CurrentStatusSize)
 		}
 
-	// 边界检查：确保索引不会超出当前数组的实际长度
-	currentArrayLength := len(ss.serviceCurrentStatusData[mh.GetId()])
-	if ss.serviceCurrentStatusIndex[mh.GetId()].index >= currentArrayLength {
-		ss.serviceCurrentStatusIndex[mh.GetId()].index = 0
-	}
+		// 边界检查：确保索引不会超出当前数组的实际长度
+		currentArrayLength := len(ss.serviceCurrentStatusData[mh.GetId()])
+		if ss.serviceCurrentStatusIndex[mh.GetId()].index >= currentArrayLength {
+			ss.serviceCurrentStatusIndex[mh.GetId()].index = 0
+		}
 
-	ss.serviceCurrentStatusData[mh.GetId()][ss.serviceCurrentStatusIndex[mh.GetId()].index] = mh
-	ss.serviceCurrentStatusIndex[mh.GetId()].index++
-	
-	// 立即检查并重置index以防止越界，使用实际数组长度
-	if ss.serviceCurrentStatusIndex[mh.GetId()].index >= currentArrayLength {
-		ss.serviceCurrentStatusIndex[mh.GetId()].index = 0
-	}
+		ss.serviceCurrentStatusData[mh.GetId()][ss.serviceCurrentStatusIndex[mh.GetId()].index] = mh
+		ss.serviceCurrentStatusIndex[mh.GetId()].index++
+
+		// 立即检查并重置index以防止越界，使用实际数组长度
+		if ss.serviceCurrentStatusIndex[mh.GetId()].index >= currentArrayLength {
+			ss.serviceCurrentStatusIndex[mh.GetId()].index = 0
+		}
 	}
 
 	// 更新当前状态
@@ -566,7 +566,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 	// 改为基于时间间隔的保存策略，而不是依赖不可靠的计数器
 	now := time.Now()
 	shouldSave := false
-	
+
 	// 检查是否需要保存数据
 	if ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime.IsZero() {
 		// 首次保存
@@ -574,12 +574,12 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 	} else if now.Sub(ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime) >= 15*time.Minute {
 		// 超过15分钟未保存
 		shouldSave = true
-	} else if ss.serviceCurrentStatusIndex[mh.GetId()].index%_CurrentStatusSize == 0 && 
-			  ss.serviceCurrentStatusIndex[mh.GetId()].index > 0 {
+	} else if ss.serviceCurrentStatusIndex[mh.GetId()].index%_CurrentStatusSize == 0 &&
+		ss.serviceCurrentStatusIndex[mh.GetId()].index > 0 {
 		// 当计数器完成一个周期时也保存
 		shouldSave = true
 	}
-	
+
 	if shouldSave {
 		// 确保有数据才保存
 		totalChecks := ss.serviceResponseDataStoreCurrentUp[mh.GetId()] + ss.serviceResponseDataStoreCurrentDown[mh.GetId()]
@@ -592,16 +592,16 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 				"up":         ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
 				"down":       ss.serviceResponseDataStoreCurrentDown[mh.GetId()],
 			}
-			
-			// 使用异步插入避免数据库锁冲突
-			AsyncDBInsert("monitor_histories", monitorData, func(err error) {
+
+			// 直接使用监控历史记录专用队列，避免@id字段错误
+			AsyncMonitorHistoryInsert(monitorData, func(err error) {
 				if err != nil {
 					log.Printf("NG>> 服务监控数据持久化失败 (MonitorID: %d): %v", mh.GetId(), err)
 				} else {
 					ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime = now
-					log.Printf("监控数据已保存 (MonitorID: %d, Up: %d, Down: %d)", 
-						mh.GetId(), 
-						ss.serviceResponseDataStoreCurrentUp[mh.GetId()], 
+					log.Printf("监控数据已保存 (MonitorID: %d, Up: %d, Down: %d)",
+						mh.GetId(),
+						ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
 						ss.serviceResponseDataStoreCurrentDown[mh.GetId()])
 				}
 			})
@@ -853,10 +853,10 @@ func (ss *ServiceSentinel) limitDataSize() {
 			if len(statusData) > maxStatusRecords {
 				// 只保留最新的记录
 				ss.serviceCurrentStatusData[monitorID] = statusData[len(statusData)-maxStatusRecords:]
-				
+
 				// 重要：当数组被缩减时，必须重置索引以防止越界
-				if ss.serviceCurrentStatusIndex[monitorID] != nil && 
-				   ss.serviceCurrentStatusIndex[monitorID].index >= maxStatusRecords {
+				if ss.serviceCurrentStatusIndex[monitorID] != nil &&
+					ss.serviceCurrentStatusIndex[monitorID].index >= maxStatusRecords {
 					ss.serviceCurrentStatusIndex[monitorID].index = 0
 				}
 			}
