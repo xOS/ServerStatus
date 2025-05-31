@@ -1132,26 +1132,22 @@ func StartDBInsertWorker() {
 // executeDBWriteRequest 执行单个数据库写入请求
 func executeDBWriteRequest(req DBWriteRequest) error {
 	return ExecuteWithRetry(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		
-		// 使用事务确保操作原子性
-		return DB.Transaction(func(tx *gorm.DB) error {
-			return tx.WithContext(ctx).Table(req.TableName).Where("id = ?", req.ServerID).Updates(req.Updates).Error
-		})
+		// 直接更新，避免不必要的事务开销
+		return DB.WithContext(ctx).Table(req.TableName).Where("id = ?", req.ServerID).Updates(req.Updates).Error
 	})
 }
 
 // executeDBInsertRequest 执行单个数据库插入请求
 func executeDBInsertRequest(req DBInsertRequest) error {
 	return ExecuteWithRetry(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		
-		// 使用事务确保操作原子性
-		return DB.Transaction(func(tx *gorm.DB) error {
-			return tx.WithContext(ctx).Table(req.TableName).Create(req.Data).Error
-		})
+		// 直接插入，避免不必要的事务开销
+		return DB.WithContext(ctx).Table(req.TableName).Create(req.Data).Error
 	})
 }
 

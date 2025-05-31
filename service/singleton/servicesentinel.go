@@ -179,7 +179,15 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 		// 旧版本可能不存在通知组 为其设置默认组
 		if monitors[i].NotificationTag == "" {
 			monitors[i].NotificationTag = "default"
-			DB.Save(monitors[i])
+			// 使用异步队列更新，避免锁冲突
+			monitorData := map[string]interface{}{
+				"notification_tag": "default",
+			}
+			AsyncDBUpdate(monitors[i].ID, "monitors", monitorData, func(err error) {
+				if err != nil {
+					log.Printf("更新Monitor通知组失败: %v", err)
+				}
+			})
 		}
 
 		// 初始化监控数据存储
@@ -456,14 +464,21 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 				ts.ping = float32(Conf.MaxTCPPingValue)
 			}
 			ts.count = 0
-			if err := DB.Create(&model.MonitorHistory{
-				MonitorID: mh.GetId(),
-				AvgDelay:  ts.ping,
-				Data:      mh.Data,
-				ServerID:  r.Reporter,
-			}).Error; err != nil {
-				log.Println("NG>> 服务监控数据持久化失败：", err)
+			
+			// 使用异步数据库插入队列来保存监控数据，避免并发冲突
+			monitorData := map[string]interface{}{
+				"monitor_id": mh.GetId(),
+				"avg_delay":  ts.ping,
+				"data":       mh.Data,
+				"server_id":  r.Reporter,
 			}
+			
+			// 使用异步插入避免数据库锁冲突
+			AsyncDBInsert("monitor_histories", monitorData, func(err error) {
+				if err != nil {
+					log.Printf("NG>> TCP/ICMP监控数据持久化失败 (MonitorID: %d): %v", mh.GetId(), err)
+				}
+			})
 		}
 		monitorTcpMap[r.Reporter] = ts
 	}

@@ -80,9 +80,14 @@ func AlertSentinelStart() {
 		// 旧版本可能不存在通知组 为其添加默认值
 		if alert.NotificationTag == "" {
 			alert.NotificationTag = "default"
-			// 使用重试机制保存
-			executeWithRetry(func() error {
-				return DB.Save(alert).Error
+			// 使用异步队列保存，避免锁冲突
+			alertData := map[string]interface{}{
+				"notification_tag": "default",
+			}
+			AsyncDBUpdate(alert.ID, "alert_rules", alertData, func(err error) {
+				if err != nil {
+					log.Printf("更新AlertRule通知组失败: %v", err)
+				}
 			})
 		}
 		alertsStore[alert.ID] = make(map[uint64][][]interface{})
