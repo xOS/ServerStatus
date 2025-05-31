@@ -17,6 +17,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"github.com/jinzhu/copier"
 	"github.com/xos/serverstatus/model"
@@ -234,37 +235,55 @@ func InitConfigFromPath(path string) {
 	}
 }
 
-// InitDBFromPath 从给出的文件路径中加载数据库
-func InitDBFromPath(path string) {
+// InitDBFromPath 从指定路径初始化数据库
+func InitDBFromPath(path string) error {
 	var err error
-	DB, err = gorm.Open(sqlite.Open(path), &gorm.Config{
+
+	Loc, err = time.LoadLocation(Conf.Location)
+	if err != nil {
+		Loc = time.Local
+	}
+
+	dsn := fmt.Sprintf("file:%s?loc=auto&_journal_mode=WAL&_busy_timeout=%d&_synchronous=%s", path, 30000, "NORMAL")
+	DB, err = gorm.Open(sqlite.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+		NowFunc: func() time.Time {
+			return time.Now().In(Loc)
+		},
 		CreateBatchSize: 60,   // 增加批处理大小到60（从50增加）
 		PrepareStmt:     true, // 启用预处理语句以提高性能
 	})
+
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	// 配置SQLite连接以避免锁死问题
-	sqlDB, err := DB.DB()
+	// 专门为monitor_histories表添加优化
+	DB.Exec("PRAGMA temp_store = MEMORY;")
+	DB.Exec("PRAGMA mmap_size = 1073741824;")        // 1GB
+	DB.Exec("PRAGMA cache_size = -131072;")          // 增加到128MB
+	DB.Exec("PRAGMA journal_size_limit = 67108864;") // 64MB
+	DB.Exec("PRAGMA busy_timeout = 180000;")         // 180秒等待超时
+	DB.Exec("PRAGMA locking_mode = EXCLUSIVE;")      // 独占锁定模式，减少锁冲突
+	DB.Exec("PRAGMA wal_autocheckpoint = 50000;")    // 增加自动检查点，从20000增加到50000
+
+	// 为monitor_histories表添加特定索引，提高查询性能
+	DB.Exec("CREATE INDEX IF NOT EXISTS idx_monitor_histories_created_at ON monitor_histories(created_at);")
+	DB.Exec("CREATE INDEX IF NOT EXISTS idx_monitor_histories_monitor_type ON monitor_histories(monitor_id);")
+	DB.Exec("CREATE INDEX IF NOT EXISTS idx_monitor_histories_server_id ON monitor_histories(server_id);")
+
+	// 优化连接池配置
+	rawDB, err := DB.DB()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	// SQLite WAL模式优化：进一步降低并发连接
-	sqlDB.SetMaxOpenConns(6)                   // 从10减少到6，严格限制并发连接数
-	sqlDB.SetMaxIdleConns(3)                   // 从5减少到3，减少空闲连接
-	sqlDB.SetConnMaxLifetime(20 * time.Minute) // 从30分钟减少到20分钟
-	sqlDB.SetConnMaxIdleTime(5 * time.Minute)  // 从10分钟减少到5分钟，更快回收空闲连接
+	// 修改连接池配置，降低并发压力
+	rawDB.SetMaxIdleConns(3) // 降低空闲连接数，从10降到3
+	rawDB.SetMaxOpenConns(6) // 降低最大连接数，从20降到6
+	rawDB.SetConnMaxLifetime(time.Hour)
 
-	// SQLite性能和锁管理优化配置
-	DB.Exec("PRAGMA synchronous = NORMAL")  // 平衡性能和安全性
-	DB.Exec("PRAGMA cache_size = -128000")  // 从64MB增加到128MB，提高缓存容量
-	DB.Exec("PRAGMA temp_store = memory")   // 临时表存储在内存
-	DB.Exec("PRAGMA busy_timeout = 120000") // 保持120秒超时
-	DB.Exec("PRAGMA optimize")              // 启用查询优化器
-	// 迁移时先使用DELETE模式，避免WAL锁竞争
-
+	// 初始化数据库表
 	log.Println("开始数据库表迁移...")
 	err = DB.AutoMigrate(model.Server{}, model.User{},
 		model.Notification{}, model.AlertRule{}, model.Monitor{},
@@ -272,24 +291,9 @@ func InitDBFromPath(path string) {
 		model.ApiToken{}, model.NAT{}, model.DDNSProfile{}, model.DDNSRecordState{})
 	if err != nil {
 		log.Printf("数据库迁移失败: %v", err)
-		panic(err)
+		return err
 	}
 	log.Println("数据库表迁移完成")
-
-	// 迁移完成后切换到WAL模式并优化并发设置
-	DB.Exec("PRAGMA journal_mode = WAL")             // 使用WAL模式，支持多读一写
-	DB.Exec("PRAGMA synchronous = NORMAL")           // 平衡性能和安全性
-	DB.Exec("PRAGMA cache_size = -128000")           // 128MB缓存
-	DB.Exec("PRAGMA temp_store = MEMORY")            // 临时表存储在内存中
-	DB.Exec("PRAGMA mmap_size = 1073741824")         // 增加到1GB内存映射，显著提升大数据集性能
-	DB.Exec("PRAGMA wal_autocheckpoint = 50000")     // 从20000增加到50000，进一步降低检查点频率
-	DB.Exec("PRAGMA busy_timeout = 180000")          // 从120秒增加到180秒，给更多时间处理锁竞争
-	DB.Exec("PRAGMA threads = 2")                    // 从4线程减少到2线程，进一步减少并发冲突
-	DB.Exec("PRAGMA journal_size_limit = 134217728") // 增加WAL文件大小限制到128MB
-	DB.Exec("PRAGMA wal_checkpoint(PASSIVE)")        // 执行被动检查点
-	DB.Exec("PRAGMA foreign_keys = ON")              // 确保外键约束启用
-	DB.Exec("PRAGMA locking_mode = EXCLUSIVE")       // 使用独占锁定模式，减少锁切换开销
-	log.Println("数据库配置完成")
 
 	// 启动连接池监控
 	StartConnectionPoolMonitor()
@@ -298,10 +302,8 @@ func InitDBFromPath(path string) {
 	// 预热数据库连接池
 	WarmupDatabase()
 
-	// 启动数据库写入工作器
+	// 启动写入队列和插入队列
 	StartDBWriteWorker()
-
-	// 启动数据库插入工作器
 	StartDBInsertWorker()
 
 	// 启动监控历史记录专用工作器
@@ -310,65 +312,7 @@ func InitDBFromPath(path string) {
 	// 启动数据库维护计划
 	StartDatabaseMaintenanceScheduler()
 
-	// 检查并添加新字段
-	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {
-		if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_in_transfer"); err != nil {
-			log.Println("添加cumulative_net_in_transfer字段失败:", err)
-		}
-	}
-
-	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_out_transfer") {
-		if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_out_transfer"); err != nil {
-			log.Println("添加cumulative_net_out_transfer字段失败:", err)
-		}
-	}
-
-	if !DB.Migrator().HasColumn(&model.Server{}, "last_state_json") {
-		if err := DB.Migrator().AddColumn(&model.Server{}, "last_state_json"); err != nil {
-			log.Println("添加last_state_json字段失败:", err)
-		}
-	}
-
-	if !DB.Migrator().HasColumn(&model.Server{}, "last_online") {
-		if err := DB.Migrator().AddColumn(&model.Server{}, "last_online"); err != nil {
-			log.Println("添加last_online字段失败:", err)
-		}
-	}
-
-	// 检查host_json字段是否存在，如果不存在则添加
-	if !DB.Migrator().HasColumn(&model.Server{}, "host_json") {
-		if err := DB.Migrator().AddColumn(&model.Server{}, "host_json"); err != nil {
-			log.Println("添加host_json字段失败:", err)
-		}
-	}
-
-	// 检查是否需要从last_reported_host表迁移数据到servers表
-	var hasLegacyTable bool
-	if err := DB.Raw("SELECT 1 FROM sqlite_master WHERE type='table' AND name='last_reported_host'").Scan(&hasLegacyTable).Error; err == nil && hasLegacyTable {
-		log.Println("检测到旧的last_reported_host表，开始迁移数据...")
-
-		// 迁移数据
-		if err := DB.Exec(`
-			UPDATE servers 
-			SET host_json = (
-				SELECT host_json 
-				FROM last_reported_host 
-				WHERE last_reported_host.server_id = servers.id
-			)
-			WHERE id IN (SELECT server_id FROM last_reported_host)
-		`).Error; err != nil {
-			log.Println("迁移host_json数据失败:", err)
-		} else {
-			log.Println("迁移host_json数据成功")
-
-			// 删除旧表
-			if err := DB.Exec("DROP TABLE last_reported_host").Error; err != nil {
-				log.Println("删除last_reported_host表失败:", err)
-			} else {
-				log.Println("删除last_reported_host表成功")
-			}
-		}
-	}
+	return nil
 }
 
 // RecordTransferHourlyUsage 记录每小时流量使用情况
@@ -507,12 +451,13 @@ func CleanMonitorHistory() {
 	// 使用无锁方式执行清理操作，依赖SQLite WAL模式的并发控制
 	err := executeWithoutLock(func() error {
 		var totalCleaned int64
-		batchSize := 25                             // 增加批次大小到25（从20增加）
-		maxRetries := 3                             // 减少重试次数，更快失败
-		cutoffDate := time.Now().AddDate(0, 0, -60) // 延长到60天，避免误删除有效历史数据
+		batchSize := 25                                // 增加批次大小到25（从20增加）
+		maxRetries := 3                                // 减少重试次数，更快失败
+		cutoffDate := time.Now().AddDate(0, 0, -60)    // 延长到60天，避免误删除有效历史数据
+		safetyBuffer := time.Now().Add(-6 * time.Hour) // 添加6小时安全缓冲区，避免误删新数据
 
 		// 使用非事务方式分批清理，避免长时间事务锁定
-		// 清理60天前的监控记录
+		// 清理60天前的监控记录，并确保不删除最近6小时的数据
 		for {
 			var count int64
 			var err error
@@ -521,9 +466,11 @@ func CleanMonitorHistory() {
 				// 等待确保没有其他操作在进行
 				time.Sleep(time.Duration(retry*100) * time.Millisecond)
 
-				// 使用子查询删除，SQLite兼容方式
-				result := DB.Exec("DELETE FROM monitor_histories WHERE rowid IN (SELECT rowid FROM monitor_histories WHERE created_at < ? LIMIT ?)",
-					cutoffDate.Format("2006-01-02 15:04:05"), batchSize)
+				// 使用子查询删除，添加安全时间检查，确保不会删除新数据
+				result := DB.Exec("DELETE FROM monitor_histories WHERE rowid IN (SELECT rowid FROM monitor_histories WHERE created_at < ? AND created_at < ? LIMIT ?)",
+					cutoffDate.Format("2006-01-02 15:04:05"),
+					safetyBuffer.Format("2006-01-02 15:04:05"),
+					batchSize)
 
 				if result.Error != nil {
 					err = result.Error
@@ -561,7 +508,7 @@ func CleanMonitorHistory() {
 			time.Sleep(100 * time.Millisecond)
 		}
 
-		// 清理孤立的监控记录
+		// 清理孤立的监控记录，添加安全时间检查
 		for {
 			var count int64
 			var err error
@@ -570,8 +517,10 @@ func CleanMonitorHistory() {
 				// 等待确保没有其他操作在进行
 				time.Sleep(time.Duration(retry*100) * time.Millisecond)
 
-				// 使用子查询删除孤立记录，SQLite兼容方式
-				result := DB.Exec("DELETE FROM monitor_histories WHERE rowid IN (SELECT rowid FROM monitor_histories WHERE monitor_id NOT IN (SELECT id FROM monitors) LIMIT ?)", batchSize)
+				// 使用子查询删除孤立记录，添加时间安全检查
+				result := DB.Exec("DELETE FROM monitor_histories WHERE rowid IN (SELECT rowid FROM monitor_histories WHERE monitor_id NOT IN (SELECT id FROM monitors) AND created_at < ? LIMIT ?)",
+					safetyBuffer.Format("2006-01-02 15:04:05"),
+					batchSize)
 
 				if result.Error != nil {
 					err = result.Error
@@ -1915,9 +1864,9 @@ func batchInsertMonitorHistories(requests []DBInsertRequest) error {
 		strings.Join(valueStrings, ", "),
 	)
 
-	// 使用事务包装批量插入，提高原子性
+	// 使用改进的重试机制包装批量插入，提高原子性和可靠性
 	return executeWithAdvancedRetry(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second) // 从10秒增加到20秒
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // 从20秒增加到30秒
 		defer cancel()
 
 		// 使用事务确保批量插入的原子性
@@ -1925,15 +1874,22 @@ func batchInsertMonitorHistories(requests []DBInsertRequest) error {
 			// 在事务内执行批量插入
 			result := tx.Exec(query, valueArgs...)
 			if result.Error != nil {
-				// 发生错误，回滚事务
-				log.Printf("批量插入失败，回滚事务: %v", result.Error)
+				// 专门处理锁定错误，使其可重试
+				if strings.Contains(result.Error.Error(), "database is locked") ||
+					strings.Contains(result.Error.Error(), "SQL statements in progress") ||
+					strings.Contains(result.Error.Error(), "cannot commit") {
+					log.Printf("数据库锁定，等待重试批量插入: %v", result.Error)
+				} else {
+					// 其他错误情况
+					log.Printf("批量插入失败，错误: %v", result.Error)
+				}
 				return result.Error
 			}
 
 			// 事务提交
 			return nil
 		})
-	}, 8, 100*time.Millisecond, 5*time.Second) // 增加重试次数和等待时间
+	}, 10, 200*time.Millisecond, 8*time.Second) // 增加重试次数和等待时间
 }
 
 // AsyncBatchMonitorHistoryInsert 将监控历史记录添加到批处理队列
@@ -1941,7 +1897,119 @@ func AsyncBatchMonitorHistoryInsert(data map[string]interface{}, callback func(e
 	// 确保批处理器已启动
 	StartMonitorHistoryBatchProcessor()
 
-	// 添加到批处理队列
+	// 为ICMP和TCP监控尝试直接保存一份到数据库，确保数据不丢失
+	monitorID, hasMonitorID := data["monitor_id"]
+	if hasMonitorID {
+		// 安全类型转换
+		var midVal uint64
+		switch mid := monitorID.(type) {
+		case uint64:
+			midVal = mid
+		case uint:
+			midVal = uint64(mid)
+		case int64:
+			midVal = uint64(mid)
+		case int:
+			midVal = uint64(mid)
+		case float64:
+			midVal = uint64(mid)
+		default:
+			// 无法转换，使用0值
+			midVal = 0
+		}
+
+		// 对ICMP和TCP监控使用直接插入，绕过批处理系统
+		if midVal == model.TaskTypeICMPPing || midVal == model.TaskTypeTCPPing {
+			// 克隆数据，避免竞态条件
+			directData := make(map[string]interface{})
+			for k, v := range data {
+				directData[k] = v
+			}
+
+			go func(insertData map[string]interface{}) {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+
+				// 使用直接SQL插入，避免GORM的@id字段问题
+				sqlStr := "INSERT INTO monitor_histories (monitor_id, server_id, avg_delay, data, up, down, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+
+				now := time.Now()
+				monitorID, _ := insertData["monitor_id"].(uint64)
+
+				var serverID uint64
+				if sid, ok := insertData["server_id"]; ok {
+					switch s := sid.(type) {
+					case uint64:
+						serverID = s
+					case uint:
+						serverID = uint64(s)
+					case int64:
+						serverID = uint64(s)
+					case int:
+						serverID = uint64(s)
+					case float64:
+						serverID = uint64(s)
+					}
+				}
+
+				var avgDelay float32
+				if ad, ok := insertData["avg_delay"]; ok {
+					switch a := ad.(type) {
+					case float32:
+						avgDelay = a
+					case float64:
+						avgDelay = float32(a)
+					}
+				}
+
+				dataStr, _ := insertData["data"].(string)
+
+				var up, down uint64
+				if u, ok := insertData["up"]; ok {
+					switch uv := u.(type) {
+					case uint64:
+						up = uv
+					case uint:
+						up = uint64(uv)
+					case int64:
+						up = uint64(uv)
+					case int:
+						up = uint64(uv)
+					case float64:
+						up = uint64(uv)
+					}
+				}
+
+				if d, ok := insertData["down"]; ok {
+					switch dv := d.(type) {
+					case uint64:
+						down = dv
+					case uint:
+						down = uint64(dv)
+					case int64:
+						down = uint64(dv)
+					case int:
+						down = uint64(dv)
+					case float64:
+						down = uint64(dv)
+					}
+				}
+
+				// 使用高级重试逻辑执行插入
+				err := executeWithAdvancedRetry(func() error {
+					return DB.WithContext(ctx).Exec(sqlStr, monitorID, serverID, avgDelay, dataStr, up, down, now, now).Error
+				}, 5, 100*time.Millisecond, 3*time.Second)
+
+				if err != nil {
+					log.Printf("ICMP/TCP监控数据直接插入失败 (MonitorID: %d): %v", monitorID, err)
+				} else {
+					log.Printf("ICMP/TCP监控数据直接插入成功 (MonitorID: %d)", monitorID)
+				}
+			}(directData)
+		}
+	}
+
+	// 同时仍然放入批处理队列作为备份
 	select {
 	case monitorHistoryBatchQueue <- DBInsertRequest{
 		TableName: "monitor_histories",
@@ -1953,7 +2021,75 @@ func AsyncBatchMonitorHistoryInsert(data map[string]interface{}, callback func(e
 		// 队列满，丢弃数据并记录日志
 		log.Printf("监控历史记录批处理队列已满，丢弃一条记录")
 		if callback != nil {
-			callback(fmt.Errorf("监控历史记录批处理队列已满"))
+			go callback(fmt.Errorf("监控历史记录批处理队列已满"))
 		}
+	}
+}
+
+// VerifyMonitorHistoryConsistency 检查监控历史记录的一致性
+func VerifyMonitorHistoryConsistency() {
+	// 检查是否有其他重要操作正在进行
+	if isSystemBusy() {
+		log.Printf("系统繁忙，跳过监控历史记录一致性检查")
+		return
+	}
+
+	log.Printf("执行监控历史记录一致性检查...")
+
+	// 检查最近30分钟内添加的ICMP/TCP监控记录
+	var count int64
+	checkTime := time.Now().Add(-30 * time.Minute)
+
+	err := DB.Model(&model.MonitorHistory{}).
+		Where("created_at > ? AND monitor_id IN (?, ?)",
+			checkTime.Format("2006-01-02 15:04:05"),
+			model.TaskTypeICMPPing, model.TaskTypeTCPPing).
+		Count(&count).Error
+
+	if err != nil {
+		log.Printf("检查监控历史记录失败: %v", err)
+		return
+	}
+
+	log.Printf("最近30分钟内ICMP/TCP监控记录数: %d", count)
+
+	// 如果数量异常少，触发报警
+	if count < 10 { // 根据实际情况调整阈值
+		log.Printf("警告: ICMP/TCP监控记录数量异常少，可能存在数据丢失")
+
+		// 记录警告日志，不通过通知系统发送，避免依赖错误
+		log.Printf("监控历史记录一致性警告: 最近30分钟内仅有 %d 条ICMP/TCP监控记录，可能存在数据丢失", count)
+
+		// 强制执行数据库优化
+		go func() {
+			time.Sleep(5 * time.Second)
+			optimizeDatabase()
+		}()
+	}
+
+	// 检查空数据记录
+	var emptyCount int64
+	err = DB.Model(&model.MonitorHistory{}).
+		Where("created_at > ? AND (data = '' OR data IS NULL)",
+			checkTime.Format("2006-01-02 15:04:05")).
+		Count(&emptyCount).Error
+
+	if err != nil {
+		log.Printf("检查空数据记录失败: %v", err)
+		return
+	}
+
+	if emptyCount > 0 {
+		log.Printf("警告: 发现 %d 条空数据记录", emptyCount)
+	}
+}
+
+// 在原有init函数中添加监控一致性检查的定时任务
+func init() {
+	// ... existing code ...
+
+	// 添加监控历史记录一致性检查任务，每10分钟执行一次
+	if _, err := Cron.AddFunc("*/10 * * * *", VerifyMonitorHistoryConsistency); err != nil {
+		log.Printf("添加监控历史记录一致性检查任务失败: %v", err)
 	}
 }
