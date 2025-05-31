@@ -494,10 +494,9 @@ func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *mo
 	state.NetInTransfer = server.CumulativeNetInTransfer
 	state.NetOutTransfer = server.CumulativeNetOutTransfer
 
-	// 记录调试信息
-	if increaseIn > 0 || increaseOut > 0 {
-		log.Printf("调试：服务器 %d 入站增量=%d, 出站增量=%d, 累计入站=%d, 累计出站=%d",
-			server.ID, increaseIn, increaseOut, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+	// 仅在异常大流量增量时记录日志，减少日志输出
+	if increaseIn > 100*1024*1024*1024 || increaseOut > 100*1024*1024*1024 {
+		log.Printf("注意：服务器 %d 流量增量较大 (入站=%d, 出站=%d)", server.ID, increaseIn, increaseOut)
 	}
 }
 
