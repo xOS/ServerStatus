@@ -30,6 +30,9 @@ var (
 	Cache *cache.Cache
 	DB    *gorm.DB
 	Loc   *time.Location
+
+	// 服务器状态缓存，减少数据库访问
+	serverStatusCache *cache.Cache
 )
 
 func InitTimezoneAndCache() {
@@ -42,6 +45,9 @@ func InitTimezoneAndCache() {
 	// 使用合理的缓存时间，并适度调整清理频率
 	Cache = cache.New(6*time.Minute, 12*time.Minute) // 增加缓存时间（从5/10分钟增加到6/12分钟）
 
+	// 初始化服务器状态缓存，单独设置更长的过期时间
+	serverStatusCache = cache.New(15*time.Minute, 30*time.Minute)
+
 	// 启动适度的定期清理任务
 	go func() {
 		ticker := time.NewTicker(35 * time.Minute) // 改为35分钟清理一次（从30分钟增加）
@@ -49,6 +55,7 @@ func InitTimezoneAndCache() {
 
 		for range ticker.C {
 			Cache.DeleteExpired()
+			serverStatusCache.DeleteExpired()
 		}
 	}()
 }
@@ -244,18 +251,18 @@ func InitDBFromPath(path string) {
 		panic(err)
 	}
 
-	// SQLite WAL模式优化：支持多读一写的并发模式
-	sqlDB.SetMaxOpenConns(20)                  // 减少到20个并发连接，避免过度并发导致的锁争用
-	sqlDB.SetMaxIdleConns(10)                  // 保持10个空闲连接，减少连接创建开销
-	sqlDB.SetConnMaxLifetime(30 * time.Minute) // 30分钟连接生命周期，减少连接重建
-	sqlDB.SetConnMaxIdleTime(10 * time.Minute) // 空闲连接保持10分钟
+	// SQLite WAL模式优化：进一步降低并发连接
+	sqlDB.SetMaxOpenConns(6)                   // 从10减少到6，严格限制并发连接数
+	sqlDB.SetMaxIdleConns(3)                   // 从5减少到3，减少空闲连接
+	sqlDB.SetConnMaxLifetime(20 * time.Minute) // 从30分钟减少到20分钟
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)  // 从10分钟减少到5分钟，更快回收空闲连接
 
 	// SQLite性能和锁管理优化配置
-	DB.Exec("PRAGMA synchronous = NORMAL") // 平衡性能和安全性
-	DB.Exec("PRAGMA cache_size = -64000")  // 增加缓存到64MB，提升查询性能
-	DB.Exec("PRAGMA temp_store = memory")  // 临时表存储在内存
-	DB.Exec("PRAGMA busy_timeout = 60000") // 增加到60秒锁等待超时，减少冲突失败
-	DB.Exec("PRAGMA optimize")             // 启用查询优化器
+	DB.Exec("PRAGMA synchronous = NORMAL")  // 平衡性能和安全性
+	DB.Exec("PRAGMA cache_size = -128000")  // 从64MB增加到128MB，提高缓存容量
+	DB.Exec("PRAGMA temp_store = memory")   // 临时表存储在内存
+	DB.Exec("PRAGMA busy_timeout = 120000") // 保持120秒超时
+	DB.Exec("PRAGMA optimize")              // 启用查询优化器
 	// 迁移时先使用DELETE模式，避免WAL锁竞争
 
 	log.Println("开始数据库表迁移...")
@@ -270,15 +277,18 @@ func InitDBFromPath(path string) {
 	log.Println("数据库表迁移完成")
 
 	// 迁移完成后切换到WAL模式并优化并发设置
-	DB.Exec("PRAGMA journal_mode = WAL")         // 使用WAL模式，支持多读一写
-	DB.Exec("PRAGMA synchronous = NORMAL")       // 平衡性能和安全性
-	DB.Exec("PRAGMA cache_size = -64000")        // 64MB缓存
-	DB.Exec("PRAGMA temp_store = MEMORY")        // 临时表存储在内存中
-	DB.Exec("PRAGMA mmap_size = 536870912")      // 增加到512MB内存映射，提升大数据集性能
-	DB.Exec("PRAGMA wal_autocheckpoint = 10000") // WAL文件10000页时自动检查点，降低检查点频率
-	DB.Exec("PRAGMA busy_timeout = 60000")       // 60秒超时，给更多时间处理锁竞争
-	DB.Exec("PRAGMA threads = 8")                // 启用8线程支持，提升并发处理能力
-	DB.Exec("PRAGMA wal_checkpoint(PASSIVE)")    // 执行被动检查点
+	DB.Exec("PRAGMA journal_mode = WAL")             // 使用WAL模式，支持多读一写
+	DB.Exec("PRAGMA synchronous = NORMAL")           // 平衡性能和安全性
+	DB.Exec("PRAGMA cache_size = -128000")           // 128MB缓存
+	DB.Exec("PRAGMA temp_store = MEMORY")            // 临时表存储在内存中
+	DB.Exec("PRAGMA mmap_size = 1073741824")         // 增加到1GB内存映射，显著提升大数据集性能
+	DB.Exec("PRAGMA wal_autocheckpoint = 50000")     // 从20000增加到50000，进一步降低检查点频率
+	DB.Exec("PRAGMA busy_timeout = 180000")          // 从120秒增加到180秒，给更多时间处理锁竞争
+	DB.Exec("PRAGMA threads = 2")                    // 从4线程减少到2线程，进一步减少并发冲突
+	DB.Exec("PRAGMA journal_size_limit = 134217728") // 增加WAL文件大小限制到128MB
+	DB.Exec("PRAGMA wal_checkpoint(PASSIVE)")        // 执行被动检查点
+	DB.Exec("PRAGMA foreign_keys = ON")              // 确保外键约束启用
+	DB.Exec("PRAGMA locking_mode = EXCLUSIVE")       // 使用独占锁定模式，减少锁切换开销
 	log.Println("数据库配置完成")
 
 	// 启动连接池监控
@@ -425,36 +435,31 @@ func executeWithoutLock(operation func() error) error {
 
 // ExecuteWithRetry 带重试机制的数据库操作，用于处理临时的数据库锁定（导出版本）
 func ExecuteWithRetry(operation func() error) error {
-	const maxRetries = 5                    // 增加重试次数到5次
-	const baseDelay = 25 * time.Millisecond // 减少基础延迟
-	const maxDelay = 500 * time.Millisecond // 最大延迟500ms
+	return executeWithAdvancedRetry(operation, 8, 10*time.Millisecond, 10*time.Second)
+}
 
+// executeWithAdvancedRetry 实现指数退避重试机制
+func executeWithAdvancedRetry(operation func() error, maxRetries int, baseDelay, maxDelay time.Duration) error {
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		err := operation()
 		if err == nil {
 			return nil
 		}
 
-		// 检查是否是数据库锁定错误
-		if strings.Contains(err.Error(), "database is locked") ||
-			strings.Contains(err.Error(), "SQL statements in progress") ||
-			strings.Contains(err.Error(), "cannot commit transaction") ||
-			strings.Contains(err.Error(), "database table is locked") {
-
+		// 判断是否是可重试的错误
+		if isRetryableError(err) {
 			if attempt < maxRetries-1 {
-				// 更智能的延迟策略：随机化指数退避
-				delay := baseDelay * time.Duration(1<<attempt)
+				// 指数退避策略
+				delay := baseDelay * time.Duration(1<<uint(attempt))
 				if delay > maxDelay {
 					delay = maxDelay
 				}
-				// 添加安全的随机抖动，避免雷群效应
-				maxJitter := int64(delay) / 4
-				if maxJitter > 0 {
-					jitterBig, err := rand.Int(rand.Reader, big.NewInt(maxJitter))
-					if err == nil {
-						jitter := time.Duration(jitterBig.Int64())
-						delay += jitter
-					}
+
+				// 添加随机抖动避免同步重试
+				jitterBig, jErr := rand.Int(rand.Reader, big.NewInt(int64(delay/4)))
+				if jErr == nil {
+					jitter := time.Duration(jitterBig.Int64())
+					delay += jitter
 				}
 
 				log.Printf("数据库操作重试 %d/%d，延迟 %v: %v", attempt+1, maxRetries, delay, err)
@@ -463,11 +468,22 @@ func ExecuteWithRetry(operation func() error) error {
 			}
 		}
 
-		// 非数据库锁定错误或已达到最大重试次数
+		// 无法重试的错误或已到达最大重试次数
 		return err
 	}
 
 	return fmt.Errorf("数据库操作在 %d 次重试后失败", maxRetries)
+}
+
+// isRetryableError 判断错误是否可以重试
+func isRetryableError(err error) bool {
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "database is locked") ||
+		strings.Contains(errMsg, "SQL statements in progress") ||
+		strings.Contains(errMsg, "cannot commit transaction") ||
+		strings.Contains(errMsg, "database table is locked") ||
+		strings.Contains(errMsg, "database is busy") ||
+		strings.Contains(errMsg, "disk I/O error")
 }
 
 // executeWithRetry 带重试机制的数据库操作，用于处理临时的数据库锁定
@@ -725,19 +741,17 @@ func CheckServerOnlineStatus() {
 
 			// 离线前保存累计流量数据到数据库
 			if server.State != nil {
-				// 使用事务确保数据一致性
-				tx := DB.Begin()
-				if err := tx.Model(server).Updates(map[string]interface{}{
+				// 使用安全更新函数替代事务
+				AsyncSafeUpdateServerStatus(server.ID, map[string]interface{}{
 					"cumulative_net_in_transfer":  server.State.NetInTransfer,
 					"cumulative_net_out_transfer": server.State.NetOutTransfer,
-				}).Error; err != nil {
-					tx.Rollback()
-					log.Printf("保存服务器 %s 的累计流量数据失败: %v", server.Name, err)
-				} else {
-					if err := tx.Commit().Error; err != nil {
-						log.Printf("提交服务器 %s 的累计流量数据事务失败: %v", server.Name, err)
+					"last_online":                 server.LastActive,
+					"last_state_json":             server.LastStateJSON,
+				}, func(err error) {
+					if err != nil {
+						log.Printf("保存服务器 %s 的累计流量数据失败: %v", server.Name, err)
 					}
-				}
+				})
 			}
 		}
 
@@ -746,11 +760,11 @@ func CheckServerOnlineStatus() {
 			server.CumulativeNetInTransfer = 0
 			server.CumulativeNetOutTransfer = 0
 
-			// 更新数据库
-			DB.Model(server).Updates(map[string]interface{}{
+			// 更新数据库 - 使用安全更新函数
+			AsyncSafeUpdateServerStatus(server.ID, map[string]interface{}{
 				"cumulative_net_in_transfer":  0,
 				"cumulative_net_out_transfer": 0,
-			})
+			}, nil)
 		}
 	}
 }
@@ -809,57 +823,57 @@ func SaveAllTrafficToDB() {
 		return
 	}
 
-	// 使用无锁方式进行批量更新，依赖SQLite WAL模式处理并发
-	err := executeWithoutLock(func() error {
-		savedCount := 0
-		maxRetries := 3
+	// 批量构造更新语句，减少数据库操作次数
+	batchSize := 5 // 每批更新5个服务器
+	serverBatches := make([][]uint64, 0)
 
-		for serverID, server := range serverData {
-			var err error
+	// 将服务器ID分组
+	var currentBatch []uint64
+	for serverID := range serverData {
+		currentBatch = append(currentBatch, serverID)
 
-			// 重试机制处理数据库忙碌
-			for retry := 0; retry < maxRetries; retry++ {
-				updateSQL := `UPDATE servers SET 
-								cumulative_net_in_transfer = ?, 
-								cumulative_net_out_transfer = ? 
-								WHERE id = ?`
-
-				err = DB.Exec(updateSQL,
-					server.CumulativeNetInTransfer,
-					server.CumulativeNetOutTransfer,
-					serverID).Error
-
-				if err == nil {
-					savedCount++
-					break
-				}
-
-				// 检查是否为数据库锁错误
-				if strings.Contains(err.Error(), "database is locked") ||
-					strings.Contains(err.Error(), "SQL statements in progress") {
-					if retry < maxRetries-1 {
-						backoffDelay := time.Duration((retry+1)*200) * time.Millisecond
-						log.Printf("数据库忙碌，%v 后重试流量保存 (%d/%d)", backoffDelay, retry+1, maxRetries)
-						time.Sleep(backoffDelay)
-						continue
-					}
-				}
-
-				log.Printf("保存服务器 %s (ID:%d) 累计流量失败: %v", server.Name, serverID, err)
-				break
-			}
+		if len(currentBatch) >= batchSize {
+			serverBatches = append(serverBatches, currentBatch)
+			currentBatch = make([]uint64, 0)
 		}
-
-		if savedCount > 0 {
-			log.Printf("成功保存 %d 个服务器的累计流量数据", savedCount)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		log.Printf("保存流量数据过程中发生错误: %v", err)
 	}
+
+	// 处理最后一批
+	if len(currentBatch) > 0 {
+		serverBatches = append(serverBatches, currentBatch)
+	}
+
+	// 每批异步处理
+	var wg sync.WaitGroup
+	for _, batch := range serverBatches {
+		wg.Add(1)
+		go func(serverIDs []uint64) {
+			defer wg.Done()
+
+			// 为每个服务器构建更新语句
+			for _, serverID := range serverIDs {
+				server := serverData[serverID]
+
+				// 使用无事务更新
+				err := SafeUpdateServerStatus(serverID, map[string]interface{}{
+					"cumulative_net_in_transfer":  server.CumulativeNetInTransfer,
+					"cumulative_net_out_transfer": server.CumulativeNetOutTransfer,
+				})
+
+				if err != nil {
+					log.Printf("保存服务器 %s (ID:%d) 累计流量失败: %v", server.Name, serverID, err)
+				}
+
+				// 添加延迟，避免并发更新
+				time.Sleep(50 * time.Millisecond)
+			}
+		}(batch)
+	}
+
+	// 等待所有批次完成
+	wg.Wait()
+
+	log.Printf("成功保存 %d 个服务器的累计流量数据", len(serverData))
 }
 
 // AutoSyncTraffic 自动同步流量的空实现
@@ -1216,6 +1230,14 @@ var (
 	monitorHistoryQueue         = make(chan DBInsertRequest, 2000)
 	monitorHistoryWorkerStarted = false
 	monitorHistoryWorkerMutex   sync.Mutex
+
+	// 监控历史批处理
+	monitorHistoryBatchQueue      = make(chan DBInsertRequest, 10000) // 更大的缓冲区，从5000增加到10000
+	monitorHistoryBatchProcessor  sync.Once
+	monitorHistoryBatchBuffer     = make([]DBInsertRequest, 0, 200) // 从100增加到200
+	monitorHistoryBatchBufferLock sync.Mutex
+	monitorHistoryBatchSize       = 100              // 默认批量大小，从50增加到100
+	monitorHistoryBatchInterval   = 10 * time.Second // 从3秒增加到10秒，降低处理频率
 )
 
 // StartDBWriteWorker 启动数据库写入工作器
@@ -1275,8 +1297,9 @@ func executeDBWriteRequest(req DBWriteRequest) error {
 
 // executeDBInsertRequest 执行单个数据库插入请求
 func executeDBInsertRequest(req DBInsertRequest) error {
+	// 设置更长的超时时间
 	return ExecuteWithRetry(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second) // 从5秒增加到8秒
 		defer cancel()
 
 		// 特殊处理monitor_histories表，确保不使用@id字段
@@ -1285,11 +1308,33 @@ func executeDBInsertRequest(req DBInsertRequest) error {
 			if _, exists := req.Data["@id"]; exists {
 				delete(req.Data, "@id")
 			}
+
+			// 避免直接使用GORM的Create方法，改用手动SQL
+			fields, values, args := prepareInsertSQL(req.Data)
+			insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+				req.TableName, fields, values)
+
+			return DB.WithContext(ctx).Exec(insertSQL, args...).Error
 		}
 
 		// 直接插入，避免不必要的事务开销
 		return DB.WithContext(ctx).Table(req.TableName).Create(req.Data).Error
 	})
+}
+
+// prepareInsertSQL 准备插入SQL的字段、占位符和参数
+func prepareInsertSQL(data map[string]interface{}) (string, string, []interface{}) {
+	var fields []string
+	var placeholders []string
+	var args []interface{}
+
+	for field, value := range data {
+		fields = append(fields, field)
+		placeholders = append(placeholders, "?")
+		args = append(args, value)
+	}
+
+	return strings.Join(fields, ", "), strings.Join(placeholders, ", "), args
 }
 
 // AsyncDBUpdate 异步数据库更新，通过队列避免并发冲突
@@ -1434,12 +1479,14 @@ func StartConnectionPoolMonitor() {
 func WarmupDatabase() {
 	log.Println("开始数据库连接池预热...")
 
-	// 预热连接池
+	// 预热连接池 - 降低并发度，避免锁竞争
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 3; i++ { // 从8减少到3
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
+			// 延迟执行，避免同时访问
+			time.Sleep(time.Duration(index*500) * time.Millisecond)
 
 			// 执行简单查询来预热连接
 			var count int64
@@ -1648,4 +1695,265 @@ func StartDatabaseMaintenanceScheduler() {
 			}
 		}
 	}()
+}
+
+// SafeUpdateServerStatus 使用无事务模式更新服务器状态，避免锁竞争
+func SafeUpdateServerStatus(serverID uint64, updates map[string]interface{}) error {
+	// 构建SQL语句
+	var setClauses []string
+	var args []interface{}
+
+	for key, value := range updates {
+		setClauses = append(setClauses, fmt.Sprintf("`%s` = ?", key))
+		args = append(args, value)
+	}
+
+	// 添加服务器ID到参数列表
+	args = append(args, serverID)
+	sql := fmt.Sprintf("UPDATE servers SET %s WHERE id = ?", strings.Join(setClauses, ", "))
+
+	// 执行SQL，不使用事务
+	return executeWithAdvancedRetry(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
+		return DB.WithContext(ctx).Exec(sql, args...).Error
+	}, 5, 20*time.Millisecond, 500*time.Millisecond)
+}
+
+// AsyncSafeUpdateServerStatus 异步安全更新服务器状态
+func AsyncSafeUpdateServerStatus(serverID uint64, updates map[string]interface{}, callback func(error)) {
+	go func() {
+		err := SafeUpdateServerStatus(serverID, updates)
+		if callback != nil {
+			callback(err)
+		} else if err != nil {
+			log.Printf("异步更新服务器 %d 状态失败: %v", serverID, err)
+		}
+	}()
+}
+
+// GetCachedServerStatus 获取缓存的服务器状态，如果不存在则从数据库加载
+func GetCachedServerStatus(serverID uint64) (*model.Server, error) {
+	cacheKey := fmt.Sprintf("server:%d", serverID)
+
+	// 尝试从缓存获取
+	if cached, found := serverStatusCache.Get(cacheKey); found {
+		if server, ok := cached.(*model.Server); ok {
+			return server, nil
+		}
+	}
+
+	// 缓存未命中，从数据库加载
+	var server model.Server
+	if err := DB.First(&server, serverID).Error; err != nil {
+		return nil, err
+	}
+
+	// 更新缓存
+	serverStatusCache.Set(cacheKey, &server, cache.DefaultExpiration)
+	return &server, nil
+}
+
+// UpdateServerStatusCache 更新服务器状态缓存
+func UpdateServerStatusCache(server *model.Server) {
+	if server == nil || server.ID == 0 {
+		return
+	}
+
+	cacheKey := fmt.Sprintf("server:%d", server.ID)
+	serverStatusCache.Set(cacheKey, server, cache.DefaultExpiration)
+}
+
+// InvalidateServerCache 使服务器缓存失效
+func InvalidateServerCache(serverID uint64) {
+	cacheKey := fmt.Sprintf("server:%d", serverID)
+	serverStatusCache.Delete(cacheKey)
+}
+
+// StartMonitorHistoryBatchProcessor 启动监控历史记录批处理器
+func StartMonitorHistoryBatchProcessor() {
+	monitorHistoryBatchProcessor.Do(func() {
+		log.Println("启动监控历史记录批处理器...")
+
+		// 创建刷新定时器
+		flushTicker := time.NewTicker(monitorHistoryBatchInterval)
+
+		go func() {
+			defer flushTicker.Stop()
+
+			for {
+				select {
+				case req := <-monitorHistoryBatchQueue:
+					// 添加到缓冲区
+					monitorHistoryBatchBufferLock.Lock()
+					monitorHistoryBatchBuffer = append(monitorHistoryBatchBuffer, req)
+
+					// 如果达到批处理大小，执行批处理
+					if len(monitorHistoryBatchBuffer) >= monitorHistoryBatchSize {
+						batch := monitorHistoryBatchBuffer
+						monitorHistoryBatchBuffer = make([]DBInsertRequest, 0, 200) // 从100增加到200
+						monitorHistoryBatchBufferLock.Unlock()
+
+						// 异步执行批处理
+						go processBatchInserts(batch)
+					} else {
+						monitorHistoryBatchBufferLock.Unlock()
+					}
+
+				case <-flushTicker.C:
+					// 定时刷新缓冲区
+					monitorHistoryBatchBufferLock.Lock()
+					if len(monitorHistoryBatchBuffer) > 0 {
+						batch := monitorHistoryBatchBuffer
+						monitorHistoryBatchBuffer = make([]DBInsertRequest, 0, 200) // 从100增加到200
+						monitorHistoryBatchBufferLock.Unlock()
+
+						// 异步执行批处理
+						go processBatchInserts(batch)
+					} else {
+						monitorHistoryBatchBufferLock.Unlock()
+					}
+				}
+			}
+		}()
+	})
+}
+
+// processBatchInserts 批量处理插入请求
+func processBatchInserts(batch []DBInsertRequest) {
+	if len(batch) == 0 {
+		return
+	}
+
+	// 分组处理，按表名分组
+	tableGroups := make(map[string][]DBInsertRequest)
+	for _, req := range batch {
+		tableGroups[req.TableName] = append(tableGroups[req.TableName], req)
+	}
+
+	// 对每个表进行批量处理
+	for tableName, requests := range tableGroups {
+		// 仅处理monitor_histories表
+		if tableName != "monitor_histories" {
+			for _, req := range requests {
+				executeDBInsertRequest(req)
+				if req.Callback != nil {
+					req.Callback(nil)
+				}
+			}
+			continue
+		}
+
+		// 构建批量插入SQL
+		if len(requests) == 1 {
+			// 单条记录直接处理
+			err := executeDBInsertRequest(requests[0])
+			if requests[0].Callback != nil {
+				requests[0].Callback(err)
+			}
+			continue
+		}
+
+		// 多条记录构建批量插入
+		err := batchInsertMonitorHistories(requests)
+
+		// 处理回调
+		for _, req := range requests {
+			if req.Callback != nil {
+				req.Callback(err)
+			}
+		}
+	}
+}
+
+// batchInsertMonitorHistories 批量插入监控历史记录
+func batchInsertMonitorHistories(requests []DBInsertRequest) error {
+	if len(requests) == 0 {
+		return nil
+	}
+
+	// 收集所有数据
+	allData := make([]map[string]interface{}, len(requests))
+	for i, req := range requests {
+		// 移除@id字段
+		if _, exists := req.Data["@id"]; exists {
+			delete(req.Data, "@id")
+		}
+		allData[i] = req.Data
+	}
+
+	// 构建批量插入SQL
+	var fieldNames []string
+
+	// 获取所有字段名
+	for field := range allData[0] {
+		fieldNames = append(fieldNames, field)
+	}
+
+	// 构建VALUES部分
+	var valueStrings []string
+	var valueArgs []interface{}
+
+	for _, data := range allData {
+		valueString := "("
+		var placeholders []string
+
+		for _, field := range fieldNames {
+			placeholders = append(placeholders, "?")
+			valueArgs = append(valueArgs, data[field])
+		}
+
+		valueString += strings.Join(placeholders, ", ") + ")"
+		valueStrings = append(valueStrings, valueString)
+	}
+
+	// 构建最终SQL
+	query := fmt.Sprintf(
+		"INSERT INTO monitor_histories (%s) VALUES %s",
+		strings.Join(fieldNames, ", "),
+		strings.Join(valueStrings, ", "),
+	)
+
+	// 使用事务包装批量插入，提高原子性
+	return executeWithAdvancedRetry(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second) // 从10秒增加到20秒
+		defer cancel()
+
+		// 使用事务确保批量插入的原子性
+		return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// 在事务内执行批量插入
+			result := tx.Exec(query, valueArgs...)
+			if result.Error != nil {
+				// 发生错误，回滚事务
+				log.Printf("批量插入失败，回滚事务: %v", result.Error)
+				return result.Error
+			}
+
+			// 事务提交
+			return nil
+		})
+	}, 8, 100*time.Millisecond, 5*time.Second) // 增加重试次数和等待时间
+}
+
+// AsyncBatchMonitorHistoryInsert 将监控历史记录添加到批处理队列
+func AsyncBatchMonitorHistoryInsert(data map[string]interface{}, callback func(error)) {
+	// 确保批处理器已启动
+	StartMonitorHistoryBatchProcessor()
+
+	// 添加到批处理队列
+	select {
+	case monitorHistoryBatchQueue <- DBInsertRequest{
+		TableName: "monitor_histories",
+		Data:      data,
+		Callback:  callback,
+	}:
+		// 成功入队
+	default:
+		// 队列满，丢弃数据并记录日志
+		log.Printf("监控历史记录批处理队列已满，丢弃一条记录")
+		if callback != nil {
+			callback(fmt.Errorf("监控历史记录批处理队列已满"))
+		}
+	}
 }
