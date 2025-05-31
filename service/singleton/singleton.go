@@ -79,6 +79,11 @@ func LoadSingleton() {
 	// 添加定时验证流量数据一致性的任务，每5分钟检查一次
 	Cron.AddFunc("0 */5 * * * *", VerifyTrafficDataConsistency)
 
+	// 添加监控历史记录一致性检查任务，每10分钟执行一次
+	if _, err := Cron.AddFunc("0 */10 * * * *", VerifyMonitorHistoryConsistency); err != nil {
+		log.Printf("添加监控历史记录一致性检查任务失败: %v", err)
+	}
+
 	// 添加定时清理任务，减少频率到每4小时执行一次，避免干扰数据保存
 	Cron.AddFunc("0 0 */4 * * *", func() {
 		CleanMonitorHistory()
@@ -2081,15 +2086,5 @@ func VerifyMonitorHistoryConsistency() {
 
 	if emptyCount > 0 {
 		log.Printf("警告: 发现 %d 条空数据记录", emptyCount)
-	}
-}
-
-// 在原有init函数中添加监控一致性检查的定时任务
-func init() {
-	// ... existing code ...
-
-	// 添加监控历史记录一致性检查任务，每10分钟执行一次
-	if _, err := Cron.AddFunc("*/10 * * * *", VerifyMonitorHistoryConsistency); err != nil {
-		log.Printf("添加监控历史记录一致性检查任务失败: %v", err)
 	}
 }
