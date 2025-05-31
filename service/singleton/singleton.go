@@ -739,8 +739,38 @@ func checkShouldResetTransferStats() bool {
 	// 获取当前时间
 	now := time.Now()
 
-	// 如果是本月第一天的凌晨，返回true
-	return now.Day() == 1 && now.Hour() == 0 && now.Minute() < 5
+	// 首先检查是否存在有效的流量周期报警规则
+	// 如果存在报警规则，优先使用报警规则中的周期
+	AlertsLock.RLock()
+	defer AlertsLock.RUnlock()
+
+	hasActiveRules := false
+	for _, alert := range Alerts {
+		if alert == nil || !alert.Enabled() {
+			continue
+		}
+
+		// 检查每个报警规则的Rules字段
+		for _, rule := range alert.Rules {
+			// 检查是否是周期流量规则
+			if rule.IsTransferDurationRule() {
+				hasActiveRules = true
+				break
+			}
+		}
+
+		if hasActiveRules {
+			break
+		}
+	}
+
+	// 如果没有找到流量周期报警规则，则使用默认的月度重置（每月1日凌晨）
+	if !hasActiveRules {
+		return now.Day() == 1 && now.Hour() == 0 && now.Minute() < 5
+	}
+
+	// 存在流量周期报警规则，由报警规则自行处理重置，这里不额外重置
+	return false
 }
 
 // SyncAllServerTrafficFromDB 从数据库同步所有服务器的累计流量数据到内存

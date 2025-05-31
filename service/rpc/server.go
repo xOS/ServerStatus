@@ -13,11 +13,11 @@ import (
 	"github.com/jinzhu/copier"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/model"
-	pb "github.com/xos/serverstatus/proto"
 	"github.com/xos/serverstatus/pkg/ddns"
 	"github.com/xos/serverstatus/pkg/geoip"
 	"github.com/xos/serverstatus/pkg/grpcx"
 	"github.com/xos/serverstatus/pkg/utils"
+	pb "github.com/xos/serverstatus/proto"
 	"github.com/xos/serverstatus/service/singleton"
 )
 
@@ -26,7 +26,7 @@ func isConnectionError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errStr := err.Error()
 	connectionErrors := []string{
 		"broken pipe",
@@ -37,13 +37,13 @@ func isConnectionError(err error) bool {
 		"connection timed out",
 		"EOF",
 	}
-	
+
 	for _, connErr := range connectionErrors {
 		if strings.Contains(strings.ToLower(errStr), connErr) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -80,13 +80,13 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 			// 保存当前服务器状态信息
 			curServer := model.Server{}
 			copier.Copy(&curServer, singleton.ServerList[clientID])
-			
+
 			// 计算执行时间
 			startTime := time.Now().Add(time.Second * -1 * time.Duration(r.GetDelay()))
 			endTime := time.Now()
-			
+
 			if cr.PushSuccessful && r.GetSuccessful() {
-				message := fmt.Sprintf("[%s]\n任务名称: %s\n执行设备: %s (ID:%d)\n开始时间: %s\n结束时间: %s\n执行结果: 成功\n执行详情:\n%s", 
+				message := fmt.Sprintf("[%s]\n任务名称: %s\n执行设备: %s (ID:%d)\n开始时间: %s\n结束时间: %s\n执行结果: 成功\n执行详情:\n%s",
 					singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
 						MessageID: "ScheduledTaskExecutedSuccessfully",
 					}),
@@ -98,7 +98,7 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 				singleton.SendNotification(cr.NotificationTag, message, nil, &curServer)
 			}
 			if !r.GetSuccessful() {
-				message := fmt.Sprintf("[%s]\n任务名称: %s\n执行设备: %s (ID:%d)\n开始时间: %s\n结束时间: %s\n执行结果: 失败\n错误详情:\n%s", 
+				message := fmt.Sprintf("[%s]\n任务名称: %s\n执行设备: %s (ID:%d)\n开始时间: %s\n结束时间: %s\n执行结果: 失败\n错误详情:\n%s",
 					singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
 						MessageID: "ScheduledTaskExecutedFailed",
 					}),
@@ -168,7 +168,7 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 				log.Printf("RequestTask监控goroutine panic恢复: %v", r)
 			}
 		}()
-		
+
 		select {
 		case <-ctx.Done():
 			// 连接断开时清理资源，增强错误处理
@@ -181,7 +181,7 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 					log.Printf("RequestTask连接上下文错误: %v", ctxErr)
 				}
 			}
-			
+
 			singleton.ServerLock.RLock()
 			if singleton.ServerList[clientID] != nil {
 				singleton.ServerList[clientID].TaskCloseLock.Lock()
@@ -254,12 +254,12 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		return nil, err
 	}
 	state := model.PB2State(r)
-	
+
 	// 快速获取服务器信息，立即释放锁
 	var serverCopy *model.Server
 	var isFirstReport bool
 	var prevState *model.HostState
-	
+
 	singleton.ServerLock.RLock()
 	if server := singleton.ServerList[clientID]; server != nil {
 		// 创建服务器信息的副本，避免长时间持锁
@@ -272,11 +272,11 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 		}
 	}
 	singleton.ServerLock.RUnlock()
-	
+
 	if serverCopy == nil {
 		return nil, fmt.Errorf("服务器 %d 未找到", clientID)
 	}
-	
+
 	// 在锁外处理数据，减少锁竞争
 	return s.processServerStateWithoutLock(clientID, serverCopy, &state, isFirstReport, prevState)
 }
@@ -284,7 +284,7 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 // processServerStateWithoutLock 在不持有锁的情况下处理服务器状态
 func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCopy *model.Server, state *model.HostState, isFirstReport bool, prevState *model.HostState) (*pb.Receipt, error) {
 	now := time.Now()
-	
+
 	// 保存原始流量数据用于增量计算
 	originalNetInTransfer := state.NetInTransfer
 	originalNetOutTransfer := state.NetOutTransfer
@@ -311,15 +311,15 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 
 	// 准备数据库更新数据
 	dbUpdates := make(map[string]interface{})
-	
+
 	// 获取锁快速更新内存状态
 	singleton.ServerLock.Lock()
 	server := singleton.ServerList[clientID]
-	
+
 	// 更新基本状态
 	server.IsOnline = true
 	server.LastActive = now
-	
+
 	// 处理流量计算
 	if isFirstReport || isRestart {
 		// 首次上线或重启，从数据库读取累计流量
@@ -330,7 +330,7 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 				server.CumulativeNetOutTransfer = dbServer.CumulativeNetOutTransfer
 			}
 		}
-		
+
 		server.PrevTransferInSnapshot = int64(originalNetInTransfer)
 		server.PrevTransferOutSnapshot = int64(originalNetOutTransfer)
 		state.NetInTransfer = server.CumulativeNetInTransfer
@@ -339,15 +339,15 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 		// 正常增量更新
 		s.updateTrafficIncremental(server, state, originalNetInTransfer, originalNetOutTransfer)
 	}
-	
+
 	// 保存当前状态
 	server.State = state
-	
+
 	// 准备状态数据保存
 	lastState := model.HostState{}
 	copier.Copy(&lastState, state)
 	server.LastStateBeforeOffline = &lastState
-	
+
 	// 检查是否需要数据库更新
 	shouldUpdateDB := false
 	if server.LastDBUpdateTime.IsZero() || now.Sub(server.LastDBUpdateTime) > 15*time.Minute {
@@ -355,16 +355,16 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 	} else if prevState != nil {
 		// 检查关键状态变化
 		if math.Abs(float64(state.CPU-prevState.CPU)) > 25 ||
-		   math.Abs(float64(state.MemUsed-prevState.MemUsed)) > (3*1024*1024*1024) ||
-		   math.Abs(float64(state.SwapUsed-prevState.SwapUsed)) > (1536*1024*1024) ||
-		   math.Abs(float64(state.DiskUsed-prevState.DiskUsed)) > (12*1024*1024*1024) ||
-		   math.Abs(float64(state.Load1-prevState.Load1)) > 2.5 {
+			math.Abs(float64(state.MemUsed-prevState.MemUsed)) > (3*1024*1024*1024) ||
+			math.Abs(float64(state.SwapUsed-prevState.SwapUsed)) > (1536*1024*1024) ||
+			math.Abs(float64(state.DiskUsed-prevState.DiskUsed)) > (12*1024*1024*1024) ||
+			math.Abs(float64(state.Load1-prevState.Load1)) > 2.5 {
 			if now.Sub(server.LastDBUpdateTime) > 5*time.Minute {
 				shouldUpdateDB = true
 			}
 		}
 	}
-	
+
 	// 准备数据库更新数据
 	if shouldUpdateDB {
 		lastStateJSON, err := utils.Json.Marshal(lastState)
@@ -372,21 +372,21 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 			server.LastStateJSON = string(lastStateJSON)
 			server.LastOnline = server.LastActive
 			server.LastDBUpdateTime = now
-			
+
 			dbUpdates["last_state_json"] = server.LastStateJSON
 			dbUpdates["last_online"] = server.LastOnline
 		}
 	}
-	
+
 	// 检查是否需要保存流量数据
 	if time.Since(server.LastFlowSaveTime).Minutes() > 10 {
 		server.LastFlowSaveTime = now
 		dbUpdates["cumulative_net_in_transfer"] = server.CumulativeNetInTransfer
 		dbUpdates["cumulative_net_out_transfer"] = server.CumulativeNetOutTransfer
 	}
-	
+
 	singleton.ServerLock.Unlock()
-	
+
 	// 异步数据库更新，避免阻塞
 	if len(dbUpdates) > 0 {
 		// 延迟执行，错开不同服务器的更新时间
@@ -432,17 +432,29 @@ func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *mo
 
 	// 处理入站流量
 	if originalNetInTransfer < prevIn {
-		if float64(prevIn-originalNetInTransfer)/float64(prevIn) < 0.1 {
+		// 检测到流量回退
+		if float64(prevIn-originalNetInTransfer)/float64(prevIn+1) < 0.1 {
+			// 小幅度回退，可能是统计误差，不计入增量
 			increaseIn = 0
 		} else {
+			// 大幅度回退，可能是重启，重置基准点
 			server.PrevTransferInSnapshot = int64(originalNetInTransfer)
+			// 重要：不计算负增量
+			increaseIn = 0
 		}
 	} else {
+		// 正常增量
 		increaseIn = originalNetInTransfer - prevIn
-		if server.CumulativeNetInTransfer > 0 &&
+		// 检查增量是否合理（防止异常大值）
+		if increaseIn > 1000*1024*1024*1024 { // 增量超过1TB，可能是异常值
+			log.Printf("警告：服务器 %d 入站流量增量异常大 (%d)，可能是统计错误，本次不计入", server.ID, increaseIn)
+			increaseIn = 0
+		} else if server.CumulativeNetInTransfer > 0 &&
 			increaseIn > ^uint64(0)-server.CumulativeNetInTransfer {
+			// 溢出保护
 			log.Printf("警告：服务器 %d 入站流量累计值即将溢出，保持当前值", server.ID)
 		} else {
+			// 正常累加
 			server.CumulativeNetInTransfer += increaseIn
 		}
 		server.PrevTransferInSnapshot = int64(originalNetInTransfer)
@@ -450,17 +462,29 @@ func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *mo
 
 	// 处理出站流量
 	if originalNetOutTransfer < prevOut {
-		if float64(prevOut-originalNetOutTransfer)/float64(prevOut) < 0.1 {
+		// 检测到流量回退
+		if float64(prevOut-originalNetOutTransfer)/float64(prevOut+1) < 0.1 {
+			// 小幅度回退，可能是统计误差，不计入增量
 			increaseOut = 0
 		} else {
+			// 大幅度回退，可能是重启，重置基准点
 			server.PrevTransferOutSnapshot = int64(originalNetOutTransfer)
+			// 重要：不计算负增量
+			increaseOut = 0
 		}
 	} else {
+		// 正常增量
 		increaseOut = originalNetOutTransfer - prevOut
-		if server.CumulativeNetOutTransfer > 0 &&
+		// 检查增量是否合理（防止异常大值）
+		if increaseOut > 1000*1024*1024*1024 { // 增量超过1TB，可能是异常值
+			log.Printf("警告：服务器 %d 出站流量增量异常大 (%d)，可能是统计错误，本次不计入", server.ID, increaseOut)
+			increaseOut = 0
+		} else if server.CumulativeNetOutTransfer > 0 &&
 			increaseOut > ^uint64(0)-server.CumulativeNetOutTransfer {
+			// 溢出保护
 			log.Printf("警告：服务器 %d 出站流量累计值即将溢出，保持当前值", server.ID)
 		} else {
+			// 正常累加
 			server.CumulativeNetOutTransfer += increaseOut
 		}
 		server.PrevTransferOutSnapshot = int64(originalNetOutTransfer)
@@ -469,6 +493,12 @@ func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *mo
 	// 显示的流量 = 累计流量
 	state.NetInTransfer = server.CumulativeNetInTransfer
 	state.NetOutTransfer = server.CumulativeNetOutTransfer
+
+	// 记录调试信息
+	if increaseIn > 0 || increaseOut > 0 {
+		log.Printf("调试：服务器 %d 入站增量=%d, 出站增量=%d, 累计入站=%d, 累计出站=%d",
+			server.ID, increaseIn, increaseOut, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+	}
 }
 
 func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Receipt, error) {
