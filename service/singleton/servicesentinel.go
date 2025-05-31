@@ -214,27 +214,56 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 	var mhs []model.MonitorHistory
 	
 	// 添加查询优化和超时控制
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	
 	startTime := time.Now()
 	
-	// 使用更高效的查询，添加排序和限制结果数量
-	err = DB.WithContext(ctx).
-		Where("created_at > ? AND created_at < ?", today.AddDate(0, 0, -29), today).
-		Order("created_at DESC").  // 添加索引友好的排序
-		Limit(50000).             // 限制查询结果数量，避免内存过载
-		Find(&mhs).Error
-		
-	queryDuration := time.Since(startTime)
+	// 使用分批加载，避免大量数据导致的锁竞争
+	batchSize := 5000
+	var allMhs []model.MonitorHistory
 	
-	if err != nil {
-		log.Printf("加载月度监控数据失败: %v", err)
-		return
+	fromDate := today.AddDate(0, 0, -29)
+	toDate := today
+	
+	// 分批查询，减少数据库锁时间
+	for offset := 0; ; offset += batchSize {
+		var batchMhs []model.MonitorHistory
+		
+		err = DB.WithContext(ctx).
+			Where("created_at > ? AND created_at < ?", fromDate, toDate).
+			Order("created_at DESC").
+			Offset(offset).
+			Limit(batchSize).
+			Find(&batchMhs).Error
+			
+		if err != nil {
+			log.Printf("加载月度监控数据失败 (批次 %d): %v", offset/batchSize+1, err)
+			return
+		}
+		
+		if len(batchMhs) == 0 {
+			break // 没有更多数据
+		}
+		
+		allMhs = append(allMhs, batchMhs...)
+		
+		// 如果这一批数据少于批次大小，说明已经是最后一批
+		if len(batchMhs) < batchSize {
+			break
+		}
+		
+		// 批次间短暂暂停，让其他操作有机会执行
+		time.Sleep(10 * time.Millisecond)
 	}
 	
-	if queryDuration > 200*time.Millisecond {
-		log.Printf("慢SQL查询警告: 加载月度数据耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
+	mhs = allMhs
+	queryDuration := time.Since(startTime)
+	
+	if queryDuration > 500*time.Millisecond {
+		log.Printf("慢SQL查询警告: 分批加载月度数据耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
+	} else {
+		log.Printf("月度监控数据加载完成: 耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
 	}
 	var delayCount = make(map[int]int)
 	for i := 0; i < len(mhs); i++ {
@@ -566,21 +595,27 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 		// 确保有数据才保存
 		totalChecks := ss.serviceResponseDataStoreCurrentUp[mh.GetId()] + ss.serviceResponseDataStoreCurrentDown[mh.GetId()]
 		if totalChecks > 0 {
-			if err := DB.Create(&model.MonitorHistory{
-				MonitorID: mh.GetId(),
-				AvgDelay:  ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()],
-				Data:      mh.Data,
-				Up:        ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
-				Down:      ss.serviceResponseDataStoreCurrentDown[mh.GetId()],
-			}).Error; err != nil {
-				log.Printf("NG>> 服务监控数据持久化失败 (MonitorID: %d): %v", mh.GetId(), err)
-			} else {
-				ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime = now
-				log.Printf("监控数据已保存 (MonitorID: %d, Up: %d, Down: %d)", 
-					mh.GetId(), 
-					ss.serviceResponseDataStoreCurrentUp[mh.GetId()], 
-					ss.serviceResponseDataStoreCurrentDown[mh.GetId()])
+			// 使用异步数据库插入队列来保存监控数据，避免并发冲突
+			monitorData := map[string]interface{}{
+				"monitor_id": mh.GetId(),
+				"avg_delay":  ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()],
+				"data":       mh.Data,
+				"up":         ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
+				"down":       ss.serviceResponseDataStoreCurrentDown[mh.GetId()],
 			}
+			
+			// 使用异步插入避免数据库锁冲突
+			AsyncDBInsert("monitor_histories", monitorData, func(err error) {
+				if err != nil {
+					log.Printf("NG>> 服务监控数据持久化失败 (MonitorID: %d): %v", mh.GetId(), err)
+				} else {
+					ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime = now
+					log.Printf("监控数据已保存 (MonitorID: %d, Up: %d, Down: %d)", 
+						mh.GetId(), 
+						ss.serviceResponseDataStoreCurrentUp[mh.GetId()], 
+						ss.serviceResponseDataStoreCurrentDown[mh.GetId()])
+				}
+			})
 		}
 	}
 

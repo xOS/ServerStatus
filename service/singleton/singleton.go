@@ -214,6 +214,9 @@ func InitDBFromPath(path string) {
 	
 	// 启动数据库写入工作器
 	StartDBWriteWorker()
+	
+	// 启动数据库插入工作器
+	StartDBInsertWorker()
 
 	// 检查并添加新字段
 	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {
@@ -1066,10 +1069,20 @@ type DBWriteRequest struct {
 	Callback  func(error)
 }
 
+// 数据库插入队列，用于序列化数据库插入操作
+type DBInsertRequest struct {
+	TableName string
+	Data      map[string]interface{}
+	Callback  func(error)
+}
+
 var (
 	dbWriteQueue     = make(chan DBWriteRequest, 2000) // 增大队列容量
+	dbInsertQueue    = make(chan DBInsertRequest, 2000) // 插入队列
 	dbWriteWorkerStarted = false
+	dbInsertWorkerStarted = false
 	dbWriteWorkerMutex   sync.Mutex
+	dbInsertWorkerMutex  sync.Mutex
 )
 
 // StartDBWriteWorker 启动数据库写入工作器
@@ -1094,6 +1107,28 @@ func StartDBWriteWorker() {
 	}()
 }
 
+// StartDBInsertWorker 启动数据库插入工作器
+func StartDBInsertWorker() {
+	dbInsertWorkerMutex.Lock()
+	defer dbInsertWorkerMutex.Unlock()
+	
+	if dbInsertWorkerStarted {
+		return
+	}
+	
+	dbInsertWorkerStarted = true
+	log.Println("启动数据库插入工作器...")
+	
+	go func() {
+		for req := range dbInsertQueue {
+			err := executeDBInsertRequest(req)
+			if req.Callback != nil {
+				req.Callback(err)
+			}
+		}
+	}()
+}
+
 // executeDBWriteRequest 执行单个数据库写入请求
 func executeDBWriteRequest(req DBWriteRequest) error {
 	return ExecuteWithRetry(func() error {
@@ -1103,6 +1138,19 @@ func executeDBWriteRequest(req DBWriteRequest) error {
 		// 使用事务确保操作原子性
 		return DB.Transaction(func(tx *gorm.DB) error {
 			return tx.WithContext(ctx).Table(req.TableName).Where("id = ?", req.ServerID).Updates(req.Updates).Error
+		})
+	})
+}
+
+// executeDBInsertRequest 执行单个数据库插入请求
+func executeDBInsertRequest(req DBInsertRequest) error {
+	return ExecuteWithRetry(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		
+		// 使用事务确保操作原子性
+		return DB.Transaction(func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Table(req.TableName).Create(req.Data).Error
 		})
 	})
 }
@@ -1121,6 +1169,23 @@ func AsyncDBUpdate(serverID uint64, tableName string, updates map[string]interfa
 		// 队列满，执行回调通知错误
 		if callback != nil {
 			callback(fmt.Errorf("数据库写入队列已满"))
+		}
+	}
+}
+
+// AsyncDBInsert 异步数据库插入，通过队列避免并发冲突
+func AsyncDBInsert(tableName string, data map[string]interface{}, callback func(error)) {
+	select {
+	case dbInsertQueue <- DBInsertRequest{
+		TableName: tableName,
+		Data:      data,
+		Callback:  callback,
+	}:
+		// 成功入队
+	default:
+		// 队列满，执行回调通知错误
+		if callback != nil {
+			callback(fmt.Errorf("数据库插入队列已满"))
 		}
 	}
 }
