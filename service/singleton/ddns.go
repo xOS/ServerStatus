@@ -63,7 +63,7 @@ func GetDDNSProvidersFromProfiles(profileId []uint64, ip *ddns2.IP) ([]*ddns2.Pr
 			providers = append(providers, provider)
 		case model.ProviderWebHook:
 			webhookProvider := &webhook.Provider{
-				DDNSProfile: profile,
+				DDNSProfile:      profile,
 				NotifyChangeFunc: DDNSChangeNotificationCallback, // 直接在这里设置回调函数
 			}
 			// 将来ServerName和ServerID会通过GetDDNSProvidersFromProfilesWithServer设置
@@ -91,7 +91,7 @@ func DDNSChangeNotificationCallback(serverName string, serverID uint64, domain s
 	// 查询或创建DDNS记录状态
 	var recordState model.DDNSRecordState
 	result := DB.Where("server_id = ? AND domain = ? AND record_type = ?", serverID, domain, recordType).First(&recordState)
-	
+
 	if result.Error != nil {
 		// 记录不存在，创建新记录
 		if result.Error == gorm.ErrRecordNotFound {
@@ -106,7 +106,7 @@ func DDNSChangeNotificationCallback(serverName string, serverID uint64, domain s
 				log.Printf("创建DDNS记录状态失败: %v", err)
 				return
 			}
-			
+
 			// 首次创建记录，发送通知（如果有旧IP信息）
 			if oldIP != "" && oldIP != newIP {
 				sendDDNSChangeNotification(serverName, domain, recordType, oldIP, newIP)
@@ -143,7 +143,7 @@ func DDNSChangeNotificationCallback(serverName string, serverID uint64, domain s
 func sendDDNSChangeNotification(serverName string, domain string, recordType string, oldIP string, newIP string) {
 	changeTime := time.Now().Format("2006-01-02 15:04:05")
 	message := fmt.Sprintf(
-		"[DDNS记录变更] 服务器: %s, 域名: %s, 记录类型: %s, IP变更: %s => %s, 变更时间: %s",
+		"[DDNS记录变更]\n服务器: %s\n域名: %s\n记录类型: %s\nIP变更: %s => %s\n变更时间: %s",
 		serverName, domain, recordType, IPDesensitize(oldIP), IPDesensitize(newIP), changeTime,
 	)
 

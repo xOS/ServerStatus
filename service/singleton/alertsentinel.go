@@ -65,7 +65,7 @@ func AlertSentinelStart() {
 	alertsPrevState = make(map[uint64]map[uint64]uint)
 	AlertsCycleTransferStatsStore = make(map[uint64]*model.CycleTransferStats)
 	AlertsLock.Lock()
-	
+
 	// 使用重试机制防止数据库锁定
 	err := executeWithRetry(func() error {
 		return DB.Find(&Alerts).Error
@@ -75,7 +75,7 @@ func AlertSentinelStart() {
 		AlertsLock.Unlock()
 		return // 不要panic，而是返回并稍后重试
 	}
-	
+
 	for _, alert := range Alerts {
 		// 旧版本可能不存在通知组 为其添加默认值
 		if alert.NotificationTag == "" {
@@ -211,7 +211,7 @@ func checkStatus() {
 				if alertsPrevState[alert.ID][server.ID] == _RuleCheckFail {
 					// 生成详细的恢复消息
 					message := generateDetailedRecoveryMessage(alert, server)
-					
+
 					SafeSendTriggerTasks(alert.RecoverTriggerTasks, curServer.ID)
 					SafeSendNotification(alert.NotificationTag, message, NotificationMuteLabel.ServerIncidentResolved(alert.ID, server.ID), &curServer)
 					// 清除失败通知的静音缓存
@@ -402,10 +402,10 @@ func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, 
 				} else {
 					lastSeenTime = time.Now().Add(-24 * time.Hour) // 默认24小时前
 				}
-				
+
 				// 计算离线时长
 				offlineDuration := time.Since(lastSeenTime)
-				
+
 				message += fmt.Sprintf("• 服务器离线: 最后在线时间 %s (离线时长: %s)\n",
 					lastSeenTime.Format("2006-01-02 15:04:05"),
 					formatDuration(offlineDuration))
@@ -636,10 +636,10 @@ func generateDetailedRecoveryMessage(alert *model.AlertRule, server *model.Serve
 		} else {
 			lastSeenTime = now.Add(-time.Hour) // 默认1小时前
 		}
-		
+
 		// 计算离线时长（从离线到恢复）
 		offlineDuration := now.Sub(lastSeenTime)
-		
+
 		message += fmt.Sprintf("• 服务器已恢复上线: 上次离线时间 %s (离线时长: %s)\n",
 			lastSeenTime.Format("2006-01-02 15:04:05"),
 			formatDuration(offlineDuration))
@@ -648,11 +648,15 @@ func generateDetailedRecoveryMessage(alert *model.AlertRule, server *model.Serve
 	}
 
 	// 添加当前服务器状态信息
-	if server.State != nil {
-		message += fmt.Sprintf("• 当前状态: CPU %.2f%%, 内存 %.2fMB, 磁盘 %.2fGB\n",
+	if server.State != nil && server.Host != nil {
+		// 计算百分比
+		memPercent := float64(server.State.MemUsed) * 100 / float64(server.Host.MemTotal)
+		diskPercent := float64(server.State.DiskUsed) * 100 / float64(server.Host.DiskTotal)
+
+		message += fmt.Sprintf("• 当前状态: CPU %.2f%%, 内存 %.2f%%, 磁盘 %.2f%%\n",
 			server.State.CPU,
-			float64(server.State.MemUsed)/1024/1024,
-			float64(server.State.DiskUsed)/1024/1024/1024)
+			memPercent,
+			diskPercent)
 	}
 
 	return message

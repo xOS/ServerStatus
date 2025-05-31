@@ -544,7 +544,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		changeTime := time.Now().Format("2006-01-02 15:04:05")
 		singleton.SendNotification(singleton.Conf.IPChangeNotificationTag,
 			fmt.Sprintf(
-				"[%s] %s (ID:%d), %s => %s\n变更时间: %s",
+				"[%s]\n服务器: %s (ID:%d)\nIP变更: %s => %s\n变更时间: %s",
 				singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
 					MessageID: "IPChanged",
 				}),
