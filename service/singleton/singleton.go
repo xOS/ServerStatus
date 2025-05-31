@@ -169,16 +169,16 @@ func InitDBFromPath(path string) {
 	}
 
 	// SQLite WAL模式优化：支持多读一写的并发模式
-	sqlDB.SetMaxOpenConns(18)                  // 增加到18个并发连接（从16增加）
-	sqlDB.SetMaxIdleConns(9)                   // 保持9个空闲连接（从8增加）
-	sqlDB.SetConnMaxLifetime(30 * time.Minute) // 30分钟连接生命周期
-	sqlDB.SetConnMaxIdleTime(10 * time.Minute) // 空闲连接保持10分钟
+	sqlDB.SetMaxOpenConns(30)                  // 增加到30个并发连接，应对高并发场景
+	sqlDB.SetMaxIdleConns(15)                  // 保持15个空闲连接，减少连接创建开销
+	sqlDB.SetConnMaxLifetime(45 * time.Minute) // 45分钟连接生命周期，减少连接重建
+	sqlDB.SetConnMaxIdleTime(15 * time.Minute) // 空闲连接保持15分钟
 
 	// SQLite性能和锁管理优化配置
 	DB.Exec("PRAGMA synchronous = NORMAL")        // 平衡性能和安全性
-	DB.Exec("PRAGMA cache_size = -45000")         // 增加缓存到45MB（从40MB增加）
+	DB.Exec("PRAGMA cache_size = -64000")         // 增加缓存到64MB，提升查询性能
 	DB.Exec("PRAGMA temp_store = memory")         // 临时表存储在内存
-	DB.Exec("PRAGMA busy_timeout = 10000")        // 增加到10秒锁等待超时
+	DB.Exec("PRAGMA busy_timeout = 30000")        // 增加到30秒锁等待超时，减少冲突失败
 	DB.Exec("PRAGMA optimize")                    // 启用查询优化器
 	// 迁移时先使用DELETE模式，避免WAL锁竞争
 	
@@ -196,12 +196,12 @@ func InitDBFromPath(path string) {
 	// 迁移完成后切换到WAL模式并优化并发设置
 	DB.Exec("PRAGMA journal_mode = WAL")          // 使用WAL模式，支持多读一写
 	DB.Exec("PRAGMA synchronous = NORMAL")        // 平衡性能和安全性
-	DB.Exec("PRAGMA cache_size = -40000")         // 40MB缓存
+	DB.Exec("PRAGMA cache_size = -64000")         // 64MB缓存
 	DB.Exec("PRAGMA temp_store = MEMORY")         // 临时表存储在内存中
-	DB.Exec("PRAGMA mmap_size = 301989888")       // 增加到288MB内存映射（从256MB增加）
-	DB.Exec("PRAGMA wal_autocheckpoint = 2200")   // WAL文件2200页时自动检查点（从2000增加）
-	DB.Exec("PRAGMA busy_timeout = 10000")        // 10秒超时，给更多时间处理锁竞争
-	DB.Exec("PRAGMA threads = 4")                 // 启用多线程支持
+	DB.Exec("PRAGMA mmap_size = 402653184")       // 增加到384MB内存映射，提升大数据集性能
+	DB.Exec("PRAGMA wal_autocheckpoint = 5000")   // WAL文件5000页时自动检查点，减少检查点频率
+	DB.Exec("PRAGMA busy_timeout = 30000")        // 30秒超时，给更多时间处理锁竞争
+	DB.Exec("PRAGMA threads = 6")                 // 启用6线程支持，提升并发处理能力
 	DB.Exec("PRAGMA wal_checkpoint(PASSIVE)")     // 执行被动检查点
 	log.Println("数据库配置完成")
 	
@@ -211,6 +211,9 @@ func InitDBFromPath(path string) {
 	
 	// 预热数据库连接池
 	WarmupDatabase()
+	
+	// 启动数据库写入工作器
+	StartDBWriteWorker()
 
 	// 检查并添加新字段
 	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {
@@ -1054,6 +1057,73 @@ func SafeDatabaseDelete(model interface{}, whereClause string, args ...interface
 
 // 添加在文件末尾的全局内存监控器
 var globalMemoryMonitor *MemoryMonitor
+
+// 数据库写入队列，用于序列化数据库操作，避免并发冲突
+type DBWriteRequest struct {
+	ServerID  uint64
+	TableName string
+	Updates   map[string]interface{}
+	Callback  func(error)
+}
+
+var (
+	dbWriteQueue     = make(chan DBWriteRequest, 2000) // 增大队列容量
+	dbWriteWorkerStarted = false
+	dbWriteWorkerMutex   sync.Mutex
+)
+
+// StartDBWriteWorker 启动数据库写入工作器
+func StartDBWriteWorker() {
+	dbWriteWorkerMutex.Lock()
+	defer dbWriteWorkerMutex.Unlock()
+	
+	if dbWriteWorkerStarted {
+		return
+	}
+	
+	dbWriteWorkerStarted = true
+	log.Println("启动数据库写入工作器...")
+	
+	go func() {
+		for req := range dbWriteQueue {
+			err := executeDBWriteRequest(req)
+			if req.Callback != nil {
+				req.Callback(err)
+			}
+		}
+	}()
+}
+
+// executeDBWriteRequest 执行单个数据库写入请求
+func executeDBWriteRequest(req DBWriteRequest) error {
+	return ExecuteWithRetry(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		
+		// 使用事务确保操作原子性
+		return DB.Transaction(func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Table(req.TableName).Where("id = ?", req.ServerID).Updates(req.Updates).Error
+		})
+	})
+}
+
+// AsyncDBUpdate 异步数据库更新，通过队列避免并发冲突
+func AsyncDBUpdate(serverID uint64, tableName string, updates map[string]interface{}, callback func(error)) {
+	select {
+	case dbWriteQueue <- DBWriteRequest{
+		ServerID:  serverID,
+		TableName: tableName,
+		Updates:   updates,
+		Callback:  callback,
+	}:
+		// 成功入队
+	default:
+		// 队列满，执行回调通知错误
+		if callback != nil {
+			callback(fmt.Errorf("数据库写入队列已满"))
+		}
+	}
+}
 
 // optimizeDatabase 安全地优化数据库，避免锁竞争
 func optimizeDatabase() {
