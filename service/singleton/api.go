@@ -112,10 +112,15 @@ func loadAPI() {
 	if Conf.DatabaseType == "badger" {
 		// 使用 BadgerDB 加载API令牌
 		if db.DB != nil {
-			// 目前BadgerDB还没有ApiTokenOps实现，
-			// 后续可以添加ApiTokenOps对象来处理ApiToken
-			log.Println("BadgerDB: API令牌功能暂不支持，跳过加载")
-			return
+			// 使用ApiTokenOps加载API令牌
+			apiTokenOps := db.NewApiTokenOps(db.DB)
+			var err error
+			tokenList, err = apiTokenOps.GetAllApiTokens()
+			if err != nil {
+				log.Printf("从 BadgerDB 加载API令牌失败: %v", err)
+				return
+			}
+			log.Printf("从 BadgerDB 加载了 %d 个API令牌", len(tokenList))
 		} else {
 			log.Println("警告: BadgerDB 未初始化")
 			return

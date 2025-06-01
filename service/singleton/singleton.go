@@ -76,6 +76,18 @@ func LoadSingleton() {
 	globalMemoryMonitor = NewMemoryMonitor()
 	globalMemoryMonitor.Start()
 
+	// 确保BadgerDB已正确初始化
+	if Conf.DatabaseType == "badger" && db.DB == nil {
+		log.Println("重新初始化BadgerDB连接...")
+		var err error
+		db.DB, err = db.OpenDB(Conf.DatabaseLocation)
+		if err != nil {
+			log.Printf("无法重新初始化BadgerDB: %v，尝试继续运行", err)
+		} else {
+			log.Println("BadgerDB已成功初始化")
+		}
+	}
+
 	// 如果使用SQLite数据库，执行数据库初始化操作
 	if Conf.DatabaseType != "badger" {
 		log.Println("初始化SQLite数据库...")
@@ -161,24 +173,29 @@ func LoadSingleton() {
 			}
 		}()
 
-		// 启动连接池监控
-		StartConnectionPoolMonitor()
-		LogConnectionPoolStats() // 立即记录一次连接池状态
+		// 根据数据库类型决定是否启动连接池监控
+		if Conf.DatabaseType != "badger" {
+			// 启动连接池监控
+			StartConnectionPoolMonitor()
+			LogConnectionPoolStats() // 立即记录一次连接池状态
 
-		// 预热数据库连接池
-		WarmupDatabase()
+			// 预热数据库连接池
+			WarmupDatabase()
 
-		// 启动数据库写入工作器
-		StartDBWriteWorker()
+			// 启动数据库写入工作器
+			StartDBWriteWorker()
 
-		// 启动数据库插入工作器
-		StartDBInsertWorker()
+			// 启动数据库插入工作器
+			StartDBInsertWorker()
 
-		// 启动监控历史记录专用工作器
-		StartMonitorHistoryWorker()
+			// 启动监控历史记录专用工作器
+			StartMonitorHistoryWorker()
 
-		// 启动数据库维护计划
-		StartDatabaseMaintenanceScheduler()
+			// 启动数据库维护计划
+			StartDatabaseMaintenanceScheduler()
+		} else {
+			log.Println("使用BadgerDB，跳过数据库连接池相关操作")
+		}
 	}()
 
 	// 加载通知服务

@@ -336,3 +336,72 @@ func (o *CronOps) GetCronByID(id uint64) (*model.Cron, error) {
 func (o *CronOps) DeleteCron(id uint64) error {
 	return o.db.Delete(fmt.Sprintf("cron:%d", id))
 }
+
+// ApiTokenOps provides specialized operations for API tokens
+type ApiTokenOps struct {
+	db *BadgerDB
+}
+
+// NewApiTokenOps creates a new ApiTokenOps instance
+func NewApiTokenOps(db *BadgerDB) *ApiTokenOps {
+	return &ApiTokenOps{db: db}
+}
+
+// SaveApiToken saves an API token record
+func (o *ApiTokenOps) SaveApiToken(token *model.ApiToken) error {
+	key := fmt.Sprintf("api_token:%d", token.ID)
+
+	value, err := json.Marshal(token)
+	if err != nil {
+		return fmt.Errorf("failed to marshal API token: %w", err)
+	}
+
+	return o.db.Set(key, value)
+}
+
+// GetAllApiTokens gets all API tokens
+func (o *ApiTokenOps) GetAllApiTokens() ([]*model.ApiToken, error) {
+	var tokens []*model.ApiToken
+
+	err := o.db.FindAll("api_token", &tokens)
+	if err != nil {
+		return nil, err
+	}
+
+	return tokens, nil
+}
+
+// GetApiTokenByID gets an API token by ID
+func (o *ApiTokenOps) GetApiTokenByID(id uint64) (*model.ApiToken, error) {
+	var token model.ApiToken
+
+	err := o.db.FindModel(id, "api_token", &token)
+	if err != nil {
+		return nil, err
+	}
+
+	return &token, nil
+}
+
+// GetApiTokenByToken gets an API token by token string
+func (o *ApiTokenOps) GetApiTokenByToken(tokenStr string) (*model.ApiToken, error) {
+	var tokens []*model.ApiToken
+
+	err := o.db.FindAll("api_token", &tokens)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, t := range tokens {
+		if t.Token == tokenStr {
+			return t, nil
+		}
+	}
+
+	return nil, ErrorNotFound
+}
+
+// DeleteApiToken deletes an API token
+func (o *ApiTokenOps) DeleteApiToken(id uint64) error {
+	return o.db.Delete(fmt.Sprintf("api_token:%d", id))
+}
