@@ -10,6 +10,7 @@ import (
 	"github.com/jinzhu/copier"
 
 	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 )
 
@@ -65,30 +66,69 @@ func AlertSentinelStart() {
 	alertsPrevState = make(map[uint64]map[uint64]uint)
 	AlertsCycleTransferStatsStore = make(map[uint64]*model.CycleTransferStats)
 	AlertsLock.Lock()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("AlertSentinelStart goroutine panic恢复: %v", r)
+			// 重新启动
+			go AlertSentinelStart()
+		}
+	}()
 
-	// 使用重试机制防止数据库锁定
-	err := executeWithRetry(func() error {
-		return DB.Find(&Alerts).Error
-	})
-	if err != nil {
-		log.Printf("AlertSentinelStart 初始化失败: %v", err)
-		AlertsLock.Unlock()
-		return // 不要panic，而是返回并稍后重试
+	// 根据数据库类型选择不同的加载方式
+	if Conf.DatabaseType == "badger" {
+		// 使用BadgerDB加载报警规则
+		if db.DB != nil {
+			// BadgerDB模式，直接查询AlertRule
+			var alerts []*model.AlertRule
+			err := db.DB.FindAll("alert_rule", &alerts)
+			if err != nil {
+				log.Printf("从BadgerDB加载报警规则失败: %v", err)
+				AlertsLock.Unlock()
+				return
+			}
+			Alerts = alerts
+		} else {
+			log.Println("BadgerDB未初始化，跳过加载报警规则")
+			AlertsLock.Unlock()
+			return
+		}
+	} else {
+		// 使用SQLite加载报警规则
+		err := executeWithRetry(func() error {
+			return DB.Find(&Alerts).Error
+		})
+		if err != nil {
+			log.Printf("从SQLite加载报警规则失败: %v", err)
+			AlertsLock.Unlock()
+			return // 不要panic，而是返回并稍后重试
+		}
 	}
 
 	for _, alert := range Alerts {
 		// 旧版本可能不存在通知组 为其添加默认值
 		if alert.NotificationTag == "" {
 			alert.NotificationTag = "default"
-			// 使用异步队列保存，避免锁冲突
-			alertData := map[string]interface{}{
-				"notification_tag": "default",
-			}
-			AsyncDBUpdate(alert.ID, "alert_rules", alertData, func(err error) {
-				if err != nil {
-					log.Printf("更新AlertRule通知组失败: %v", err)
+
+			if Conf.DatabaseType == "badger" {
+				// 使用BadgerDB更新
+				if db.DB != nil {
+					// 直接保存AlertRule
+					err := db.DB.SaveModel("alert_rule", alert.ID, alert)
+					if err != nil {
+						log.Printf("更新AlertRule通知组到BadgerDB失败: %v", err)
+					}
 				}
-			})
+			} else {
+				// 使用异步队列保存，避免锁冲突
+				alertData := map[string]interface{}{
+					"notification_tag": "default",
+				}
+				AsyncDBUpdate(alert.ID, "alert_rules", alertData, func(err error) {
+					if err != nil {
+						log.Printf("更新AlertRule通知组失败: %v", err)
+					}
+				})
+			}
 		}
 		alertsStore[alert.ID] = make(map[uint64][][]interface{})
 		alertsPrevState[alert.ID] = make(map[uint64]uint)
@@ -181,10 +221,50 @@ func checkStatus() {
 		if !alert.Enabled() {
 			continue
 		}
+
+		// 确保Rules属性已初始化
+		if alert.Rules == nil || len(alert.Rules) == 0 {
+			if Conf.Debug {
+				log.Printf("警告：报警规则 %s (ID=%d) 的Rules为空，跳过检查", alert.Name, alert.ID)
+			}
+			continue
+		}
+
+		// 初始化每个Rule的字段，避免nil指针
+		for i := range alert.Rules {
+			if alert.Rules[i].NextTransferAt == nil {
+				alert.Rules[i].NextTransferAt = make(map[uint64]time.Time)
+			}
+			if alert.Rules[i].LastCycleStatus == nil {
+				alert.Rules[i].LastCycleStatus = make(map[uint64]interface{})
+			}
+			if alert.Rules[i].Ignore == nil {
+				alert.Rules[i].Ignore = make(map[uint64]bool)
+			}
+		}
+
 		for _, server := range ServerList {
+			// 确保alertsStore对应的键存在
+			if alertsStore[alert.ID] == nil {
+				alertsStore[alert.ID] = make(map[uint64][][]interface{})
+			}
+			if alertsStore[alert.ID][server.ID] == nil {
+				alertsStore[alert.ID][server.ID] = make([][]interface{}, 0)
+			}
+
 			// 监测点
-			alertsStore[alert.ID][server.ID] = append(alertsStore[alert.
-				ID][server.ID], alert.Snapshot(AlertsCycleTransferStatsStore[alert.ID], server, DB))
+			// 根据数据库类型决定是否传入DB参数
+			var snapshot []interface{}
+			if Conf.DatabaseType == "badger" {
+				// BadgerDB模式下，传入nil作为DB参数
+				snapshot = alert.Snapshot(AlertsCycleTransferStatsStore[alert.ID], server, nil)
+			} else {
+				// SQLite模式下，传入DB参数
+				snapshot = alert.Snapshot(AlertsCycleTransferStatsStore[alert.ID], server, DB)
+			}
+
+			alertsStore[alert.ID][server.ID] = append(alertsStore[alert.ID][server.ID], snapshot)
+
 			// 发送通知，分为触发报警和恢复通知
 			max, passed := alert.Check(alertsStore[alert.ID][server.ID])
 			// 保存当前服务器状态信息
@@ -193,6 +273,11 @@ func checkStatus() {
 
 			// 本次未通过检查
 			if !passed {
+				// 确保alertsPrevState正确初始化
+				if alertsPrevState[alert.ID] == nil {
+					alertsPrevState[alert.ID] = make(map[uint64]uint)
+				}
+
 				// 始终触发模式或上次检查不为失败时触发报警（跳过单次触发+上次失败的情况）
 				if alert.TriggerMode == model.ModeAlwaysTrigger || alertsPrevState[alert.ID][server.ID] != _RuleCheckFail {
 					alertsPrevState[alert.ID][server.ID] = _RuleCheckFail
@@ -207,6 +292,11 @@ func checkStatus() {
 					UnMuteNotification(alert.NotificationTag, NotificationMuteLabel.ServerIncidentResolved(alert.ID, server.ID))
 				}
 			} else {
+				// 确保alertsPrevState正确初始化
+				if alertsPrevState[alert.ID] == nil {
+					alertsPrevState[alert.ID] = make(map[uint64]uint)
+				}
+
 				// 本次通过检查但上一次的状态为失败，则发送恢复通知
 				if alertsPrevState[alert.ID][server.ID] == _RuleCheckFail {
 					// 生成详细的恢复消息
