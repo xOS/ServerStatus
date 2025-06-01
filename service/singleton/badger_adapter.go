@@ -2,10 +2,12 @@ package singleton
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/xos/serverstatus/db"
@@ -110,37 +112,133 @@ func initializeBadgerDBIndexes() error {
 
 // loadServersFromBadgerDB 从BadgerDB加载服务器列表到内存
 func loadServersFromBadgerDB() error {
+	log.Println("从BadgerDB加载服务器列表...")
 	ServerLock.Lock()
 	defer ServerLock.Unlock()
 
+	// 清空现有服务器列表
+	ServerList = make(map[uint64]*model.Server)
+	SortedServerList = make([]*model.Server, 0)
+	SortedServerListForGuest = make([]*model.Server, 0)
+
 	// 使用ServerOps获取所有服务器
 	serverOps := db.NewServerOps(db.DB)
+	if serverOps == nil || db.DB == nil {
+		log.Println("警告: BadgerDB或ServerOps未初始化")
+		return errors.New("BadgerDB未初始化")
+	}
+
 	servers, err := serverOps.GetAllServers()
 	if err != nil {
+		log.Printf("从BadgerDB获取服务器列表失败: %v", err)
 		return err
 	}
 
+	log.Printf("从BadgerDB加载了 %d 台服务器", len(servers))
+
 	// 初始化服务器列表
 	for _, server := range servers {
-		ServerList[server.ID] = server
-		ServerList[server.ID].Host = &model.Host{}
-		ServerList[server.ID].State = &model.HostState{}
+		if server == nil {
+			log.Println("警告: 跳过空的服务器记录")
+			continue
+		}
 
-		// 解析持久化的主机信息和状态
+		if server.ID == 0 {
+			log.Printf("警告: 服务器ID为0，跳过: %s", server.Name)
+			continue
+		}
+
+		log.Printf("加载服务器: ID=%d, 名称=%s", server.ID, server.Name)
+
+		// 初始化必要的对象
+		server.Host = &model.Host{}
+		server.State = &model.HostState{}
+
+		// 设置默认值
+		server.IsOnline = false // 初始状态为离线，等待agent报告
+
+		// 从数据库恢复LastActive时间，使用LastOnline字段
+		if !server.LastOnline.IsZero() {
+			server.LastActive = server.LastOnline
+		} else {
+			// 如果没有LastOnline记录，设置为当前时间减去一个较大的值，表示很久没有活动
+			server.LastActive = time.Now().Add(-24 * time.Hour)
+		}
+
+		// 解析持久化的主机信息
 		if server.HostJSON != "" {
-			err := json.Unmarshal([]byte(server.HostJSON), ServerList[server.ID].Host)
+			err := json.Unmarshal([]byte(server.HostJSON), server.Host)
 			if err != nil {
 				log.Printf("解析服务器主机信息失败，服务器ID：%d：%v", server.ID, err)
+				// 创建新的Host对象作为回退
+				server.Host = &model.Host{}
+				server.Host.Initialize()
+			} else if server.Host == nil {
+				// 确保Host不为空
+				server.Host = &model.Host{}
+				server.Host.Initialize()
+			}
+		} else {
+			// 如果没有JSON数据，初始化一个空的Host对象
+			server.Host = &model.Host{}
+			server.Host.Initialize()
+		}
+
+		// 解析持久化的状态信息
+		if server.LastStateJSON != "" {
+			err := json.Unmarshal([]byte(server.LastStateJSON), server.State)
+			if err != nil {
+				log.Printf("解析服务器状态信息失败，服务器ID：%d：%v", server.ID, err)
+				server.State = &model.HostState{}
+			} else if server.State != nil {
+				server.LastStateBeforeOffline = server.State
 			}
 		}
 
-		if server.LastStateJSON != "" {
-			err := json.Unmarshal([]byte(server.LastStateJSON), ServerList[server.ID].State)
-			if err != nil {
-				log.Printf("解析服务器状态信息失败，服务器ID：%d：%v", server.ID, err)
-			}
-			ServerList[server.ID].LastStateBeforeOffline = ServerList[server.ID].State
+		// 添加到服务器映射
+		ServerList[server.ID] = server
+	}
+
+	// 构建排序后的服务器列表
+	log.Println("构建排序的服务器列表...")
+	// 刷新内存中的有序服务器列表
+	SortedServerLock.Lock()
+	defer SortedServerLock.Unlock()
+	SortedServerList = []*model.Server{}
+	SortedServerListForGuest = []*model.Server{}
+
+	for _, s := range ServerList {
+		SortedServerList = append(SortedServerList, s)
+		if !s.HideForGuest {
+			SortedServerListForGuest = append(SortedServerListForGuest, s)
 		}
+	}
+
+	// 按照服务器排序值排序
+	sort.SliceStable(SortedServerList, func(i, j int) bool {
+		if SortedServerList[i].DisplayIndex == SortedServerList[j].DisplayIndex {
+			return SortedServerList[i].ID < SortedServerList[j].ID
+		}
+		return SortedServerList[i].DisplayIndex < SortedServerList[j].DisplayIndex
+	})
+
+	sort.SliceStable(SortedServerListForGuest, func(i, j int) bool {
+		if SortedServerListForGuest[i].DisplayIndex == SortedServerListForGuest[j].DisplayIndex {
+			return SortedServerListForGuest[i].ID < SortedServerListForGuest[j].ID
+		}
+		return SortedServerListForGuest[i].DisplayIndex < SortedServerListForGuest[j].DisplayIndex
+	})
+
+	log.Printf("服务器列表加载完成: 共 %d 台服务器, 排序后 %d 台, 访客可见 %d 台",
+		len(ServerList), len(SortedServerList), len(SortedServerListForGuest))
+
+	// 显示服务器ID列表，用于调试
+	if len(ServerList) > 0 {
+		ids := []uint64{}
+		for id := range ServerList {
+			ids = append(ids, id)
+		}
+		log.Printf("服务器ID列表: %v", ids)
 	}
 
 	return nil

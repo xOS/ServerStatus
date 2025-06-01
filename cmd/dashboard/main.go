@@ -44,13 +44,23 @@ func initSystem() {
 	// 等待两秒钟确保所有服务充分初始化
 	time.Sleep(2 * time.Second)
 
-	// 加载服务器流量数据并初始化
-	singleton.SyncAllServerTrafficFromDB()
+	// 加载服务器流量数据并初始化 - 仅在非BadgerDB模式下执行
+	if singleton.Conf != nil && singleton.Conf.DatabaseType != "badger" {
+		singleton.SyncAllServerTrafficFromDB()
+	} else {
+		log.Println("使用BadgerDB，执行BadgerDB监控历史清理...")
+		count, err := singleton.CleanMonitorHistory()
+		if err != nil {
+			log.Printf("BadgerDB监控历史清理失败: %v", err)
+		} else {
+			log.Printf("BadgerDB监控历史清理完成，清理了%d条记录", count)
+		}
+	}
 
 	// 特别强调：面板重启时必须执行流量重新计算
 	singleton.TriggerTrafficRecalculation()
 
-	// 开启流量同步和持久化
+	// 开启流量同步和持久化 - 在BadgerDB模式下使用空实现
 	singleton.AutoSyncTraffic()
 }
 
@@ -104,7 +114,11 @@ func main() {
 	_ = ctx // 将来可能用于goroutine控制
 
 	// 启动所有服务
-	singleton.CleanMonitorHistory()
+	// 只在非BadgerDB模式下调用CleanMonitorHistory，BadgerDB模式下已经在initSystem中调用
+	if singleton.Conf.DatabaseType != "badger" {
+		singleton.CleanMonitorHistory()
+	}
+
 	go rpc.ServeRPC(singleton.Conf.GRPCPort)
 	serviceSentinelDispatchBus := make(chan model.Monitor)
 

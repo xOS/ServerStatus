@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -183,6 +184,14 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 	prefixBytes := []byte(prefix + ":")
 	items := [][]byte{}
 
+	if b.db == nil {
+		log.Printf("FindAll: BadgerDB实例未初始化，返回空结果")
+		// 返回空数组结果而不是错误
+		return json.Unmarshal([]byte("[]"), result)
+	}
+
+	log.Printf("FindAll: 查询前缀 %s 的数据", prefix)
+
 	err := b.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = true
@@ -203,20 +212,117 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 	})
 
 	if err != nil {
+		log.Printf("FindAll: BadgerDB查询错误: %v", err)
 		return err
 	}
 
-	// Convert items to JSON array
-	itemsJSON := "["
-	for i, item := range items {
-		if i > 0 {
-			itemsJSON += ","
-		}
-		itemsJSON += string(item)
-	}
-	itemsJSON += "]"
+	log.Printf("FindAll: 找到 %d 条 %s 记录", len(items), prefix)
 
-	return json.Unmarshal([]byte(itemsJSON), result)
+	// 如果没有找到任何记录，返回空数组
+	if len(items) == 0 {
+		return json.Unmarshal([]byte("[]"), result)
+	}
+
+	// 针对不同的数据类型进行特殊处理
+	switch prefix {
+	case "server":
+		// 服务器记录可能需要特殊处理
+		var servers []*map[string]interface{}
+		for _, item := range items {
+			var data map[string]interface{}
+			if err := json.Unmarshal(item, &data); err != nil {
+				log.Printf("FindAll: 解析服务器数据失败: %v, 数据: %s", err, string(item))
+				continue
+			}
+
+			// 转换字段类型，确保 JSON 字段正确
+			convertDbFieldTypes(&data)
+			servers = append(servers, &data)
+		}
+
+		// 重新序列化为 JSON
+		serversJSON, err := json.Marshal(servers)
+		if err != nil {
+			log.Printf("FindAll: 重新序列化服务器数据失败: %v", err)
+			return err
+		}
+
+		log.Printf("FindAll: 已处理 %d 条服务器记录", len(servers))
+		return json.Unmarshal(serversJSON, result)
+	default:
+		// 其他类型的记录，使用标准处理方式
+		itemsJSON := "["
+		for i, item := range items {
+			if i > 0 {
+				itemsJSON += ","
+			}
+			itemsJSON += string(item)
+		}
+		itemsJSON += "]"
+
+		return json.Unmarshal([]byte(itemsJSON), result)
+	}
+}
+
+// convertDbFieldTypes 转换从 BadgerDB 读取的字段类型，确保兼容性
+func convertDbFieldTypes(data *map[string]interface{}) {
+	// 转换已知需要特殊处理的字段
+	d := *data
+
+	// 处理数值型字段，确保它们是正确的类型
+	numericFields := []string{"id", "group", "sort", "latest_version"}
+	for _, field := range numericFields {
+		if val, ok := d[field]; ok {
+			switch v := val.(type) {
+			case string:
+				if v == "" {
+					d[field] = float64(0)
+				} else if f, err := strconv.ParseFloat(v, 64); err == nil {
+					d[field] = f
+				}
+			}
+		}
+	}
+
+	// 处理布尔型字段
+	boolFields := []string{"is_online", "is_disabled", "hide_for_guest", "show_all", "tasker"}
+	for _, field := range boolFields {
+		if val, ok := d[field]; ok {
+			switch v := val.(type) {
+			case string:
+				d[field] = v == "1" || v == "true" || v == "t"
+			case float64:
+				d[field] = v != 0
+			case int:
+				d[field] = v != 0
+			}
+		}
+	}
+
+	// 处理特殊的 JSON 字符串字段
+	jsonFields := []string{"host_json", "last_state_json"}
+	for _, field := range jsonFields {
+		if val, ok := d[field]; ok {
+			if strVal, isStr := val.(string); isStr && strVal != "" {
+				var jsonData interface{}
+				if err := json.Unmarshal([]byte(strVal), &jsonData); err == nil {
+					// 如果能成功解析为 JSON，保持原样，否则视为普通字符串
+					// 这里不做替换，因为 model 会自己处理这些 JSON 字段
+				}
+			}
+		}
+	}
+
+	// 确保必要的字段存在
+	if _, ok := d["id"]; !ok {
+		d["id"] = float64(0)
+	}
+	if _, ok := d["host_json"]; !ok {
+		d["host_json"] = ""
+	}
+	if _, ok := d["last_state_json"]; !ok {
+		d["last_state_json"] = ""
+	}
 }
 
 // Begin starts a new transaction

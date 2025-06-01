@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"strconv"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -105,43 +106,133 @@ func scanToMap(rows *sql.Rows) (map[string]interface{}, error) {
 
 // migrateServers migrates servers from SQLite to BadgerDB
 func (m *Migration) migrateServers() error {
+	log.Println("开始迁移服务器数据...")
 	rows, err := m.sqliteDB.Query("SELECT * FROM servers WHERE deleted_at IS NULL")
 	if err != nil {
-		return err
+		return fmt.Errorf("查询服务器数据失败: %w", err)
 	}
 	defer rows.Close()
 
 	count := 0
+	errorCount := 0
+
+	// 获取列名
+	columns, err := rows.Columns()
+	if err != nil {
+		return fmt.Errorf("获取列名失败: %w", err)
+	}
+
+	log.Printf("服务器数据列: %v", columns)
 
 	for rows.Next() {
 		data, err := scanToMap(rows)
 		if err != nil {
-			return err
-		}
-
-		// Extract ID for key
-		id, ok := data["id"]
-		if !ok {
+			log.Printf("扫描行数据失败: %v，跳过", err)
+			errorCount++
 			continue
 		}
 
-		// Convert to JSON
-		jsonData, err := json.Marshal(data)
+		// Extract ID for key
+		idVal, ok := data["id"]
+		if !ok {
+			log.Printf("服务器数据缺少ID字段，跳过")
+			errorCount++
+			continue
+		}
+
+		// 确保ID是有效的
+		var id uint64
+		switch v := idVal.(type) {
+		case int64:
+			id = uint64(v)
+		case float64:
+			id = uint64(v)
+		case string:
+			parsed, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				log.Printf("解析服务器ID失败: %v，跳过", err)
+				errorCount++
+				continue
+			}
+			id = parsed
+		default:
+			log.Printf("服务器ID类型无效: %T，跳过", idVal)
+			errorCount++
+			continue
+		}
+
+		if id == 0 {
+			log.Printf("服务器ID为0，跳过")
+			errorCount++
+			continue
+		}
+
+		// 确保正确处理布尔值字段
+		boolFields := []string{"is_disabled", "is_online", "hide_for_guest", "show_all", "tasker"}
+		for _, field := range boolFields {
+			if val, ok := data[field]; ok {
+				switch v := val.(type) {
+				case int64:
+					data[field] = v != 0
+				case float64:
+					data[field] = v != 0
+				case string:
+					data[field] = v == "1" || v == "true" || v == "t"
+				}
+			}
+		}
+
+		// 尝试构建 Server 模型对象
+		var server model.Server
+		serverJSON, err := json.Marshal(data)
 		if err != nil {
-			return err
+			log.Printf("服务器ID %d: 序列化数据失败: %v, 尝试原始保存", id, err)
+		}
+
+		if err := json.Unmarshal(serverJSON, &server); err != nil {
+			log.Printf("服务器ID %d: 反序列化为Server对象失败: %v, 尝试原始保存", id, err)
+		} else {
+			// 确保ID正确
+			server.ID = id
+
+			// 如果服务器名称为空，给一个默认名称
+			if server.Name == "" {
+				server.Name = fmt.Sprintf("Server-%d", id)
+			}
+
+			// 添加额外的日志
+			log.Printf("服务器ID %d: 名称=%s, 在线=%v, 隐藏=%v",
+				server.ID, server.Name, server.IsOnline, server.HideForGuest)
+
+			// 重新序列化为JSON以保存
+			serverJSON, err = json.Marshal(server)
+			if err != nil {
+				log.Printf("服务器ID %d: 重新序列化失败: %v, 尝试原始保存", id, err)
+				// 如果重新序列化失败，回退到使用原始数据
+				serverJSON, _ = json.Marshal(data)
+			}
 		}
 
 		// Save to BadgerDB
 		key := fmt.Sprintf("server:%v", id)
-		if err := m.badgerDB.Set(key, jsonData); err != nil {
-			return err
+		if err := m.badgerDB.Set(key, serverJSON); err != nil {
+			log.Printf("服务器ID %d: 保存到BadgerDB失败: %v", id, err)
+			errorCount++
+			continue
 		}
 
 		count++
+		if count%10 == 0 {
+			log.Printf("已迁移 %d 条服务器记录...", count)
+		}
 	}
 
-	log.Printf("已迁移 %d 条服务器记录", count)
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("迭代服务器行时出错: %w", err)
+	}
+
+	log.Printf("服务器迁移完成: 成功 %d 条, 失败 %d 条", count, errorCount)
+	return nil
 }
 
 // migrateUsers migrates users from SQLite to BadgerDB

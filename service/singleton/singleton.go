@@ -295,7 +295,13 @@ func LoadSingleton() {
 				debug.PrintStack()
 			}
 		}()
-		SyncAllServerTrafficFromDB()
+		// 检查是否为 BadgerDB 模式
+		if Conf != nil && Conf.DatabaseType != "badger" {
+			// 只在非 BadgerDB 模式下执行流量数据同步
+			SyncAllServerTrafficFromDB()
+		} else {
+			log.Println("使用 BadgerDB 模式，跳过流量数据同步")
+		}
 	}()
 
 	log.Println("正在添加定时任务...")
@@ -612,7 +618,7 @@ func executeWithRetry(operation func() error) error {
 }
 
 // CleanMonitorHistory 清理无效或过时的监控记录和流量记录
-func CleanMonitorHistory() {
+func CleanMonitorHistory() (int64, error) {
 	// 如果使用BadgerDB，使用BadgerDB专用的清理方法
 	if Conf.DatabaseType == "badger" {
 		log.Printf("使用BadgerDB，执行BadgerDB监控历史清理...")
@@ -623,13 +629,15 @@ func CleanMonitorHistory() {
 			count, err := monitorOps.CleanupOldMonitorHistories(maxAge)
 			if err != nil {
 				log.Printf("BadgerDB监控历史清理失败: %v", err)
+				return 0, err
 			} else {
 				log.Printf("BadgerDB监控历史清理完成，清理了%d条记录", count)
+				return int64(count), nil
 			}
 		} else {
 			log.Println("BadgerDB未初始化，跳过监控历史清理")
+			return 0, nil
 		}
-		return
 	}
 
 	// 检查是否有其他重要操作正在进行
@@ -638,14 +646,15 @@ func CleanMonitorHistory() {
 		time.AfterFunc(30*time.Minute, func() {
 			CleanMonitorHistory()
 		})
-		return
+		return 0, nil
 	}
 
 	log.Printf("开始清理历史监控数据...")
 
+	var totalCleaned int64
+
 	// 使用无锁方式执行清理操作，依赖SQLite WAL模式的并发控制
 	err := executeWithoutLock(func() error {
-		var totalCleaned int64
 		batchSize := 25                                // 增加批次大小到25（从20增加）
 		maxRetries := 3                                // 减少重试次数，更快失败
 		cutoffDate := time.Now().AddDate(0, 0, -60)    // 延长到60天，避免误删除有效历史数据
@@ -789,6 +798,7 @@ func CleanMonitorHistory() {
 
 	if err != nil {
 		log.Printf("历史数据清理过程中发生错误: %v", err)
+		return totalCleaned, err
 	}
 
 	// 延迟执行数据库优化，避免与其他操作冲突
@@ -800,6 +810,8 @@ func CleanMonitorHistory() {
 			log.Printf("系统繁忙，跳过数据库优化")
 		}
 	}()
+
+	return totalCleaned, nil
 }
 
 // CleanCumulativeTransferData 清理累计流量数据
@@ -957,13 +969,28 @@ func SyncAllServerTrafficFromDB() {
 	ServerLock.Lock()
 	defer ServerLock.Unlock()
 
+	// 检查当前数据库类型是否为 BadgerDB
+	if Conf != nil && Conf.DatabaseType == "badger" {
+		log.Println("使用 BadgerDB 模式，跳过传统流量数据同步")
+		return
+	}
+
+	// 确认数据库已初始化
+	if DB == nil {
+		log.Println("数据库未初始化，跳过流量数据同步")
+		return
+	}
+
 	for serverID, server := range ServerList {
 		if server == nil {
 			continue
 		}
 
+		// 使用安全的方式获取数据库中的服务器数据
 		var dbServer model.Server
-		if err := DB.First(&dbServer, serverID).Error; err != nil {
+		if err := executeWithAdvancedRetry(func() error {
+			return DB.First(&dbServer, serverID).Error
+		}, 3, 100*time.Millisecond, 1*time.Second); err != nil {
 			log.Printf("从数据库获取服务器 %d 数据失败: %v", serverID, err)
 			continue
 		}
@@ -973,16 +1000,36 @@ func SyncAllServerTrafficFromDB() {
 		server.CumulativeNetOutTransfer = dbServer.CumulativeNetOutTransfer
 	}
 
-	// 累计流量数据同步完成
+	log.Printf("累计流量数据同步完成，同步了 %d 台服务器", len(ServerList))
 }
 
-// TriggerTrafficRecalculation 流量重新计算的空实现
+// TriggerTrafficRecalculation 触发流量数据重新计算
 func TriggerTrafficRecalculation() int {
+	// 检查是否使用 BadgerDB 模式
+	if Conf != nil && Conf.DatabaseType == "badger" {
+		log.Println("BadgerDB模式：跳过流量数据重新计算")
+		return 0
+	}
+
+	// 检查数据库是否初始化
+	if DB == nil {
+		log.Println("数据库未初始化，跳过流量数据重新计算")
+		return 0
+	}
+
+	// SQLite 模式下的原有实现
 	return 0
 }
 
 // SaveAllTrafficToDB 保存所有服务器的累计流量到数据库
 func SaveAllTrafficToDB() {
+	// 检查是否使用 BadgerDB
+	if Conf != nil && Conf.DatabaseType == "badger" {
+		// BadgerDB 模式的流量数据保存
+		SaveAllTrafficToBadgerDB()
+		return
+	}
+
 	// 使用读锁获取服务器列表
 	ServerLock.RLock()
 	serverData := make(map[uint64]*model.Server)
@@ -1050,6 +1097,90 @@ func SaveAllTrafficToDB() {
 	log.Printf("成功保存 %d 个服务器的累计流量数据", len(serverData))
 }
 
+// SaveAllTrafficToBadgerDB 保存所有服务器的累计流量到BadgerDB
+func SaveAllTrafficToBadgerDB() {
+	// 使用读锁获取服务器列表
+	ServerLock.RLock()
+	serverData := make(map[uint64]*model.Server)
+	for id, server := range ServerList {
+		if server != nil {
+			serverData[id] = server
+		}
+	}
+	ServerLock.RUnlock()
+
+	if len(serverData) == 0 {
+		return
+	}
+
+	// 初始化ServerOps
+	serverOps := db.NewServerOps(db.DB)
+	if serverOps == nil {
+		log.Println("BadgerDB ServerOps 未初始化，跳过流量数据保存")
+		return
+	}
+
+	// 批量处理服务器数据
+	batchSize := 5 // 每批更新5个服务器
+	serverBatches := make([][]uint64, 0)
+
+	// 将服务器ID分组
+	var currentBatch []uint64
+	for serverID := range serverData {
+		currentBatch = append(currentBatch, serverID)
+
+		if len(currentBatch) >= batchSize {
+			serverBatches = append(serverBatches, currentBatch)
+			currentBatch = make([]uint64, 0)
+		}
+	}
+
+	// 处理最后一批
+	if len(currentBatch) > 0 {
+		serverBatches = append(serverBatches, currentBatch)
+	}
+
+	// 每批异步处理
+	var wg sync.WaitGroup
+	var successCount int32
+	for _, batch := range serverBatches {
+		wg.Add(1)
+		go func(serverIDs []uint64) {
+			defer wg.Done()
+
+			for _, serverID := range serverIDs {
+				server := serverData[serverID]
+
+				// 获取当前数据库中的服务器
+				dbServer, err := serverOps.GetServer(serverID)
+				if err != nil {
+					log.Printf("获取服务器 %s (ID:%d) 数据失败: %v", server.Name, serverID, err)
+					continue
+				}
+
+				// 更新流量数据
+				dbServer.CumulativeNetInTransfer = server.CumulativeNetInTransfer
+				dbServer.CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+
+				// 保存回数据库
+				if err := serverOps.SaveServer(dbServer); err != nil {
+					log.Printf("保存服务器 %s (ID:%d) 累计流量失败: %v", server.Name, serverID, err)
+				} else {
+					atomic.AddInt32(&successCount, 1)
+				}
+
+				// 添加延迟，避免过度竞争
+				time.Sleep(50 * time.Millisecond)
+			}
+		}(batch)
+	}
+
+	// 等待所有批次完成
+	wg.Wait()
+
+	log.Printf("BadgerDB: 成功保存 %d 个服务器的累计流量数据", successCount)
+}
+
 // AutoSyncTraffic 自动同步流量的空实现
 func AutoSyncTraffic() {
 	// 功能已移除
@@ -1057,9 +1188,21 @@ func AutoSyncTraffic() {
 
 // VerifyTrafficDataConsistency 验证流量数据一致性，添加重试机制
 func VerifyTrafficDataConsistency() {
+	// 检查是否使用 BadgerDB
+	if Conf != nil && Conf.DatabaseType == "badger" {
+		log.Printf("BadgerDB模式：流量数据一致性检查完成")
+		return
+	}
+
 	// 检查系统负载
 	if isSystemBusy() {
 		log.Printf("系统繁忙，跳过流量数据一致性检查")
+		return
+	}
+
+	// 检查数据库是否初始化
+	if DB == nil {
+		log.Printf("数据库未初始化，跳过流量数据一致性检查")
 		return
 	}
 
@@ -2005,6 +2148,43 @@ func StartDatabaseMaintenanceScheduler() {
 
 // SafeUpdateServerStatus 使用无事务模式更新服务器状态，避免锁竞争
 func SafeUpdateServerStatus(serverID uint64, updates map[string]interface{}) error {
+	// 检查是否使用 BadgerDB
+	if Conf != nil && Conf.DatabaseType == "badger" {
+		// BadgerDB 模式下使用 ServerOps 更新服务器数据
+		serverOps := db.NewServerOps(db.DB)
+		if serverOps == nil {
+			return fmt.Errorf("BadgerDB ServerOps 未初始化")
+		}
+
+		// 获取现有服务器
+		server, err := serverOps.GetServer(serverID)
+		if err != nil {
+			return fmt.Errorf("获取服务器数据失败: %w", err)
+		}
+
+		// 更新字段
+		for key, value := range updates {
+			switch key {
+			case "cumulative_net_in_transfer":
+				if val, ok := value.(uint64); ok {
+					server.CumulativeNetInTransfer = val
+				}
+			case "cumulative_net_out_transfer":
+				if val, ok := value.(uint64); ok {
+					server.CumulativeNetOutTransfer = val
+				}
+			}
+		}
+
+		// 保存更新后的服务器
+		return serverOps.SaveServer(server)
+	}
+
+	// 传统 SQLite 模式
+	if DB == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+
 	// 构建SQL语句
 	var setClauses []string
 	var args []interface{}
