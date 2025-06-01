@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/pkg/oidc/cloudflare"
 	myOidc "github.com/xos/serverstatus/pkg/oidc/general"
 
@@ -277,7 +279,61 @@ func (oa *oauth2controller) callback(c *gin.Context) {
 		return
 	}
 	user.TokenExpired = time.Now().AddDate(0, 2, 0)
-	singleton.DB.Save(&user)
+
+	// 根据数据库类型选择不同的保存方式
+	if singleton.Conf.DatabaseType == "badger" {
+		// 使用BadgerDB保存用户信息
+		if singleton.Conf.Debug {
+			log.Printf("使用BadgerDB保存OAuth2用户信息: %s", user.Login)
+		}
+
+		// 检查BadgerDB是否已初始化
+		if db.DB != nil {
+			// 使用UserOps保存用户信息
+			userOps := db.NewUserOps(db.DB)
+			err = userOps.SaveUser(&user)
+			if err != nil {
+				mygin.ShowErrorPage(c, mygin.ErrInfo{
+					Code:  http.StatusBadRequest,
+					Title: "保存用户信息失败",
+					Msg:   fmt.Sprintf("错误信息：%s", err),
+				}, true)
+				return
+			}
+		} else {
+			// BadgerDB未初始化，但在调试模式下仍然允许继续
+			if singleton.Conf.Debug {
+				log.Printf("警告：BadgerDB未初始化，无法保存用户信息，但在调试模式下将继续执行")
+			} else {
+				mygin.ShowErrorPage(c, mygin.ErrInfo{
+					Code:  http.StatusBadRequest,
+					Title: "数据库错误",
+					Msg:   "BadgerDB未初始化，无法保存用户信息",
+				}, true)
+				return
+			}
+		}
+	} else {
+		// 使用SQLite(GORM)保存用户信息
+		if singleton.DB == nil {
+			mygin.ShowErrorPage(c, mygin.ErrInfo{
+				Code:  http.StatusBadRequest,
+				Title: "数据库错误",
+				Msg:   "SQLite数据库未初始化，无法保存用户信息",
+			}, true)
+			return
+		}
+		err = singleton.DB.Save(&user).Error
+		if err != nil {
+			mygin.ShowErrorPage(c, mygin.ErrInfo{
+				Code:  http.StatusBadRequest,
+				Title: "保存用户信息失败",
+				Msg:   fmt.Sprintf("错误信息：%s", err),
+			}, true)
+			return
+		}
+	}
+
 	c.SetCookie(singleton.Conf.Site.CookieName, user.Token, 60*60*24, "", "", false, false)
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/redirect", mygin.CommonEnvironment(c, gin.H{
 		"URL": "/",

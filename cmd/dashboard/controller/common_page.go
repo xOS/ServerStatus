@@ -116,6 +116,10 @@ func (p *commonPage) service(c *gin.Context) {
 }
 
 func (cp *commonPage) network(c *gin.Context) {
+	if singleton.Conf.Debug {
+		log.Printf("network: 进入网络页面处理函数")
+	}
+
 	var (
 		monitorHistory       *model.MonitorHistory
 		servers              []*model.Server
@@ -125,24 +129,97 @@ func (cp *commonPage) network(c *gin.Context) {
 	)
 	if len(singleton.SortedServerList) > 0 {
 		id = singleton.SortedServerList[0].ID
+		if singleton.Conf.Debug {
+			log.Printf("network: 使用SortedServerList中第一个服务器ID: %d", id)
+		}
 	}
-	if err := singleton.DB.Model(&model.MonitorHistory{}).Select("monitor_id, server_id").
-		Where("monitor_id != 0 and server_id != 0").Limit(1).First(&monitorHistory).Error; err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusForbidden,
-			Title: "请求失败",
-			Msg:   "请求参数有误：" + "server monitor history not found",
-			Link:  "/",
-			Btn:   "返回重试",
-		}, true)
-		return
-	} else {
-		if monitorHistory == nil || monitorHistory.ServerID == 0 {
+
+	// 根据数据库类型选择不同的处理方式
+	if singleton.Conf.DatabaseType == "badger" {
+		// BadgerDB 模式下，使用默认的监控历史记录方式
+		if singleton.Conf.Debug {
+			log.Printf("network: 使用BadgerDB模式，跳过GORM查询监控历史")
+		}
+
+		// 使用第一个服务器的ID作为默认选择
+		if len(singleton.SortedServerList) > 0 {
+			id = singleton.SortedServerList[0].ID
+			if singleton.Conf.Debug {
+				log.Printf("network: BadgerDB模式下使用服务器ID: %d", id)
+			}
+		}
+
+		// 从监控API获取服务器ID列表，用于显示
+		dummyMonitorHistory := &model.MonitorHistory{
+			ServerID:  id,
+			MonitorID: 1,
+		}
+
+		// 使用ServerList中的服务器ID构建serverIdsWithMonitor
+		if singleton.Conf.Debug {
+			log.Printf("network: 从ServerList构建监控服务器ID列表")
+		}
+		singleton.ServerLock.RLock()
+		for serverID, server := range singleton.ServerList {
+			if server != nil && server.IsOnline {
+				serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
+			}
+		}
+		singleton.ServerLock.RUnlock()
+
+		if singleton.Conf.Debug {
+			log.Printf("network: 从ServerList获取到 %d 个监控服务器ID", len(serverIdsWithMonitor))
+		}
+
+		if dummyMonitorHistory == nil || dummyMonitorHistory.ServerID == 0 {
 			if len(singleton.SortedServerList) > 0 {
 				id = singleton.SortedServerList[0].ID
+				if singleton.Conf.Debug {
+					log.Printf("network: 更新服务器ID: %d", id)
+				}
 			}
 		} else {
-			id = monitorHistory.ServerID
+			id = dummyMonitorHistory.ServerID
+			if singleton.Conf.Debug {
+				log.Printf("network: 使用dummy监控历史记录的服务器ID: %d", id)
+			}
+		}
+	} else {
+		// SQLite 模式，使用 GORM 查询
+		if err := singleton.DB.Model(&model.MonitorHistory{}).Select("monitor_id, server_id").
+			Where("monitor_id != 0 and server_id != 0").Limit(1).First(&monitorHistory).Error; err != nil {
+			mygin.ShowErrorPage(c, mygin.ErrInfo{
+				Code:  http.StatusForbidden,
+				Title: "请求失败",
+				Msg:   "请求参数有误：" + "server monitor history not found",
+				Link:  "/",
+				Btn:   "返回重试",
+			}, true)
+			return
+		} else {
+			if monitorHistory == nil || monitorHistory.ServerID == 0 {
+				if len(singleton.SortedServerList) > 0 {
+					id = singleton.SortedServerList[0].ID
+				}
+			} else {
+				id = monitorHistory.ServerID
+			}
+		}
+
+		// 使用GORM获取带有监控的服务器ID列表
+		if err := singleton.DB.Model(&model.MonitorHistory{}).
+			Select("distinct(server_id)").
+			Where("server_id != 0").
+			Find(&serverIdsWithMonitor).
+			Error; err != nil {
+			mygin.ShowErrorPage(c, mygin.ErrInfo{
+				Code:  http.StatusForbidden,
+				Title: "请求失败",
+				Msg:   "请求参数有误：" + "no server with monitor histories",
+				Link:  "/",
+				Btn:   "返回重试",
+			}, true)
+			return
 		}
 	}
 
@@ -172,25 +249,44 @@ func (cp *commonPage) network(c *gin.Context) {
 			return
 		}
 	}
-	monitorHistories := singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": id})
-	monitorInfos, _ = utils.Json.Marshal(monitorHistories)
+
+	// 获取监控历史记录
+	var monitorHistories interface{}
+	if singleton.Conf.DatabaseType == "badger" {
+		// BadgerDB 模式，使用空的历史记录
+		if singleton.Conf.Debug {
+			log.Printf("network: BadgerDB模式，使用空的监控历史记录")
+		}
+		// 创建一个空的历史记录数组
+		monitorHistories = []model.MonitorHistory{}
+		// 序列化为JSON
+		monitorInfos, _ = utils.Json.Marshal(monitorHistories)
+	} else {
+		// SQLite 模式，使用 MonitorAPI
+		monitorHistories = singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": id})
+		monitorInfos, _ = utils.Json.Marshal(monitorHistories)
+	}
+
 	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
 	_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
 
-	if err := singleton.DB.Model(&model.MonitorHistory{}).
-		Select("distinct(server_id)").
-		Where("server_id != 0").
-		Find(&serverIdsWithMonitor).
-		Error; err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusForbidden,
-			Title: "请求失败",
-			Msg:   "请求参数有误：" + "no server with monitor histories",
-			Link:  "/",
-			Btn:   "返回重试",
-		}, true)
-		return
+	// 如果使用BadgerDB且serverIdsWithMonitor为空，则使用所有在线服务器
+	if singleton.Conf.DatabaseType == "badger" && len(serverIdsWithMonitor) == 0 {
+		if singleton.Conf.Debug {
+			log.Printf("network: BadgerDB模式下，未找到监控历史记录服务器，使用在线服务器列表")
+		}
+
+		// 添加所有在线服务器到列表
+		singleton.ServerLock.RLock()
+		for serverID, server := range singleton.ServerList {
+			if server != nil && server.IsOnline {
+				serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
+			}
+		}
+		singleton.ServerLock.RUnlock()
 	}
+
+	// 根据权限过滤服务器列表
 	if isMember || isViewPasswordVerfied {
 		for _, server := range singleton.SortedServerList {
 			for _, id := range serverIdsWithMonitor {
@@ -208,6 +304,22 @@ func (cp *commonPage) network(c *gin.Context) {
 			}
 		}
 	}
+
+	// 确保我们至少有一个服务器
+	if len(servers) == 0 && singleton.Conf.Debug {
+		log.Printf("network: 未找到任何服务器，创建演示服务器")
+		demoServer := &model.Server{
+			Common: model.Common{
+				ID: 1,
+			},
+			Name:     "演示服务器",
+			Host:     &model.Host{},
+			State:    &model.HostState{},
+			IsOnline: true,
+		}
+		servers = append(servers, demoServer)
+	}
+
 	serversBytes, _ := utils.Json.Marshal(Data{
 		Now:     time.Now().Unix() * 1000,
 		Servers: servers,
@@ -241,8 +353,56 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 			serverList = singleton.SortedServerListForGuest
 		}
 
+		// 添加调试日志
+		if singleton.Conf.Debug {
+			log.Printf("getServerStat: 获取服务器列表, 授权状态: %v, 获取到 %d 台服务器",
+				authorized, len(serverList))
+		}
+
+		// 修复：检查服务器列表是否为空
+		if serverList == nil || len(serverList) == 0 {
+			if singleton.Conf.Debug {
+				log.Printf("getServerStat: 服务器列表为空，尝试从 ServerList 提取数据")
+			}
+
+			// 从 ServerList 中提取服务器
+			singleton.ServerLock.RLock()
+			for _, server := range singleton.ServerList {
+				if server != nil {
+					// 为所有用户展示所有服务器，或者仅对授权用户显示
+					if authorized || !server.HideForGuest {
+						serverList = append(serverList, server)
+					}
+				}
+			}
+			singleton.ServerLock.RUnlock()
+
+			if singleton.Conf.Debug {
+				log.Printf("getServerStat: 从 ServerList 提取到 %d 台服务器", len(serverList))
+			}
+
+			// 如果服务器列表仍然为空，创建一个默认的演示服务器
+			if singleton.Conf.Debug && (serverList == nil || len(serverList) == 0) {
+				log.Printf("getServerStat: 创建演示服务器数据用于调试")
+				demoServer := &model.Server{
+					Common: model.Common{
+						ID: 1,
+					},
+					Name:     "演示服务器",
+					Host:     &model.Host{},
+					State:    &model.HostState{},
+					IsOnline: true,
+				}
+				serverList = append(serverList, demoServer)
+			}
+		}
+
 		var servers []*model.Server
 		for _, server := range serverList {
+			if server == nil {
+				continue
+			}
+
 			item := *server
 			if !withPublicNote {
 				item.PublicNote = ""
@@ -381,12 +541,30 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 		}
 		singleton.ServerLock.RUnlock()
 
-		return utils.Json.Marshal(Data{
+		// 确保返回正确的数据结构，即使没有服务器数据
+		if servers == nil {
+			servers = make([]*model.Server, 0)
+		}
+
+		data := Data{
 			Now:         time.Now().Unix() * 1000,
 			Servers:     servers,
 			TrafficData: trafficData,
-		})
+		}
+
+		// 添加调试日志
+		if singleton.Conf.Debug {
+			log.Printf("getServerStat: 返回数据 - %d 台服务器, %d 条流量数据",
+				len(servers), len(trafficData))
+		}
+
+		return utils.Json.Marshal(data)
 	})
+
+	if err != nil && singleton.Conf.Debug {
+		log.Printf("getServerStat: 数据序列化错误: %v", err)
+	}
+
 	return v.([]byte), err
 }
 
