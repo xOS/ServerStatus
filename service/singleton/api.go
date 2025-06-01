@@ -1,14 +1,13 @@
 package singleton
 
 import (
-	"fmt"
 	"log"
 	"sync"
-	"time"
 
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/utils"
+	"gorm.io/gorm"
 )
 
 var (
@@ -399,98 +398,23 @@ func (s *ServerAPIService) Register(rs *RegisterServer) *ServerRegisterResponse 
 	}
 }
 
-func (m *MonitorAPIService) GetMonitorHistories(query map[string]any) *MonitorInfoResponse {
-	// 生成缓存键
-	cacheKey := fmt.Sprintf("monitor_histories_%v", query)
-
-	// 尝试从缓存获取
-	if cached, found := Cache.Get(cacheKey); found {
-		if cachedResponse, ok := cached.(*MonitorInfoResponse); ok {
-			return cachedResponse
-		}
+// GetMonitorHistories 获取监控记录
+func (m *MonitorAPIService) GetMonitorHistories(search map[string]any) []*model.MonitorHistory {
+	// 检查是否使用BadgerDB
+	if Conf != nil && Conf.DatabaseType == "badger" {
+		log.Printf("MonitorAPIService.GetMonitorHistories: BadgerDB模式，返回空的监控历史记录")
+		// 在BadgerDB模式下返回空数组
+		return []*model.MonitorHistory{}
 	}
 
-	var (
-		resultMap        = make(map[uint64]*MonitorInfo)
-		monitorHistories []*model.MonitorHistory
-		sortedMonitorIDs []uint64
-	)
-	res := &MonitorInfoResponse{
-		CommonResponse: CommonResponse{
-			Code:    0,
-			Message: "success",
-		},
-	}
-
-	// 优化查询：减少查询时间范围，添加合理的限制
-	timeRange := 24 * time.Hour // 从72小时减少到24小时
-	queryLimit := 5000          // 限制最大记录数，防止数据过大
-
+	// 原有的SQLite查询逻辑
+	var mhs []*model.MonitorHistory
 	if err := DB.Model(&model.MonitorHistory{}).
-		Select("monitor_id, created_at, server_id, avg_delay").
-		Where(query).
-		Where("created_at >= ?", time.Now().Add(-timeRange)).
-		Order("monitor_id, created_at DESC").
-		Limit(queryLimit).
-		Scan(&monitorHistories).Error; err != nil {
-		res.CommonResponse = CommonResponse{
-			Code:    500,
-			Message: err.Error(),
-		}
-	} else {
-		for _, history := range monitorHistories {
-			infos, ok := resultMap[history.MonitorID]
-			if !ok {
-				// 安全检查：确保monitor和server存在
-				var monitorName string
-				var serverName string
-
-				// 检查ServiceSentinelShared和monitors是否存在
-				if ServiceSentinelShared != nil && ServiceSentinelShared.monitors != nil {
-					if monitor, exists := ServiceSentinelShared.monitors[history.MonitorID]; exists && monitor != nil {
-						monitorName = monitor.Name
-					} else {
-						monitorName = "Unknown Monitor"
-					}
-				} else {
-					monitorName = "Unknown Monitor"
-				}
-
-				// 检查ServerList中是否存在该服务器
-				ServerLock.RLock()
-				if server, exists := ServerList[history.ServerID]; exists && server != nil {
-					serverName = server.Name
-				} else {
-					// 如果内存中没有，尝试从数据库查询
-					var dbServer model.Server
-					if err := DB.Where("id = ?", history.ServerID).First(&dbServer).Error; err == nil {
-						serverName = dbServer.Name
-					} else {
-						serverName = "Unknown Server"
-					}
-				}
-				ServerLock.RUnlock()
-
-				infos = &MonitorInfo{
-					MonitorID:   history.MonitorID,
-					ServerID:    history.ServerID,
-					MonitorName: monitorName,
-					ServerName:  serverName,
-				}
-				resultMap[history.MonitorID] = infos
-				sortedMonitorIDs = append(sortedMonitorIDs, history.MonitorID)
-			}
-			// 修复时间戳计算：确保返回正确的毫秒时间戳
-			timestampMs := history.CreatedAt.Truncate(time.Minute).Unix() * 1000
-			infos.CreatedAt = append(infos.CreatedAt, timestampMs)
-			infos.AvgDelay = append(infos.AvgDelay, history.AvgDelay)
-		}
-		for _, monitorID := range sortedMonitorIDs {
-			res.Result = append(res.Result, resultMap[monitorID])
-		}
-
-		// 缓存结果（缓存2分钟）
-		Cache.Set(cacheKey, res, 2*time.Minute)
+		Where(search).
+		FindInBatches(&mhs, 100, func(tx *gorm.DB, batch int) error {
+			return nil
+		}).Error; err != nil {
+		log.Printf("获取监控记录失败: %v", err)
 	}
-	return res
+	return mhs
 }

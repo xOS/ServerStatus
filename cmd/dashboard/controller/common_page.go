@@ -124,45 +124,39 @@ func (cp *commonPage) network(c *gin.Context) {
 		monitorHistory       *model.MonitorHistory
 		servers              []*model.Server
 		serverIdsWithMonitor []uint64
-		monitorInfos         = []byte("{}")
+		monitorInfos         = []byte("[]") // 默认为空数组
 		id                   uint64
 	)
-	if len(singleton.SortedServerList) > 0 {
-		id = singleton.SortedServerList[0].ID
-		if singleton.Conf.Debug {
-			log.Printf("network: 使用SortedServerList中第一个服务器ID: %d", id)
-		}
-	}
 
 	// 根据数据库类型选择不同的处理方式
 	if singleton.Conf.DatabaseType == "badger" {
-		// BadgerDB 模式下，使用默认的监控历史记录方式
 		if singleton.Conf.Debug {
 			log.Printf("network: 使用BadgerDB模式，跳过GORM查询监控历史")
-		}
-
-		// 使用第一个服务器的ID作为默认选择
-		if len(singleton.SortedServerList) > 0 {
-			id = singleton.SortedServerList[0].ID
-			if singleton.Conf.Debug {
-				log.Printf("network: BadgerDB模式下使用服务器ID: %d", id)
-			}
-		}
-
-		// 从监控API获取服务器ID列表，用于显示
-		dummyMonitorHistory := &model.MonitorHistory{
-			ServerID:  id,
-			MonitorID: 1,
 		}
 
 		// 使用ServerList中的服务器ID构建serverIdsWithMonitor
 		if singleton.Conf.Debug {
 			log.Printf("network: 从ServerList构建监控服务器ID列表")
 		}
+
+		// 安全初始化
+		if servers == nil {
+			servers = []*model.Server{}
+		}
+		if serverIdsWithMonitor == nil {
+			serverIdsWithMonitor = []uint64{}
+		}
+
+		// 使用读锁安全访问ServerList
 		singleton.ServerLock.RLock()
+		// 从ServerList中获取所有服务器ID
 		for serverID, server := range singleton.ServerList {
-			if server != nil && server.IsOnline {
+			if server != nil {
 				serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
+				// 如果还没有选定ID，或者服务器在线，则将此服务器ID设为当前ID
+				if id == 0 || server.IsOnline {
+					id = serverID
+				}
 			}
 		}
 		singleton.ServerLock.RUnlock()
@@ -171,17 +165,21 @@ func (cp *commonPage) network(c *gin.Context) {
 			log.Printf("network: 从ServerList获取到 %d 个监控服务器ID", len(serverIdsWithMonitor))
 		}
 
-		if dummyMonitorHistory == nil || dummyMonitorHistory.ServerID == 0 {
-			if len(singleton.SortedServerList) > 0 {
-				id = singleton.SortedServerList[0].ID
-				if singleton.Conf.Debug {
-					log.Printf("network: 更新服务器ID: %d", id)
-				}
-			}
-		} else {
-			id = dummyMonitorHistory.ServerID
+		// 如果仍然没有找到ID，并且有排序列表，则使用排序列表中的第一个ID
+		singleton.SortedServerLock.RLock()
+		if id == 0 && len(singleton.SortedServerList) > 0 {
+			id = singleton.SortedServerList[0].ID
 			if singleton.Conf.Debug {
-				log.Printf("network: 使用dummy监控历史记录的服务器ID: %d", id)
+				log.Printf("network: 使用SortedServerList中第一个服务器ID: %d", id)
+			}
+		}
+		singleton.SortedServerLock.RUnlock()
+
+		// 如果依然没有ID，创建一个默认值
+		if id == 0 {
+			id = 1
+			if singleton.Conf.Debug {
+				log.Printf("network: 未找到有效服务器ID，使用默认ID: %d", id)
 			}
 		}
 	} else {
@@ -223,6 +221,7 @@ func (cp *commonPage) network(c *gin.Context) {
 		}
 	}
 
+	// 检查URL参数中是否指定了服务器ID
 	idStr := c.Param("id")
 	if idStr != "" {
 		var err error
@@ -237,7 +236,12 @@ func (cp *commonPage) network(c *gin.Context) {
 			}, true)
 			return
 		}
+
+		// 确保指定的服务器ID存在
+		singleton.ServerLock.RLock()
 		_, ok := singleton.ServerList[id]
+		singleton.ServerLock.RUnlock()
+
 		if !ok {
 			mygin.ShowErrorPage(c, mygin.ErrInfo{
 				Code:  http.StatusForbidden,
@@ -264,50 +268,94 @@ func (cp *commonPage) network(c *gin.Context) {
 	} else {
 		// SQLite 模式，使用 MonitorAPI
 		monitorHistories = singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": id})
-		monitorInfos, _ = utils.Json.Marshal(monitorHistories)
+		var err error
+		monitorInfos, err = utils.Json.Marshal(monitorHistories)
+		if err != nil {
+			log.Printf("network: 监控历史记录序列化失败: %v", err)
+			// 在序列化失败时使用空数组
+			monitorInfos = []byte("[]")
+		}
 	}
 
+	// 检查用户是否有权限访问
 	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
 	_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
+	authorized := isMember || isViewPasswordVerfied
 
-	// 如果使用BadgerDB且serverIdsWithMonitor为空，则使用所有在线服务器
+	// 如果使用BadgerDB且serverIdsWithMonitor为空，则使用所有服务器
 	if singleton.Conf.DatabaseType == "badger" && len(serverIdsWithMonitor) == 0 {
 		if singleton.Conf.Debug {
-			log.Printf("network: BadgerDB模式下，未找到监控历史记录服务器，使用在线服务器列表")
+			log.Printf("network: BadgerDB模式下，未找到监控历史记录服务器，使用所有服务器列表")
 		}
 
-		// 添加所有在线服务器到列表
+		// 添加所有服务器到列表
 		singleton.ServerLock.RLock()
-		for serverID, server := range singleton.ServerList {
-			if server != nil && server.IsOnline {
-				serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
-			}
+		for serverID := range singleton.ServerList {
+			serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
 		}
 		singleton.ServerLock.RUnlock()
 	}
 
 	// 根据权限过滤服务器列表
-	if isMember || isViewPasswordVerfied {
-		for _, server := range singleton.SortedServerList {
-			for _, id := range serverIdsWithMonitor {
-				if server.ID == id {
-					servers = append(servers, server)
+	singleton.SortedServerLock.RLock()
+	defer singleton.SortedServerLock.RUnlock()
+
+	// 安全检查，确保服务器切片已初始化
+	if servers == nil {
+		servers = make([]*model.Server, 0)
+	}
+
+	if authorized {
+		// 有权限的用户可以访问所有服务器
+		if singleton.SortedServerList != nil {
+			for _, server := range singleton.SortedServerList {
+				// 确保服务器不为nil
+				if server != nil {
+					// 如果serverIdsWithMonitor为空或包含当前服务器ID，则添加
+					if len(serverIdsWithMonitor) == 0 {
+						servers = append(servers, server)
+					} else {
+						for _, monitorServerID := range serverIdsWithMonitor {
+							if server.ID == monitorServerID {
+								servers = append(servers, server)
+								break
+							}
+						}
+					}
 				}
 			}
+		} else if singleton.Conf.Debug {
+			log.Printf("network: 警告: SortedServerList为nil")
 		}
 	} else {
-		for _, server := range singleton.SortedServerListForGuest {
-			for _, id := range serverIdsWithMonitor {
-				if server.ID == id {
-					servers = append(servers, server)
+		// 访客只能访问非隐藏服务器
+		if singleton.SortedServerListForGuest != nil {
+			for _, server := range singleton.SortedServerListForGuest {
+				// 确保服务器不为nil
+				if server != nil {
+					// 如果serverIdsWithMonitor为空或包含当前服务器ID，则添加
+					if len(serverIdsWithMonitor) == 0 {
+						servers = append(servers, server)
+					} else {
+						for _, monitorServerID := range serverIdsWithMonitor {
+							if server.ID == monitorServerID {
+								servers = append(servers, server)
+								break
+							}
+						}
+					}
 				}
 			}
+		} else if singleton.Conf.Debug {
+			log.Printf("network: 警告: SortedServerListForGuest为nil")
 		}
 	}
 
 	// 确保我们至少有一个服务器
-	if len(servers) == 0 && singleton.Conf.Debug {
-		log.Printf("network: 未找到任何服务器，创建演示服务器")
+	if len(servers) == 0 {
+		if singleton.Conf.Debug {
+			log.Printf("network: 未找到任何服务器，创建演示服务器")
+		}
 		demoServer := &model.Server{
 			Common: model.Common{
 				ID: 1,
@@ -320,11 +368,20 @@ func (cp *commonPage) network(c *gin.Context) {
 		servers = append(servers, demoServer)
 	}
 
-	serversBytes, _ := utils.Json.Marshal(Data{
+	// 序列化数据以便在前端使用
+	data := Data{
 		Now:     time.Now().Unix() * 1000,
 		Servers: servers,
-	})
+	}
 
+	serversBytes, err := utils.Json.Marshal(data)
+	if err != nil {
+		log.Printf("network: 服务器数据序列化失败: %v", err)
+		// 在序列化失败时使用空对象
+		serversBytes = []byte(`{"now":` + fmt.Sprintf("%d", time.Now().Unix()*1000) + `,"servers":[]}`)
+	}
+
+	// 渲染页面
 	c.HTML(http.StatusOK, mygin.GetPreferredTheme(c, "/network"), mygin.CommonEnvironment(c, gin.H{
 		"Servers":         string(serversBytes),
 		"MonitorInfos":    string(monitorInfos),
