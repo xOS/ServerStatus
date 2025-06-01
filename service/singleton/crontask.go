@@ -3,6 +3,7 @@ package singleton
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/jinzhu/copier"
@@ -53,10 +54,30 @@ func InitCronTask() {
 
 // loadCronTasks 加载计划任务
 func loadCronTasks() {
+	log.Println("加载计划任务...")
 	InitCronTask()
+
+	// 如果使用BadgerDB，初始化一个空的Cron列表然后返回，跳过后续处理
+	if Conf.DatabaseType == "badger" {
+		log.Println("使用BadgerDB，跳过加载计划任务")
+		// 启动定时器服务，只初始化系统任务
+		Cron.Start()
+		return
+	}
+
+	// 以下是SQLite的处理逻辑
 	var crons []model.Cron
-	DB.Find(&crons)
-	var err error
+
+	// 使用GORM (SQLite) 加载计划任务
+	err := DB.Find(&crons).Error
+	if err != nil {
+		log.Printf("加载计划任务失败: %v", err)
+		// 即使失败也要启动Cron服务
+		Cron.Start()
+		return
+	}
+
+	var taskErr error
 	var notificationTagList []string
 	notificationMsgMap := make(map[string]*bytes.Buffer)
 	for i := 0; i < len(crons); i++ {
@@ -71,8 +92,8 @@ func loadCronTasks() {
 			DB.Save(crons[i])
 		}
 		// 注册计划任务
-		crons[i].CronJobID, err = Cron.AddFunc(crons[i].Scheduler, CronTrigger(crons[i]))
-		if err == nil {
+		crons[i].CronJobID, taskErr = Cron.AddFunc(crons[i].Scheduler, CronTrigger(crons[i]))
+		if taskErr == nil {
 			Crons[crons[i].ID] = &crons[i]
 		} else {
 			// 当前通知组首次出现 将其加入通知组列表并初始化通知组消息缓存
@@ -89,6 +110,8 @@ func loadCronTasks() {
 		notificationMsgMap[tag].WriteString("] 这些任务将无法正常执行,请进入后点重新修改保存。")
 		SafeSendNotification(tag, notificationMsgMap[tag].String(), nil)
 	}
+
+	// 启动定时器服务
 	Cron.Start()
 }
 

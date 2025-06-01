@@ -12,6 +12,7 @@ import (
 
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	pb "github.com/xos/serverstatus/proto"
 )
@@ -163,9 +164,29 @@ func (ss *ServiceSentinel) Monitors() []*model.Monitor {
 // loadMonitorHistory 加载服务监控器的历史状态信息
 func (ss *ServiceSentinel) loadMonitorHistory() {
 	var monitors []*model.Monitor
-	err := DB.Find(&monitors).Error
-	if err != nil {
-		panic(err)
+
+	// 根据数据库类型选择不同的加载方式
+	if Conf.DatabaseType == "badger" {
+		if db.DB != nil {
+			// 使用BadgerDB加载监控器列表
+			monitorOps := db.NewMonitorOps(db.DB)
+			var err error
+			monitors, err = monitorOps.GetAllMonitors()
+			if err != nil {
+				log.Printf("从BadgerDB加载监控器列表失败: %v", err)
+				monitors = []*model.Monitor{} // 使用空列表避免空指针
+			}
+		} else {
+			log.Println("BadgerDB未初始化，使用空的监控器列表")
+			monitors = []*model.Monitor{} // 使用空列表避免空指针
+		}
+	} else {
+		// 使用SQLite加载监控器列表
+		err := DB.Find(&monitors).Error
+		if err != nil {
+			log.Printf("从SQLite加载监控器列表失败: %v", err)
+			monitors = []*model.Monitor{} // 使用空列表避免空指针
+		}
 	}
 
 	ss.serviceResponseDataStoreLock.Lock()
@@ -179,15 +200,28 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 		// 旧版本可能不存在通知组 为其设置默认组
 		if monitors[i].NotificationTag == "" {
 			monitors[i].NotificationTag = "default"
-			// 使用异步队列更新，避免锁冲突
-			monitorData := map[string]interface{}{
-				"notification_tag": "default",
-			}
-			AsyncDBUpdate(monitors[i].ID, "monitors", monitorData, func(err error) {
-				if err != nil {
-					log.Printf("更新Monitor通知组失败: %v", err)
+
+			// 根据数据库类型选择不同的更新方式
+			if Conf.DatabaseType == "badger" {
+				if db.DB != nil {
+					// 使用BadgerDB更新监控器
+					monitors[i].NotificationTag = "default"
+					monitorOps := db.NewMonitorOps(db.DB)
+					if err := monitorOps.SaveMonitor(monitors[i]); err != nil {
+						log.Printf("更新Monitor通知组到BadgerDB失败: %v", err)
+					}
 				}
-			})
+			} else {
+				// 使用异步队列更新SQLite，避免锁冲突
+				monitorData := map[string]interface{}{
+					"notification_tag": "default",
+				}
+				AsyncDBUpdate(monitors[i].ID, "monitors", monitorData, func(err error) {
+					if err != nil {
+						log.Printf("更新Monitor通知组失败: %v", err)
+					}
+				})
+			}
 		}
 
 		// 初始化监控数据存储
@@ -197,11 +231,13 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 
 		task := *monitors[i]
 		// 通过cron定时将服务监控任务传递给任务调度管道
+		var err error
 		monitors[i].CronJobID, err = Cron.AddFunc(task.CronSpec(), func() {
 			ss.dispatchBus <- task
 		})
 		if err != nil {
-			panic(err)
+			log.Printf("添加监控定时任务失败: %v", err)
+			continue // 跳过此监控器，继续处理其他的
 		}
 		ss.serviceStatusToday[monitors[i].ID] = &_TodayStatsOfMonitor{}
 	}
@@ -221,32 +257,50 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 	// 加载服务监控历史记录，优化查询性能
 	var mhs []model.MonitorHistory
 
-	// 添加查询优化和超时控制
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// 如果使用BadgerDB，则使用BadgerDB方式加载监控历史记录
+	if Conf.DatabaseType == "badger" {
+		if db.DB != nil {
+			// 使用BadgerDB加载监控历史记录
+			// BadgerDB暂不支持批量查询监控历史记录，记录日志并跳过
+			log.Printf("BadgerDB模式：监控历史记录功能暂不完全支持，跳过历史数据加载")
+			log.Printf("首次运行时没有历史数据是正常的，应用程序会逐渐收集新的监控数据")
 
-	startTime := time.Now()
-
-	// 直接查询月度数据，系统启动时需要快速加载
-	fromDate := today.AddDate(0, 0, -29)
-	toDate := today
-
-	err = DB.WithContext(ctx).
-		Where("created_at > ? AND created_at < ?", fromDate, toDate).
-		Order("created_at DESC").
-		Find(&mhs).Error
-
-	if err != nil {
-		log.Printf("加载月度监控数据失败: %v", err)
-		return
-	}
-	queryDuration := time.Since(startTime)
-
-	if queryDuration > 500*time.Millisecond {
-		log.Printf("慢SQL查询警告: 分批加载月度数据耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
+			// 设置空的历史记录列表
+			mhs = []model.MonitorHistory{}
+		} else {
+			log.Println("BadgerDB未初始化，跳过加载监控历史记录")
+			return
+		}
 	} else {
-		log.Printf("月度监控数据加载完成: 耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
+		// 添加查询优化和超时控制
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		startTime := time.Now()
+
+		// 直接查询月度数据，系统启动时需要快速加载
+		fromDate := today.AddDate(0, 0, -29)
+		toDate := today
+
+		err := DB.WithContext(ctx).
+			Where("created_at > ? AND created_at < ?", fromDate, toDate).
+			Order("created_at DESC").
+			Find(&mhs).Error
+
+		if err != nil {
+			log.Printf("加载月度监控数据失败: %v", err)
+			return
+		}
+
+		queryDuration := time.Since(startTime)
+
+		if queryDuration > 500*time.Millisecond {
+			log.Printf("慢SQL查询警告: 分批加载月度数据耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
+		} else {
+			log.Printf("月度监控数据加载完成: 耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
+		}
 	}
+
 	var delayCount = make(map[int]int)
 	for i := 0; i < len(mhs); i++ {
 		dayIndex := 28 - (int(today.Sub(mhs[i].CreatedAt).Hours()) / 24)

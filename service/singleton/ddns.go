@@ -10,6 +10,7 @@ import (
 	tencentcloud "github.com/nezhahq/libdns-tencentcloud"
 	"gorm.io/gorm"
 
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	ddns2 "github.com/xos/serverstatus/pkg/ddns"
 	"github.com/xos/serverstatus/pkg/ddns/dummy"
@@ -28,7 +29,27 @@ func initDDNS() {
 
 func OnDDNSUpdate() {
 	var ddns []*model.DDNSProfile
-	DB.Find(&ddns)
+
+	// 根据数据库类型选择不同的加载方式
+	if Conf.DatabaseType == "badger" {
+		// 使用 BadgerDB 加载DDNS配置
+		if db.DB != nil {
+			// 目前BadgerDB还没有DDNSOps实现，
+			// 后续可以添加DDNSOps对象来处理DDNS配置
+			log.Println("BadgerDB: DDNS功能暂不支持，跳过加载")
+			ddnsCacheLock.Lock()
+			defer ddnsCacheLock.Unlock()
+			ddnsCache = make(map[uint64]*model.DDNSProfile)
+			return
+		} else {
+			log.Println("警告: BadgerDB 未初始化")
+			return
+		}
+	} else {
+		// 使用 GORM (SQLite) 加载DDNS配置
+		DB.Find(&ddns)
+	}
+
 	ddnsCacheLock.Lock()
 	defer ddnsCacheLock.Unlock()
 	ddnsCache = make(map[uint64]*model.DDNSProfile)
@@ -88,6 +109,15 @@ func DDNSChangeNotificationCallback(serverName string, serverID uint64, domain s
 		return
 	}
 
+	// 如果使用BadgerDB，暂时不支持DDNS状态记录
+	if Conf.DatabaseType == "badger" {
+		log.Printf("BadgerDB模式：域名 %s 的 %s 记录IP变化 (%s -> %s)", domain, recordType, oldIP, newIP)
+		// 直接发送通知，不保存状态
+		sendDDNSChangeNotification(serverName, domain, recordType, oldIP, newIP)
+		return
+	}
+
+	// 以下是SQLite逻辑
 	// 查询或创建DDNS记录状态
 	var recordState model.DDNSRecordState
 	result := DB.Where("server_id = ? AND domain = ? AND record_type = ?", serverID, domain, recordType).First(&recordState)

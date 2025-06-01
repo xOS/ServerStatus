@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/utils"
 )
@@ -106,7 +107,24 @@ func InitAPI() {
 func loadAPI() {
 	InitAPI()
 	var tokenList []*model.ApiToken
-	DB.Find(&tokenList)
+
+	// 根据数据库类型选择不同的加载方式
+	if Conf.DatabaseType == "badger" {
+		// 使用 BadgerDB 加载API令牌
+		if db.DB != nil {
+			// 目前BadgerDB还没有ApiTokenOps实现，
+			// 后续可以添加ApiTokenOps对象来处理ApiToken
+			log.Println("BadgerDB: API令牌功能暂不支持，跳过加载")
+			return
+		} else {
+			log.Println("警告: BadgerDB 未初始化")
+			return
+		}
+	} else {
+		// 使用 GORM (SQLite) 加载API令牌
+		DB.Find(&tokenList)
+	}
+
 	for _, token := range tokenList {
 		ApiTokenList[token.Token] = token
 		UserIDToApiTokenList[token.UserID] = append(UserIDToApiTokenList[token.UserID], token.Token)
@@ -379,14 +397,14 @@ func (s *ServerAPIService) Register(rs *RegisterServer) *ServerRegisterResponse 
 func (m *MonitorAPIService) GetMonitorHistories(query map[string]any) *MonitorInfoResponse {
 	// 生成缓存键
 	cacheKey := fmt.Sprintf("monitor_histories_%v", query)
-	
+
 	// 尝试从缓存获取
 	if cached, found := Cache.Get(cacheKey); found {
 		if cachedResponse, ok := cached.(*MonitorInfoResponse); ok {
 			return cachedResponse
 		}
 	}
-	
+
 	var (
 		resultMap        = make(map[uint64]*MonitorInfo)
 		monitorHistories []*model.MonitorHistory
@@ -398,11 +416,11 @@ func (m *MonitorAPIService) GetMonitorHistories(query map[string]any) *MonitorIn
 			Message: "success",
 		},
 	}
-	
+
 	// 优化查询：减少查询时间范围，添加合理的限制
 	timeRange := 24 * time.Hour // 从72小时减少到24小时
-	queryLimit := 5000 // 限制最大记录数，防止数据过大
-	
+	queryLimit := 5000          // 限制最大记录数，防止数据过大
+
 	if err := DB.Model(&model.MonitorHistory{}).
 		Select("monitor_id, created_at, server_id, avg_delay").
 		Where(query).
@@ -465,7 +483,7 @@ func (m *MonitorAPIService) GetMonitorHistories(query map[string]any) *MonitorIn
 		for _, monitorID := range sortedMonitorIDs {
 			res.Result = append(res.Result, resultMap[monitorID])
 		}
-		
+
 		// 缓存结果（缓存2分钟）
 		Cache.Set(cacheKey, res, 2*time.Minute)
 	}

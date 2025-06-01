@@ -285,3 +285,54 @@ func (o *NotificationOps) GetNotificationByID(id uint64) (*model.Notification, e
 func (o *NotificationOps) DeleteNotification(id uint64) error {
 	return o.db.Delete(fmt.Sprintf("notification:%d", id))
 }
+
+// CronOps provides specialized operations for cron tasks
+type CronOps struct {
+	db *BadgerDB
+}
+
+// NewCronOps creates a new CronOps instance
+func NewCronOps(db *BadgerDB) *CronOps {
+	return &CronOps{db: db}
+}
+
+// SaveCron saves a cron task record
+func (o *CronOps) SaveCron(cron *model.Cron) error {
+	key := fmt.Sprintf("cron:%d", cron.ID)
+
+	value, err := json.Marshal(cron)
+	if err != nil {
+		return fmt.Errorf("failed to marshal cron task: %w", err)
+	}
+
+	return o.db.Set(key, value)
+}
+
+// GetAllCrons gets all cron tasks
+func (o *CronOps) GetAllCrons() ([]*model.Cron, error) {
+	var crons []*model.Cron
+
+	err := o.db.FindAll("cron", &crons)
+	if err != nil {
+		return nil, err
+	}
+
+	return crons, nil
+}
+
+// GetCronByID gets a cron task by ID
+func (o *CronOps) GetCronByID(id uint64) (*model.Cron, error) {
+	var cron model.Cron
+
+	err := o.db.FindModel(id, "cron", &cron)
+	if err != nil {
+		return nil, err
+	}
+
+	return &cron, nil
+}
+
+// DeleteCron deletes a cron task
+func (o *CronOps) DeleteCron(id uint64) error {
+	return o.db.Delete(fmt.Sprintf("cron:%d", id))
+}

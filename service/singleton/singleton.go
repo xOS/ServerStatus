@@ -20,6 +20,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/jinzhu/copier"
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/utils"
 )
@@ -63,15 +64,224 @@ func InitTimezoneAndCache() {
 
 // LoadSingleton 加载子服务并执行
 func LoadSingleton() {
-	loadNotifications() // 加载通知服务
-	loadServers()       // 加载服务器列表
-	loadCronTasks()     // 加载定时任务
-	loadAPI()
-	initNAT()
-	initDDNS()
+	// 使用顶层的panic处理，确保程序不会因为一个模块的失败而整体崩溃
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("严重错误：加载子服务时发生崩溃，但程序将继续执行: %v", r)
+			debug.PrintStack()
+		}
+	}()
+
+	// 启动内存监控
+	globalMemoryMonitor = NewMemoryMonitor()
+	globalMemoryMonitor.Start()
+
+	// 如果使用SQLite数据库，执行数据库初始化操作
+	if Conf.DatabaseType != "badger" {
+		log.Println("初始化SQLite数据库...")
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("数据库初始化失败，但程序将继续执行: %v", r)
+					debug.PrintStack()
+				}
+			}()
+
+			// 检查并添加新字段
+			if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {
+				if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_in_transfer"); err != nil {
+					log.Println("添加cumulative_net_in_transfer字段失败:", err)
+				}
+			}
+
+			if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_out_transfer") {
+				if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_out_transfer"); err != nil {
+					log.Println("添加cumulative_net_out_transfer字段失败:", err)
+				}
+			}
+
+			if !DB.Migrator().HasColumn(&model.Server{}, "last_state_json") {
+				if err := DB.Migrator().AddColumn(&model.Server{}, "last_state_json"); err != nil {
+					log.Println("添加last_state_json字段失败:", err)
+				}
+			}
+
+			if !DB.Migrator().HasColumn(&model.Server{}, "last_online") {
+				if err := DB.Migrator().AddColumn(&model.Server{}, "last_online"); err != nil {
+					log.Println("添加last_online字段失败:", err)
+				}
+			}
+
+			// 检查host_json字段是否存在，如果不存在则添加
+			if !DB.Migrator().HasColumn(&model.Server{}, "host_json") {
+				if err := DB.Migrator().AddColumn(&model.Server{}, "host_json"); err != nil {
+					log.Println("添加host_json字段失败:", err)
+				}
+			}
+
+			// 检查是否需要从last_reported_host表迁移数据到servers表
+			var hasLegacyTable bool
+			if err := DB.Raw("SELECT 1 FROM sqlite_master WHERE type='table' AND name='last_reported_host'").Scan(&hasLegacyTable).Error; err == nil && hasLegacyTable {
+				log.Println("检测到旧的last_reported_host表，开始迁移数据...")
+
+				// 迁移数据
+				if err := DB.Exec(`
+					UPDATE servers 
+					SET host_json = (
+						SELECT host_json 
+						FROM last_reported_host 
+						WHERE last_reported_host.server_id = servers.id
+					)
+					WHERE id IN (SELECT server_id FROM last_reported_host)
+				`).Error; err != nil {
+					log.Println("迁移host_json数据失败:", err)
+				} else {
+					log.Println("迁移host_json数据成功")
+
+					// 删除旧表
+					if err := DB.Exec("DROP TABLE last_reported_host").Error; err != nil {
+						log.Println("删除last_reported_host表失败:", err)
+					} else {
+						log.Println("删除last_reported_host表成功")
+					}
+				}
+			}
+		}()
+	} else {
+		log.Println("使用 BadgerDB 数据库，跳过表结构检查和迁移操作")
+	}
+
+	// 启动数据库相关服务
+	log.Println("启动数据库服务...")
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("数据库服务启动失败，但程序将继续执行: %v", r)
+				debug.PrintStack()
+			}
+		}()
+
+		// 启动连接池监控
+		StartConnectionPoolMonitor()
+		LogConnectionPoolStats() // 立即记录一次连接池状态
+
+		// 预热数据库连接池
+		WarmupDatabase()
+
+		// 启动数据库写入工作器
+		StartDBWriteWorker()
+
+		// 启动数据库插入工作器
+		StartDBInsertWorker()
+
+		// 启动监控历史记录专用工作器
+		StartMonitorHistoryWorker()
+
+		// 启动数据库维护计划
+		StartDatabaseMaintenanceScheduler()
+	}()
+
+	// 加载通知服务
+	log.Println("正在加载通知服务...")
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("通知服务加载失败，但程序将继续执行: %v", r)
+				debug.PrintStack()
+				// 确保初始化基础结构
+				InitNotification()
+			}
+		}()
+		loadNotifications()
+	}()
+
+	// 加载服务器列表
+	log.Println("正在加载服务器列表...")
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("服务器列表加载失败，但程序将继续执行: %v", r)
+				debug.PrintStack()
+				// 确保初始化基础结构
+				InitServer()
+			}
+		}()
+		loadServers()
+	}()
+
+	// 创建定时任务对象，即使后续加载失败也能确保基础定时任务可用
+	InitCronTask()
+
+	// 加载定时任务
+	log.Println("正在加载定时任务...")
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("定时任务加载失败，但程序将继续执行: %v", r)
+				debug.PrintStack()
+			}
+		}()
+
+		// 处理BadgerDB特殊情况
+		if Conf.DatabaseType == "badger" {
+			log.Println("BadgerDB模式：使用空的定时任务列表")
+			// 已在之前调用了InitCronTask，无需其他操作
+		} else {
+			loadCronTasks()
+		}
+	}()
+
+	// 加载API
+	log.Println("正在加载API服务...")
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("API加载失败，但程序将继续执行: %v", r)
+				debug.PrintStack()
+				// 确保初始化基础结构
+				InitAPI()
+			}
+		}()
+		loadAPI()
+	}()
+
+	// 初始化NAT
+	log.Println("正在初始化NAT...")
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("NAT初始化失败，但程序将继续执行: %v", r)
+				debug.PrintStack()
+			}
+		}()
+		initNAT()
+	}()
+
+	// 初始化DDNS
+	log.Println("正在初始化DDNS...")
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("DDNS初始化失败，但程序将继续执行: %v", r)
+				debug.PrintStack()
+			}
+		}()
+		initDDNS()
+	}()
 
 	// 从数据库同步累计流量数据到内存
-	SyncAllServerTrafficFromDB()
+	log.Println("正在同步流量数据...")
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("流量数据同步失败，但程序将继续执行: %v", r)
+				debug.PrintStack()
+			}
+		}()
+		SyncAllServerTrafficFromDB()
+	}()
+
+	log.Println("正在添加定时任务...")
 
 	// 添加定时检查在线状态的任务，每分钟检查一次
 	Cron.AddFunc("0 */1 * * * *", CheckServerOnlineStatus)
@@ -90,29 +300,6 @@ func LoadSingleton() {
 		Cache.DeleteExpired()
 		CleanupServerState() // 添加服务器状态清理
 		SaveAllTrafficToDB() // 保存流量数据到数据库
-	})
-
-	// 添加内存使用监控任务，每1分钟执行一次，温和的内存管理
-	Cron.AddFunc("0 */1 * * * *", func() {
-		var m runtime.MemStats
-		runtime.ReadMemStats(&m)
-
-		// 温和的内存阈值检查，提高到1200MB时进行基础清理，与其他组件保持一致
-		if m.Alloc > 1200*1024*1024 {
-			log.Printf("内存使用提醒: %v MB，执行温和清理", m.Alloc/1024/1024)
-
-			// 执行温和的清理操作
-			if Cache != nil {
-				Cache.DeleteExpired() // 只清理过期项
-			}
-
-			// 单次GC即可
-			runtime.GC()
-
-			// 检查清理后的内存使用
-			runtime.ReadMemStats(&m)
-			log.Printf("清理后内存使用: %v MB", m.Alloc/1024/1024)
-		}
 	})
 
 	// 定期温和清理任务，改为每小时执行一次
@@ -138,102 +325,48 @@ func LoadSingleton() {
 		log.Printf("定期温和清理完成，当前内存使用: %v MB", m.Alloc/1024/1024)
 	})
 
-	// 数据库优化任务，改为每1小时执行一次，降低清理频率
-	Cron.AddFunc("0 0 * * * *", func() {
-		OptimizeDatabase()
+	// 数据库优化任务仅在使用SQLite时执行
+	if Conf.DatabaseType != "badger" {
+		// 数据库优化任务，改为每1小时执行一次，降低清理频率
+		Cron.AddFunc("0 0 * * * *", func() {
+			OptimizeDatabase()
 
-		// 输出数据库状态
-		stats := GetDatabaseStats()
-		log.Printf("数据库状态: %+v", stats)
+			// 输出数据库状态
+			stats := GetDatabaseStats()
+			log.Printf("数据库状态: %+v", stats)
+		})
+	}
+
+	// 添加内存使用监控任务，每1分钟执行一次，温和的内存管理
+	Cron.AddFunc("0 */1 * * * *", func() {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+
+		// 温和的内存阈值检查，提高到1200MB时进行基础清理，与其他组件保持一致
+		if m.Alloc > 1200*1024*1024 {
+			log.Printf("内存使用提醒: %v MB，执行温和清理", m.Alloc/1024/1024)
+
+			// 执行温和的清理操作
+			if Cache != nil {
+				Cache.DeleteExpired() // 只清理过期项
+			}
+
+			// 单次GC即可
+			runtime.GC()
+
+			// 检查清理后的内存使用
+			runtime.ReadMemStats(&m)
+			log.Printf("清理后内存使用: %v MB", m.Alloc/1024/1024)
+		}
 	})
 
-	// 启动内存监控
-	globalMemoryMonitor = NewMemoryMonitor()
-	globalMemoryMonitor.Start()
-
-	// 启动连接池监控
-	StartConnectionPoolMonitor()
-	LogConnectionPoolStats() // 立即记录一次连接池状态
-
-	// 预热数据库连接池
-	WarmupDatabase()
-
-	// 启动数据库写入工作器
-	StartDBWriteWorker()
-
-	// 启动数据库插入工作器
-	StartDBInsertWorker()
-
-	// 启动监控历史记录专用工作器
-	StartMonitorHistoryWorker()
-
-	// 启动数据库维护计划
-	StartDatabaseMaintenanceScheduler()
-
-	// 只有在使用 SQLite 数据库时才进行这些操作
-	if Conf.DatabaseType != "badger" {
-		// 检查并添加新字段
-		if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {
-			if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_in_transfer"); err != nil {
-				log.Println("添加cumulative_net_in_transfer字段失败:", err)
-			}
-		}
-
-		if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_out_transfer") {
-			if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_out_transfer"); err != nil {
-				log.Println("添加cumulative_net_out_transfer字段失败:", err)
-			}
-		}
-
-		if !DB.Migrator().HasColumn(&model.Server{}, "last_state_json") {
-			if err := DB.Migrator().AddColumn(&model.Server{}, "last_state_json"); err != nil {
-				log.Println("添加last_state_json字段失败:", err)
-			}
-		}
-
-		if !DB.Migrator().HasColumn(&model.Server{}, "last_online") {
-			if err := DB.Migrator().AddColumn(&model.Server{}, "last_online"); err != nil {
-				log.Println("添加last_online字段失败:", err)
-			}
-		}
-
-		// 检查host_json字段是否存在，如果不存在则添加
-		if !DB.Migrator().HasColumn(&model.Server{}, "host_json") {
-			if err := DB.Migrator().AddColumn(&model.Server{}, "host_json"); err != nil {
-				log.Println("添加host_json字段失败:", err)
-			}
-		}
-
-		// 检查是否需要从last_reported_host表迁移数据到servers表
-		var hasLegacyTable bool
-		if err := DB.Raw("SELECT 1 FROM sqlite_master WHERE type='table' AND name='last_reported_host'").Scan(&hasLegacyTable).Error; err == nil && hasLegacyTable {
-			log.Println("检测到旧的last_reported_host表，开始迁移数据...")
-
-			// 迁移数据
-			if err := DB.Exec(`
-				UPDATE servers 
-				SET host_json = (
-					SELECT host_json 
-					FROM last_reported_host 
-					WHERE last_reported_host.server_id = servers.id
-				)
-				WHERE id IN (SELECT server_id FROM last_reported_host)
-			`).Error; err != nil {
-				log.Println("迁移host_json数据失败:", err)
-			} else {
-				log.Println("迁移host_json数据成功")
-
-				// 删除旧表
-				if err := DB.Exec("DROP TABLE last_reported_host").Error; err != nil {
-					log.Println("删除last_reported_host表失败:", err)
-				} else {
-					log.Println("删除last_reported_host表成功")
-				}
-			}
-		}
-	} else {
-		log.Println("使用 BadgerDB 数据库，跳过表结构检查和迁移操作")
+	log.Println("启动计划任务...")
+	// 确保Cron已经启动
+	if Cron != nil {
+		Cron.Start()
 	}
+
+	log.Println("子服务加载完成")
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
@@ -367,6 +500,11 @@ func isSystemBusy() bool {
 		return true
 	}
 
+	// 如果使用BadgerDB，不检查数据库连接状态
+	if Conf.DatabaseType == "badger" {
+		return false
+	}
+
 	// 检查数据库连接池状态来判断系统繁忙程度
 	sqlDB, err := DB.DB()
 	if err != nil {
@@ -458,6 +596,25 @@ func executeWithRetry(operation func() error) error {
 
 // CleanMonitorHistory 清理无效或过时的监控记录和流量记录
 func CleanMonitorHistory() {
+	// 如果使用BadgerDB，使用BadgerDB专用的清理方法
+	if Conf.DatabaseType == "badger" {
+		log.Printf("使用BadgerDB，执行BadgerDB监控历史清理...")
+		if db.DB != nil {
+			// 使用BadgerDB的MonitorHistoryOps清理过期数据
+			monitorOps := db.NewMonitorHistoryOps(db.DB)
+			maxAge := 60 * 24 * time.Hour // 60天
+			count, err := monitorOps.CleanupOldMonitorHistories(maxAge)
+			if err != nil {
+				log.Printf("BadgerDB监控历史清理失败: %v", err)
+			} else {
+				log.Printf("BadgerDB监控历史清理完成，清理了%d条记录", count)
+			}
+		} else {
+			log.Println("BadgerDB未初始化，跳过监控历史清理")
+		}
+		return
+	}
+
 	// 检查是否有其他重要操作正在进行
 	if isSystemBusy() {
 		log.Printf("系统繁忙，延迟历史数据清理")
@@ -1299,6 +1456,12 @@ var (
 
 // StartDBWriteWorker 启动数据库写入工作器
 func StartDBWriteWorker() {
+	// 如果使用BadgerDB，跳过数据库写入工作器
+	if Conf.DatabaseType == "badger" {
+		log.Println("使用BadgerDB，跳过数据库写入工作器")
+		return
+	}
+
 	dbWriteWorkerMutex.Lock()
 	defer dbWriteWorkerMutex.Unlock()
 
@@ -1321,6 +1484,12 @@ func StartDBWriteWorker() {
 
 // StartDBInsertWorker 启动数据库插入工作器
 func StartDBInsertWorker() {
+	// 如果使用BadgerDB，跳过数据库插入工作器
+	if Conf.DatabaseType == "badger" {
+		log.Println("使用BadgerDB，跳过数据库插入工作器")
+		return
+	}
+
 	dbInsertWorkerMutex.Lock()
 	defer dbInsertWorkerMutex.Unlock()
 
@@ -1540,6 +1709,11 @@ func GetDatabaseStats() map[string]interface{} {
 
 // LogConnectionPoolStats 记录数据库连接池统计信息
 func LogConnectionPoolStats() {
+	// 如果使用BadgerDB，跳过连接池统计
+	if Conf.DatabaseType == "badger" {
+		return
+	}
+
 	if DB != nil {
 		sqlDB, err := DB.DB()
 		if err == nil {
@@ -1556,6 +1730,12 @@ func LogConnectionPoolStats() {
 
 // StartConnectionPoolMonitor 启动连接池监控
 func StartConnectionPoolMonitor() {
+	// 如果使用BadgerDB，跳过连接池监控
+	if Conf.DatabaseType == "badger" {
+		log.Println("使用BadgerDB，跳过连接池监控")
+		return
+	}
+
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
@@ -1569,6 +1749,12 @@ func StartConnectionPoolMonitor() {
 // WarmupDatabase 预热数据库连接池，减少首次访问时的锁竞争
 func WarmupDatabase() {
 	log.Println("开始数据库连接池预热...")
+
+	// 如果使用BadgerDB，跳过预热
+	if Conf.DatabaseType == "badger" {
+		log.Println("使用BadgerDB，跳过数据库连接池预热")
+		return
+	}
 
 	// 预热连接池 - 降低并发度，避免锁竞争
 	var wg sync.WaitGroup
@@ -1592,6 +1778,12 @@ func WarmupDatabase() {
 
 // StartMonitorHistoryWorker 启动监控历史记录插入专用工作器
 func StartMonitorHistoryWorker() {
+	// 如果使用BadgerDB，跳过监控历史记录插入工作器
+	if Conf.DatabaseType == "badger" {
+		log.Println("使用BadgerDB，跳过监控历史记录插入工作器")
+		return
+	}
+
 	monitorHistoryWorkerMutex.Lock()
 	defer monitorHistoryWorkerMutex.Unlock()
 
@@ -1749,6 +1941,12 @@ func AsyncMonitorHistoryInsert(data map[string]interface{}, callback func(error)
 
 // StartDatabaseMaintenanceScheduler 启动数据库维护计划
 func StartDatabaseMaintenanceScheduler() {
+	// 如果使用BadgerDB，跳过数据库维护计划
+	if Conf.DatabaseType == "badger" {
+		log.Println("使用BadgerDB，跳过数据库维护计划")
+		return
+	}
+
 	log.Println("启动数据库维护计划...")
 
 	// 每6小时执行一次数据库优化
@@ -2076,83 +2274,171 @@ func AsyncBatchMonitorHistoryInsert(data map[string]interface{}, callback func(e
 			}
 
 			go func(insertData map[string]interface{}) {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
+				// 根据数据库类型选择不同的保存方式
+				if Conf.DatabaseType == "badger" {
+					// 使用 BadgerDB 保存
+					if db.DB != nil {
+						// 转换数据格式
+						history := &model.MonitorHistory{
+							MonitorID: midVal,
+							ServerID:  0,
+							AvgDelay:  0,
+							Data:      "",
+							Up:        0,
+							Down:      0,
+							CreatedAt: time.Now(),
+							UpdatedAt: time.Now(),
+						}
 
-				// 使用直接SQL插入，避免GORM的@id字段问题
-				sqlStr := "INSERT INTO monitor_histories (monitor_id, server_id, avg_delay, data, up, down, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+						// 设置服务器ID
+						if sid, ok := insertData["server_id"]; ok {
+							switch s := sid.(type) {
+							case uint64:
+								history.ServerID = s
+							case uint:
+								history.ServerID = uint64(s)
+							case int64:
+								history.ServerID = uint64(s)
+							case int:
+								history.ServerID = uint64(s)
+							case float64:
+								history.ServerID = uint64(s)
+							}
+						}
 
-				now := time.Now()
-				monitorID, _ := insertData["monitor_id"].(uint64)
+						// 设置平均延迟
+						if ad, ok := insertData["avg_delay"]; ok {
+							switch a := ad.(type) {
+							case float32:
+								history.AvgDelay = a
+							case float64:
+								history.AvgDelay = float32(a)
+							}
+						}
 
-				var serverID uint64
-				if sid, ok := insertData["server_id"]; ok {
-					switch s := sid.(type) {
-					case uint64:
-						serverID = s
-					case uint:
-						serverID = uint64(s)
-					case int64:
-						serverID = uint64(s)
-					case int:
-						serverID = uint64(s)
-					case float64:
-						serverID = uint64(s)
+						// 设置数据字符串
+						if dataStr, ok := insertData["data"].(string); ok {
+							history.Data = dataStr
+						}
+
+						// 设置Up/Down计数
+						if u, ok := insertData["up"]; ok {
+							switch uv := u.(type) {
+							case uint64:
+								history.Up = uv
+							case uint:
+								history.Up = uint64(uv)
+							case int64:
+								history.Up = uint64(uv)
+							case int:
+								history.Up = uint64(uv)
+							case float64:
+								history.Up = uint64(uv)
+							}
+						}
+
+						if d, ok := insertData["down"]; ok {
+							switch dv := d.(type) {
+							case uint64:
+								history.Down = dv
+							case uint:
+								history.Down = uint64(dv)
+							case int64:
+								history.Down = uint64(dv)
+							case int:
+								history.Down = uint64(dv)
+							case float64:
+								history.Down = uint64(dv)
+							}
+						}
+
+						// 使用BadgerDB保存
+						monitorHistoryOps := db.NewMonitorHistoryOps(db.DB)
+						err := monitorHistoryOps.SaveMonitorHistory(history)
+						if err != nil {
+							log.Printf("ICMP/TCP监控数据保存到BadgerDB失败 (MonitorID: %d): %v", midVal, err)
+						}
 					}
-				}
-
-				var avgDelay float32
-				if ad, ok := insertData["avg_delay"]; ok {
-					switch a := ad.(type) {
-					case float32:
-						avgDelay = a
-					case float64:
-						avgDelay = float32(a)
-					}
-				}
-
-				dataStr, _ := insertData["data"].(string)
-
-				var up, down uint64
-				if u, ok := insertData["up"]; ok {
-					switch uv := u.(type) {
-					case uint64:
-						up = uv
-					case uint:
-						up = uint64(uv)
-					case int64:
-						up = uint64(uv)
-					case int:
-						up = uint64(uv)
-					case float64:
-						up = uint64(uv)
-					}
-				}
-
-				if d, ok := insertData["down"]; ok {
-					switch dv := d.(type) {
-					case uint64:
-						down = dv
-					case uint:
-						down = uint64(dv)
-					case int64:
-						down = uint64(dv)
-					case int:
-						down = uint64(dv)
-					case float64:
-						down = uint64(dv)
-					}
-				}
-
-				// 使用高级重试逻辑执行插入
-				err := executeWithAdvancedRetry(func() error {
-					return DB.WithContext(ctx).Exec(sqlStr, monitorID, serverID, avgDelay, dataStr, up, down, now, now).Error
-				}, 5, 100*time.Millisecond, 3*time.Second)
-
-				if err != nil {
-					log.Printf("ICMP/TCP监控数据直接插入失败 (MonitorID: %d): %v", monitorID, err)
 				} else {
-					log.Printf("ICMP/TCP监控数据直接插入成功 (MonitorID: %d)", monitorID)
+					// 使用SQLite保存
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+
+					// 使用直接SQL插入，避免GORM的@id字段问题
+					sqlStr := "INSERT INTO monitor_histories (monitor_id, server_id, avg_delay, data, up, down, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+
+					now := time.Now()
+					monitorID, _ := insertData["monitor_id"].(uint64)
+
+					var serverID uint64
+					if sid, ok := insertData["server_id"]; ok {
+						switch s := sid.(type) {
+						case uint64:
+							serverID = s
+						case uint:
+							serverID = uint64(s)
+						case int64:
+							serverID = uint64(s)
+						case int:
+							serverID = uint64(s)
+						case float64:
+							serverID = uint64(s)
+						}
+					}
+
+					var avgDelay float32
+					if ad, ok := insertData["avg_delay"]; ok {
+						switch a := ad.(type) {
+						case float32:
+							avgDelay = a
+						case float64:
+							avgDelay = float32(a)
+						}
+					}
+
+					dataStr, _ := insertData["data"].(string)
+
+					var up, down uint64
+					if u, ok := insertData["up"]; ok {
+						switch uv := u.(type) {
+						case uint64:
+							up = uv
+						case uint:
+							up = uint64(uv)
+						case int64:
+							up = uint64(uv)
+						case int:
+							up = uint64(uv)
+						case float64:
+							up = uint64(uv)
+						}
+					}
+
+					if d, ok := insertData["down"]; ok {
+						switch dv := d.(type) {
+						case uint64:
+							down = dv
+						case uint:
+							down = uint64(dv)
+						case int64:
+							down = uint64(dv)
+						case int:
+							down = uint64(dv)
+						case float64:
+							down = uint64(dv)
+						}
+					}
+
+					// 使用高级重试逻辑执行插入
+					err := executeWithAdvancedRetry(func() error {
+						return DB.WithContext(ctx).Exec(sqlStr, monitorID, serverID, avgDelay, dataStr, up, down, now, now).Error
+					}, 5, 100*time.Millisecond, 3*time.Second)
+
+					if err != nil {
+						log.Printf("ICMP/TCP监控数据直接插入失败 (MonitorID: %d): %v", monitorID, err)
+					} else {
+						log.Printf("ICMP/TCP监控数据直接插入成功 (MonitorID: %d)", monitorID)
+					}
 				}
 			}(directData)
 		}
@@ -2185,6 +2471,14 @@ func VerifyMonitorHistoryConsistency() {
 
 	log.Printf("执行监控历史记录一致性检查...")
 
+	// 根据数据库类型选择不同的检查方式
+	if Conf.DatabaseType == "badger" {
+		// BadgerDB检查逻辑 - 简单记录器
+		log.Printf("BadgerDB模式：监控历史记录检查完成")
+		return
+	}
+
+	// 以下是SQLite的检查逻辑
 	// 使用重试机制执行数据库查询
 	var count int64
 	err := executeWithAdvancedRetry(func() error {
@@ -2217,7 +2511,7 @@ func VerifyMonitorHistoryConsistency() {
 		// 强制执行数据库优化，延迟执行避免冲突
 		go func() {
 			time.Sleep(30 * time.Second)
-			if !isSystemBusy() {
+			if !isSystemBusy() && Conf.DatabaseType != "badger" {
 				optimizeDatabase()
 			}
 		}()
