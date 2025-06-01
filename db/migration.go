@@ -230,9 +230,9 @@ func (m *Migration) migrateMonitors() error {
 func (m *Migration) migrateMonitorHistories() error {
 	// For monitor histories, we might want to limit to recent data (e.g., last 30 days)
 	cutoffDate := time.Now().AddDate(0, 0, -30)
-	query := fmt.Sprintf("SELECT * FROM monitor_histories WHERE deleted_at IS NULL AND created_at > '%s' LIMIT 1000", cutoffDate.Format("2006-01-02"))
 
-	rows, err := m.sqliteDB.Query(query)
+	// Use parameterized query instead of string formatting to prevent SQL injection
+	rows, err := m.sqliteDB.Query("SELECT * FROM monitor_histories WHERE deleted_at IS NULL AND created_at > ? LIMIT 1000", cutoffDate.Format("2006-01-02"))
 	if err != nil {
 		return err
 	}

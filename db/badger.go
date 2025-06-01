@@ -36,7 +36,7 @@ type BadgerDB struct {
 // OpenDB opens a BadgerDB database at the given path
 func OpenDB(path string) (*BadgerDB, error) {
 	// Ensure directory exists
-	if err := os.MkdirAll(path, 0755); err != nil {
+	if err := os.MkdirAll(path, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 

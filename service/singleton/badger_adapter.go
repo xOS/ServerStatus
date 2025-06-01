@@ -16,7 +16,7 @@ import (
 func InitBadgerDBFromPath(path string) error {
 	// 确保目录存在
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return fmt.Errorf("创建BadgerDB目录失败: %w", err)
 	}
 
