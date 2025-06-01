@@ -15,7 +15,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/server-status/agent/
-ExecStart=/opt/server-status/agent/server-agent -s grpc_host:grpc_port -p client_secret
+ExecStart=/opt/server-status/agent/server-agent --gpu --temperature -s grpc_host:grpc_port -p client_secret
 Restart=always
 #Environment=DEBUG=true
 

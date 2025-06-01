@@ -1389,22 +1389,56 @@ func prepareInsertSQL(data map[string]interface{}) (string, string, []interface{
 	return strings.Join(fields, ", "), strings.Join(placeholders, ", "), args
 }
 
-// AsyncDBUpdate 异步数据库更新，通过队列避免并发冲突
+// AsyncDBUpdate 异步更新数据库记录
 func AsyncDBUpdate(serverID uint64, tableName string, updates map[string]interface{}, callback func(error)) {
-	select {
-	case dbWriteQueue <- DBWriteRequest{
-		ServerID:  serverID,
-		TableName: tableName,
-		Updates:   updates,
-		Callback:  callback,
-	}:
-		// 成功入队
-	default:
-		// 队列满，执行回调通知错误
+	// 如果系统处于高内存压力状态，使用同步更新以减少排队
+	if isSystemBusy() {
+		err := executeDBWriteRequest(DBWriteRequest{
+			ServerID:  serverID,
+			TableName: tableName,
+			Updates:   updates,
+			Callback:  callback,
+		})
 		if callback != nil {
-			callback(fmt.Errorf("数据库写入队列已满"))
+			callback(err)
 		}
+		return
 	}
+
+	// 防止重复的相同更新占用队列
+	if len(updates) == 0 {
+		if callback != nil {
+			callback(nil)
+		}
+		return
+	}
+
+	// 添加随机延迟，避免多个更新同时进入队列
+	delay := time.Duration(serverID%20) * 50 * time.Millisecond
+	go func() {
+		time.Sleep(delay)
+
+		select {
+		case dbWriteQueue <- DBWriteRequest{
+			ServerID:  serverID,
+			TableName: tableName,
+			Updates:   updates,
+			Callback:  callback,
+		}:
+			// 成功添加到队列
+		case <-time.After(2 * time.Second):
+			// 队列满或阻塞超时，直接执行
+			err := executeDBWriteRequest(DBWriteRequest{
+				ServerID:  serverID,
+				TableName: tableName,
+				Updates:   updates,
+				Callback:  callback,
+			})
+			if callback != nil {
+				callback(err)
+			}
+		}
+	}()
 }
 
 // AsyncDBInsert 异步数据库插入，通过队列避免并发冲突

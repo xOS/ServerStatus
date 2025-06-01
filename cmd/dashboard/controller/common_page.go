@@ -344,7 +344,7 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 
 			// 计算当月累积流量（模拟月度重置）
 			var monthlyTransfer uint64
-			
+
 			// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
 			if !server.LastActive.IsZero() && server.LastActive.After(currentMonthStart) {
 				monthlyTransfer = server.CumulativeNetInTransfer + server.CumulativeNetOutTransfer
@@ -471,7 +471,7 @@ func (cp *commonPage) home(c *gin.Context) {
 
 				// 计算当月累积流量（模拟月度重置）
 				var monthlyTransfer uint64
-				
+
 				// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
 				if !actualServer.LastActive.IsZero() && actualServer.LastActive.After(currentMonthStart) {
 					monthlyTransfer = actualServer.CumulativeNetInTransfer + actualServer.CumulativeNetOutTransfer
@@ -555,18 +555,19 @@ func (cp *commonPage) ws(c *gin.Context) {
 		// 强制触发GC清理连接相关内存
 		runtime.GC()
 	}()
-	
+
 	// 设置连接超时和大小限制
 	conn.SetReadLimit(512 * 1024) // 512KB 限制
 	conn.SetPongHandler(func(appData string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		// 延长读取超时时间，增强容错性
+		conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 		return nil
 	})
-	
+
 	// 使用context控制连接生命周期，增加超时时间
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 45*time.Minute)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Minute)
 	defer cancel()
-	
+
 	count := 0
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -598,9 +599,9 @@ func (cp *commonPage) ws(c *gin.Context) {
 
 			if err := conn.WriteMessage(websocket.TextMessage, stat); err != nil {
 				// 检查是否为网络连接错误
-				if strings.Contains(err.Error(), "broken pipe") || 
-				   strings.Contains(err.Error(), "connection reset") ||
-				   strings.Contains(err.Error(), "use of closed network connection") {
+				if strings.Contains(err.Error(), "broken pipe") ||
+					strings.Contains(err.Error(), "connection reset") ||
+					strings.Contains(err.Error(), "use of closed network connection") {
 					// 静默处理网络连接错误，客户端可能已断开
 					return
 				}
@@ -613,9 +614,9 @@ func (cp *commonPage) ws(c *gin.Context) {
 				err = conn.WriteMessage(websocket.PingMessage, []byte{})
 				if err != nil {
 					// 检查是否为网络连接错误
-					if strings.Contains(err.Error(), "broken pipe") || 
-					   strings.Contains(err.Error(), "connection reset") ||
-					   strings.Contains(err.Error(), "use of closed network connection") {
+					if strings.Contains(err.Error(), "broken pipe") ||
+						strings.Contains(err.Error(), "connection reset") ||
+						strings.Contains(err.Error(), "use of closed network connection") {
 						// 静默处理网络连接错误
 						return
 					}
@@ -804,12 +805,12 @@ func (cp *commonPage) fm(c *gin.Context) {
 		return
 	}
 	defer wsConn.Close()
-	
+
 	// 设置连接限制和超时
 	wsConn.SetReadLimit(1024 * 1024) // 1MB 限制
 	wsConn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	wsConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	
+
 	conn := websocketx.NewConn(wsConn)
 
 	// 使用 context 控制 PING 保活 goroutine 的生命周期
@@ -1007,7 +1008,7 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 
 				// 计算当月累积流量（模拟月度重置）
 				var monthlyTransfer uint64
-				
+
 				// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
 				if !actualServer.LastActive.IsZero() && actualServer.LastActive.After(currentMonthStart) {
 					monthlyTransfer = actualServer.CumulativeNetInTransfer + actualServer.CumulativeNetOutTransfer
@@ -1141,7 +1142,7 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 
 		// 计算当月累积流量（模拟月度重置）
 		var monthlyTransfer uint64
-		
+
 		// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
 		if !server.LastActive.IsZero() && server.LastActive.After(currentMonthStart) {
 			monthlyTransfer = server.CumulativeNetInTransfer + server.CumulativeNetOutTransfer
