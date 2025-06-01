@@ -404,17 +404,29 @@ func (m *MonitorAPIService) GetMonitorHistories(search map[string]any) []*model.
 	if Conf != nil && Conf.DatabaseType == "badger" {
 		log.Printf("MonitorAPIService.GetMonitorHistories: BadgerDB模式，返回空的监控历史记录")
 		// 在BadgerDB模式下返回空数组
-		return []*model.MonitorHistory{}
+		return make([]*model.MonitorHistory, 0)
 	}
 
 	// 原有的SQLite查询逻辑
 	var mhs []*model.MonitorHistory
+	if DB == nil {
+		log.Printf("MonitorAPIService.GetMonitorHistories: DB未初始化，返回空数组")
+		return make([]*model.MonitorHistory, 0)
+	}
+
 	if err := DB.Model(&model.MonitorHistory{}).
 		Where(search).
 		FindInBatches(&mhs, 100, func(tx *gorm.DB, batch int) error {
 			return nil
 		}).Error; err != nil {
 		log.Printf("获取监控记录失败: %v", err)
+		// 返回空数组而不是nil
+		return make([]*model.MonitorHistory, 0)
+	}
+
+	// 确保返回非nil值
+	if mhs == nil {
+		return make([]*model.MonitorHistory, 0)
 	}
 	return mhs
 }

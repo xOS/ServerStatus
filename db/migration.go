@@ -63,13 +63,16 @@ func (m *Migration) MigrateAll() error {
 	}
 
 	for _, table := range tables {
-		log.Printf("迁移表 %s...", table.name)
-		if err := table.migrator(); err != nil {
+		log.Printf("MigrateAll: 准备迁移表 %s...", table.name)
+		err := table.migrator()
+		if err != nil {
+			log.Printf("MigrateAll: 迁移表 %s 失败: %v", table.name, err)
 			return fmt.Errorf("failed to migrate %s: %w", table.name, err)
 		}
+		log.Printf("MigrateAll: 迁移表 %s 完成。", table.name)
 	}
 
-	log.Println("数据迁移完成！")
+	log.Println("所有数据表迁移完成！")
 	return nil
 }
 
@@ -135,7 +138,7 @@ func (m *Migration) migrateServers() error {
 		// Extract ID for key
 		idVal, ok := data["id"]
 		if !ok {
-			log.Printf("服务器数据缺少ID字段，跳过")
+			log.Printf("服务器数据缺少ID字段，跳过: %v", data)
 			errorCount++
 			continue
 		}
@@ -150,19 +153,19 @@ func (m *Migration) migrateServers() error {
 		case string:
 			parsed, err := strconv.ParseUint(v, 10, 64)
 			if err != nil {
-				log.Printf("解析服务器ID失败: %v，跳过", err)
+				log.Printf("解析服务器ID '%s' 失败: %v，跳过. Data: %v", v, err, data)
 				errorCount++
 				continue
 			}
 			id = parsed
 		default:
-			log.Printf("服务器ID类型无效: %T，跳过", idVal)
+			log.Printf("服务器ID类型无效: %T，跳过. Data: %v", idVal, data)
 			errorCount++
 			continue
 		}
 
 		if id == 0 {
-			log.Printf("服务器ID为0，跳过")
+			log.Printf("服务器ID为0，跳过. Data: %v", data)
 			errorCount++
 			continue
 		}
@@ -182,45 +185,60 @@ func (m *Migration) migrateServers() error {
 			}
 		}
 
+		log.Printf("迁移服务器 ID %d: 原始数据: %v", id, data)
+
 		// 尝试构建 Server 模型对象
 		var server model.Server
 		serverJSON, err := json.Marshal(data)
 		if err != nil {
-			log.Printf("服务器ID %d: 序列化数据失败: %v, 尝试原始保存", id, err)
-		}
-
-		if err := json.Unmarshal(serverJSON, &server); err != nil {
-			log.Printf("服务器ID %d: 反序列化为Server对象失败: %v, 尝试原始保存", id, err)
+			log.Printf("服务器ID %d: 序列化原始数据失败: %v. Data: %v", id, err, data)
+			// Fallback to trying to save raw data if model processing fails
 		} else {
-			// 确保ID正确
-			server.ID = id
+			if err := json.Unmarshal(serverJSON, &server); err != nil {
+				log.Printf("服务器ID %d: 反序列化为Server对象失败: %v. JSON Data: %s", id, err, string(serverJSON))
+				// Fallback to trying to save raw data if model processing fails
+			} else {
+				// 确保ID正确
+				server.ID = id
 
-			// 如果服务器名称为空，给一个默认名称
-			if server.Name == "" {
-				server.Name = fmt.Sprintf("Server-%d", id)
-			}
+				// 如果服务器名称为空，给一个默认名称
+				if server.Name == "" {
+					server.Name = fmt.Sprintf("Server-%d", id)
+					log.Printf("服务器ID %d: 名称为空，设置为默认名称 '%s'", id, server.Name)
+				}
 
-			// 添加额外的日志
-			log.Printf("服务器ID %d: 名称=%s, 在线=%v, 隐藏=%v",
-				server.ID, server.Name, server.IsOnline, server.HideForGuest)
+				// 添加额外的日志
+				log.Printf("服务器ID %d: 准备迁移的服务器对象: %+v", server.ID, server)
 
-			// 重新序列化为JSON以保存
-			serverJSON, err = json.Marshal(server)
-			if err != nil {
-				log.Printf("服务器ID %d: 重新序列化失败: %v, 尝试原始保存", id, err)
-				// 如果重新序列化失败，回退到使用原始数据
-				serverJSON, _ = json.Marshal(data)
+				// 重新序列化为JSON以保存
+				serverJSON, err = json.Marshal(server)
+				if err != nil {
+					log.Printf("服务器ID %d: 重新序列化处理后的Server对象失败: %v. Object: %+v", id, err, server)
+					// If re-serialization fails, fall back to using the original data marshalled earlier
+					// (or data before attempting to unmarshal to server object if that also failed)
+					originalDataJSON, _ := json.Marshal(data) // Marshal the original map again
+					serverJSON = originalDataJSON
+					log.Printf("服务器ID %d: 回退到使用原始map序列化的JSON进行保存", id)
+				}
 			}
 		}
 
-		// Save to BadgerDB
-		key := fmt.Sprintf("server:%v", id)
-		if err := m.badgerDB.Set(key, serverJSON); err != nil {
-			log.Printf("服务器ID %d: 保存到BadgerDB失败: %v", id, err)
+		if len(serverJSON) == 0 {
+			log.Printf("服务器ID %d: serverJSON为空，无法保存. Data: %v", id, data)
 			errorCount++
 			continue
 		}
 
+		// Save to BadgerDB
+		key := fmt.Sprintf("server:%v", id) // Ensure correct prefix
+		log.Printf("服务器ID %d: 准备保存到BadgerDB. Key: '%s', Value: %s", id, key, string(serverJSON))
+		if err := m.badgerDB.Set(key, serverJSON); err != nil {
+			log.Printf("服务器ID %d: 保存到BadgerDB失败: %v. Key: '%s'", id, err, key)
+			errorCount++
+			continue
+		}
+
+		log.Printf("服务器ID %d: 成功保存到BadgerDB. Key: '%s'", id, key)
 		count++
 		if count%10 == 0 {
 			log.Printf("已迁移 %d 条服务器记录...", count)

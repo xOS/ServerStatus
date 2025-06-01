@@ -228,26 +228,29 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 	case "server":
 		// 服务器记录可能需要特殊处理
 		var servers []*map[string]interface{}
-		for _, item := range items {
+		for i, item := range items {
+			log.Printf("FindAll (server case): Processing item %d, raw data: %s", i, string(item))
 			var data map[string]interface{}
 			if err := json.Unmarshal(item, &data); err != nil {
-				log.Printf("FindAll: 解析服务器数据失败: %v, 数据: %s", err, string(item))
+				log.Printf("FindAll (server case): Item %d, 解析服务器数据失败: %v, 数据: %s", i, err, string(item))
 				continue
 			}
+			log.Printf("FindAll (server case): Item %d, successfully unmarshalled to map: %v", i, data)
 
 			// 转换字段类型，确保 JSON 字段正确
 			convertDbFieldTypes(&data)
+			log.Printf("FindAll (server case): Item %d, after convertDbFieldTypes: %v", i, data)
 			servers = append(servers, &data)
 		}
 
 		// 重新序列化为 JSON
 		serversJSON, err := json.Marshal(servers)
 		if err != nil {
-			log.Printf("FindAll: 重新序列化服务器数据失败: %v", err)
+			log.Printf("FindAll (server case): 重新序列化服务器数据失败: %v. Processed servers data: %v", err, servers)
 			return err
 		}
 
-		log.Printf("FindAll: 已处理 %d 条服务器记录", len(servers))
+		log.Printf("FindAll (server case): 已处理 %d 条服务器记录. Final JSON to unmarshal to result: %s", len(servers), string(serversJSON))
 		return json.Unmarshal(serversJSON, result)
 	default:
 		// 其他类型的记录，使用标准处理方式

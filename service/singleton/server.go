@@ -47,11 +47,25 @@ func loadServers() {
 			servers, err = serverOps.GetAllServers()
 			if err != nil {
 				log.Printf("从 BadgerDB 加载服务器列表失败: %v", err)
-				return
+				// 检查具体错误类型，适当处理
+				log.Printf("尝试修复BadgerDB服务器加载问题...")
+				// 确保服务器列表为空数组而不是nil
+				servers = []*model.Server{}
+			} else {
+				log.Printf("从 BadgerDB 加载了 %d 台服务器", len(servers))
+				// 确保没有nil条目
+				for i, s := range servers {
+					if s == nil {
+						log.Printf("警告: 服务器列表中第 %d 项为nil，已移除", i)
+						// 移除nil条目
+						servers = append(servers[:i], servers[i+1:]...)
+					}
+				}
 			}
-			log.Printf("从 BadgerDB 加载了 %d 台服务器", len(servers))
 		} else {
 			log.Println("警告: BadgerDB 未初始化，无法加载服务器")
+			// 确保服务器列表为空数组而不是nil
+			servers = []*model.Server{}
 			return
 		}
 	} else {

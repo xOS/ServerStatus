@@ -33,7 +33,12 @@ func InitCronTask() {
 
 	// 每天的3:30 对 监控记录 和 流量记录 进行清理
 	if _, err := Cron.AddFunc("0 30 3 * * *", func() {
-		_, _ = CleanMonitorHistory() // 忽略返回值
+		count, err := CleanMonitorHistory() // 处理返回值
+		if err != nil {
+			log.Printf("清理监控历史记录失败: %v", err)
+		} else if Conf.Debug {
+			log.Printf("清理监控历史记录成功，共清理 %d 条记录", count)
+		}
 	}); err != nil {
 		panic(err)
 	}

@@ -149,15 +149,20 @@ func (cp *commonPage) network(c *gin.Context) {
 
 		// 使用读锁安全访问ServerList
 		singleton.ServerLock.RLock()
-		// 从ServerList中获取所有服务器ID
-		for serverID, server := range singleton.ServerList {
-			if server != nil {
-				serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
-				// 如果还没有选定ID，或者服务器在线，则将此服务器ID设为当前ID
-				if id == 0 || server.IsOnline {
-					id = serverID
+		// 检查ServerList是否初始化
+		if singleton.ServerList != nil {
+			// 从ServerList中获取所有服务器ID
+			for serverID, server := range singleton.ServerList {
+				if server != nil {
+					serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
+					// 如果还没有选定ID，或者服务器在线，则将此服务器ID设为当前ID
+					if id == 0 || server.IsOnline {
+						id = serverID
+					}
 				}
 			}
+		} else {
+			log.Printf("network: 警告 - ServerList未初始化")
 		}
 		singleton.ServerLock.RUnlock()
 
@@ -167,10 +172,15 @@ func (cp *commonPage) network(c *gin.Context) {
 
 		// 如果仍然没有找到ID，并且有排序列表，则使用排序列表中的第一个ID
 		singleton.SortedServerLock.RLock()
-		if id == 0 && len(singleton.SortedServerList) > 0 {
-			id = singleton.SortedServerList[0].ID
-			if singleton.Conf.Debug {
-				log.Printf("network: 使用SortedServerList中第一个服务器ID: %d", id)
+		if id == 0 && singleton.SortedServerList != nil && len(singleton.SortedServerList) > 0 {
+			// 检查第一个元素是否为nil
+			if singleton.SortedServerList[0] != nil {
+				id = singleton.SortedServerList[0].ID
+				if singleton.Conf.Debug {
+					log.Printf("network: 使用SortedServerList中第一个服务器ID: %d", id)
+				}
+			} else {
+				log.Printf("network: 警告 - SortedServerList第一个元素为nil")
 			}
 		}
 		singleton.SortedServerLock.RUnlock()
@@ -267,12 +277,22 @@ func (cp *commonPage) network(c *gin.Context) {
 		monitorInfos, _ = utils.Json.Marshal(monitorHistories)
 	} else {
 		// SQLite 模式，使用 MonitorAPI
-		monitorHistories = singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": id})
-		var err error
-		monitorInfos, err = utils.Json.Marshal(monitorHistories)
-		if err != nil {
-			log.Printf("network: 监控历史记录序列化失败: %v", err)
-			// 在序列化失败时使用空数组
+		if singleton.MonitorAPI != nil {
+			monitorHistories = singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": id})
+			var err error
+			if monitorHistories != nil {
+				monitorInfos, err = utils.Json.Marshal(monitorHistories)
+				if err != nil {
+					log.Printf("network: 监控历史记录序列化失败: %v", err)
+					// 在序列化失败时使用空数组
+					monitorInfos = []byte("[]")
+				}
+			} else {
+				log.Printf("network: 监控历史记录为nil，使用空数组")
+				monitorInfos = []byte("[]")
+			}
+		} else {
+			log.Printf("network: MonitorAPI为nil，使用空数组")
 			monitorInfos = []byte("[]")
 		}
 	}
@@ -290,8 +310,10 @@ func (cp *commonPage) network(c *gin.Context) {
 
 		// 添加所有服务器到列表
 		singleton.ServerLock.RLock()
-		for serverID := range singleton.ServerList {
-			serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
+		if singleton.ServerList != nil {
+			for serverID := range singleton.ServerList {
+				serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
+			}
 		}
 		singleton.ServerLock.RUnlock()
 	}
@@ -416,7 +438,7 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 				authorized, len(serverList))
 		}
 
-		// 修复：检查服务器列表是否为空
+		// 修复：检查服务器列表是否为空或未初始化
 		if serverList == nil || len(serverList) == 0 {
 			if singleton.Conf.Debug {
 				log.Printf("getServerStat: 服务器列表为空，尝试从 ServerList 提取数据")
@@ -424,13 +446,26 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 
 			// 从 ServerList 中提取服务器
 			singleton.ServerLock.RLock()
-			for _, server := range singleton.ServerList {
-				if server != nil {
-					// 为所有用户展示所有服务器，或者仅对授权用户显示
-					if authorized || !server.HideForGuest {
-						serverList = append(serverList, server)
+			// 检查ServerList是否初始化
+			if singleton.ServerList != nil {
+				for _, server := range singleton.ServerList {
+					if server != nil {
+						// 为所有用户展示所有服务器，或者仅对授权用户显示
+						if authorized || !server.HideForGuest {
+							// 确保服务器对象完整
+							if server.Host == nil {
+								server.Host = &model.Host{}
+								server.Host.Initialize()
+							}
+							if server.State == nil {
+								server.State = &model.HostState{}
+							}
+							serverList = append(serverList, server)
+						}
 					}
 				}
+			} else {
+				log.Printf("getServerStat: ServerList未初始化")
 			}
 			singleton.ServerLock.RUnlock()
 
@@ -441,14 +476,34 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 			// 如果服务器列表仍然为空，创建一个默认的演示服务器
 			if singleton.Conf.Debug && (serverList == nil || len(serverList) == 0) {
 				log.Printf("getServerStat: 创建演示服务器数据用于调试")
+				now := time.Now()
 				demoServer := &model.Server{
 					Common: model.Common{
 						ID: 1,
 					},
-					Name:     "演示服务器",
-					Host:     &model.Host{},
-					State:    &model.HostState{},
-					IsOnline: true,
+					Name:         "演示服务器",
+					Tag:          "演示",
+					DisplayIndex: 1,
+					Host: &model.Host{
+						Platform:        "linux",
+						PlatformVersion: "Ubuntu 20.04",
+						CPU:             []string{"Intel Core i7-10700K"},
+						MemTotal:        16777216,      // 16GB
+						DiskTotal:       1099511627776, // 1TB
+					},
+					State: &model.HostState{
+						CPU:            5.2,
+						MemUsed:        4096000,
+						DiskUsed:       107374182400,
+						NetInTransfer:  1073741824,
+						NetOutTransfer: 536870912,
+						NetInSpeed:     1048576,
+						NetOutSpeed:    524288,
+						Uptime:         86400,
+					},
+					IsOnline:   true,
+					LastActive: now,
+					LastOnline: now,
 				}
 				serverList = append(serverList, demoServer)
 			}
@@ -464,6 +519,16 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 			if !withPublicNote {
 				item.PublicNote = ""
 			}
+
+			// 确保Host和State不为nil
+			if item.Host == nil {
+				item.Host = &model.Host{}
+				item.Host.Initialize()
+			}
+			if item.State == nil {
+				item.State = &model.HostState{}
+			}
+
 			servers = append(servers, &item)
 		}
 
