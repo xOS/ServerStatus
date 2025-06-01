@@ -48,14 +48,19 @@ func InitCronTask() {
 		panic(err)
 	}
 
-	// 改为每30分钟同步一次所有服务器的累计流量，降低频率
-	if _, err := Cron.AddFunc("0 */30 * * * *", SyncAllServerTrafficFromDB); err != nil {
-		panic(err)
-	}
+	// 以下任务仅在非BadgerDB模式下注册，因为它们依赖GORM
+	if Conf == nil || Conf.DatabaseType != "badger" {
+		// 改为每30分钟同步一次所有服务器的累计流量，降低频率
+		if _, err := Cron.AddFunc("0 */30 * * * *", SyncAllServerTrafficFromDB); err != nil {
+			panic(err)
+		}
 
-	// 改为每15分钟保存一次流量数据到数据库，进一步降低频率
-	if _, err := Cron.AddFunc("0 */15 * * * *", SaveAllTrafficToDB); err != nil {
-		panic(err)
+		// 改为每15分钟保存一次流量数据到数据库，进一步降低频率
+		if _, err := Cron.AddFunc("0 */15 * * * *", SaveAllTrafficToDB); err != nil {
+			panic(err)
+		}
+	} else {
+		log.Println("BadgerDB模式：跳过注册GORM相关的定时任务")
 	}
 }
 

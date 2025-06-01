@@ -116,10 +116,10 @@ func DDNSChangeNotificationCallback(serverName string, serverID uint64, domain s
 		// 使用BadgerDB处理DDNS状态记录
 		if db.DB != nil {
 			ddnsOps := db.NewDDNSOps(db.DB)
-			
+
 			// 查询现有记录状态
 			recordState, err := ddnsOps.GetDDNSRecordStateByParams(serverID, domain, recordType)
-			
+
 			if err != nil {
 				// 记录不存在，创建新记录
 				if err == db.ErrorNotFound {

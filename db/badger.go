@@ -252,6 +252,33 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 
 		log.Printf("FindAll (server case): 已处理 %d 条服务器记录. Final JSON to unmarshal to result: %s", len(servers), string(serversJSON))
 		return json.Unmarshal(serversJSON, result)
+	case "monitor":
+		// 监控器记录也需要特殊处理布尔字段
+		var monitors []*map[string]interface{}
+		for i, item := range items {
+			log.Printf("FindAll (monitor case): Processing item %d, raw data: %s", i, string(item))
+			var data map[string]interface{}
+			if err := json.Unmarshal(item, &data); err != nil {
+				log.Printf("FindAll (monitor case): Item %d, 解析监控器数据失败: %v, 数据: %s", i, err, string(item))
+				continue
+			}
+			log.Printf("FindAll (monitor case): Item %d, successfully unmarshalled to map: %v", i, data)
+
+			// 转换字段类型，确保布尔字段正确
+			convertDbFieldTypes(&data)
+			log.Printf("FindAll (monitor case): Item %d, after convertDbFieldTypes: %v", i, data)
+			monitors = append(monitors, &data)
+		}
+
+		// 重新序列化为 JSON
+		monitorsJSON, err := json.Marshal(monitors)
+		if err != nil {
+			log.Printf("FindAll (monitor case): 重新序列化监控器数据失败: %v. Processed monitors data: %v", err, monitors)
+			return err
+		}
+
+		log.Printf("FindAll (monitor case): 已处理 %d 条监控器记录. Final JSON to unmarshal to result: %s", len(monitors), string(monitorsJSON))
+		return json.Unmarshal(monitorsJSON, result)
 	default:
 		// 其他类型的记录，使用标准处理方式
 		itemsJSON := "["
@@ -287,8 +314,16 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 		}
 	}
 
-	// 处理布尔型字段
-	boolFields := []string{"is_online", "is_disabled", "hide_for_guest", "show_all", "tasker"}
+	// 处理布尔型字段 (支持多种命名格式)
+	boolFields := []string{
+		// Server fields
+		"is_online", "is_disabled", "hide_for_guest", "show_all", "tasker",
+		"HideForGuest", "EnableDDNS", "enable_ddns",
+		// Monitor fields  
+		"notify", "Notify", "enable_trigger_task", "EnableTriggerTask", 
+		"enable_show_in_service", "EnableShowInService", 
+		"latency_notify", "LatencyNotify",
+	}
 	for _, field := range boolFields {
 		if val, ok := d[field]; ok {
 			switch v := val.(type) {
@@ -316,10 +351,7 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 		}
 	}
 
-	// 确保必要的字段存在
-	if _, ok := d["id"]; !ok {
-		d["id"] = float64(0)
-	}
+	// 确保必要的字段存在，但不要覆盖已存在的id字段
 	if _, ok := d["host_json"]; !ok {
 		d["host_json"] = ""
 	}
