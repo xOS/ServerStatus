@@ -279,6 +279,33 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 
 		log.Printf("FindAll (monitor case): 已处理 %d 条监控器记录. Final JSON to unmarshal to result: %s", len(monitors), string(monitorsJSON))
 		return json.Unmarshal(monitorsJSON, result)
+	case "user":
+		// 用户记录需要特殊处理布尔字段
+		var users []*map[string]interface{}
+		for i, item := range items {
+			log.Printf("FindAll (user case): Processing item %d, raw data: %s", i, string(item))
+			var data map[string]interface{}
+			if err := json.Unmarshal(item, &data); err != nil {
+				log.Printf("FindAll (user case): Item %d, 解析用户数据失败: %v, 数据: %s", i, err, string(item))
+				continue
+			}
+			log.Printf("FindAll (user case): Item %d, successfully unmarshalled to map: %v", i, data)
+
+			// 转换字段类型，确保布尔字段正确
+			convertDbFieldTypes(&data)
+			log.Printf("FindAll (user case): Item %d, after convertDbFieldTypes: %v", i, data)
+			users = append(users, &data)
+		}
+
+		// 重新序列化为 JSON
+		usersJSON, err := json.Marshal(users)
+		if err != nil {
+			log.Printf("FindAll (user case): 重新序列化用户数据失败: %v. Processed users data: %v", err, users)
+			return err
+		}
+
+		log.Printf("FindAll (user case): 已处理 %d 条用户记录. Final JSON to unmarshal to result: %s", len(users), string(usersJSON))
+		return json.Unmarshal(usersJSON, result)
 	default:
 		// 其他类型的记录，使用标准处理方式
 		itemsJSON := "["
@@ -323,6 +350,8 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 		"notify", "Notify", "enable_trigger_task", "EnableTriggerTask", 
 		"enable_show_in_service", "EnableShowInService", 
 		"latency_notify", "LatencyNotify",
+		// User fields
+		"hireable", "Hireable", "super_admin", "SuperAdmin",
 	}
 	for _, field := range boolFields {
 		if val, ok := d[field]; ok {
