@@ -170,64 +170,69 @@ func LoadSingleton() {
 	// 启动数据库维护计划
 	StartDatabaseMaintenanceScheduler()
 
-	// 检查并添加新字段
-	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {
-		if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_in_transfer"); err != nil {
-			log.Println("添加cumulative_net_in_transfer字段失败:", err)
-		}
-	}
-
-	if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_out_transfer") {
-		if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_out_transfer"); err != nil {
-			log.Println("添加cumulative_net_out_transfer字段失败:", err)
-		}
-	}
-
-	if !DB.Migrator().HasColumn(&model.Server{}, "last_state_json") {
-		if err := DB.Migrator().AddColumn(&model.Server{}, "last_state_json"); err != nil {
-			log.Println("添加last_state_json字段失败:", err)
-		}
-	}
-
-	if !DB.Migrator().HasColumn(&model.Server{}, "last_online") {
-		if err := DB.Migrator().AddColumn(&model.Server{}, "last_online"); err != nil {
-			log.Println("添加last_online字段失败:", err)
-		}
-	}
-
-	// 检查host_json字段是否存在，如果不存在则添加
-	if !DB.Migrator().HasColumn(&model.Server{}, "host_json") {
-		if err := DB.Migrator().AddColumn(&model.Server{}, "host_json"); err != nil {
-			log.Println("添加host_json字段失败:", err)
-		}
-	}
-
-	// 检查是否需要从last_reported_host表迁移数据到servers表
-	var hasLegacyTable bool
-	if err := DB.Raw("SELECT 1 FROM sqlite_master WHERE type='table' AND name='last_reported_host'").Scan(&hasLegacyTable).Error; err == nil && hasLegacyTable {
-		log.Println("检测到旧的last_reported_host表，开始迁移数据...")
-
-		// 迁移数据
-		if err := DB.Exec(`
-			UPDATE servers 
-			SET host_json = (
-				SELECT host_json 
-				FROM last_reported_host 
-				WHERE last_reported_host.server_id = servers.id
-			)
-			WHERE id IN (SELECT server_id FROM last_reported_host)
-		`).Error; err != nil {
-			log.Println("迁移host_json数据失败:", err)
-		} else {
-			log.Println("迁移host_json数据成功")
-
-			// 删除旧表
-			if err := DB.Exec("DROP TABLE last_reported_host").Error; err != nil {
-				log.Println("删除last_reported_host表失败:", err)
-			} else {
-				log.Println("删除last_reported_host表成功")
+	// 只有在使用 SQLite 数据库时才进行这些操作
+	if Conf.DatabaseType != "badger" {
+		// 检查并添加新字段
+		if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_in_transfer") {
+			if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_in_transfer"); err != nil {
+				log.Println("添加cumulative_net_in_transfer字段失败:", err)
 			}
 		}
+
+		if !DB.Migrator().HasColumn(&model.Server{}, "cumulative_net_out_transfer") {
+			if err := DB.Migrator().AddColumn(&model.Server{}, "cumulative_net_out_transfer"); err != nil {
+				log.Println("添加cumulative_net_out_transfer字段失败:", err)
+			}
+		}
+
+		if !DB.Migrator().HasColumn(&model.Server{}, "last_state_json") {
+			if err := DB.Migrator().AddColumn(&model.Server{}, "last_state_json"); err != nil {
+				log.Println("添加last_state_json字段失败:", err)
+			}
+		}
+
+		if !DB.Migrator().HasColumn(&model.Server{}, "last_online") {
+			if err := DB.Migrator().AddColumn(&model.Server{}, "last_online"); err != nil {
+				log.Println("添加last_online字段失败:", err)
+			}
+		}
+
+		// 检查host_json字段是否存在，如果不存在则添加
+		if !DB.Migrator().HasColumn(&model.Server{}, "host_json") {
+			if err := DB.Migrator().AddColumn(&model.Server{}, "host_json"); err != nil {
+				log.Println("添加host_json字段失败:", err)
+			}
+		}
+
+		// 检查是否需要从last_reported_host表迁移数据到servers表
+		var hasLegacyTable bool
+		if err := DB.Raw("SELECT 1 FROM sqlite_master WHERE type='table' AND name='last_reported_host'").Scan(&hasLegacyTable).Error; err == nil && hasLegacyTable {
+			log.Println("检测到旧的last_reported_host表，开始迁移数据...")
+
+			// 迁移数据
+			if err := DB.Exec(`
+				UPDATE servers 
+				SET host_json = (
+					SELECT host_json 
+					FROM last_reported_host 
+					WHERE last_reported_host.server_id = servers.id
+				)
+				WHERE id IN (SELECT server_id FROM last_reported_host)
+			`).Error; err != nil {
+				log.Println("迁移host_json数据失败:", err)
+			} else {
+				log.Println("迁移host_json数据成功")
+
+				// 删除旧表
+				if err := DB.Exec("DROP TABLE last_reported_host").Error; err != nil {
+					log.Println("删除last_reported_host表失败:", err)
+				} else {
+					log.Println("删除last_reported_host表成功")
+				}
+			}
+		}
+	} else {
+		log.Println("使用 BadgerDB 数据库，跳过表结构检查和迁移操作")
 	}
 }
 

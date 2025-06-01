@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 )
 
@@ -30,24 +31,58 @@ func loadNotifications() {
 	notificationsLock.Lock()
 	defer notificationsLock.Unlock()
 
-	var notifications []model.Notification
-	if err := DB.Find(&notifications).Error; err != nil {
-		panic(err)
+	var notifications []*model.Notification
+
+	// 根据数据库类型选择不同的加载方式
+	if Conf.DatabaseType == "badger" {
+		// 使用 BadgerDB 加载通知
+		if db.DB != nil {
+			notificationOps := db.NewNotificationOps(db.DB)
+			var err error
+			notifications, err = notificationOps.GetAllNotifications()
+			if err != nil {
+				log.Printf("从 BadgerDB 加载通知失败: %v", err)
+				return
+			}
+		} else {
+			log.Println("警告: BadgerDB 未初始化")
+			return
+		}
+	} else {
+		// 使用 GORM (SQLite) 加载通知
+		if err := DB.Find(&notifications).Error; err != nil {
+			log.Printf("从 SQLite 加载通知失败: %v", err)
+			return
+		}
 	}
+
 	for i := 0; i < len(notifications); i++ {
 		// 旧版本的Tag可能不存在 自动设置为默认值
 		if notifications[i].Tag == "" {
-			SetDefaultNotificationTagInDB(&notifications[i])
+			SetDefaultNotificationTagInDB(notifications[i])
 		}
-		AddNotificationToList(&notifications[i])
+		AddNotificationToList(notifications[i])
 	}
 }
 
 // SetDefaultNotificationTagInDB 设置默认通知方式的 Tag
 func SetDefaultNotificationTagInDB(n *model.Notification) {
 	n.Tag = "default"
-	if err := DB.Save(n).Error; err != nil {
-		log.Println("NG>> SetDefaultNotificationTagInDB 错误: ", err)
+
+	// 根据数据库类型选择不同的保存方式
+	if Conf.DatabaseType == "badger" {
+		// 使用 BadgerDB 保存
+		if db.DB != nil {
+			notificationOps := db.NewNotificationOps(db.DB)
+			if err := notificationOps.SaveNotification(n); err != nil {
+				log.Println("NG>> SetDefaultNotificationTagInDB 错误 (BadgerDB): ", err)
+			}
+		}
+	} else {
+		// 使用 GORM 保存
+		if err := DB.Save(n).Error; err != nil {
+			log.Println("NG>> SetDefaultNotificationTagInDB 错误 (SQLite): ", err)
+		}
 	}
 }
 
