@@ -34,16 +34,18 @@ func OnDDNSUpdate() {
 	if Conf.DatabaseType == "badger" {
 		// 使用 BadgerDB 加载DDNS配置
 		if db.DB != nil {
-			// 目前BadgerDB还没有DDNSOps实现，
-			// 后续可以添加DDNSOps对象来处理DDNS配置
-			log.Println("BadgerDB: DDNS功能暂不支持，跳过加载")
-			ddnsCacheLock.Lock()
-			defer ddnsCacheLock.Unlock()
-			ddnsCache = make(map[uint64]*model.DDNSProfile)
-			return
+			ddnsOps := db.NewDDNSOps(db.DB)
+			var err error
+			ddns, err = ddnsOps.GetAllDDNSProfiles()
+			if err != nil {
+				log.Printf("从BadgerDB加载DDNS配置失败: %v", err)
+				ddns = []*model.DDNSProfile{}
+			} else {
+				log.Printf("从BadgerDB成功加载 %d 条DDNS配置", len(ddns))
+			}
 		} else {
 			log.Println("警告: BadgerDB 未初始化")
-			return
+			ddns = []*model.DDNSProfile{}
 		}
 	} else {
 		// 使用 GORM (SQLite) 加载DDNS配置
@@ -103,17 +105,72 @@ func GetDDNSProvidersFromProfiles(profileId []uint64, ip *ddns2.IP) ([]*ddns2.Pr
 	return providers, nil
 }
 
-// DDNS变更通知回调函数 - 简化版：直接比较IP变化
+// DDNS变更通知回调函数 - 支持BadgerDB和SQLite
 func DDNSChangeNotificationCallback(serverName string, serverID uint64, domain string, recordType string, oldIP string, newIP string) {
 	if !Conf.EnableIPChangeNotification {
 		return
 	}
 
-	// 如果使用BadgerDB，暂时不支持DDNS状态记录
+	// 根据数据库类型选择不同的处理方式
 	if Conf.DatabaseType == "badger" {
-		log.Printf("BadgerDB模式：域名 %s 的 %s 记录IP变化 (%s -> %s)", domain, recordType, oldIP, newIP)
-		// 直接发送通知，不保存状态
-		sendDDNSChangeNotification(serverName, domain, recordType, oldIP, newIP)
+		// 使用BadgerDB处理DDNS状态记录
+		if db.DB != nil {
+			ddnsOps := db.NewDDNSOps(db.DB)
+			
+			// 查询现有记录状态
+			recordState, err := ddnsOps.GetDDNSRecordStateByParams(serverID, domain, recordType)
+			
+			if err != nil {
+				// 记录不存在，创建新记录
+				if err == db.ErrorNotFound {
+					newRecordState := &model.DDNSRecordState{
+						ServerID:   serverID,
+						Domain:     domain,
+						RecordType: recordType,
+						LastIP:     newIP,
+						LastUpdate: time.Now(),
+					}
+					if err := ddnsOps.CreateDDNSRecordState(newRecordState); err != nil {
+						log.Printf("创建DDNS记录状态失败: %v", err)
+						return
+					}
+
+					// 首次创建记录，发送通知（如果有旧IP信息）
+					if oldIP != "" && oldIP != newIP {
+						sendDDNSChangeNotification(serverName, domain, recordType, oldIP, newIP)
+					} else {
+						log.Printf("域名 %s 首次设置 %s 记录，IP: %s", domain, recordType, newIP)
+					}
+				} else {
+					log.Printf("查询DDNS记录状态失败: %v", err)
+				}
+				return
+			}
+
+			// 检查IP是否实际发生了变化
+			if recordState.LastIP == newIP {
+				log.Printf("域名 %s 的 %s 记录IP未发生变化 (%s)，跳过通知", domain, recordType, newIP)
+				return
+			}
+
+			// IP发生了变化，更新记录并发送通知
+			oldLastIP := recordState.LastIP
+			recordState.LastIP = newIP
+			recordState.LastUpdate = time.Now()
+			recordState.UpdatedAt = time.Now()
+			if err := ddnsOps.SaveDDNSRecordState(recordState); err != nil {
+				log.Printf("更新DDNS记录状态失败: %v", err)
+				return
+			}
+
+			// 发送变更通知
+			log.Printf("检测到IP变化: %s -> %s，发送DDNS变更通知", oldLastIP, newIP)
+			sendDDNSChangeNotification(serverName, domain, recordType, oldLastIP, newIP)
+		} else {
+			log.Printf("BadgerDB未初始化，直接发送DDNS变更通知: 域名 %s 的 %s 记录IP变化 (%s -> %s)", domain, recordType, oldIP, newIP)
+			// 直接发送通知，不保存状态
+			sendDDNSChangeNotification(serverName, domain, recordType, oldIP, newIP)
+		}
 		return
 	}
 

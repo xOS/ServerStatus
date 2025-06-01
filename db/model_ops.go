@@ -405,3 +405,255 @@ func (o *ApiTokenOps) GetApiTokenByToken(tokenStr string) (*model.ApiToken, erro
 func (o *ApiTokenOps) DeleteApiToken(id uint64) error {
 	return o.db.Delete(fmt.Sprintf("api_token:%d", id))
 }
+
+// NATOps provides specialized operations for NAT configurations
+type NATOps struct {
+	db *BadgerDB
+}
+
+// NewNATOps creates a new NATOps instance
+func NewNATOps(db *BadgerDB) *NATOps {
+	return &NATOps{db: db}
+}
+
+// SaveNAT saves a NAT configuration record
+func (o *NATOps) SaveNAT(nat *model.NAT) error {
+	key := fmt.Sprintf("nat:%d", nat.ID)
+
+	value, err := json.Marshal(nat)
+	if err != nil {
+		return fmt.Errorf("failed to marshal NAT: %w", err)
+	}
+
+	return o.db.Set(key, value)
+}
+
+// GetAllNATs gets all NAT configurations
+func (o *NATOps) GetAllNATs() ([]*model.NAT, error) {
+	var nats []*model.NAT
+
+	err := o.db.FindAll("nat", &nats)
+	if err != nil {
+		return nil, err
+	}
+
+	return nats, nil
+}
+
+// GetNATByID gets a NAT configuration by ID
+func (o *NATOps) GetNATByID(id uint64) (*model.NAT, error) {
+	var nat model.NAT
+
+	err := o.db.FindModel(id, "nat", &nat)
+	if err != nil {
+		return nil, err
+	}
+
+	return &nat, nil
+}
+
+// GetNATByDomain gets a NAT configuration by domain
+func (o *NATOps) GetNATByDomain(domain string) (*model.NAT, error) {
+	var nats []*model.NAT
+
+	err := o.db.FindAll("nat", &nats)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, nat := range nats {
+		if nat.Domain == domain {
+			return nat, nil
+		}
+	}
+
+	return nil, ErrorNotFound
+}
+
+// DeleteNAT deletes a NAT configuration
+func (o *NATOps) DeleteNAT(id uint64) error {
+	return o.db.Delete(fmt.Sprintf("nat:%d", id))
+}
+
+// DDNSOps provides specialized operations for DDNS profiles and states
+type DDNSOps struct {
+	db *BadgerDB
+}
+
+// NewDDNSOps creates a new DDNSOps instance
+func NewDDNSOps(db *BadgerDB) *DDNSOps {
+	return &DDNSOps{db: db}
+}
+
+// SaveDDNSProfile saves a DDNS profile record
+func (o *DDNSOps) SaveDDNSProfile(profile *model.DDNSProfile) error {
+	key := fmt.Sprintf("ddns_profile:%d", profile.ID)
+
+	value, err := json.Marshal(profile)
+	if err != nil {
+		return fmt.Errorf("failed to marshal DDNS profile: %w", err)
+	}
+
+	return o.db.Set(key, value)
+}
+
+// GetAllDDNSProfiles gets all DDNS profiles
+func (o *DDNSOps) GetAllDDNSProfiles() ([]*model.DDNSProfile, error) {
+	var profiles []*model.DDNSProfile
+
+	err := o.db.FindAll("ddns_profile", &profiles)
+	if err != nil {
+		return nil, err
+	}
+
+	return profiles, nil
+}
+
+// GetDDNSProfileByID gets a DDNS profile by ID
+func (o *DDNSOps) GetDDNSProfileByID(id uint64) (*model.DDNSProfile, error) {
+	var profile model.DDNSProfile
+
+	err := o.db.FindModel(id, "ddns_profile", &profile)
+	if err != nil {
+		return nil, err
+	}
+
+	return &profile, nil
+}
+
+// DeleteDDNSProfile deletes a DDNS profile
+func (o *DDNSOps) DeleteDDNSProfile(id uint64) error {
+	return o.db.Delete(fmt.Sprintf("ddns_profile:%d", id))
+}
+
+// SaveDDNSRecordState saves a DDNS record state
+func (o *DDNSOps) SaveDDNSRecordState(state *model.DDNSRecordState) error {
+	key := fmt.Sprintf("ddns_record_state:%d", state.ID)
+
+	value, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("failed to marshal DDNS record state: %w", err)
+	}
+
+	return o.db.Set(key, value)
+}
+
+// GetAllDDNSRecordStates gets all DDNS record states
+func (o *DDNSOps) GetAllDDNSRecordStates() ([]*model.DDNSRecordState, error) {
+	var states []*model.DDNSRecordState
+
+	err := o.db.FindAll("ddns_record_state", &states)
+	if err != nil {
+		return nil, err
+	}
+
+	return states, nil
+}
+
+// GetDDNSRecordStateByID gets a DDNS record state by ID
+func (o *DDNSOps) GetDDNSRecordStateByID(id uint64) (*model.DDNSRecordState, error) {
+	var state model.DDNSRecordState
+
+	err := o.db.FindModel(id, "ddns_record_state", &state)
+	if err != nil {
+		return nil, err
+	}
+
+	return &state, nil
+}
+
+// GetDDNSRecordStateByParams gets a DDNS record state by server ID, domain and record type
+func (o *DDNSOps) GetDDNSRecordStateByParams(serverID uint64, domain string, recordType string) (*model.DDNSRecordState, error) {
+	var states []*model.DDNSRecordState
+
+	err := o.db.FindAll("ddns_record_state", &states)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, state := range states {
+		if state.ServerID == serverID && state.Domain == domain && state.RecordType == recordType {
+			return state, nil
+		}
+	}
+
+	return nil, ErrorNotFound
+}
+
+// CreateDDNSRecordState creates a new DDNS record state
+func (o *DDNSOps) CreateDDNSRecordState(state *model.DDNSRecordState) error {
+	// Generate ID for new record
+	states, err := o.GetAllDDNSRecordStates()
+	if err != nil {
+		return err
+	}
+
+	var maxID uint64 = 0
+	for _, s := range states {
+		if s.ID > maxID {
+			maxID = s.ID
+		}
+	}
+
+	state.ID = maxID + 1
+	state.CreatedAt = time.Now()
+	state.UpdatedAt = time.Now()
+
+	return o.SaveDDNSRecordState(state)
+}
+
+// DeleteDDNSRecordState deletes a DDNS record state
+func (o *DDNSOps) DeleteDDNSRecordState(id uint64) error {
+	return o.db.Delete(fmt.Sprintf("ddns_record_state:%d", id))
+}
+
+// AlertRuleOps provides specialized operations for alert rules
+type AlertRuleOps struct {
+	db *BadgerDB
+}
+
+// NewAlertRuleOps creates a new AlertRuleOps instance
+func NewAlertRuleOps(db *BadgerDB) *AlertRuleOps {
+	return &AlertRuleOps{db: db}
+}
+
+// SaveAlertRule saves an alert rule record
+func (o *AlertRuleOps) SaveAlertRule(rule *model.AlertRule) error {
+	key := fmt.Sprintf("alert_rule:%d", rule.ID)
+
+	value, err := json.Marshal(rule)
+	if err != nil {
+		return fmt.Errorf("failed to marshal alert rule: %w", err)
+	}
+
+	return o.db.Set(key, value)
+}
+
+// GetAllAlertRules gets all alert rules
+func (o *AlertRuleOps) GetAllAlertRules() ([]*model.AlertRule, error) {
+	var rules []*model.AlertRule
+
+	err := o.db.FindAll("alert_rule", &rules)
+	if err != nil {
+		return nil, err
+	}
+
+	return rules, nil
+}
+
+// GetAlertRuleByID gets an alert rule by ID
+func (o *AlertRuleOps) GetAlertRuleByID(id uint64) (*model.AlertRule, error) {
+	var rule model.AlertRule
+
+	err := o.db.FindModel(id, "alert_rule", &rule)
+	if err != nil {
+		return nil, err
+	}
+
+	return &rule, nil
+}
+
+// DeleteAlertRule deletes an alert rule
+func (o *AlertRuleOps) DeleteAlertRule(id uint64) error {
+	return o.db.Delete(fmt.Sprintf("alert_rule:%d", id))
+}

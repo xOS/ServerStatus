@@ -78,15 +78,16 @@ func AlertSentinelStart() {
 	if Conf.DatabaseType == "badger" {
 		// 使用BadgerDB加载报警规则
 		if db.DB != nil {
-			// BadgerDB模式，直接查询AlertRule
-			var alerts []*model.AlertRule
-			err := db.DB.FindAll("alert_rule", &alerts)
+			// BadgerDB模式，使用AlertRuleOps查询AlertRule
+			alertOps := db.NewAlertRuleOps(db.DB)
+			alerts, err := alertOps.GetAllAlertRules()
 			if err != nil {
 				log.Printf("从BadgerDB加载报警规则失败: %v", err)
 				AlertsLock.Unlock()
 				return
 			}
 			Alerts = alerts
+			log.Printf("从BadgerDB成功加载 %d 条报警规则", len(Alerts))
 		} else {
 			log.Println("BadgerDB未初始化，跳过加载报警规则")
 			AlertsLock.Unlock()

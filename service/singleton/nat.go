@@ -24,13 +24,18 @@ func OnNATUpdate() {
 	if Conf.DatabaseType == "badger" {
 		// 使用 BadgerDB 加载NAT配置
 		if db.DB != nil {
-			// 目前BadgerDB还没有NATOps实现，
-			// 后续可以添加NATOps对象来处理NAT配置
-			log.Println("BadgerDB: NAT功能暂不支持，跳过加载")
-			return
+			natOps := db.NewNATOps(db.DB)
+			var err error
+			nats, err = natOps.GetAllNATs()
+			if err != nil {
+				log.Printf("从BadgerDB加载NAT配置失败: %v", err)
+				nats = []*model.NAT{}
+			} else {
+				log.Printf("从BadgerDB成功加载 %d 条NAT配置", len(nats))
+			}
 		} else {
 			log.Println("警告: BadgerDB 未初始化")
-			return
+			nats = []*model.NAT{}
 		}
 	} else {
 		// 使用 GORM (SQLite) 加载NAT配置

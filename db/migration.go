@@ -57,8 +57,8 @@ func (m *Migration) MigrateAll() error {
 		{"crons", &model.Cron{}, m.migrateCrons},
 		{"transfers", &model.Transfer{}, m.migrateTransfers},
 		{"api_tokens", &model.ApiToken{}, m.migrateApiTokens},
-		{"n_a_ts", &model.NAT{}, m.migrateNATs},
-		{"ddns_profiles", &model.DDNSProfile{}, m.migrateDDNSProfiles},
+		{"nats", &model.NAT{}, m.migrateNATs},
+		{"ddns", &model.DDNSProfile{}, m.migrateDDNSProfiles},
 		{"ddns_record_states", &model.DDNSRecordState{}, m.migrateDDNSRecordStates},
 	}
 
@@ -575,7 +575,7 @@ func (m *Migration) migrateApiTokens() error {
 
 // migrateNATs migrates NATs from SQLite to BadgerDB
 func (m *Migration) migrateNATs() error {
-	rows, err := m.sqliteDB.Query("SELECT * FROM n_a_ts")
+	rows, err := m.sqliteDB.Query("SELECT * FROM nats")
 	if err != nil {
 		return err
 	}
@@ -606,7 +606,7 @@ func (m *Migration) migrateNATs() error {
 
 // migrateDDNSProfiles migrates DDNS profiles from SQLite to BadgerDB
 func (m *Migration) migrateDDNSProfiles() error {
-	rows, err := m.sqliteDB.Query("SELECT * FROM ddns_profiles")
+	rows, err := m.sqliteDB.Query("SELECT * FROM ddns")
 	if err != nil {
 		return err
 	}
