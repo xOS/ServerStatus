@@ -21,6 +21,7 @@ type DashboardCliParam struct {
 	Version          bool   // 当前版本号
 	ConfigFile       string // 配置文件路径
 	DatebaseLocation string // Sqlite3 数据库文件路径
+	DatabaseType     string // 数据库类型：sqlite 或 badger
 }
 
 var (
@@ -32,6 +33,7 @@ func init() {
 	flag.BoolVarP(&dashboardCliParam.Version, "version", "v", false, "查看当前版本号")
 	flag.StringVarP(&dashboardCliParam.ConfigFile, "config", "c", "data/config.yaml", "配置文件路径")
 	flag.StringVar(&dashboardCliParam.DatebaseLocation, "db", "data/sqlite.db", "Sqlite3数据库文件路径")
+	flag.StringVar(&dashboardCliParam.DatabaseType, "dbtype", "", "数据库类型：sqlite 或 badger，默认使用配置文件中的设置")
 	flag.Parse()
 }
 
@@ -61,7 +63,34 @@ func main() {
 	// 初始化 dao 包
 	singleton.InitConfigFromPath(dashboardCliParam.ConfigFile)
 	singleton.InitTimezoneAndCache()
-	singleton.InitDBFromPath(dashboardCliParam.DatebaseLocation)
+
+	// 如果命令行指定了数据库类型，则覆盖配置文件中的设置
+	if dashboardCliParam.DatabaseType != "" {
+		singleton.Conf.DatabaseType = dashboardCliParam.DatabaseType
+	}
+
+	// 根据配置选择数据库类型
+	if singleton.Conf.DatabaseType == "badger" {
+		// 使用BadgerDB
+		log.Println("使用BadgerDB数据库...")
+
+		// 如果命令行没有指定BadgerDB路径，使用默认路径
+		badgerPath := "data/badger"
+		if dashboardCliParam.DatebaseLocation != "data/sqlite.db" {
+			// 用户在命令行指定了路径
+			badgerPath = dashboardCliParam.DatebaseLocation
+		} else if singleton.Conf.DatabaseLocation != "" {
+			// 使用配置文件中的路径
+			badgerPath = singleton.Conf.DatabaseLocation
+		}
+
+		singleton.InitBadgerDBFromPath(badgerPath)
+	} else {
+		// 默认使用SQLite
+		log.Println("使用SQLite数据库...")
+		singleton.InitDBFromPath(dashboardCliParam.DatebaseLocation)
+	}
+
 	singleton.InitLocalizer()
 
 	// 初始化Goroutine池，防止内存泄漏
@@ -78,7 +107,7 @@ func main() {
 	singleton.CleanMonitorHistory()
 	go rpc.ServeRPC(singleton.Conf.GRPCPort)
 	serviceSentinelDispatchBus := make(chan model.Monitor)
-	
+
 	// 修复goroutine泄漏：使用正确的context模式
 	go func() {
 		defer func() {
@@ -88,7 +117,7 @@ func main() {
 		}()
 		rpc.DispatchTask(serviceSentinelDispatchBus)
 	}()
-	
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -97,7 +126,7 @@ func main() {
 		}()
 		rpc.DispatchKeepalive()
 	}()
-	
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -106,10 +135,10 @@ func main() {
 		}()
 		singleton.AlertSentinelStart()
 	}()
-	
+
 	singleton.NewServiceSentinel(serviceSentinelDispatchBus)
 	srv := controller.ServeWeb(singleton.Conf.HTTPPort)
-	
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {

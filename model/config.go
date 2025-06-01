@@ -95,6 +95,10 @@ type Config struct {
 
 	DNSServers string
 
+	// 数据库配置
+	DatabaseType     string // 数据库类型，可选：sqlite、badger
+	DatabaseLocation string // 数据库文件路径
+
 	k        *koanf.Koanf
 	filePath string
 }
@@ -173,6 +177,14 @@ func (c *Config) Read(path string) error {
 	}
 	if c.Oauth2.OidcGroupClaim == "" {
 		c.Oauth2.OidcGroupClaim = "groups"
+	}
+
+	// 设置数据库默认值
+	if c.DatabaseType == "" {
+		c.DatabaseType = "sqlite"
+	}
+	if c.DatabaseLocation == "" {
+		c.DatabaseLocation = "data/sqlite.db"
 	}
 
 	c.updateIgnoredIPNotificationID()
