@@ -13,6 +13,7 @@ import (
 
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/pkg/utils"
 )
 
 // InitBadgerDBFromPath 从指定路径初始化BadgerDB数据库
@@ -29,23 +30,19 @@ func InitBadgerDBFromPath(path string) error {
 		return fmt.Errorf("打开BadgerDB失败: %w", err)
 	}
 
-	// 初始化或从SQLite迁移数据
+	// 检查是否存在SQLite数据库，如果存在则提示用户运行迁移脚本
 	if isSQLiteFileExists() {
-		log.Println("检测到SQLite数据库，开始数据迁移...")
-		if err := migrateFromSQLiteToBadgerDB(path); err != nil {
-			return fmt.Errorf("从SQLite迁移数据失败: %w", err)
-		}
-		log.Println("数据迁移完成！重命名旧SQLite数据库为备份...")
+		log.Println("⚠️  检测到SQLite数据库文件，但自动迁移功能已禁用")
+		log.Println("请运行以下命令进行数据库迁移：")
+		log.Println("  bash scripts/migrate_database.sh")
+		log.Println("迁移完成后再启动应用程序")
+		return fmt.Errorf("需要手动运行数据库迁移脚本")
+	}
 
-		// 重命名旧SQLite数据库文件为备份
-		if err := renameSQLiteFileToBackup(); err != nil {
-			log.Printf("警告：无法重命名旧SQLite数据库: %v", err)
-		}
-	} else {
-		log.Println("未检测到SQLite数据库，初始化新的BadgerDB...")
-		if err := db.InitializeEmptyBadgerDB(); err != nil {
-			return fmt.Errorf("初始化BadgerDB失败: %w", err)
-		}
+	// 初始化BadgerDB（不进行自动迁移）
+	log.Println("初始化BadgerDB...")
+	if err := db.InitializeEmptyBadgerDB(); err != nil {
+		return fmt.Errorf("初始化BadgerDB失败: %w", err)
 	}
 
 	// 初始化BadgerDB的索引和缓存
@@ -199,11 +196,13 @@ func loadServersFromBadgerDB() error {
 	SortedServerListForGuest = make([]*model.Server, 0)
 
 	// 使用ServerOps获取所有服务器
+	log.Println("正在创建ServerOps...")
 	serverOps := db.NewServerOps(db.DB)
 	if serverOps == nil || db.DB == nil {
 		log.Println("警告: BadgerDB或ServerOps未初始化")
 		return errors.New("BadgerDB未初始化")
 	}
+	log.Println("ServerOps创建成功，正在获取所有服务器...")
 
 	servers, err := serverOps.GetAllServers()
 	if err != nil {
@@ -225,7 +224,7 @@ func loadServersFromBadgerDB() error {
 			continue
 		}
 
-		log.Printf("加载服务器: ID=%d, 名称=%s", server.ID, server.Name)
+		log.Printf("加载服务器: ID=%d, 名称=%s, Secret=%s", server.ID, server.Name, server.Secret)
 
 		// 初始化必要的对象
 		server.Host = &model.Host{}
@@ -269,6 +268,26 @@ func loadServersFromBadgerDB() error {
 				server.State = &model.HostState{}
 			} else if server.State != nil {
 				server.LastStateBeforeOffline = server.State
+			}
+		}
+
+		// 检查并生成Secret
+		if server.Secret == "" {
+			log.Printf("服务器 %s (ID: %d) 没有Secret，正在生成新的Secret...", server.Name, server.ID)
+			newSecret, err := utils.GenerateRandomString(18)
+			if err != nil {
+				log.Printf("为服务器 %s (ID: %d) 生成Secret失败: %v", server.Name, server.ID, err)
+			} else {
+				server.Secret = newSecret
+				log.Printf("为服务器 %s (ID: %d) 生成新Secret: %s", server.Name, server.ID, newSecret)
+
+				// 保存到数据库
+				serverOps := db.NewServerOps(db.DB)
+				if err := serverOps.SaveServer(server); err != nil {
+					log.Printf("保存服务器 %s (ID: %d) 的新Secret到BadgerDB失败: %v", server.Name, server.ID, err)
+				} else {
+					log.Printf("已为服务器 %s (ID: %d) 生成并保存新Secret: %s", server.Name, server.ID, newSecret)
+				}
 			}
 		}
 

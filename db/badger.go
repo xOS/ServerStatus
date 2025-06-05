@@ -217,8 +217,6 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		return err
 	}
 
-	log.Printf("FindAll: 找到 %d 条 %s 记录", len(items), prefix)
-
 	// 如果没有找到任何记录，返回空数组
 	if len(items) == 0 {
 		return json.Unmarshal([]byte("[]"), result)
@@ -229,36 +227,29 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 	case "server":
 		// 服务器记录可能需要特殊处理
 		var servers []*map[string]interface{}
-		for i, item := range items {
-			log.Printf("FindAll (server case): Processing item %d, raw data: %s", i, string(item))
+		for _, item := range items {
 			var data map[string]interface{}
 			if err := json.Unmarshal(item, &data); err != nil {
-				log.Printf("FindAll (server case): Item %d, 解析服务器数据失败: %v, 数据: %s", i, err, string(item))
 				continue
 			}
-			log.Printf("FindAll (server case): Item %d, successfully unmarshalled to map: %v", i, data)
 
 			// 转换字段类型，确保 JSON 字段正确
 			convertDbFieldTypes(&data)
-			log.Printf("FindAll (server case): Item %d, after convertDbFieldTypes: %v", i, data)
 			servers = append(servers, &data)
 		}
 
 		// 重新序列化为 JSON
 		serversJSON, err := json.Marshal(servers)
 		if err != nil {
-			log.Printf("FindAll (server case): 重新序列化服务器数据失败: %v. Processed servers data: %v", err, servers)
 			return err
 		}
-
-		log.Printf("FindAll (server case): 已处理 %d 条服务器记录. Final JSON to unmarshal to result: %s", len(servers), string(serversJSON))
 
 		// 先反序列化到结果
 		if err := json.Unmarshal(serversJSON, result); err != nil {
 			return err
 		}
 
-		// 由于HostJSON和LastStateJSON字段有json:"-"标签，需要手动设置这些字段
+		// 由于HostJSON、LastStateJSON和Secret字段有json:"-"标签，需要手动设置这些字段
 		if serverSlice, ok := result.(*[]*model.Server); ok {
 			for i, server := range *serverSlice {
 				if i < len(servers) {
@@ -266,13 +257,17 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 					if hostJSON, exists := serverData["HostJSON"]; exists {
 						if hostJSONStr, isStr := hostJSON.(string); isStr && hostJSONStr != "" {
 							server.HostJSON = hostJSONStr
-							log.Printf("FindAll: 手动设置服务器 %d 的 HostJSON (长度: %d)", server.ID, len(hostJSONStr))
 						}
 					}
 					if lastStateJSON, exists := serverData["LastStateJSON"]; exists {
 						if lastStateJSONStr, isStr := lastStateJSON.(string); isStr && lastStateJSONStr != "" {
 							server.LastStateJSON = lastStateJSONStr
-							log.Printf("FindAll: 手动设置服务器 %d 的 LastStateJSON (长度: %d)", server.ID, len(lastStateJSONStr))
+						}
+					}
+					// 手动设置 Secret 字段
+					if secret, exists := serverData["Secret"]; exists {
+						if secretStr, isStr := secret.(string); isStr {
+							server.Secret = secretStr
 						}
 					}
 				}
@@ -283,56 +278,44 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 	case "monitor":
 		// 监控器记录也需要特殊处理布尔字段
 		var monitors []*map[string]interface{}
-		for i, item := range items {
-			log.Printf("FindAll (monitor case): Processing item %d, raw data: %s", i, string(item))
+		for _, item := range items {
 			var data map[string]interface{}
 			if err := json.Unmarshal(item, &data); err != nil {
-				log.Printf("FindAll (monitor case): Item %d, 解析监控器数据失败: %v, 数据: %s", i, err, string(item))
 				continue
 			}
-			log.Printf("FindAll (monitor case): Item %d, successfully unmarshalled to map: %v", i, data)
 
 			// 转换字段类型，确保布尔字段正确
 			convertDbFieldTypes(&data)
-			log.Printf("FindAll (monitor case): Item %d, after convertDbFieldTypes: %v", i, data)
 			monitors = append(monitors, &data)
 		}
 
 		// 重新序列化为 JSON
 		monitorsJSON, err := json.Marshal(monitors)
 		if err != nil {
-			log.Printf("FindAll (monitor case): 重新序列化监控器数据失败: %v. Processed monitors data: %v", err, monitors)
 			return err
 		}
 
-		log.Printf("FindAll (monitor case): 已处理 %d 条监控器记录. Final JSON to unmarshal to result: %s", len(monitors), string(monitorsJSON))
 		return json.Unmarshal(monitorsJSON, result)
 	case "user":
 		// 用户记录需要特殊处理布尔字段
 		var users []*map[string]interface{}
-		for i, item := range items {
-			log.Printf("FindAll (user case): Processing item %d, raw data: %s", i, string(item))
+		for _, item := range items {
 			var data map[string]interface{}
 			if err := json.Unmarshal(item, &data); err != nil {
-				log.Printf("FindAll (user case): Item %d, 解析用户数据失败: %v, 数据: %s", i, err, string(item))
 				continue
 			}
-			log.Printf("FindAll (user case): Item %d, successfully unmarshalled to map: %v", i, data)
 
 			// 转换字段类型，确保布尔字段正确
 			convertDbFieldTypes(&data)
-			log.Printf("FindAll (user case): Item %d, after convertDbFieldTypes: %v", i, data)
 			users = append(users, &data)
 		}
 
 		// 重新序列化为 JSON
 		usersJSON, err := json.Marshal(users)
 		if err != nil {
-			log.Printf("FindAll (user case): 重新序列化用户数据失败: %v. Processed users data: %v", err, users)
 			return err
 		}
 
-		log.Printf("FindAll (user case): 已处理 %d 条用户记录. Final JSON to unmarshal to result: %s", len(users), string(usersJSON))
 		return json.Unmarshal(usersJSON, result)
 	default:
 		// 其他类型的记录，使用标准处理方式
@@ -471,6 +454,15 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 	}
 	if _, ok := d["LastStateJSON"]; !ok {
 		d["LastStateJSON"] = ""
+	}
+
+	// 确保 Secret 字段存在，如果不存在或为空则保持原值
+	// 不要在这里重置 Secret 字段，让服务器加载逻辑处理
+	if _, ok := d["Secret"]; !ok {
+		d["Secret"] = ""
+	}
+	if _, ok := d["secret"]; !ok {
+		d["secret"] = ""
 	}
 }
 

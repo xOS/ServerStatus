@@ -32,7 +32,33 @@ func (o *ServerOps) GetServer(id uint64) (*model.Server, error) {
 
 // SaveServer saves a server
 func (o *ServerOps) SaveServer(server *model.Server) error {
-	return o.db.SaveModel("server", server.ID, server)
+	// 由于 Secret 字段有 json:"-" 标签，我们需要特殊处理
+	// 创建一个临时的 map 来包含所有字段，包括 Secret
+	serverData := make(map[string]interface{})
+
+	// 首先序列化服务器对象（这会忽略 Secret 字段）
+	serverJSON, err := json.Marshal(server)
+	if err != nil {
+		return fmt.Errorf("failed to marshal server: %w", err)
+	}
+
+	// 反序列化到 map 中
+	if err := json.Unmarshal(serverJSON, &serverData); err != nil {
+		return fmt.Errorf("failed to unmarshal server to map: %w", err)
+	}
+
+	// 手动添加 Secret 字段
+	serverData["Secret"] = server.Secret
+
+	// 重新序列化包含 Secret 的数据
+	finalJSON, err := json.Marshal(serverData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal server with secret: %w", err)
+	}
+
+	// 直接保存到数据库
+	key := fmt.Sprintf("server:%d", server.ID)
+	return o.db.Set(key, finalJSON)
 }
 
 // DeleteServer deletes a server

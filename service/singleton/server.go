@@ -177,8 +177,35 @@ func loadServers() {
 		ServerList[innerS.ID] = innerS
 
 		// 处理Secret映射
+		log.Printf("检查服务器 %s (ID: %d) 的Secret: '%s' (长度: %d)", innerS.Name, innerS.ID, innerS.Secret, len(innerS.Secret))
 		if innerS.Secret != "" {
+			log.Printf("服务器 %s (ID: %d) 已有Secret: %s", innerS.Name, innerS.ID, innerS.Secret)
 			SecretToID[innerS.Secret] = innerS.ID
+		} else {
+			// 如果Secret为空，生成一个新的Secret
+			log.Printf("服务器 %s (ID: %d) 缺少Secret，正在生成新的Secret...", innerS.Name, innerS.ID)
+			newSecret, err := utils.GenerateRandomString(18)
+			if err != nil {
+				log.Printf("为服务器 %s (ID: %d) 生成Secret失败: %v", innerS.Name, innerS.ID, err)
+			} else {
+				innerS.Secret = newSecret
+				SecretToID[innerS.Secret] = innerS.ID
+
+				// 保存到数据库
+				if Conf.DatabaseType == "badger" {
+					if err := SaveServerToBadgerDB(innerS); err != nil {
+						log.Printf("保存服务器 %s (ID: %d) 的新Secret到BadgerDB失败: %v", innerS.Name, innerS.ID, err)
+					} else {
+						log.Printf("已为服务器 %s (ID: %d) 生成并保存新Secret: %s", innerS.Name, innerS.ID, newSecret)
+					}
+				} else {
+					if err := DB.Save(innerS).Error; err != nil {
+						log.Printf("保存服务器 %s (ID: %d) 的新Secret到SQLite失败: %v", innerS.Name, innerS.ID, err)
+					} else {
+						log.Printf("已为服务器 %s (ID: %d) 生成并保存新Secret: %s", innerS.Name, innerS.ID, newSecret)
+					}
+				}
+			}
 		}
 
 		// 处理标签映射
