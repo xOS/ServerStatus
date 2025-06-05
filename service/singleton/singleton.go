@@ -80,7 +80,12 @@ func LoadSingleton() {
 	if Conf.DatabaseType == "badger" && db.DB == nil {
 		log.Println("重新初始化BadgerDB连接...")
 		var err error
-		db.DB, err = db.OpenDB(Conf.DatabaseLocation)
+
+		// 获取正确的BadgerDB目录路径
+		badgerPath := GetBadgerDBPath()
+		log.Printf("使用BadgerDB路径: %s", badgerPath)
+
+		db.DB, err = db.OpenDB(badgerPath)
 		if err != nil {
 			log.Printf("无法重新初始化BadgerDB: %v，尝试继续运行", err)
 		} else {

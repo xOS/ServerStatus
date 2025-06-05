@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 	_ "time/tzdata"
 
@@ -84,16 +86,31 @@ func main() {
 		// 使用BadgerDB
 		log.Println("使用BadgerDB数据库...")
 
-		// 如果命令行没有指定BadgerDB路径，使用默认路径
+		// 获取正确的BadgerDB路径
 		badgerPath := "data/badger"
 		if dashboardCliParam.DatebaseLocation != "data/sqlite.db" {
 			// 用户在命令行指定了路径
-			badgerPath = dashboardCliParam.DatebaseLocation
+			if strings.HasSuffix(dashboardCliParam.DatebaseLocation, ".db") {
+				// 如果指定的是SQLite文件路径，转换为BadgerDB目录路径
+				dir := filepath.Dir(dashboardCliParam.DatebaseLocation)
+				badgerPath = filepath.Join(dir, "badger")
+			} else {
+				// 如果不是.db文件，假设它是目录路径
+				badgerPath = dashboardCliParam.DatebaseLocation
+			}
 		} else if singleton.Conf.DatabaseLocation != "" {
-			// 使用配置文件中的路径
-			badgerPath = singleton.Conf.DatabaseLocation
+			// 使用配置文件中的路径，但需要确保它是目录路径
+			if strings.HasSuffix(singleton.Conf.DatabaseLocation, ".db") {
+				// 如果配置的是SQLite文件路径，转换为BadgerDB目录路径
+				dir := filepath.Dir(singleton.Conf.DatabaseLocation)
+				badgerPath = filepath.Join(dir, "badger")
+			} else {
+				// 如果不是.db文件，假设它是目录路径
+				badgerPath = singleton.Conf.DatabaseLocation
+			}
 		}
 
+		log.Printf("BadgerDB将使用目录: %s", badgerPath)
 		singleton.InitBadgerDBFromPath(badgerPath)
 	} else {
 		// 默认使用SQLite

@@ -120,6 +120,32 @@ func getSQLitePath() string {
 	return defaultPath
 }
 
+// GetBadgerDBPath 获取BadgerDB数据库目录路径
+func GetBadgerDBPath() string {
+	// 默认BadgerDB路径
+	defaultPath := "data/badger"
+
+	if Conf == nil {
+		return defaultPath
+	}
+
+	// 如果配置了DatabaseLocation
+	if Conf.DatabaseLocation != "" {
+		// 检查配置的路径是否看起来像SQLite文件路径
+		if strings.HasSuffix(Conf.DatabaseLocation, ".db") {
+			// 如果是SQLite文件路径，转换为BadgerDB目录路径
+			// 例如：data/sqlite.db -> data/badger
+			dir := filepath.Dir(Conf.DatabaseLocation)
+			return filepath.Join(dir, "badger")
+		} else {
+			// 如果不是.db文件，假设它是目录路径，直接使用
+			return Conf.DatabaseLocation
+		}
+	}
+
+	return defaultPath
+}
+
 // renameSQLiteFileToBackup 将SQLite数据库文件重命名为备份
 func renameSQLiteFileToBackup() error {
 	// 获取SQLite数据库路径
@@ -138,12 +164,8 @@ func renameSQLiteFileToBackup() error {
 
 // migrateFromSQLiteToBadgerDB 从SQLite迁移数据到BadgerDB
 func migrateFromSQLiteToBadgerDB(badgerPath string) error {
-	sqlitePath := "data/sqlite.db"
-	// 注意：当DatabaseType为badger时，DatabaseLocation指向BadgerDB目录
-	// 我们总是使用默认的SQLite路径进行迁移
-	if Conf != nil && Conf.DatabaseType != "badger" && Conf.DatabaseLocation != "" {
-		sqlitePath = Conf.DatabaseLocation
-	}
+	// 获取SQLite数据库文件路径
+	sqlitePath := getSQLitePath()
 
 	log.Printf("从SQLite路径迁移: %s 到 BadgerDB路径: %s", sqlitePath, badgerPath)
 
