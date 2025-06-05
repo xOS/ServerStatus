@@ -12,6 +12,7 @@ import (
 
 	"github.com/jinzhu/copier"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/ddns"
 	"github.com/xos/serverstatus/pkg/geoip"
@@ -580,10 +581,26 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	// 保存完整Host信息到数据库，用于重启后恢复
 	hostJSON, err := utils.Json.Marshal(host)
 	if err == nil {
-		// 更新servers表中的host_json字段
-		if err := singleton.DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
-			string(hostJSON), clientID).Error; err != nil {
-			// 静默处理保存失败，避免日志干扰
+		// 根据数据库类型选择不同的保存方式
+		if singleton.Conf.DatabaseType == "badger" {
+			// 使用BadgerDB保存Host信息
+			if db.DB != nil {
+				serverOps := db.NewServerOps(db.DB)
+				if server, err := serverOps.GetServer(clientID); err == nil && server != nil {
+					server.HostJSON = string(hostJSON)
+					if err := serverOps.SaveServer(server); err != nil {
+						// 静默处理保存失败，避免日志干扰
+					}
+				}
+			}
+		} else {
+			// 使用SQLite保存Host信息
+			if singleton.DB != nil {
+				if err := singleton.DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
+					string(hostJSON), clientID).Error; err != nil {
+					// 静默处理保存失败，避免日志干扰
+				}
+			}
 		}
 	}
 
@@ -738,9 +755,26 @@ func checkAndResetCycleTraffic(clientID uint64) {
 			// 周期流量重置完成，静默处理
 
 			// 立即保存到数据库
-			updateSQL := "UPDATE servers SET cumulative_net_in_transfer = ?, cumulative_net_out_transfer = ? WHERE id = ?"
-			if err := singleton.DB.Exec(updateSQL, 0, 0, clientID).Error; err != nil {
-				log.Printf("保存服务器 %s 周期重置流量到数据库失败: %v", server.Name, err)
+			if singleton.Conf.DatabaseType == "badger" {
+				// 使用BadgerDB保存流量重置
+				if db.DB != nil {
+					serverOps := db.NewServerOps(db.DB)
+					if dbServer, err := serverOps.GetServer(clientID); err == nil && dbServer != nil {
+						dbServer.CumulativeNetInTransfer = 0
+						dbServer.CumulativeNetOutTransfer = 0
+						if err := serverOps.SaveServer(dbServer); err != nil {
+							log.Printf("保存服务器 %s 周期重置流量到BadgerDB失败: %v", server.Name, err)
+						}
+					}
+				}
+			} else {
+				// 使用SQLite保存流量重置
+				if singleton.DB != nil {
+					updateSQL := "UPDATE servers SET cumulative_net_in_transfer = ?, cumulative_net_out_transfer = ? WHERE id = ?"
+					if err := singleton.DB.Exec(updateSQL, 0, 0, clientID).Error; err != nil {
+						log.Printf("保存服务器 %s 周期重置流量到数据库失败: %v", server.Name, err)
+					}
+				}
 			}
 
 			// 更新AlertsCycleTransferStatsStore中的重置时间记录

@@ -36,11 +36,36 @@ func (mp *memberPage) serve() {
 }
 
 func (mp *memberPage) api(c *gin.Context) {
-	singleton.ApiLock.RLock()
-	defer singleton.ApiLock.RUnlock()
+	var tokens map[string]*model.ApiToken
+
+	// 根据数据库类型选择不同的查询方式
+	if singleton.Conf.DatabaseType == "badger" {
+		// 使用BadgerDB实时查询
+		tokens = make(map[string]*model.ApiToken)
+		if db.DB != nil {
+			apiTokenOps := db.NewApiTokenOps(db.DB)
+			tokenList, err := apiTokenOps.GetAllApiTokens()
+			if err != nil {
+				log.Printf("从BadgerDB查询API令牌失败: %v", err)
+			} else {
+				// 转换为map格式
+				for _, tokenPtr := range tokenList {
+					if tokenPtr != nil {
+						tokens[tokenPtr.Token] = tokenPtr
+					}
+				}
+			}
+		}
+	} else {
+		// 使用内存中的数据（SQLite模式）
+		singleton.ApiLock.RLock()
+		defer singleton.ApiLock.RUnlock()
+		tokens = singleton.ApiTokenList
+	}
+
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/api", mygin.CommonEnvironment(c, gin.H{
 		"title":  singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ApiManagement"}),
-		"Tokens": singleton.ApiTokenList,
+		"Tokens": tokens,
 	}))
 }
 
