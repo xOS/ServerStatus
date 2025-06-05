@@ -1,7 +1,9 @@
 package model
 
 import (
+	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +38,56 @@ type Rule struct {
 	// 只作为缓存使用，记录下次该检测的时间
 	NextTransferAt  map[uint64]time.Time   `json:"-"`
 	LastCycleStatus map[uint64]interface{} `json:"-"`
+}
+
+// MarshalJSON 自定义 JSON 序列化，确保 Ignore 字段正确序列化
+func (r Rule) MarshalJSON() ([]byte, error) {
+	// 创建一个临时结构体，将 Ignore 字段转换为字符串键的 map
+	type Alias Rule
+	aux := struct {
+		Alias
+		Ignore map[string]bool `json:"ignore,omitempty"`
+	}{
+		Alias: Alias(r),
+	}
+
+	// 转换 Ignore 字段
+	if r.Ignore != nil {
+		aux.Ignore = make(map[string]bool)
+		for k, v := range r.Ignore {
+			aux.Ignore[strconv.FormatUint(k, 10)] = v
+		}
+	}
+
+	return json.Marshal(aux)
+}
+
+// UnmarshalJSON 自定义 JSON 反序列化，确保 Ignore 字段正确反序列化
+func (r *Rule) UnmarshalJSON(data []byte) error {
+	// 创建一个临时结构体，接收字符串键的 Ignore 字段
+	type Alias Rule
+	aux := struct {
+		*Alias
+		Ignore map[string]bool `json:"ignore,omitempty"`
+	}{
+		Alias: (*Alias)(r),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// 转换 Ignore 字段
+	if aux.Ignore != nil {
+		r.Ignore = make(map[uint64]bool)
+		for k, v := range aux.Ignore {
+			if id, err := strconv.ParseUint(k, 10, 64); err == nil {
+				r.Ignore[id] = v
+			}
+		}
+	}
+
+	return nil
 }
 
 func percentage(used, total uint64) float64 {

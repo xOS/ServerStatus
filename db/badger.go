@@ -217,8 +217,23 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 		// 反序列化到结果
 		return json.Unmarshal(ruleJSON, result)
 	default:
-		// 其他类型的记录，使用标准处理方式
-		return json.Unmarshal(data, result)
+		// 其他类型的记录，也需要进行字段类型转换
+		var dataMap map[string]interface{}
+		if err := json.Unmarshal(data, &dataMap); err != nil {
+			return err
+		}
+
+		// 转换字段类型，确保布尔字段正确
+		convertDbFieldTypes(&dataMap)
+
+		// 重新序列化为 JSON
+		dataJSON, err := json.Marshal(dataMap)
+		if err != nil {
+			return err
+		}
+
+		// 反序列化到结果
+		return json.Unmarshal(dataJSON, result)
 	}
 }
 
@@ -495,18 +510,151 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		return nil
-	default:
-		// 其他类型的记录，使用标准处理方式
-		itemsJSON := "["
-		for i, item := range items {
-			if i > 0 {
-				itemsJSON += ","
+	case "api_token":
+		// API令牌记录需要特殊处理布尔字段和Token字段
+		var tokens []*map[string]interface{}
+		for _, item := range items {
+			var data map[string]interface{}
+			if err := json.Unmarshal(item, &data); err != nil {
+				continue
 			}
-			itemsJSON += string(item)
-		}
-		itemsJSON += "]"
 
-		return json.Unmarshal([]byte(itemsJSON), result)
+			// 转换字段类型，确保布尔字段正确
+			convertDbFieldTypes(&data)
+			tokens = append(tokens, &data)
+		}
+
+		// 重新序列化为 JSON
+		tokensJSON, err := json.Marshal(tokens)
+		if err != nil {
+			return err
+		}
+
+		// 反序列化到结果，然后手动设置Token字段
+		if err := json.Unmarshal(tokensJSON, result); err != nil {
+			return err
+		}
+
+		// 手动设置Token字段（因为它可能有json:"-"标签）
+		if tokenSlice, ok := result.(*[]*model.ApiToken); ok {
+			for i, token := range *tokenSlice {
+				if token != nil && i < len(tokens) {
+					tokenData := tokens[i]
+					if tokenVal, exists := (*tokenData)["Token"]; exists {
+						if tokenStr, isStr := tokenVal.(string); isStr {
+							token.Token = tokenStr
+						}
+					}
+				}
+			}
+		}
+
+		return nil
+	case "ddns_profile":
+		// DDNS配置记录需要特殊处理布尔字段
+		var profiles []*map[string]interface{}
+		for _, item := range items {
+			var data map[string]interface{}
+			if err := json.Unmarshal(item, &data); err != nil {
+				continue
+			}
+
+			// 转换字段类型，确保布尔字段正确
+			convertDbFieldTypes(&data)
+			profiles = append(profiles, &data)
+		}
+
+		// 重新序列化为 JSON
+		profilesJSON, err := json.Marshal(profiles)
+		if err != nil {
+			return err
+		}
+
+		return json.Unmarshal(profilesJSON, result)
+	case "notification":
+		// 通知配置记录需要特殊处理布尔字段
+		var notifications []*map[string]interface{}
+		for _, item := range items {
+			var data map[string]interface{}
+			if err := json.Unmarshal(item, &data); err != nil {
+				continue
+			}
+
+			// 转换字段类型，确保布尔字段正确
+			convertDbFieldTypes(&data)
+			notifications = append(notifications, &data)
+		}
+
+		// 重新序列化为 JSON
+		notificationsJSON, err := json.Marshal(notifications)
+		if err != nil {
+			return err
+		}
+
+		return json.Unmarshal(notificationsJSON, result)
+	case "nat":
+		// NAT配置记录需要特殊处理布尔字段
+		var nats []*map[string]interface{}
+		for _, item := range items {
+			var data map[string]interface{}
+			if err := json.Unmarshal(item, &data); err != nil {
+				continue
+			}
+
+			// 转换字段类型，确保布尔字段正确
+			convertDbFieldTypes(&data)
+			nats = append(nats, &data)
+		}
+
+		// 重新序列化为 JSON
+		natsJSON, err := json.Marshal(nats)
+		if err != nil {
+			return err
+		}
+
+		return json.Unmarshal(natsJSON, result)
+	case "cron":
+		// 定时任务记录需要特殊处理布尔字段
+		var crons []*map[string]interface{}
+		for _, item := range items {
+			var data map[string]interface{}
+			if err := json.Unmarshal(item, &data); err != nil {
+				continue
+			}
+
+			// 转换字段类型，确保布尔字段正确
+			convertDbFieldTypes(&data)
+			crons = append(crons, &data)
+		}
+
+		// 重新序列化为 JSON
+		cronsJSON, err := json.Marshal(crons)
+		if err != nil {
+			return err
+		}
+
+		return json.Unmarshal(cronsJSON, result)
+	default:
+		// 其他类型的记录，也需要进行字段类型转换
+		var others []*map[string]interface{}
+		for _, item := range items {
+			var data map[string]interface{}
+			if err := json.Unmarshal(item, &data); err != nil {
+				continue
+			}
+
+			// 转换字段类型，确保布尔字段正确
+			convertDbFieldTypes(&data)
+			others = append(others, &data)
+		}
+
+		// 重新序列化为 JSON
+		othersJSON, err := json.Marshal(others)
+		if err != nil {
+			return err
+		}
+
+		return json.Unmarshal(othersJSON, result)
 	}
 }
 

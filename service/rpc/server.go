@@ -566,10 +566,24 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		singleton.ServerList[clientID].PrevTransferOutSnapshot = 0
 
 		// 确保从数据库读取最新的累计流量值（只在重启时读取一次）
-		var server model.Server
-		if err := singleton.DB.First(&server, clientID).Error; err == nil {
-			singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
-			singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+		if singleton.Conf.DatabaseType == "badger" {
+			// 使用BadgerDB读取累计流量
+			if db.DB != nil {
+				serverOps := db.NewServerOps(db.DB)
+				if server, err := serverOps.GetServer(clientID); err == nil && server != nil {
+					singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
+					singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+				}
+			}
+		} else {
+			// 使用SQLite读取累计流量
+			if singleton.DB != nil {
+				var server model.Server
+				if err := singleton.DB.First(&server, clientID).Error; err == nil {
+					singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
+					singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+				}
+			}
 		}
 	}
 
