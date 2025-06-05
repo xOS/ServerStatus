@@ -1943,9 +1943,10 @@ func WarmupDatabase() {
 
 // StartMonitorHistoryWorker 启动监控历史记录插入专用工作器
 func StartMonitorHistoryWorker() {
-	// 如果使用BadgerDB，跳过监控历史记录插入工作器
+	// 如果使用BadgerDB，启动BadgerDB专用的监控历史记录工作器
 	if Conf.DatabaseType == "badger" {
-		log.Println("使用BadgerDB，跳过监控历史记录插入工作器")
+		log.Println("使用BadgerDB，启动BadgerDB监控历史记录插入工作器")
+		StartBadgerMonitorHistoryWorker()
 		return
 	}
 
@@ -2077,6 +2078,91 @@ func StartMonitorHistoryWorker() {
 
 				// 其他错误不重试
 				break
+			}
+
+			if req.Callback != nil {
+				req.Callback(err)
+			}
+		}
+	}()
+}
+
+// StartBadgerMonitorHistoryWorker 启动BadgerDB专用的监控历史记录插入工作器
+func StartBadgerMonitorHistoryWorker() {
+	monitorHistoryWorkerMutex.Lock()
+	defer monitorHistoryWorkerMutex.Unlock()
+
+	if monitorHistoryWorkerStarted {
+		return
+	}
+
+	monitorHistoryWorkerStarted = true
+	log.Println("启动BadgerDB监控历史记录处理工作器...")
+
+	go func() {
+		for req := range monitorHistoryQueue {
+			// 确保没有使用@id字段
+			if _, exists := req.Data["@id"]; exists {
+				delete(req.Data, "@id")
+			}
+
+			// 转换数据为MonitorHistory结构
+			history := &model.MonitorHistory{
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}
+
+			// 提取字段
+			if v, ok := req.Data["monitor_id"]; ok {
+				if val, ok := v.(uint64); ok {
+					history.MonitorID = val
+				}
+			}
+			if v, ok := req.Data["server_id"]; ok {
+				if val, ok := v.(uint64); ok {
+					history.ServerID = val
+				}
+			}
+			if v, ok := req.Data["avg_delay"]; ok {
+				if val, ok := v.(float32); ok {
+					history.AvgDelay = val
+				} else if val, ok := v.(float64); ok {
+					history.AvgDelay = float32(val)
+				}
+			}
+			if v, ok := req.Data["data"]; ok {
+				if val, ok := v.(string); ok {
+					history.Data = val
+				}
+			}
+			if v, ok := req.Data["up"]; ok {
+				if val, ok := v.(uint64); ok {
+					history.Up = val
+				} else if val, ok := v.(int); ok {
+					history.Up = uint64(val)
+				}
+			}
+			if v, ok := req.Data["down"]; ok {
+				if val, ok := v.(uint64); ok {
+					history.Down = val
+				} else if val, ok := v.(int); ok {
+					history.Down = uint64(val)
+				}
+			}
+
+			// 保存到BadgerDB
+			var err error
+			if db.DB != nil {
+				monitorOps := db.NewMonitorHistoryOps(db.DB)
+				err = monitorOps.SaveMonitorHistory(history)
+				if err != nil {
+					log.Printf("BadgerDB监控历史记录保存失败 (MonitorID: %d): %v", history.MonitorID, err)
+				} else {
+					log.Printf("BadgerDB监控历史记录保存成功 (MonitorID: %d)", history.MonitorID)
+				}
+			} else {
+				err = fmt.Errorf("BadgerDB未初始化")
+				log.Printf("BadgerDB监控历史记录保存失败: %v", err)
 			}
 
 			if req.Callback != nil {

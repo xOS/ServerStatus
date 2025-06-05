@@ -59,9 +59,9 @@ func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
 				continue
 			}
 			// 找到合适机器执行任务，跳出循环
-			// singleton.SortedServerList[workedServerIndex].TaskStream.Send(task.PB())
-			// workedServerIndex++
-			// break
+			singleton.SortedServerList[workedServerIndex].TaskStream.Send(task.PB())
+			workedServerIndex++
+			break
 		}
 		singleton.SortedServerLock.RUnlock()
 	}

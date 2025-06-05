@@ -3,6 +3,7 @@ package singleton
 import (
 	"log"
 	"sync"
+	"time"
 
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
@@ -402,9 +403,52 @@ func (s *ServerAPIService) Register(rs *RegisterServer) *ServerRegisterResponse 
 func (m *MonitorAPIService) GetMonitorHistories(search map[string]any) []*model.MonitorHistory {
 	// 检查是否使用BadgerDB
 	if Conf != nil && Conf.DatabaseType == "badger" {
-		log.Printf("MonitorAPIService.GetMonitorHistories: BadgerDB模式，返回空的监控历史记录")
-		// 在BadgerDB模式下返回空数组
-		return make([]*model.MonitorHistory, 0)
+		log.Printf("MonitorAPIService.GetMonitorHistories: BadgerDB模式，查询监控历史记录")
+
+		// 从BadgerDB获取监控历史记录
+		if db.DB != nil {
+			// 获取服务器ID
+			var serverID uint64
+			if sid, ok := search["server_id"]; ok {
+				if sidVal, ok := sid.(uint64); ok {
+					serverID = sidVal
+				}
+			}
+
+			if serverID == 0 {
+				log.Printf("MonitorAPIService.GetMonitorHistories: 无效的服务器ID")
+				return make([]*model.MonitorHistory, 0)
+			}
+
+			// 获取时间范围（默认最近30天）
+			endTime := time.Now()
+			startTime := endTime.AddDate(0, 0, -30)
+
+			// 从BadgerDB查询监控历史记录
+			// 注意：这里需要查询所有监控历史记录，然后按server_id过滤
+			monitorOps := db.NewMonitorHistoryOps(db.DB)
+
+			// 获取所有监控历史记录并过滤
+			allHistories, err := monitorOps.GetAllMonitorHistoriesInRange(startTime, endTime)
+			if err != nil {
+				log.Printf("MonitorAPIService.GetMonitorHistories: 从BadgerDB查询失败: %v", err)
+				return make([]*model.MonitorHistory, 0)
+			}
+
+			// 过滤出指定服务器的记录
+			var histories []*model.MonitorHistory
+			for _, history := range allHistories {
+				if history.ServerID == serverID {
+					histories = append(histories, history)
+				}
+			}
+
+			log.Printf("MonitorAPIService.GetMonitorHistories: 从BadgerDB获取到 %d 条监控历史记录 (服务器ID: %d)", len(histories), serverID)
+			return histories
+		} else {
+			log.Printf("MonitorAPIService.GetMonitorHistories: BadgerDB未初始化")
+			return make([]*model.MonitorHistory, 0)
+		}
 	}
 
 	// 原有的SQLite查询逻辑

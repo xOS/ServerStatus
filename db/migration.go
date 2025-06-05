@@ -422,6 +422,21 @@ func (m *Migration) migrateServers() error {
 
 		// 尝试构建 Server 模型对象
 		var server model.Server
+
+		// 先保存HostJSON和LastStateJSON，因为它们有json:"-"标签
+		hostJSON := ""
+		lastStateJSON := ""
+		if val, ok := data["HostJSON"]; ok {
+			if str, ok := val.(string); ok {
+				hostJSON = str
+			}
+		}
+		if val, ok := data["LastStateJSON"]; ok {
+			if str, ok := val.(string); ok {
+				lastStateJSON = str
+			}
+		}
+
 		serverJSON, err := json.Marshal(data)
 		if err != nil {
 			log.Printf("服务器ID %d: 序列化原始数据失败: %v. Data: %v", id, err, data)
@@ -434,6 +449,10 @@ func (m *Migration) migrateServers() error {
 				// 确保ID正确
 				server.ID = id
 
+				// 手动设置被json:"-"忽略的字段
+				server.HostJSON = hostJSON
+				server.LastStateJSON = lastStateJSON
+
 				// 如果服务器名称为空，给一个默认名称
 				if server.Name == "" {
 					server.Name = fmt.Sprintf("Server-%d", id)
@@ -442,16 +461,35 @@ func (m *Migration) migrateServers() error {
 
 				// 添加额外的日志
 				log.Printf("服务器ID %d: 准备迁移的服务器对象: %+v", server.ID, server)
+				log.Printf("服务器ID %d: HostJSON长度=%d, LastStateJSON长度=%d", server.ID, len(server.HostJSON), len(server.LastStateJSON))
 
 				// 重新序列化为JSON以保存
+				// 注意：HostJSON和LastStateJSON字段有json:"-"标签，需要特殊处理
 				serverJSON, err = json.Marshal(server)
 				if err != nil {
 					log.Printf("服务器ID %d: 重新序列化处理后的Server对象失败: %v. Object: %+v", id, err, server)
 					// If re-serialization fails, fall back to using the original data marshalled earlier
-					// (or data before attempting to unmarshal to server object if that also failed)
 					originalDataJSON, _ := json.Marshal(data) // Marshal the original map again
 					serverJSON = originalDataJSON
 					log.Printf("服务器ID %d: 回退到使用原始map序列化的JSON进行保存", id)
+				} else {
+					// 由于HostJSON和LastStateJSON有json:"-"标签，需要手动添加这些字段
+					var serverMap map[string]interface{}
+					if err := json.Unmarshal(serverJSON, &serverMap); err == nil {
+						// 添加被忽略的字段
+						if server.HostJSON != "" {
+							serverMap["HostJSON"] = server.HostJSON
+						}
+						if server.LastStateJSON != "" {
+							serverMap["LastStateJSON"] = server.LastStateJSON
+						}
+
+						// 重新序列化
+						if modifiedJSON, err := json.Marshal(serverMap); err == nil {
+							serverJSON = modifiedJSON
+							log.Printf("服务器ID %d: 已添加HostJSON和LastStateJSON字段到序列化数据", id)
+						}
+					}
 				}
 			}
 		}

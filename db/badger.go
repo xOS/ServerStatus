@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
+	"github.com/xos/serverstatus/model"
 )
 
 // Global variables
@@ -251,7 +252,34 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		log.Printf("FindAll (server case): 已处理 %d 条服务器记录. Final JSON to unmarshal to result: %s", len(servers), string(serversJSON))
-		return json.Unmarshal(serversJSON, result)
+
+		// 先反序列化到结果
+		if err := json.Unmarshal(serversJSON, result); err != nil {
+			return err
+		}
+
+		// 由于HostJSON和LastStateJSON字段有json:"-"标签，需要手动设置这些字段
+		if serverSlice, ok := result.(*[]*model.Server); ok {
+			for i, server := range *serverSlice {
+				if i < len(servers) {
+					serverData := *servers[i]
+					if hostJSON, exists := serverData["HostJSON"]; exists {
+						if hostJSONStr, isStr := hostJSON.(string); isStr && hostJSONStr != "" {
+							server.HostJSON = hostJSONStr
+							log.Printf("FindAll: 手动设置服务器 %d 的 HostJSON (长度: %d)", server.ID, len(hostJSONStr))
+						}
+					}
+					if lastStateJSON, exists := serverData["LastStateJSON"]; exists {
+						if lastStateJSONStr, isStr := lastStateJSON.(string); isStr && lastStateJSONStr != "" {
+							server.LastStateJSON = lastStateJSONStr
+							log.Printf("FindAll: 手动设置服务器 %d 的 LastStateJSON (长度: %d)", server.ID, len(lastStateJSONStr))
+						}
+					}
+				}
+			}
+		}
+
+		return nil
 	case "monitor":
 		// 监控器记录也需要特殊处理布尔字段
 		var monitors []*map[string]interface{}
@@ -414,7 +442,8 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 	}
 
 	// 处理特殊的 JSON 字符串字段
-	jsonFields := []string{"host_json", "last_state_json"}
+	// 注意：HostJSON和LastStateJSON字段有json:"-"标签，需要特殊处理
+	jsonFields := []string{"HostJSON", "LastStateJSON", "host_json", "last_state_json"}
 	for _, field := range jsonFields {
 		if val, ok := d[field]; ok {
 			if strVal, isStr := val.(string); isStr && strVal != "" {
@@ -427,12 +456,21 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 		}
 	}
 
-	// 确保必要的字段存在，但不要覆盖已存在的id字段
-	if _, ok := d["host_json"]; !ok {
-		d["host_json"] = ""
+	// 确保 HostJSON 和 LastStateJSON 字段存在（这些字段有json:"-"标签）
+	// 如果存在小写版本，复制到大写版本
+	if hostJSON, ok := d["host_json"]; ok {
+		d["HostJSON"] = hostJSON
 	}
-	if _, ok := d["last_state_json"]; !ok {
-		d["last_state_json"] = ""
+	if lastStateJSON, ok := d["last_state_json"]; ok {
+		d["LastStateJSON"] = lastStateJSON
+	}
+
+	// 确保必要的字段存在
+	if _, ok := d["HostJSON"]; !ok {
+		d["HostJSON"] = ""
+	}
+	if _, ok := d["LastStateJSON"]; !ok {
+		d["LastStateJSON"] = ""
 	}
 }
 

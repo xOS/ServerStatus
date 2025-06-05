@@ -105,6 +105,48 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByMonitorID(monitorID uint64, sta
 	return histories, err
 }
 
+// GetAllMonitorHistoriesInRange gets all monitor histories within a time range
+func (o *MonitorHistoryOps) GetAllMonitorHistoriesInRange(startTime, endTime time.Time) ([]*model.MonitorHistory, error) {
+	prefix := "monitor_history:"
+
+	var histories []*model.MonitorHistory
+	err := o.db.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = true
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Seek([]byte(prefix)); it.Valid(); it.Next() {
+			item := it.Item()
+			key := item.Key()
+
+			// 检查key是否以prefix开头
+			if !bytes.HasPrefix(key, []byte(prefix)) {
+				break
+			}
+
+			err := item.Value(func(val []byte) error {
+				var history model.MonitorHistory
+				if err := json.Unmarshal(val, &history); err != nil {
+					return err
+				}
+
+				// 检查时间范围
+				if history.CreatedAt.After(startTime) && history.CreatedAt.Before(endTime) {
+					histories = append(histories, &history)
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	return histories, err
+}
+
 // CleanupOldMonitorHistories removes monitor histories older than maxAge
 func (o *MonitorHistoryOps) CleanupOldMonitorHistories(maxAge time.Duration) (int, error) {
 	// Get all monitor IDs
