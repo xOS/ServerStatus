@@ -898,7 +898,7 @@ func (m *Migration) migrateAlertRules() error {
 		}
 
 		// Save to BadgerDB
-		key := fmt.Sprintf("alertRule:%v", id)
+		key := fmt.Sprintf("alert_rule:%v", id)
 		if err := m.badgerDB.Set(key, jsonData); err != nil {
 			log.Printf("报警规则ID %d: 保存到BadgerDB失败: %v. Key: '%s'", id, err, key)
 			errorCount++
@@ -1093,32 +1093,86 @@ func (m *Migration) migrateNATs() error {
 
 // migrateDDNSProfiles migrates DDNS profiles from SQLite to BadgerDB
 func (m *Migration) migrateDDNSProfiles() error {
-	rows, err := m.sqliteDB.Query("SELECT * FROM ddns")
+	log.Println("开始迁移DDNS配置数据...")
+	rows, err := m.sqliteDB.Query("SELECT * FROM ddns WHERE deleted_at IS NULL")
 	if err != nil {
-		return err
+		return fmt.Errorf("查询DDNS配置数据失败: %w", err)
 	}
 	defer rows.Close()
 
-	columns, err := rows.Columns()
-	if err != nil {
-		return err
-	}
-
 	count := 0
+	errorCount := 0
+
 	for rows.Next() {
-		var profile model.DDNSProfile
-		scanValues := getScanValues(columns, &profile)
-		if err := rows.Scan(scanValues...); err != nil {
-			return err
+		data, err := scanToMap(rows)
+		if err != nil {
+			log.Printf("扫描DDNS配置行数据失败: %v，跳过", err)
+			errorCount++
+			continue
 		}
 
-		if err := m.badgerDB.SaveModel("ddns_profile", profile.ID, &profile); err != nil {
-			return err
+		// Extract ID for key
+		idVal, ok := data["id"]
+		if !ok {
+			log.Printf("DDNS配置数据缺少ID字段，跳过: %v", data)
+			errorCount++
+			continue
 		}
+
+		// 确保ID是有效的
+		var id uint64
+		switch v := idVal.(type) {
+		case int64:
+			id = uint64(v)
+		case float64:
+			id = uint64(v)
+		case string:
+			parsed, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				log.Printf("解析DDNS配置ID '%s' 失败: %v，跳过. Data: %v", v, err, data)
+				errorCount++
+				continue
+			}
+			id = parsed
+		default:
+			log.Printf("DDNS配置ID类型无效: %T，跳过. Data: %v", idVal, data)
+			errorCount++
+			continue
+		}
+
+		if id == 0 {
+			log.Printf("DDNS配置ID为0，跳过. Data: %v", data)
+			errorCount++
+			continue
+		}
+
+		log.Printf("迁移DDNS配置 ID %d: 原始数据: %v", id, data)
+
+		// Convert to JSON
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			log.Printf("DDNS配置ID %d: 序列化数据失败: %v. Data: %v", id, err, data)
+			errorCount++
+			continue
+		}
+
+		// Save to BadgerDB
+		key := fmt.Sprintf("ddns_profile:%v", id)
+		if err := m.badgerDB.Set(key, jsonData); err != nil {
+			log.Printf("DDNS配置ID %d: 保存到BadgerDB失败: %v. Key: '%s'", id, err, key)
+			errorCount++
+			continue
+		}
+
+		log.Printf("DDNS配置ID %d: 成功保存到BadgerDB. Key: '%s'", id, key)
 		count++
 	}
 
-	log.Printf("已迁移 %d 条DDNS配置", count)
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("迭代DDNS配置行时出错: %w", err)
+	}
+
+	log.Printf("DDNS配置迁移完成: 成功 %d 条, 失败 %d 条", count, errorCount)
 	return nil
 }
 
@@ -1367,20 +1421,33 @@ func GenerateNextID(modelType string) (uint64, error) {
 
 // InitializeEmptyBadgerDB 初始化一个空的BadgerDB
 func InitializeEmptyBadgerDB() error {
-	// 初始化管理员用户
+	// 检查是否已有用户数据
+	var users []*model.User
+	err := DB.FindAll("user", &users)
+	if err != nil {
+		log.Printf("检查现有用户失败: %v，继续创建默认管理员", err)
+	} else if len(users) > 0 {
+		log.Printf("BadgerDB已有 %d 个用户，跳过创建默认管理员", len(users))
+		return nil
+	}
+
+	// 只有在没有用户的情况下才创建默认管理员
+	log.Println("BadgerDB为空，创建默认管理员用户...")
+
 	adminUser := &model.User{
-		Login:      "admin",
-		Name:       "Administrator",
-		Email:      "admin@example.com",
-		Token:      "admin",
-		SuperAdmin: true,
+		Login:        "admin",
+		Name:         "Administrator",
+		Email:        "admin@example.com",
+		Token:        "admin",
+		SuperAdmin:   true,
+		TokenExpired: time.Now().AddDate(1, 0, 0), // 1年有效期
 	}
 	adminUser.ID = 1
 	adminUser.CreatedAt = time.Now()
 	adminUser.UpdatedAt = time.Now()
 
 	if err := DB.SaveModel("user", adminUser.ID, adminUser); err != nil {
-		return err
+		return fmt.Errorf("创建默认管理员用户失败: %w", err)
 	}
 
 	log.Println("已创建默认管理员用户（登录名: admin, Token: admin）")

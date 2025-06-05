@@ -30,14 +30,8 @@ func InitBadgerDBFromPath(path string) error {
 		return fmt.Errorf("打开BadgerDB失败: %w", err)
 	}
 
-	// 检查是否存在SQLite数据库，如果存在则提示用户运行迁移脚本
-	if isSQLiteFileExists() {
-		log.Println("⚠️  检测到SQLite数据库文件，但自动迁移功能已禁用")
-		log.Println("请运行以下命令进行数据库迁移：")
-		log.Println("  bash scripts/migrate_database.sh")
-		log.Println("迁移完成后再启动应用程序")
-		return fmt.Errorf("需要手动运行数据库迁移脚本")
-	}
+	// 注意：SQLite迁移检查已移除，因为迁移应该在部署时完成
+	// 如果需要迁移，请手动运行: bash scripts/migrate_database.sh
 
 	// 初始化BadgerDB（不进行自动迁移）
 	log.Println("初始化BadgerDB...")

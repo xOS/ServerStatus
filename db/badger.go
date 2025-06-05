@@ -14,6 +14,7 @@ import (
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/pkg/utils"
 )
 
 // Global variables
@@ -197,6 +198,24 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 		}
 
 		return nil
+	case "alert_rule":
+		// 报警规则需要特殊处理布尔字段
+		var ruleData map[string]interface{}
+		if err := json.Unmarshal(data, &ruleData); err != nil {
+			return err
+		}
+
+		// 转换字段类型，确保布尔字段正确
+		convertDbFieldTypes(&ruleData)
+
+		// 重新序列化为 JSON
+		ruleJSON, err := json.Marshal(ruleData)
+		if err != nil {
+			return err
+		}
+
+		// 反序列化到结果
+		return json.Unmarshal(ruleJSON, result)
 	default:
 		// 其他类型的记录，使用标准处理方式
 		return json.Unmarshal(data, result)
@@ -413,6 +432,69 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		return nil
+	case "alert_rule":
+		// 报警规则需要特殊处理布尔字段和JSON字段
+		var rules []*map[string]interface{}
+		for _, item := range items {
+			var data map[string]interface{}
+			if err := json.Unmarshal(item, &data); err != nil {
+				continue
+			}
+
+			// 转换字段类型，确保布尔字段正确
+			convertDbFieldTypes(&data)
+			rules = append(rules, &data)
+		}
+
+		// 重新序列化为 JSON
+		rulesJSON, err := json.Marshal(rules)
+		if err != nil {
+			return err
+		}
+
+		// 反序列化到结果
+		if err := json.Unmarshal(rulesJSON, result); err != nil {
+			return err
+		}
+
+		// 手动解析 Rules 字段（模拟 GORM 的 AfterFind 钩子）
+		if alertRules, ok := result.(*[]*model.AlertRule); ok {
+			log.Printf("FindAll: 开始解析 %d 条报警规则的 Rules 字段", len(*alertRules))
+			for i, rule := range *alertRules {
+				if rule != nil {
+					log.Printf("FindAll: 处理报警规则 %d: ID=%d, Name=%s, RulesRaw=%s", i+1, rule.ID, rule.Name, rule.RulesRaw)
+					if rule.RulesRaw != "" {
+						// 解析 RulesRaw 到 Rules 字段
+						if err := utils.Json.Unmarshal([]byte(rule.RulesRaw), &rule.Rules); err != nil {
+							log.Printf("解析报警规则 %d 的 RulesRaw 失败: %v, RulesRaw内容: %s", rule.ID, err, rule.RulesRaw)
+							rule.Rules = []model.Rule{} // 设置为空数组
+						} else {
+							log.Printf("成功解析报警规则 %d 的 RulesRaw，解析出 %d 条规则", rule.ID, len(rule.Rules))
+						}
+
+						// 解析 FailTriggerTasksRaw 到 FailTriggerTasks 字段
+						if rule.FailTriggerTasksRaw != "" {
+							if err := utils.Json.Unmarshal([]byte(rule.FailTriggerTasksRaw), &rule.FailTriggerTasks); err != nil {
+								log.Printf("解析报警规则 %d 的 FailTriggerTasksRaw 失败: %v", rule.ID, err)
+								rule.FailTriggerTasks = []uint64{}
+							}
+						}
+
+						// 解析 RecoverTriggerTasksRaw 到 RecoverTriggerTasks 字段
+						if rule.RecoverTriggerTasksRaw != "" {
+							if err := utils.Json.Unmarshal([]byte(rule.RecoverTriggerTasksRaw), &rule.RecoverTriggerTasks); err != nil {
+								log.Printf("解析报警规则 %d 的 RecoverTriggerTasksRaw 失败: %v", rule.ID, err)
+								rule.RecoverTriggerTasks = []uint64{}
+							}
+						}
+					} else {
+						log.Printf("报警规则 %d 的 RulesRaw 为空", rule.ID)
+					}
+				}
+			}
+		}
+
+		return nil
 	default:
 		// 其他类型的记录，使用标准处理方式
 		itemsJSON := "["
@@ -506,6 +588,8 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 		"latency_notify", "LatencyNotify",
 		// User fields
 		"hireable", "Hireable", "super_admin", "SuperAdmin",
+		// AlertRule fields
+		"enable", "Enable", "enabled", "Enabled",
 	}
 	for _, field := range boolFields {
 		if val, ok := d[field]; ok {
@@ -567,6 +651,17 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 	}
 	if _, ok := d["token"]; !ok {
 		d["token"] = ""
+	}
+
+	// 处理报警规则的字段映射（小写到大写）
+	if rulesRaw, ok := d["rules_raw"]; ok {
+		d["RulesRaw"] = rulesRaw
+	}
+	if failTriggerTasksRaw, ok := d["fail_trigger_tasks_raw"]; ok {
+		d["FailTriggerTasksRaw"] = failTriggerTasksRaw
+	}
+	if recoverTriggerTasksRaw, ok := d["recover_trigger_tasks_raw"]; ok {
+		d["RecoverTriggerTasksRaw"] = recoverTriggerTasksRaw
 	}
 }
 

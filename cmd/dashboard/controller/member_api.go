@@ -17,6 +17,7 @@ import (
 	"golang.org/x/net/idna"
 	"gorm.io/gorm"
 
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
@@ -29,6 +30,13 @@ type memberAPI struct {
 }
 
 func (ma *memberAPI) serve() {
+	// 公共搜索 API，不需要登录
+	publicAPI := ma.r.Group("")
+	publicAPI.GET("/search-server", ma.searchServer)
+	publicAPI.GET("/search-tasks", ma.searchTask)
+	publicAPI.GET("/search-ddns", ma.searchDDNS)
+
+	// 需要登录的 API
 	mr := ma.r.Group("")
 	mr.Use(mygin.Authorize(mygin.AuthorizeOption{
 		MemberOnly: true,
@@ -37,10 +45,6 @@ func (ma *memberAPI) serve() {
 		Btn:        "点此登录",
 		Redirect:   "/login",
 	}))
-
-	mr.GET("/search-server", ma.searchServer)
-	mr.GET("/search-tasks", ma.searchTask)
-	mr.GET("/search-ddns", ma.searchDDNS)
 	mr.POST("/server", ma.addOrEditServer)
 	mr.POST("/monitor", ma.addOrEditMonitor)
 	mr.POST("/traffic", ma.addOrEditAlertRule)
@@ -268,18 +272,48 @@ type searchResult struct {
 }
 
 func (ma *memberAPI) searchServer(c *gin.Context) {
-	var servers []model.Server
-	likeWord := "%" + c.Query("word") + "%"
-	singleton.DB.Select("id,name").Where("id = ? OR name LIKE ? OR tag LIKE ? OR note LIKE ?",
-		c.Query("word"), likeWord, likeWord, likeWord).Find(&servers)
-
 	var resp []searchResult
-	for i := 0; i < len(servers); i++ {
-		resp = append(resp, searchResult{
-			Value: servers[i].ID,
-			Name:  servers[i].Name,
-			Text:  servers[i].Name,
-		})
+	word := c.Query("word")
+
+	// 根据数据库类型选择不同的查询方式
+	if singleton.Conf.DatabaseType == "badger" {
+		// 使用BadgerDB和内存中的服务器列表
+		singleton.ServerLock.RLock()
+		defer singleton.ServerLock.RUnlock()
+
+		for _, server := range singleton.ServerList {
+			if server == nil {
+				continue
+			}
+
+			// 搜索逻辑：ID匹配或名称/标签/备注包含关键词
+			if word == "" ||
+				fmt.Sprintf("%d", server.ID) == word ||
+				strings.Contains(strings.ToLower(server.Name), strings.ToLower(word)) ||
+				strings.Contains(strings.ToLower(server.Tag), strings.ToLower(word)) ||
+				strings.Contains(strings.ToLower(server.Note), strings.ToLower(word)) {
+
+				resp = append(resp, searchResult{
+					Value: server.ID,
+					Name:  server.Name,
+					Text:  server.Name,
+				})
+			}
+		}
+	} else {
+		// 使用SQLite
+		var servers []model.Server
+		likeWord := "%" + word + "%"
+		singleton.DB.Select("id,name").Where("id = ? OR name LIKE ? OR tag LIKE ? OR note LIKE ?",
+			word, likeWord, likeWord, likeWord).Find(&servers)
+
+		for i := 0; i < len(servers); i++ {
+			resp = append(resp, searchResult{
+				Value: servers[i].ID,
+				Name:  servers[i].Name,
+				Text:  servers[i].Name,
+			})
+		}
 	}
 
 	c.JSON(http.StatusOK, map[string]interface{}{
@@ -289,18 +323,56 @@ func (ma *memberAPI) searchServer(c *gin.Context) {
 }
 
 func (ma *memberAPI) searchTask(c *gin.Context) {
-	var tasks []model.Cron
-	likeWord := "%" + c.Query("word") + "%"
-	singleton.DB.Select("id,name").Where("id = ? OR name LIKE ?",
-		c.Query("word"), likeWord).Find(&tasks)
-
 	var resp []searchResult
-	for i := 0; i < len(tasks); i++ {
-		resp = append(resp, searchResult{
-			Value: tasks[i].ID,
-			Name:  tasks[i].Name,
-			Text:  tasks[i].Name,
-		})
+	word := c.Query("word")
+
+	// 根据数据库类型选择不同的查询方式
+	if singleton.Conf.DatabaseType == "badger" {
+		// 使用BadgerDB
+		if db.DB != nil {
+			cronOps := db.NewCronOps(db.DB)
+			tasks, err := cronOps.GetAllCrons()
+			if err != nil {
+				log.Printf("searchTask: 查询任务失败: %v", err)
+				c.JSON(http.StatusOK, map[string]interface{}{
+					"success": true,
+					"results": []searchResult{},
+				})
+				return
+			}
+
+			for _, task := range tasks {
+				if task == nil {
+					continue
+				}
+
+				// 搜索逻辑：ID匹配或名称包含关键词
+				if word == "" ||
+					fmt.Sprintf("%d", task.ID) == word ||
+					strings.Contains(strings.ToLower(task.Name), strings.ToLower(word)) {
+
+					resp = append(resp, searchResult{
+						Value: task.ID,
+						Name:  task.Name,
+						Text:  task.Name,
+					})
+				}
+			}
+		}
+	} else {
+		// 使用SQLite
+		var tasks []model.Cron
+		likeWord := "%" + word + "%"
+		singleton.DB.Select("id,name").Where("id = ? OR name LIKE ?",
+			word, likeWord).Find(&tasks)
+
+		for i := 0; i < len(tasks); i++ {
+			resp = append(resp, searchResult{
+				Value: tasks[i].ID,
+				Name:  tasks[i].Name,
+				Text:  tasks[i].Name,
+			})
+		}
 	}
 
 	c.JSON(http.StatusOK, map[string]interface{}{
@@ -310,18 +382,56 @@ func (ma *memberAPI) searchTask(c *gin.Context) {
 }
 
 func (ma *memberAPI) searchDDNS(c *gin.Context) {
-	var ddns []model.DDNSProfile
-	likeWord := "%" + c.Query("word") + "%"
-	singleton.DB.Select("id,name").Where("id = ? OR name LIKE ?",
-		c.Query("word"), likeWord).Find(&ddns)
-
 	var resp []searchResult
-	for i := 0; i < len(ddns); i++ {
-		resp = append(resp, searchResult{
-			Value: ddns[i].ID,
-			Name:  ddns[i].Name,
-			Text:  ddns[i].Name,
-		})
+	word := c.Query("word")
+
+	// 根据数据库类型选择不同的查询方式
+	if singleton.Conf.DatabaseType == "badger" {
+		// 使用BadgerDB
+		if db.DB != nil {
+			ddnsOps := db.NewDDNSOps(db.DB)
+			ddnsProfiles, err := ddnsOps.GetAllDDNSProfiles()
+			if err != nil {
+				log.Printf("searchDDNS: 查询DDNS配置失败: %v", err)
+				c.JSON(http.StatusOK, map[string]interface{}{
+					"success": true,
+					"results": []searchResult{},
+				})
+				return
+			}
+
+			for _, ddns := range ddnsProfiles {
+				if ddns == nil {
+					continue
+				}
+
+				// 搜索逻辑：ID匹配或名称包含关键词
+				if word == "" ||
+					fmt.Sprintf("%d", ddns.ID) == word ||
+					strings.Contains(strings.ToLower(ddns.Name), strings.ToLower(word)) {
+
+					resp = append(resp, searchResult{
+						Value: ddns.ID,
+						Name:  ddns.Name,
+						Text:  ddns.Name,
+					})
+				}
+			}
+		}
+	} else {
+		// 使用SQLite
+		var ddns []model.DDNSProfile
+		likeWord := "%" + word + "%"
+		singleton.DB.Select("id,name").Where("id = ? OR name LIKE ?",
+			word, likeWord).Find(&ddns)
+
+		for i := 0; i < len(ddns); i++ {
+			resp = append(resp, searchResult{
+				Value: ddns[i].ID,
+				Name:  ddns[i].Name,
+				Text:  ddns[i].Name,
+			})
+		}
 	}
 
 	c.JSON(http.StatusOK, map[string]interface{}{
