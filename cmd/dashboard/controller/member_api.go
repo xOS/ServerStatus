@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -914,7 +915,9 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 	var r model.AlertRule
 	err := c.ShouldBindJSON(&arf)
 	if err == nil {
-		err = utils.Json.Unmarshal([]byte(arf.RulesRaw), &r.Rules)
+		// 清理 RulesRaw 中的千位分隔符
+		cleanedRulesRaw := cleanNumbersInJSON(arf.RulesRaw)
+		err = utils.Json.Unmarshal([]byte(cleanedRulesRaw), &r.Rules)
 	}
 	if err == nil {
 		if len(r.Rules) == 0 {
@@ -1186,4 +1189,25 @@ func onServerDelete(id uint64) {
 	singleton.AlertsLock.Unlock()
 
 	singleton.DB.Unscoped().Delete(&model.Transfer{}, "server_id = ?", id)
+}
+
+// cleanNumbersInJSON 清理JSON中带千位分隔符的数字
+func cleanNumbersInJSON(jsonStr string) string {
+	// 匹配引号内包含数字和逗号的字符串，更宽松的匹配
+	// 这个正则表达式匹配引号内的数字，可能包含逗号（不管格式是否标准）
+	re := regexp.MustCompile(`"(\d+(?:,\d+)*(?:\.\d+)?)"`)
+
+	return re.ReplaceAllStringFunc(jsonStr, func(match string) string {
+		// 移除引号
+		numStr := match[1 : len(match)-1]
+		// 移除所有逗号
+		cleanNum := strings.ReplaceAll(numStr, ",", "")
+		// 验证清理后的字符串是否为有效数字
+		if matched, _ := regexp.MatchString(`^\d+(\.\d+)?$`, cleanNum); matched {
+			// 返回清理后的数字（不带引号，因为它应该是数字类型）
+			return cleanNum
+		}
+		// 如果不是有效数字，保持原样
+		return match
+	})
 }

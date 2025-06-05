@@ -341,14 +341,61 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 		}
 	}
 
+	// 处理时间字段，确保它们是正确的时间格式
+	timeFields := []string{
+		"created_at", "updated_at", "deleted_at",
+		"last_active", "last_online", "last_flow_save_time",
+		"last_db_update_time", "last_seen", "last_ping",
+		"CreatedAt", "UpdatedAt", "DeletedAt",
+		"LastActive", "LastOnline", "LastFlowSaveTime",
+		"LastDBUpdateTime", "LastSeen", "LastPing",
+		"token_expired", "TokenExpired",
+	}
+	for _, field := range timeFields {
+		if val, ok := d[field]; ok {
+			switch v := val.(type) {
+			case string:
+				if v == "" || v == "NULL" || v == "0001-01-01T00:00:00Z" {
+					// 对于空时间或无效时间，设置为当前时间或保持零值
+					if field == "created_at" || field == "CreatedAt" {
+						d[field] = time.Now().Format(time.RFC3339)
+					} else if field == "updated_at" || field == "UpdatedAt" {
+						d[field] = time.Now().Format(time.RFC3339)
+					} else {
+						// 其他时间字段保持零值
+						d[field] = "0001-01-01T00:00:00Z"
+					}
+				} else {
+					// 尝试解析时间字符串并重新格式化
+					if parsedTime, err := parseTimeString(v); err == nil {
+						d[field] = parsedTime.Format(time.RFC3339)
+					} else {
+						log.Printf("警告：无法解析时间字段 %s 的值 '%s': %v", field, v, err)
+						// 如果解析失败，根据字段类型设置默认值
+						if field == "created_at" || field == "CreatedAt" {
+							d[field] = time.Now().Format(time.RFC3339)
+						} else if field == "updated_at" || field == "UpdatedAt" {
+							d[field] = time.Now().Format(time.RFC3339)
+						} else {
+							d[field] = "0001-01-01T00:00:00Z"
+						}
+					}
+				}
+			case time.Time:
+				// 如果已经是 time.Time 类型，转换为字符串
+				d[field] = v.Format(time.RFC3339)
+			}
+		}
+	}
+
 	// 处理布尔型字段 (支持多种命名格式)
 	boolFields := []string{
 		// Server fields
 		"is_online", "is_disabled", "hide_for_guest", "show_all", "tasker",
 		"HideForGuest", "EnableDDNS", "enable_ddns",
-		// Monitor fields  
-		"notify", "Notify", "enable_trigger_task", "EnableTriggerTask", 
-		"enable_show_in_service", "EnableShowInService", 
+		// Monitor fields
+		"notify", "Notify", "enable_trigger_task", "EnableTriggerTask",
+		"enable_show_in_service", "EnableShowInService",
 		"latency_notify", "LatencyNotify",
 		// User fields
 		"hireable", "Hireable", "super_admin", "SuperAdmin",

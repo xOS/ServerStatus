@@ -2,6 +2,21 @@
     .ui.container {
         width: 77%;
     }
+    .ui.four.cards>.card {
+        margin: 0.5em!important;
+        width: calc(25% - 1em);!important
+    }
+    
+}
+
+@media only screen and (max-width: 1389px) {
+    .cards {
+        justify-content: center;
+    }
+    .ui.four.cards>.card {
+        width: 300px!important;
+        margin: 0.5em !important;
+    }
 }
 
 @media only screen and (min-width: 768px) {
@@ -12,11 +27,28 @@
     .rollanimation {
         animation: scroll 10s cubic-bezier(.2, 0, .8, 1) infinite;
     }
+    /*.ui.four.cards>.card {*/
+    /*    width: auto! important;*/
+    /*}*/
 
     @keyframes scroll {
         0% { transform: translateX(0%); }
         30% { transform: translateX(0%); }
         100% { transform: translateX(-100%); }
+    }
+}
+
+
+@media only screen and (max-width: 767px) {
+    .cards {
+        justify-content: center;
+    }
+    .ui.four.cards>.card {
+        width: auto! important;
+        margin-bottom: 1em !important;
+    }
+    .ui.stackable.cards .card:first-child {
+        margin-top: 1em!important;
     }
 }
 
@@ -144,6 +176,10 @@
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
+.ui.cards {
+    margin: -0.5em -.5em!important;
+}
+
 .ui.card>.content>.header+.description,
 .ui.cards>.card>.content>.header+.description {
     margin-top: 1em !important;
@@ -172,15 +208,6 @@
     0% { transform: translateX(0%); }
     30% { transform: translateX(0%); }
     100% { transform: translateX(-100%); }
-}
-
-@media only screen and (max-width: 1389px) {
-    .cards {
-        justify-content: center;
-    }
-    .ui.four.cards>.card {
-        width: 250px;
-    }
 }
 
 td {
@@ -410,6 +437,7 @@ a {
 
 /**信息卡片透明**/
 .ui.four.cards>.card {
+    /*margin: 0.5em!important;*/
     position: relative;
     border-radius: 10px;
     display: inline-block;

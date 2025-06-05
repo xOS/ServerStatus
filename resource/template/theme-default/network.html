@@ -62,7 +62,7 @@
 
     const monitorInfo =  JSON.parse('{{.MonitorInfos}}');
     const initData = JSON.parse('{{.Servers}}').servers;
-    let MaxTCPPingValue = {{.Conf.MaxTCPPingValue}};
+    let MaxTCPPingValue = {{.MaxTCPPingValue}};
     new Vue({
         el: '#app',
         delimiters: ['@#', '#@'],

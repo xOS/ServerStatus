@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -21,10 +23,21 @@ type Migration struct {
 
 // NewMigration creates a new Migration instance
 func NewMigration(badgerDB *BadgerDB, sqlitePath string) (*Migration, error) {
+	// 检查SQLite数据库文件是否存在
+	if _, err := os.Stat(sqlitePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("SQLite数据库文件不存在: %s", sqlitePath)
+	}
+
 	// 打开SQLite数据库
 	sqliteDB, err := sql.Open("sqlite3", sqlitePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open SQLite database: %w", err)
+	}
+
+	// 测试SQLite连接
+	if err := sqliteDB.Ping(); err != nil {
+		sqliteDB.Close()
+		return nil, fmt.Errorf("failed to connect to SQLite database: %w", err)
 	}
 
 	return &Migration{
@@ -66,6 +79,11 @@ func (m *Migration) MigrateAll() error {
 		log.Printf("MigrateAll: 准备迁移表 %s...", table.name)
 		err := table.migrator()
 		if err != nil {
+			// 检查是否是表不存在的错误
+			if strings.Contains(err.Error(), "no such table") {
+				log.Printf("MigrateAll: 表 %s 不存在，跳过迁移", table.name)
+				continue
+			}
 			log.Printf("MigrateAll: 迁移表 %s 失败: %v", table.name, err)
 			return fmt.Errorf("failed to migrate %s: %w", table.name, err)
 		}
@@ -76,7 +94,7 @@ func (m *Migration) MigrateAll() error {
 	return nil
 }
 
-// scanToMap scans a row into a map
+// scanToMap scans a row into a map with proper type conversion
 func scanToMap(rows *sql.Rows) (map[string]interface{}, error) {
 	columns, err := rows.Columns()
 	if err != nil {
@@ -96,15 +114,101 @@ func scanToMap(rows *sql.Rows) (map[string]interface{}, error) {
 	m := make(map[string]interface{})
 	for i, column := range columns {
 		val := values[i]
-		b, ok := val.([]byte)
-		if ok {
-			m[column] = string(b)
-		} else {
+
+		// Handle different data types properly
+		switch v := val.(type) {
+		case []byte:
+			str := string(v)
+			// Try to parse as time for known time columns
+			if isTimeColumn(column) {
+				if parsedTime, err := parseTimeString(str); err == nil {
+					m[column] = parsedTime
+				} else {
+					log.Printf("警告：无法解析时间字段 %s 的值 '%s': %v", column, str, err)
+					m[column] = time.Time{} // Use zero time as fallback
+				}
+			} else {
+				m[column] = str
+			}
+		case string:
+			// Try to parse as time for known time columns
+			if isTimeColumn(column) {
+				if parsedTime, err := parseTimeString(v); err == nil {
+					m[column] = parsedTime
+				} else {
+					log.Printf("警告：无法解析时间字段 %s 的值 '%s': %v", column, v, err)
+					m[column] = time.Time{} // Use zero time as fallback
+				}
+			} else {
+				m[column] = v
+			}
+		case nil:
+			m[column] = nil
+		default:
 			m[column] = val
 		}
 	}
 
 	return m, nil
+}
+
+// isTimeColumn checks if a column name represents a time field
+func isTimeColumn(columnName string) bool {
+	timeColumns := []string{
+		"created_at", "updated_at", "deleted_at",
+		"last_active", "last_online", "last_flow_save_time",
+		"last_db_update_time", "last_seen", "last_ping",
+		"CreatedAt", "UpdatedAt", "DeletedAt",
+		"LastActive", "LastOnline", "LastFlowSaveTime",
+		"LastDBUpdateTime", "LastSeen", "LastPing",
+	}
+
+	for _, timeCol := range timeColumns {
+		if columnName == timeCol {
+			return true
+		}
+	}
+	return false
+}
+
+// parseTimeString attempts to parse various time string formats
+func parseTimeString(timeStr string) (time.Time, error) {
+	if timeStr == "" || timeStr == "NULL" {
+		return time.Time{}, nil
+	}
+
+	// Common time formats used by SQLite and GORM
+	formats := []string{
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05.999999999Z07:00",
+		"2006-01-02T15:04:05.999999999Z",
+		"2006-01-02T15:04:05Z",
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05+00:00",
+		"2006-01-02 15:04:05 UTC",
+	}
+
+	for _, format := range formats {
+		if t, err := time.Parse(format, timeStr); err == nil {
+			return t, nil
+		}
+	}
+
+	// Try parsing as Unix timestamp (seconds)
+	if timestamp, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+		return time.Unix(timestamp, 0), nil
+	}
+
+	// Try parsing as Unix timestamp (milliseconds)
+	if timestamp, err := strconv.ParseInt(timeStr, 10, 64); err == nil && timestamp > 1000000000000 {
+		return time.Unix(timestamp/1000, (timestamp%1000)*1000000), nil
+	}
+
+	return time.Time{}, fmt.Errorf("无法解析时间字符串: %s", timeStr)
 }
 
 // migrateServers migrates servers from SQLite to BadgerDB
@@ -187,6 +291,135 @@ func (m *Migration) migrateServers() error {
 
 		log.Printf("迁移服务器 ID %d: 原始数据: %v", id, data)
 
+		// 预处理时间字段，确保它们是正确的格式，映射到正确的Go字段名
+		timeFieldMapping := map[string]string{
+			"created_at":  "CreatedAt",
+			"updated_at":  "UpdatedAt",
+			"last_active": "LastActive",
+			"last_online": "LastOnline",
+		}
+
+		for sqlField, goField := range timeFieldMapping {
+			if val, ok := data[sqlField]; ok {
+				var timeStr string
+				switch v := val.(type) {
+				case time.Time:
+					// 如果是 time.Time，转换为 RFC3339 字符串
+					timeStr = v.Format(time.RFC3339)
+				case string:
+					// 如果是字符串，尝试解析并重新格式化
+					if parsedTime, err := parseTimeString(v); err == nil {
+						timeStr = parsedTime.Format(time.RFC3339)
+					} else {
+						log.Printf("服务器ID %d: 无法解析时间字段 %s 的值 '%s': %v", id, sqlField, v, err)
+						// 对于无法解析的时间，根据字段类型设置默认值
+						if sqlField == "created_at" || sqlField == "updated_at" {
+							timeStr = time.Now().Format(time.RFC3339)
+						} else {
+							timeStr = "0001-01-01T00:00:00Z"
+						}
+					}
+				case nil:
+					// 对于 nil 值，根据字段类型设置默认值
+					if sqlField == "created_at" || sqlField == "updated_at" {
+						timeStr = time.Now().Format(time.RFC3339)
+					} else {
+						timeStr = "0001-01-01T00:00:00Z"
+					}
+				default:
+					log.Printf("服务器ID %d: 时间字段 %s 的类型无效: %T，值: %v", id, sqlField, v, v)
+					if sqlField == "created_at" || sqlField == "updated_at" {
+						timeStr = time.Now().Format(time.RFC3339)
+					} else {
+						timeStr = "0001-01-01T00:00:00Z"
+					}
+				}
+
+				// 删除原始字段名，添加Go格式的字段名
+				delete(data, sqlField)
+				data[goField] = timeStr
+			} else {
+				// 如果字段不存在，添加默认值
+				if sqlField == "created_at" || sqlField == "updated_at" {
+					data[goField] = time.Now().Format(time.RFC3339)
+				} else {
+					data[goField] = "0001-01-01T00:00:00Z"
+				}
+			}
+		}
+
+		// 处理其他字段名映射，使用正确的JSON标签或字段名
+		fieldMapping := map[string]string{
+			"id":              "ID",            // 没有JSON标签，使用字段名
+			"name":            "Name",          // 没有JSON标签，使用字段名
+			"tag":             "Tag",           // 没有JSON标签，使用字段名
+			"display_index":   "DisplayIndex",  // 没有JSON标签，使用字段名
+			"hide_for_guest":  "HideForGuest",  // 没有JSON标签，使用字段名
+			"enable_ddns":     "EnableDDNS",    // 没有JSON标签，使用字段名
+			"host_json":       "HostJSON",      // 有JSON标签 json:"-"，但我们保留字段名用于内部处理
+			"last_state_json": "LastStateJSON", // 有JSON标签 json:"-"，但我们保留字段名用于内部处理
+		}
+
+		for sqlField, goField := range fieldMapping {
+			if val, ok := data[sqlField]; ok {
+				delete(data, sqlField)
+				data[goField] = val
+			}
+		}
+
+		// 特殊处理数值字段，确保类型正确，使用JSON标签名
+		if val, ok := data["cumulative_net_in_transfer"]; ok {
+			switch v := val.(type) {
+			case int64:
+				data["cumulative_net_in_transfer"] = uint64(v)
+			case float64:
+				data["cumulative_net_in_transfer"] = uint64(v)
+			case string:
+				if parsed, err := strconv.ParseUint(v, 10, 64); err == nil {
+					data["cumulative_net_in_transfer"] = parsed
+				} else {
+					data["cumulative_net_in_transfer"] = uint64(0)
+				}
+			default:
+				data["cumulative_net_in_transfer"] = uint64(0)
+			}
+		}
+
+		if val, ok := data["cumulative_net_out_transfer"]; ok {
+			switch v := val.(type) {
+			case int64:
+				data["cumulative_net_out_transfer"] = uint64(v)
+			case float64:
+				data["cumulative_net_out_transfer"] = uint64(v)
+			case string:
+				if parsed, err := strconv.ParseUint(v, 10, 64); err == nil {
+					data["cumulative_net_out_transfer"] = parsed
+				} else {
+					data["cumulative_net_out_transfer"] = uint64(0)
+				}
+			default:
+				data["cumulative_net_out_transfer"] = uint64(0)
+			}
+		}
+
+		// 特殊处理布尔字段，使用JSON标签名
+		if val, ok := data["is_online"]; ok {
+			switch v := val.(type) {
+			case bool:
+				data["is_online"] = v
+			case int64:
+				data["is_online"] = v != 0
+			case float64:
+				data["is_online"] = v != 0
+			case string:
+				data["is_online"] = v == "1" || v == "true" || v == "t"
+			default:
+				data["is_online"] = false
+			}
+		}
+
+		log.Printf("迁移服务器 ID %d: 预处理后的数据: %v", id, data)
+
 		// 尝试构建 Server 模型对象
 		var server model.Server
 		serverJSON, err := json.Marshal(data)
@@ -255,84 +488,174 @@ func (m *Migration) migrateServers() error {
 
 // migrateUsers migrates users from SQLite to BadgerDB
 func (m *Migration) migrateUsers() error {
+	log.Println("开始迁移用户数据...")
 	rows, err := m.sqliteDB.Query("SELECT * FROM users WHERE deleted_at IS NULL")
 	if err != nil {
-		return err
+		return fmt.Errorf("查询用户数据失败: %w", err)
 	}
 	defer rows.Close()
 
 	count := 0
+	errorCount := 0
 
 	for rows.Next() {
 		data, err := scanToMap(rows)
 		if err != nil {
-			return err
+			log.Printf("扫描用户行数据失败: %v，跳过", err)
+			errorCount++
+			continue
 		}
 
 		// Extract ID for key
-		id, ok := data["id"]
+		idVal, ok := data["id"]
 		if !ok {
+			log.Printf("用户数据缺少ID字段，跳过: %v", data)
+			errorCount++
 			continue
 		}
+
+		// 确保ID是有效的
+		var id uint64
+		switch v := idVal.(type) {
+		case int64:
+			id = uint64(v)
+		case float64:
+			id = uint64(v)
+		case string:
+			parsed, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				log.Printf("解析用户ID '%s' 失败: %v，跳过. Data: %v", v, err, data)
+				errorCount++
+				continue
+			}
+			id = parsed
+		default:
+			log.Printf("用户ID类型无效: %T，跳过. Data: %v", idVal, data)
+			errorCount++
+			continue
+		}
+
+		if id == 0 {
+			log.Printf("用户ID为0，跳过. Data: %v", data)
+			errorCount++
+			continue
+		}
+
+		log.Printf("迁移用户 ID %d: 原始数据: %v", id, data)
 
 		// Convert to JSON
 		jsonData, err := json.Marshal(data)
 		if err != nil {
-			return err
+			log.Printf("用户ID %d: 序列化数据失败: %v. Data: %v", id, err, data)
+			errorCount++
+			continue
 		}
 
 		// Save to BadgerDB
 		key := fmt.Sprintf("user:%v", id)
+		log.Printf("用户ID %d: 准备保存到BadgerDB. Key: '%s', Value: %s", id, key, string(jsonData))
 		if err := m.badgerDB.Set(key, jsonData); err != nil {
-			return err
+			log.Printf("用户ID %d: 保存到BadgerDB失败: %v. Key: '%s'", id, err, key)
+			errorCount++
+			continue
 		}
 
+		log.Printf("用户ID %d: 成功保存到BadgerDB. Key: '%s'", id, key)
 		count++
 	}
 
-	log.Printf("已迁移 %d 条用户记录", count)
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("迭代用户行时出错: %w", err)
+	}
+
+	log.Printf("用户迁移完成: 成功 %d 条, 失败 %d 条", count, errorCount)
+	return nil
 }
 
 // migrateMonitors migrates monitors from SQLite to BadgerDB
 func (m *Migration) migrateMonitors() error {
+	log.Println("开始迁移监控器数据...")
 	rows, err := m.sqliteDB.Query("SELECT * FROM monitors WHERE deleted_at IS NULL")
 	if err != nil {
-		return err
+		return fmt.Errorf("查询监控器数据失败: %w", err)
 	}
 	defer rows.Close()
 
 	count := 0
+	errorCount := 0
 
 	for rows.Next() {
 		data, err := scanToMap(rows)
 		if err != nil {
-			return err
+			log.Printf("扫描监控器行数据失败: %v，跳过", err)
+			errorCount++
+			continue
 		}
 
 		// Extract ID for key
-		id, ok := data["id"]
+		idVal, ok := data["id"]
 		if !ok {
+			log.Printf("监控器数据缺少ID字段，跳过: %v", data)
+			errorCount++
 			continue
 		}
+
+		// 确保ID是有效的
+		var id uint64
+		switch v := idVal.(type) {
+		case int64:
+			id = uint64(v)
+		case float64:
+			id = uint64(v)
+		case string:
+			parsed, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				log.Printf("解析监控器ID '%s' 失败: %v，跳过. Data: %v", v, err, data)
+				errorCount++
+				continue
+			}
+			id = parsed
+		default:
+			log.Printf("监控器ID类型无效: %T，跳过. Data: %v", idVal, data)
+			errorCount++
+			continue
+		}
+
+		if id == 0 {
+			log.Printf("监控器ID为0，跳过. Data: %v", data)
+			errorCount++
+			continue
+		}
+
+		log.Printf("迁移监控器 ID %d: 原始数据: %v", id, data)
 
 		// Convert to JSON
 		jsonData, err := json.Marshal(data)
 		if err != nil {
-			return err
+			log.Printf("监控器ID %d: 序列化数据失败: %v. Data: %v", id, err, data)
+			errorCount++
+			continue
 		}
 
 		// Save to BadgerDB
 		key := fmt.Sprintf("monitor:%v", id)
+		log.Printf("监控器ID %d: 准备保存到BadgerDB. Key: '%s', Value: %s", id, key, string(jsonData))
 		if err := m.badgerDB.Set(key, jsonData); err != nil {
-			return err
+			log.Printf("监控器ID %d: 保存到BadgerDB失败: %v. Key: '%s'", id, err, key)
+			errorCount++
+			continue
 		}
 
+		log.Printf("监控器ID %d: 成功保存到BadgerDB. Key: '%s'", id, key)
 		count++
 	}
 
-	log.Printf("已迁移 %d 条监控记录", count)
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("迭代监控器行时出错: %w", err)
+	}
+
+	log.Printf("监控器迁移完成: 成功 %d 条, 失败 %d 条", count, errorCount)
+	return nil
 }
 
 // migrateMonitorHistories migrates monitor histories from SQLite to BadgerDB
@@ -390,125 +713,251 @@ func (m *Migration) migrateMonitorHistories() error {
 
 // migrateNotifications migrates notifications from SQLite to BadgerDB
 func (m *Migration) migrateNotifications() error {
+	log.Println("开始迁移通知数据...")
 	rows, err := m.sqliteDB.Query("SELECT * FROM notifications WHERE deleted_at IS NULL")
 	if err != nil {
-		return err
+		return fmt.Errorf("查询通知数据失败: %w", err)
 	}
 	defer rows.Close()
 
 	count := 0
+	errorCount := 0
 
 	for rows.Next() {
 		data, err := scanToMap(rows)
 		if err != nil {
-			return err
+			log.Printf("扫描通知行数据失败: %v，跳过", err)
+			errorCount++
+			continue
 		}
 
 		// Extract ID for key
-		id, ok := data["id"]
+		idVal, ok := data["id"]
 		if !ok {
+			log.Printf("通知数据缺少ID字段，跳过: %v", data)
+			errorCount++
 			continue
 		}
+
+		// 确保ID是有效的
+		var id uint64
+		switch v := idVal.(type) {
+		case int64:
+			id = uint64(v)
+		case float64:
+			id = uint64(v)
+		case string:
+			parsed, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				log.Printf("解析通知ID '%s' 失败: %v，跳过. Data: %v", v, err, data)
+				errorCount++
+				continue
+			}
+			id = parsed
+		default:
+			log.Printf("通知ID类型无效: %T，跳过. Data: %v", idVal, data)
+			errorCount++
+			continue
+		}
+
+		if id == 0 {
+			log.Printf("通知ID为0，跳过. Data: %v", data)
+			errorCount++
+			continue
+		}
+
+		log.Printf("迁移通知 ID %d: 原始数据: %v", id, data)
 
 		// Convert to JSON
 		jsonData, err := json.Marshal(data)
 		if err != nil {
-			return err
+			log.Printf("通知ID %d: 序列化数据失败: %v. Data: %v", id, err, data)
+			errorCount++
+			continue
 		}
 
 		// Save to BadgerDB
 		key := fmt.Sprintf("notification:%v", id)
 		if err := m.badgerDB.Set(key, jsonData); err != nil {
-			return err
+			log.Printf("通知ID %d: 保存到BadgerDB失败: %v. Key: '%s'", id, err, key)
+			errorCount++
+			continue
 		}
 
+		log.Printf("通知ID %d: 成功保存到BadgerDB. Key: '%s'", id, key)
 		count++
 	}
 
-	log.Printf("已迁移 %d 条通知记录", count)
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("迭代通知行时出错: %w", err)
+	}
+
+	log.Printf("通知迁移完成: 成功 %d 条, 失败 %d 条", count, errorCount)
+	return nil
 }
 
 // migrateAlertRules migrates alert rules from SQLite to BadgerDB
 func (m *Migration) migrateAlertRules() error {
+	log.Println("开始迁移报警规则数据...")
 	rows, err := m.sqliteDB.Query("SELECT * FROM alert_rules WHERE deleted_at IS NULL")
 	if err != nil {
-		return err
+		return fmt.Errorf("查询报警规则数据失败: %w", err)
 	}
 	defer rows.Close()
 
 	count := 0
+	errorCount := 0
 
 	for rows.Next() {
 		data, err := scanToMap(rows)
 		if err != nil {
-			return err
+			log.Printf("扫描报警规则行数据失败: %v，跳过", err)
+			errorCount++
+			continue
 		}
 
 		// Extract ID for key
-		id, ok := data["id"]
+		idVal, ok := data["id"]
 		if !ok {
+			log.Printf("报警规则数据缺少ID字段，跳过: %v", data)
+			errorCount++
+			continue
+		}
+
+		// 确保ID是有效的
+		var id uint64
+		switch v := idVal.(type) {
+		case int64:
+			id = uint64(v)
+		case float64:
+			id = uint64(v)
+		case string:
+			parsed, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				log.Printf("解析报警规则ID '%s' 失败: %v，跳过. Data: %v", v, err, data)
+				errorCount++
+				continue
+			}
+			id = parsed
+		default:
+			log.Printf("报警规则ID类型无效: %T，跳过. Data: %v", idVal, data)
+			errorCount++
+			continue
+		}
+
+		if id == 0 {
+			log.Printf("报警规则ID为0，跳过. Data: %v", data)
+			errorCount++
 			continue
 		}
 
 		// Convert to JSON
 		jsonData, err := json.Marshal(data)
 		if err != nil {
-			return err
+			log.Printf("报警规则ID %d: 序列化数据失败: %v. Data: %v", id, err, data)
+			errorCount++
+			continue
 		}
 
 		// Save to BadgerDB
 		key := fmt.Sprintf("alertRule:%v", id)
 		if err := m.badgerDB.Set(key, jsonData); err != nil {
-			return err
+			log.Printf("报警规则ID %d: 保存到BadgerDB失败: %v. Key: '%s'", id, err, key)
+			errorCount++
+			continue
 		}
 
 		count++
 	}
 
-	log.Printf("已迁移 %d 条报警规则", count)
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("迭代报警规则行时出错: %w", err)
+	}
+
+	log.Printf("报警规则迁移完成: 成功 %d 条, 失败 %d 条", count, errorCount)
+	return nil
 }
 
 // migrateCrons migrates crons from SQLite to BadgerDB
 func (m *Migration) migrateCrons() error {
+	log.Println("开始迁移定时任务数据...")
 	rows, err := m.sqliteDB.Query("SELECT * FROM crons WHERE deleted_at IS NULL")
 	if err != nil {
-		return err
+		return fmt.Errorf("查询定时任务数据失败: %w", err)
 	}
 	defer rows.Close()
 
 	count := 0
+	errorCount := 0
 
 	for rows.Next() {
 		data, err := scanToMap(rows)
 		if err != nil {
-			return err
+			log.Printf("扫描定时任务行数据失败: %v，跳过", err)
+			errorCount++
+			continue
 		}
 
 		// Extract ID for key
-		id, ok := data["id"]
+		idVal, ok := data["id"]
 		if !ok {
+			log.Printf("定时任务数据缺少ID字段，跳过: %v", data)
+			errorCount++
+			continue
+		}
+
+		// 确保ID是有效的
+		var id uint64
+		switch v := idVal.(type) {
+		case int64:
+			id = uint64(v)
+		case float64:
+			id = uint64(v)
+		case string:
+			parsed, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				log.Printf("解析定时任务ID '%s' 失败: %v，跳过. Data: %v", v, err, data)
+				errorCount++
+				continue
+			}
+			id = parsed
+		default:
+			log.Printf("定时任务ID类型无效: %T，跳过. Data: %v", idVal, data)
+			errorCount++
+			continue
+		}
+
+		if id == 0 {
+			log.Printf("定时任务ID为0，跳过. Data: %v", data)
+			errorCount++
 			continue
 		}
 
 		// Convert to JSON
 		jsonData, err := json.Marshal(data)
 		if err != nil {
-			return err
+			log.Printf("定时任务ID %d: 序列化数据失败: %v. Data: %v", id, err, data)
+			errorCount++
+			continue
 		}
 
 		// Save to BadgerDB
 		key := fmt.Sprintf("cron:%v", id)
 		if err := m.badgerDB.Set(key, jsonData); err != nil {
-			return err
+			log.Printf("定时任务ID %d: 保存到BadgerDB失败: %v. Key: '%s'", id, err, key)
+			errorCount++
+			continue
 		}
 
 		count++
 	}
 
-	log.Printf("已迁移 %d 条计划任务", count)
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("迭代定时任务行时出错: %w", err)
+	}
+
+	log.Printf("定时任务迁移完成: 成功 %d 条, 失败 %d 条", count, errorCount)
+	return nil
 }
 
 // migrateTransfers migrates transfers from SQLite to BadgerDB

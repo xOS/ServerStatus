@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/xos/serverstatus/db"
@@ -65,32 +66,86 @@ func InitBadgerDBFromPath(path string) error {
 
 // isSQLiteFileExists 检查SQLite数据库文件是否存在
 func isSQLiteFileExists() bool {
-	sqlitePath := "data/sqlite.db"
-	if Conf != nil && Conf.DatabaseLocation != "" {
-		sqlitePath = Conf.DatabaseLocation
-	}
+	// 获取SQLite数据库路径
+	sqlitePath := getSQLitePath()
 
 	_, err := os.Stat(sqlitePath)
 	return err == nil
 }
 
+// getSQLitePath 获取SQLite数据库文件路径
+func getSQLitePath() string {
+	// 默认路径
+	defaultPath := "data/sqlite.db"
+
+	if Conf == nil {
+		return defaultPath
+	}
+
+	// 如果当前数据库类型不是badger，直接使用配置的路径
+	if Conf.DatabaseType != "badger" && Conf.DatabaseLocation != "" {
+		return Conf.DatabaseLocation
+	}
+
+	// 如果当前是badger类型，需要推断SQLite的路径
+	// 尝试几种可能的路径
+	possiblePaths := []string{
+		defaultPath,      // 默认路径
+		"data/sqlite.db", // 标准路径
+		"/opt/server-status/dashboard/data/sqlite.db", // 生产环境路径
+	}
+
+	// 如果配置了DatabaseLocation，也尝试将其作为SQLite路径
+	// （可能用户之前配置的是SQLite路径，后来改为badger）
+	if Conf.DatabaseLocation != "" {
+		// 如果配置的路径看起来像SQLite文件，也加入候选
+		if strings.HasSuffix(Conf.DatabaseLocation, ".db") {
+			possiblePaths = append([]string{Conf.DatabaseLocation}, possiblePaths...)
+		} else {
+			// 如果是目录，尝试在该目录下查找sqlite.db
+			sqliteInConfigDir := filepath.Join(Conf.DatabaseLocation, "sqlite.db")
+			possiblePaths = append([]string{sqliteInConfigDir}, possiblePaths...)
+		}
+	}
+
+	// 检查哪个路径存在
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			log.Printf("找到SQLite数据库文件: %s", path)
+			return path
+		}
+	}
+
+	log.Printf("未找到SQLite数据库文件，使用默认路径: %s", defaultPath)
+	return defaultPath
+}
+
 // renameSQLiteFileToBackup 将SQLite数据库文件重命名为备份
 func renameSQLiteFileToBackup() error {
-	sqlitePath := "data/sqlite.db"
-	if Conf != nil && Conf.DatabaseLocation != "" {
-		sqlitePath = Conf.DatabaseLocation
+	// 获取SQLite数据库路径
+	sqlitePath := getSQLitePath()
+
+	// 检查文件是否存在
+	if _, err := os.Stat(sqlitePath); os.IsNotExist(err) {
+		log.Printf("SQLite数据库文件不存在，跳过备份: %s", sqlitePath)
+		return nil
 	}
 
 	backupPath := sqlitePath + ".bak." + time.Now().Format("20060102150405")
+	log.Printf("将SQLite数据库文件重命名为备份: %s -> %s", sqlitePath, backupPath)
 	return os.Rename(sqlitePath, backupPath)
 }
 
 // migrateFromSQLiteToBadgerDB 从SQLite迁移数据到BadgerDB
 func migrateFromSQLiteToBadgerDB(badgerPath string) error {
 	sqlitePath := "data/sqlite.db"
-	if Conf != nil && Conf.DatabaseLocation != "" {
+	// 注意：当DatabaseType为badger时，DatabaseLocation指向BadgerDB目录
+	// 我们总是使用默认的SQLite路径进行迁移
+	if Conf != nil && Conf.DatabaseType != "badger" && Conf.DatabaseLocation != "" {
 		sqlitePath = Conf.DatabaseLocation
 	}
+
+	log.Printf("从SQLite路径迁移: %s 到 BadgerDB路径: %s", sqlitePath, badgerPath)
 
 	// 创建迁移实例
 	migration, err := db.NewMigration(db.DB, sqlitePath)
