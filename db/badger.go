@@ -123,7 +123,84 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 		return err
 	}
 
-	return json.Unmarshal(data, result)
+	// 针对不同的数据类型进行特殊处理
+	switch modelType {
+	case "user":
+		// 用户记录需要特殊处理Token字段（有json:"-"标签）
+		var userData map[string]interface{}
+		if err := json.Unmarshal(data, &userData); err != nil {
+			return err
+		}
+
+		// 转换字段类型，确保布尔字段正确
+		convertDbFieldTypes(&userData)
+
+		// 重新序列化为 JSON
+		userJSON, err := json.Marshal(userData)
+		if err != nil {
+			return err
+		}
+
+		// 反序列化到结果
+		if err := json.Unmarshal(userJSON, result); err != nil {
+			return err
+		}
+
+		// 手动设置Token字段（因为它有json:"-"标签）
+		if user, ok := result.(*model.User); ok {
+			if token, exists := userData["Token"]; exists {
+				if tokenStr, isStr := token.(string); isStr {
+					user.Token = tokenStr
+				}
+			}
+		}
+
+		return nil
+	case "server":
+		// 服务器记录需要特殊处理Secret、HostJSON和LastStateJSON字段（有json:"-"标签）
+		var serverData map[string]interface{}
+		if err := json.Unmarshal(data, &serverData); err != nil {
+			return err
+		}
+
+		// 转换字段类型，确保字段正确
+		convertDbFieldTypes(&serverData)
+
+		// 重新序列化为 JSON
+		serverJSON, err := json.Marshal(serverData)
+		if err != nil {
+			return err
+		}
+
+		// 反序列化到结果
+		if err := json.Unmarshal(serverJSON, result); err != nil {
+			return err
+		}
+
+		// 手动设置有json:"-"标签的字段
+		if server, ok := result.(*model.Server); ok {
+			if hostJSON, exists := serverData["HostJSON"]; exists {
+				if hostJSONStr, isStr := hostJSON.(string); isStr && hostJSONStr != "" {
+					server.HostJSON = hostJSONStr
+				}
+			}
+			if lastStateJSON, exists := serverData["LastStateJSON"]; exists {
+				if lastStateJSONStr, isStr := lastStateJSON.(string); isStr && lastStateJSONStr != "" {
+					server.LastStateJSON = lastStateJSONStr
+				}
+			}
+			if secret, exists := serverData["Secret"]; exists {
+				if secretStr, isStr := secret.(string); isStr {
+					server.Secret = secretStr
+				}
+			}
+		}
+
+		return nil
+	default:
+		// 其他类型的记录，使用标准处理方式
+		return json.Unmarshal(data, result)
+	}
 }
 
 // DeleteModel deletes a model from the database
@@ -297,7 +374,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 
 		return json.Unmarshal(monitorsJSON, result)
 	case "user":
-		// 用户记录需要特殊处理布尔字段
+		// 用户记录需要特殊处理布尔字段和Token字段
 		var users []*map[string]interface{}
 		for _, item := range items {
 			var data map[string]interface{}
@@ -316,7 +393,26 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			return err
 		}
 
-		return json.Unmarshal(usersJSON, result)
+		// 反序列化到结果，然后手动设置Token字段
+		if err := json.Unmarshal(usersJSON, result); err != nil {
+			return err
+		}
+
+		// 手动设置Token字段（因为它有json:"-"标签）
+		if userSlice, ok := result.(*[]*model.User); ok {
+			for i, user := range *userSlice {
+				if user != nil && i < len(users) {
+					userData := users[i]
+					if token, exists := (*userData)["Token"]; exists {
+						if tokenStr, isStr := token.(string); isStr {
+							user.Token = tokenStr
+						}
+					}
+				}
+			}
+		}
+
+		return nil
 	default:
 		// 其他类型的记录，使用标准处理方式
 		itemsJSON := "["
@@ -463,6 +559,14 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 	}
 	if _, ok := d["secret"]; !ok {
 		d["secret"] = ""
+	}
+
+	// 确保 Token 字段存在（用户认证Token，有json:"-"标签）
+	if _, ok := d["Token"]; !ok {
+		d["Token"] = ""
+	}
+	if _, ok := d["token"]; !ok {
+		d["token"] = ""
 	}
 }
 

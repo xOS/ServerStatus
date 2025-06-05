@@ -284,15 +284,50 @@ func (oa *oauth2controller) callback(c *gin.Context) {
 	if singleton.Conf.DatabaseType == "badger" {
 		// 使用BadgerDB保存用户信息
 		if singleton.Conf.Debug {
-			log.Printf("使用BadgerDB保存OAuth2用户信息: %s", user.Login)
+			log.Printf("使用BadgerDB保存OAuth2用户信息: %s (原始ID: %d)", user.Login, user.ID)
 		}
 
 		// 检查BadgerDB是否已初始化
 		if db.DB != nil {
-			// 使用UserOps保存用户信息
 			userOps := db.NewUserOps(db.DB)
+
+			// 首先尝试根据用户名查找现有用户
+			existingUser, err := userOps.GetUserByUsername(user.Login)
+			if err == nil && existingUser != nil {
+				// 用户已存在，更新其信息但保持原有ID
+				log.Printf("OAuth2: 用户 %s 已存在 (ID: %d)，更新用户信息", user.Login, existingUser.ID)
+				user.ID = existingUser.ID
+				user.CreatedAt = existingUser.CreatedAt // 保持原创建时间
+			} else {
+				// 用户不存在，需要分配新的ID
+				// 在BadgerDB中，我们需要确保ID不与现有用户冲突
+				var users []*model.User
+				err = db.DB.FindAll("user", &users)
+				if err != nil {
+					log.Printf("OAuth2: 查询现有用户失败: %v", err)
+					// 使用一个较大的起始ID来避免与管理员用户冲突
+					user.ID = 1000 + user.ID%1000000
+				} else {
+					// 找到最大的用户ID并加1
+					maxID := uint64(0)
+					for _, u := range users {
+						if u != nil && u.ID > maxID {
+							maxID = u.ID
+						}
+					}
+					user.ID = maxID + 1
+				}
+				user.CreatedAt = time.Now()
+				log.Printf("OAuth2: 为新用户 %s 分配ID: %d", user.Login, user.ID)
+			}
+
+			// 设置更新时间
+			user.UpdatedAt = time.Now()
+
+			// 保存用户信息
 			err = userOps.SaveUser(&user)
 			if err != nil {
+				log.Printf("OAuth2: 保存用户信息失败: %v", err)
 				mygin.ShowErrorPage(c, mygin.ErrInfo{
 					Code:  http.StatusBadRequest,
 					Title: "保存用户信息失败",
@@ -300,6 +335,7 @@ func (oa *oauth2controller) callback(c *gin.Context) {
 				}, true)
 				return
 			}
+			log.Printf("OAuth2: 用户 %s (ID: %d) 保存成功", user.Login, user.ID)
 		} else {
 			// BadgerDB未初始化，但在调试模式下仍然允许继续
 			if singleton.Conf.Debug {

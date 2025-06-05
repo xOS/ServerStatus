@@ -66,13 +66,17 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 						}
 					} else {
 						// 在内存中查找匹配token的用户
+						log.Printf("认证: 在 %d 个用户中查找token: %s", len(users), token[:8]+"...")
 						for _, user := range users {
 							if user != nil && user.Token == token {
 								// 检查token是否过期
 								if user.TokenExpired.After(time.Now()) {
 									u = *user
 									isLogin = true
+									log.Printf("认证: 找到有效用户 %s (ID: %d)", user.Login, user.ID)
 									break
+								} else {
+									log.Printf("认证: 用户 %s 的token已过期", user.Login)
 								}
 							}
 						}
@@ -86,6 +90,10 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 								SuperAdmin: true,
 							}
 							isLogin = true
+						}
+
+						if !isLogin {
+							log.Printf("认证: 未找到匹配的有效用户，token: %s", token[:8]+"...")
 						}
 					}
 				} else {

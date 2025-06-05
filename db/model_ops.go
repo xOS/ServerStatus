@@ -209,12 +209,28 @@ func NewUserOps(db *BadgerDB) *UserOps {
 func (o *UserOps) SaveUser(user *model.User) error {
 	key := fmt.Sprintf("user:%d", user.ID)
 
+	// 先序列化用户数据
 	value, err := json.Marshal(user)
 	if err != nil {
 		return fmt.Errorf("failed to marshal user: %w", err)
 	}
 
-	return o.db.Set(key, value)
+	// 反序列化为 map 以便手动添加 Token 字段
+	var userData map[string]interface{}
+	if err := json.Unmarshal(value, &userData); err != nil {
+		return fmt.Errorf("failed to unmarshal user data: %w", err)
+	}
+
+	// 手动添加 Token 字段（因为它有 json:"-" 标签）
+	userData["Token"] = user.Token
+
+	// 重新序列化包含 Token 的数据
+	finalValue, err := json.Marshal(userData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal user with token: %w", err)
+	}
+
+	return o.db.Set(key, finalValue)
 }
 
 // GetUserByID gets a user by ID
