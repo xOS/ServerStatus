@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -69,6 +70,10 @@ func AlertSentinelStart() {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("AlertSentinelStart goroutine panic恢复: %v", r)
+			// 打印调用栈以便调试
+			if Conf.Debug {
+				log.Printf("调用栈: %s", debug.Stack())
+			}
 			// 重新启动
 			go AlertSentinelStart()
 		}
@@ -218,6 +223,14 @@ func checkStatus() {
 	defer ServerLock.RUnlock()
 
 	for _, alert := range Alerts {
+		// 安全检查：确保alert不为nil
+		if alert == nil {
+			if Conf.Debug {
+				log.Printf("警告：发现nil报警规则，跳过检查")
+			}
+			continue
+		}
+
 		// 跳过未启用
 		if !alert.Enabled() {
 			continue
@@ -245,6 +258,14 @@ func checkStatus() {
 		}
 
 		for _, server := range ServerList {
+			// 安全检查：确保server不为nil
+			if server == nil {
+				if Conf.Debug {
+					log.Printf("警告：发现nil服务器，跳过检查")
+				}
+				continue
+			}
+
 			// 确保alertsStore对应的键存在
 			if alertsStore[alert.ID] == nil {
 				alertsStore[alert.ID] = make(map[uint64][][]interface{})

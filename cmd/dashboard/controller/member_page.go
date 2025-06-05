@@ -1,10 +1,12 @@
 package controller
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/service/singleton"
@@ -60,7 +62,32 @@ func (mp *memberPage) monitor(c *gin.Context) {
 
 func (mp *memberPage) cron(c *gin.Context) {
 	var crons []model.Cron
-	singleton.DB.Find(&crons)
+
+	// 根据数据库类型选择不同的查询方式
+	if singleton.Conf.DatabaseType == "badger" {
+		// 使用BadgerDB
+		if db.DB != nil {
+			cronOps := db.NewCronOps(db.DB)
+			cronPtrs, err := cronOps.GetAllCrons()
+			if err != nil {
+				log.Printf("从BadgerDB查询定时任务失败: %v", err)
+				crons = []model.Cron{}
+			} else {
+				// 转换指针数组为值数组
+				for _, cronPtr := range cronPtrs {
+					if cronPtr != nil {
+						crons = append(crons, *cronPtr)
+					}
+				}
+			}
+		} else {
+			crons = []model.Cron{}
+		}
+	} else {
+		// 使用SQLite
+		singleton.DB.Find(&crons)
+	}
+
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/cron", mygin.CommonEnvironment(c, gin.H{
 		"Title": singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ScheduledTasks"}),
 		"Crons": crons,
@@ -69,9 +96,50 @@ func (mp *memberPage) cron(c *gin.Context) {
 
 func (mp *memberPage) notification(c *gin.Context) {
 	var nf []model.Notification
-	singleton.DB.Find(&nf)
 	var ar []model.AlertRule
-	singleton.DB.Find(&ar)
+
+	// 根据数据库类型选择不同的查询方式
+	if singleton.Conf.DatabaseType == "badger" {
+		// 使用BadgerDB查询通知
+		if db.DB != nil {
+			notificationOps := db.NewNotificationOps(db.DB)
+			nfPtrs, err := notificationOps.GetAllNotifications()
+			if err != nil {
+				log.Printf("从BadgerDB查询通知失败: %v", err)
+				nf = []model.Notification{}
+			} else {
+				// 转换指针数组为值数组
+				for _, nfPtr := range nfPtrs {
+					if nfPtr != nil {
+						nf = append(nf, *nfPtr)
+					}
+				}
+			}
+
+			// 查询报警规则
+			alertOps := db.NewAlertRuleOps(db.DB)
+			arPtrs, err := alertOps.GetAllAlertRules()
+			if err != nil {
+				log.Printf("从BadgerDB查询报警规则失败: %v", err)
+				ar = []model.AlertRule{}
+			} else {
+				// 转换指针数组为值数组
+				for _, arPtr := range arPtrs {
+					if arPtr != nil {
+						ar = append(ar, *arPtr)
+					}
+				}
+			}
+		} else {
+			nf = []model.Notification{}
+			ar = []model.AlertRule{}
+		}
+	} else {
+		// 使用SQLite
+		singleton.DB.Find(&nf)
+		singleton.DB.Find(&ar)
+	}
+
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/notification", mygin.CommonEnvironment(c, gin.H{
 		"Title":         singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Notification"}),
 		"Notifications": nf,
@@ -81,7 +149,32 @@ func (mp *memberPage) notification(c *gin.Context) {
 
 func (mp *memberPage) ddns(c *gin.Context) {
 	var data []model.DDNSProfile
-	singleton.DB.Find(&data)
+
+	// 根据数据库类型选择不同的查询方式
+	if singleton.Conf.DatabaseType == "badger" {
+		// 使用BadgerDB
+		if db.DB != nil {
+			ddnsOps := db.NewDDNSOps(db.DB)
+			dataPtrs, err := ddnsOps.GetAllDDNSProfiles()
+			if err != nil {
+				log.Printf("从BadgerDB查询DDNS配置失败: %v", err)
+				data = []model.DDNSProfile{}
+			} else {
+				// 转换指针数组为值数组
+				for _, dataPtr := range dataPtrs {
+					if dataPtr != nil {
+						data = append(data, *dataPtr)
+					}
+				}
+			}
+		} else {
+			data = []model.DDNSProfile{}
+		}
+	} else {
+		// 使用SQLite
+		singleton.DB.Find(&data)
+	}
+
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/ddns", mygin.CommonEnvironment(c, gin.H{
 		"Title":        singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "DDNS"}),
 		"DDNS":         data,
@@ -92,7 +185,32 @@ func (mp *memberPage) ddns(c *gin.Context) {
 
 func (mp *memberPage) nat(c *gin.Context) {
 	var data []model.NAT
-	singleton.DB.Find(&data)
+
+	// 根据数据库类型选择不同的查询方式
+	if singleton.Conf.DatabaseType == "badger" {
+		// 使用BadgerDB
+		if db.DB != nil {
+			natOps := db.NewNATOps(db.DB)
+			dataPtrs, err := natOps.GetAllNATs()
+			if err != nil {
+				log.Printf("从BadgerDB查询NAT配置失败: %v", err)
+				data = []model.NAT{}
+			} else {
+				// 转换指针数组为值数组
+				for _, dataPtr := range dataPtrs {
+					if dataPtr != nil {
+						data = append(data, *dataPtr)
+					}
+				}
+			}
+		} else {
+			data = []model.NAT{}
+		}
+	} else {
+		// 使用SQLite
+		singleton.DB.Find(&data)
+	}
+
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/nat", mygin.CommonEnvironment(c, gin.H{
 		"Title": singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "NAT"}),
 		"NAT":   data,
