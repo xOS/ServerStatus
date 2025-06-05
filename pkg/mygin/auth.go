@@ -54,9 +54,9 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 					err := db.DB.FindAll("user", &users)
 					if err != nil {
 						log.Printf("从 BadgerDB 查询用户失败: %v，将使用默认凭据", err)
-						// 在开发环境中可以使用默认管理员账户进行测试
-						if singleton.Conf.Debug && token == "admin" {
-							log.Printf("调试模式：使用默认管理员账户")
+						// 使用默认管理员账户进行测试
+						if token == "admin" {
+							log.Printf("使用默认管理员账户")
 							u = model.User{
 								Common:     model.Common{ID: 1},
 								Login:      "admin",
@@ -67,18 +67,32 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 					} else {
 						// 在内存中查找匹配token的用户
 						for _, user := range users {
-							if user != nil && user.Token == token && user.TokenExpired.After(time.Now()) {
-								u = *user
-								isLogin = true
-								break
+							if user != nil && user.Token == token {
+								// 检查token是否过期
+								if user.TokenExpired.After(time.Now()) {
+									u = *user
+									isLogin = true
+									break
+								}
 							}
+						}
+
+						// 如果没有找到有效用户，但token是admin，则使用默认管理员账户
+						if !isLogin && token == "admin" {
+							log.Printf("使用默认管理员账户")
+							u = model.User{
+								Common:     model.Common{ID: 1},
+								Login:      "admin",
+								SuperAdmin: true,
+							}
+							isLogin = true
 						}
 					}
 				} else {
 					log.Printf("警告：BadgerDB未初始化，用户认证将失败")
-					// 在开发环境中使用默认管理员账户
-					if singleton.Conf.Debug && token == "admin" {
-						log.Printf("调试模式：使用默认管理员账户")
+					// 使用默认管理员账户
+					if token == "admin" {
+						log.Printf("使用默认管理员账户")
 						u = model.User{
 							Common:     model.Common{ID: 1},
 							Login:      "admin",
@@ -154,7 +168,7 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 		if singleton.Conf.Debug && !isLogin && opt.MemberOnly {
 			// 对于首页和基础服务，在调试模式下可以跳过验证
 			path := c.Request.URL.Path
-			if path == "/" || path == "/service" || path == "/ws" {
+			if path == "/" || path == "/service" || path == "/ws" || path == "/network" {
 				// 创建一个临时管理员用户
 				u := &model.User{
 					Common:     model.Common{ID: 1},

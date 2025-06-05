@@ -284,8 +284,12 @@
                     this.option.title.text = "No Data Available";
                     // 使用requestAnimationFrame避免强制重排
                     requestAnimationFrame(() => {
-                        this.myChart.clear();
-                        this.myChart.setOption(this.option, true);
+                        if (this.myChart && typeof this.myChart.clear === 'function') {
+                            this.myChart.clear();
+                        }
+                        if (this.myChart && typeof this.myChart.setOption === 'function') {
+                            this.myChart.setOption(this.option, true);
+                        }
                     });
                     return;
                 }
@@ -387,22 +391,29 @@
                 
                 // 使用requestAnimationFrame优化渲染
                 requestAnimationFrame(() => {
-                    this.myChart.resize({
-                        width: 'auto',
-                        height: height
-                    });
-                    this.myChart.clear();
-                    this.myChart.setOption(this.option, true);
+                    if (this.myChart && typeof this.myChart.resize === 'function') {
+                        this.myChart.resize({
+                            width: 'auto',
+                            height: height
+                        });
+                    }
+                    if (this.myChart && typeof this.myChart.clear === 'function') {
+                        this.myChart.clear();
+                    }
+                    if (this.myChart && typeof this.myChart.setOption === 'function') {
+                        this.myChart.setOption(this.option, true);
+                    }
                 });
             },
             isWindowsPlatform(str) {
-                return str.includes('Windows')
+                return str && typeof str === 'string' && str.includes('Windows')
             },
             renderChart() {
-                const chartTheme = $('html').attr('nz-theme') == "dark" ? "dark" : "";
-                
+                const htmlTheme = $('html').attr('nz-theme');
+                const chartTheme = htmlTheme === "dark" ? "dark" : "";
+
                 // 避免重复初始化
-                if (this.myChart && !this.myChart.isDisposed()) {
+                if (this.myChart && typeof this.myChart.isDisposed === 'function' && !this.myChart.isDisposed()) {
                     this.myChart.dispose();
                 }
                 
@@ -425,13 +436,13 @@
                 });
             },
             resizeHandle() {
-                if (this.myChart && !this.myChart.isDisposed()) {
+                if (this.myChart && typeof this.myChart.isDisposed === 'function' && !this.myChart.isDisposed()) {
                     // 使用防抖优化resize性能，增加延迟时间
                     clearTimeout(this.resizeTimer);
                     this.resizeTimer = setTimeout(() => {
                         // 使用requestAnimationFrame进一步优化
                         requestAnimationFrame(() => {
-                            if (this.myChart && !this.myChart.isDisposed()) {
+                            if (this.myChart && typeof this.myChart.isDisposed === 'function' && !this.myChart.isDisposed() && typeof this.myChart.resize === 'function') {
                                 this.myChart.resize();
                             }
                         });
@@ -445,7 +456,7 @@
                 clearTimeout(this.resizeTimer);
             }
             // 清理图表实例
-            if (this.myChart && !this.myChart.isDisposed()) {
+            if (this.myChart && typeof this.myChart.isDisposed === 'function' && !this.myChart.isDisposed()) {
                 this.myChart.dispose();
             }
             this.myChart = null;

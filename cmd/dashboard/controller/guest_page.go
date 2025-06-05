@@ -27,6 +27,11 @@ func (gp *guestPage) serve() {
 
 	gr.GET("/login", gp.login)
 
+	// 调试模式下的简单登录
+	if singleton.Conf.Debug {
+		gr.POST("/debug-login", gp.debugLogin)
+	}
+
 	oauth := &oauth2controller{
 		r: gr,
 	}
@@ -64,4 +69,15 @@ func (gp *guestPage) login(c *gin.Context) {
 		"LoginType":        LoginType,
 		"RegistrationLink": RegistrationLink,
 	}))
+}
+
+func (gp *guestPage) debugLogin(c *gin.Context) {
+	if !singleton.Conf.Debug {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Debug mode not enabled"})
+		return
+	}
+
+	// 设置 admin token cookie
+	c.SetCookie(singleton.Conf.Site.CookieName, "admin", 3600*24*30, "/", "", false, false)
+	c.JSON(http.StatusOK, gin.H{"message": "Debug login successful"})
 }
