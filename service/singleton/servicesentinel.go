@@ -261,12 +261,27 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 	if Conf.DatabaseType == "badger" {
 		if db.DB != nil {
 			// 使用BadgerDB加载监控历史记录
-			// BadgerDB暂不支持批量查询监控历史记录，记录日志并跳过
-			log.Printf("BadgerDB模式：监控历史记录功能暂不完全支持，跳过历史数据加载")
-			log.Printf("首次运行时没有历史数据是正常的，应用程序会逐渐收集新的监控数据")
+			log.Printf("BadgerDB模式：正在加载监控历史记录...")
 
-			// 设置空的历史记录列表
-			mhs = []model.MonitorHistory{}
+			// 获取最近30天的监控历史记录
+			endTime := time.Now()
+			startTime := endTime.AddDate(0, 0, -30)
+
+			monitorHistoryOps := db.NewMonitorHistoryOps(db.DB)
+			histories, err := monitorHistoryOps.GetAllMonitorHistoriesInRange(startTime, endTime)
+			if err != nil {
+				log.Printf("从BadgerDB加载监控历史记录失败: %v", err)
+				mhs = []model.MonitorHistory{}
+			} else {
+				// 转换指针数组为值数组
+				mhs = make([]model.MonitorHistory, len(histories))
+				for i, h := range histories {
+					if h != nil {
+						mhs[i] = *h
+					}
+				}
+				log.Printf("从BadgerDB成功加载 %d 条监控历史记录", len(mhs))
+			}
 		} else {
 			log.Println("BadgerDB未初始化，跳过加载监控历史记录")
 			return

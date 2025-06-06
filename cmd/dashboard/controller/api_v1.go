@@ -148,8 +148,12 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 
 	// 根据数据库类型选择不同的查询方式
 	if singleton.Conf.DatabaseType == "badger" {
-		// BadgerDB 模式下直接返回空数组，因为监控历史功能暂不完全支持
-		c.JSON(200, []interface{}{})
+		// BadgerDB 模式下使用 MonitorAPI
+		if singleton.MonitorAPI != nil {
+			c.JSON(200, singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": server.ID}))
+		} else {
+			c.JSON(200, []interface{}{})
+		}
 	} else {
 		// SQLite 模式下使用 MonitorAPI
 		if singleton.MonitorAPI != nil {

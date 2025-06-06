@@ -146,9 +146,17 @@
                     });
                 }
             }).catch(err => {
+                let errorMessage = '网络错误';
+                if (err && err.responseText) {
+                    errorMessage = '网络错误：' + err.responseText;
+                } else if (err && err.message) {
+                    errorMessage = err.message;
+                } else if (typeof err === 'string') {
+                    errorMessage = err;
+                }
                 $.suiAlert({
-                    title: '',
-                    description: err,
+                    title: '强制更新失败',
+                    description: errorMessage,
                     type: 'error',
                     time: '3',
                     position: 'top-center',
@@ -197,9 +205,17 @@
                     });
                 }
             }).catch(err => {
+                let errorMessage = '网络错误';
+                if (err && err.responseText) {
+                    errorMessage = '网络错误：' + err.responseText;
+                } else if (err && err.message) {
+                    errorMessage = err.message;
+                } else if (typeof err === 'string') {
+                    errorMessage = err;
+                }
                 $.suiAlert({
-                    title: '',
-                    description: err,
+                    title: '批量编辑失败',
+                    description: errorMessage,
                     type: 'error',
                     time: '3',
                     position: 'top-center',

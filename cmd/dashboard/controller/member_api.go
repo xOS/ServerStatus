@@ -606,6 +606,17 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 				}
 			} else {
 				isEdit = true
+
+				// 确保在编辑时不会丢失 Secret 字段
+				if s.Secret == "" {
+					singleton.ServerLock.RLock()
+					if existingServer, exists := singleton.ServerList[s.ID]; exists {
+						s.Secret = existingServer.Secret
+						log.Printf("编辑服务器 %d 时保留现有Secret: %s", s.ID, s.Secret)
+					}
+					singleton.ServerLock.RUnlock()
+				}
+
 				// BadgerDB 模式下使用 BadgerDB 操作
 				if singleton.Conf.DatabaseType == "badger" {
 					err = db.DB.SaveModel("server", s.ID, &s)
@@ -980,6 +991,15 @@ func (ma *memberAPI) batchUpdateServerGroup(c *gin.Context) {
 				})
 				return
 			}
+
+			// 保留现有的 Secret 字段，避免被重置
+			singleton.ServerLock.RLock()
+			if existingServer, exists := singleton.ServerList[serverID]; exists && server.Secret == "" {
+				server.Secret = existingServer.Secret
+				log.Printf("批量更新服务器 %d 时保留现有Secret: %s", serverID, server.Secret)
+			}
+			singleton.ServerLock.RUnlock()
+
 			server.Tag = req.Group
 			if err := db.DB.SaveModel("server", serverID, &server); err != nil {
 				c.JSON(http.StatusOK, model.Response{

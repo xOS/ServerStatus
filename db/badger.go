@@ -784,14 +784,9 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 		d["LastStateJSON"] = ""
 	}
 
-	// 确保 Secret 字段存在，如果不存在或为空则保持原值
-	// 不要在这里重置 Secret 字段，让服务器加载逻辑处理
-	if _, ok := d["Secret"]; !ok {
-		d["Secret"] = ""
-	}
-	if _, ok := d["secret"]; !ok {
-		d["secret"] = ""
-	}
+	// 不要在这里设置 Secret 字段的默认值
+	// Secret 字段应该保持原有值，如果不存在则不设置
+	// 让服务器加载逻辑根据实际情况处理空 Secret
 
 	// 确保 Token 字段存在（用户认证Token，有json:"-"标签）
 	if _, ok := d["Token"]; !ok {
