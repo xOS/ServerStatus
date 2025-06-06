@@ -498,6 +498,9 @@ function addOrEditServer(server, conf) {
   }
 
   showFormModal(".server.modal", "#serverForm", "/api/server");
+
+  // 为动态添加的删除图标绑定点击事件
+  bindDeleteIconEvents();
 }
 
 function addOrEditMonitor(monitor) {
@@ -594,6 +597,9 @@ function addOrEditMonitor(monitor) {
     .find("input[name=SkipServersRaw]")
     .val(monitor ? servers : "[]");
   showFormModal(".monitor.modal", "#monitorForm", "/api/monitor");
+
+  // 为动态添加的删除图标绑定点击事件
+  bindDeleteIconEvents();
 }
 function addOrEditCron(cron) {
   const modal = $(".cron.modal");
@@ -638,6 +644,9 @@ function addOrEditCron(cron) {
     modal.find(".ui.push-successful.checkbox").checkbox("set unchecked");
   }
   showFormModal(".cron.modal", "#cronForm", "/api/cron");
+
+  // 为动态添加的删除图标绑定点击事件
+  bindDeleteIconEvents();
 }
 
 function deleteRequest(api) {
@@ -935,6 +944,48 @@ $(document).ready(() => {
   initializeDDNSDropdown();
 });
 
+// 为动态添加的删除图标绑定点击事件
+function bindDeleteIconEvents() {
+  // 为所有动态添加的删除图标绑定点击事件
+  $('.ui.label .delete.icon').off('click').on('click', function(e) {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const $label = $(this).closest('.ui.label');
+    const $dropdown = $label.closest('.dropdown');
+    const value = $label.attr('data-value');
+
+    // 从隐藏input中移除该值
+    const $hiddenInput = $dropdown.find('input[type="hidden"]');
+    if ($hiddenInput.length > 0) {
+      let currentValues = $hiddenInput.val();
+      if (currentValues) {
+        // 处理数组格式的值
+        if (currentValues.startsWith('[') && currentValues.endsWith(']')) {
+          try {
+            let valuesArray = JSON.parse(currentValues);
+            valuesArray = valuesArray.filter(v => String(v) !== String(value));
+            $hiddenInput.val(JSON.stringify(valuesArray));
+          } catch (e) {
+            console.error('解析JSON失败:', e);
+          }
+        } else {
+          // 处理逗号分隔的值
+          let valuesArray = currentValues.split(',').filter(v => v.trim() !== '');
+          valuesArray = valuesArray.filter(v => String(v) !== String(value));
+          $hiddenInput.val(valuesArray.join(','));
+        }
+      }
+    }
+
+    // 移除标签
+    $label.remove();
+
+    // 触发dropdown的change事件
+    $dropdown.dropdown('refresh');
+  });
+}
+
 // 全局函数：重新初始化所有dropdown
 window.reinitializeAllDropdowns = function() {
   console.log('重新初始化所有dropdown...');
@@ -958,13 +1009,36 @@ $(document).on('shown.bs.modal', '.modal', function() {
   window.reinitializeAllDropdowns();
 });
 
-// 监听Semantic UI模态框显示事件
-$(document).on('DOMNodeInserted', function(e) {
-  if ($(e.target).hasClass('ui modal visible active')) {
-    setTimeout(function() {
-      window.reinitializeAllDropdowns();
-    }, 300);
-  }
+// 使用MutationObserver替代已弃用的DOMNodeInserted事件
+const modalObserver = new MutationObserver(function(mutations) {
+  mutations.forEach(function(mutation) {
+    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+      const target = mutation.target;
+      if ($(target).hasClass('ui modal visible active')) {
+        setTimeout(function() {
+          window.reinitializeAllDropdowns();
+        }, 300);
+      }
+    }
+    // 监听新增的模态框节点
+    if (mutation.type === 'childList') {
+      mutation.addedNodes.forEach(function(node) {
+        if (node.nodeType === Node.ELEMENT_NODE && $(node).hasClass('ui modal visible active')) {
+          setTimeout(function() {
+            window.reinitializeAllDropdowns();
+          }, 300);
+        }
+      });
+    }
+  });
+});
+
+// 开始观察document的变化
+modalObserver.observe(document.body, {
+  childList: true,
+  subtree: true,
+  attributes: true,
+  attributeFilter: ['class']
 });
 
 // ===== 流量数据处理相关函数 =====

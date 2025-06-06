@@ -140,12 +140,19 @@ func loadAPI() {
 	ApiLock.Lock()
 	defer ApiLock.Unlock()
 
+	validTokenCount := 0
 	for _, token := range tokenList {
-		if token != nil {
+		if token != nil && token.Token != "" && token.ID > 0 {
 			ApiTokenList[token.Token] = token
 			UserIDToApiTokenList[token.UserID] = append(UserIDToApiTokenList[token.UserID], token.Token)
+			validTokenCount++
+			log.Printf("加载API令牌: %s (Note: %s)", token.Token, token.Note)
+		} else if token != nil {
+			log.Printf("警告: 发现空Token的API令牌记录 (ID: %d, Note: %s)", token.ID, token.Note)
 		}
 	}
+
+	log.Printf("BadgerDB模式: 加载了 %d 个有效API令牌", validTokenCount)
 
 	log.Printf("API令牌加载完成，共加载 %d 个令牌", len(ApiTokenList))
 }

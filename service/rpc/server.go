@@ -183,8 +183,8 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	singleton.ServerList[clientID].TaskCloseLock.Unlock()
 	singleton.ServerLock.RUnlock()
 
-	// 创建一个带超时的上下文，增加超时时间以减少频繁超时错误
-	ctx, cancel := context.WithTimeout(stream.Context(), 20*time.Minute)
+	// 创建一个带超时的上下文，减少超时时间避免goroutine泄漏
+	ctx, cancel := context.WithTimeout(stream.Context(), 5*time.Minute)
 	defer cancel()
 
 	// 监听连接状态，当连接断开时自动清理
@@ -196,44 +196,65 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 			}
 		}()
 
-		select {
-		case <-ctx.Done():
-			// 连接断开时清理资源，增强错误处理
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				// 检查是否为网络连接错误或超时错误
-				if isConnectionError(ctxErr) || ctxErr == context.DeadlineExceeded || ctxErr == context.Canceled {
-					// 静默处理网络连接错误、正常超时和取消，避免日志干扰
-					if singleton.Conf.Debug {
-						log.Printf("RequestTask连接正常断开: 客户端ID %d, 原因: %v", clientID, ctxErr)
-					}
-				} else {
-					log.Printf("RequestTask连接上下文错误: %v", ctxErr)
-				}
-			}
+		// 使用定时器避免无限等待
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
 
-			singleton.ServerLock.RLock()
-			if singleton.ServerList[clientID] != nil {
-				singleton.ServerList[clientID].TaskCloseLock.Lock()
-				if singleton.ServerList[clientID].TaskClose == closeCh {
-					// 只有当前连接才清理
-					singleton.ServerList[clientID].TaskStream = nil
-					singleton.ServerList[clientID].TaskClose = nil
-				}
-				singleton.ServerList[clientID].TaskCloseLock.Unlock()
-			}
-			singleton.ServerLock.RUnlock()
-
-			// 安全地发送关闭信号，使用非阻塞发送
+		for {
 			select {
-			case closeCh <- ctx.Err():
-			case <-done: // 如果主goroutine已经退出，停止发送
+			case <-ctx.Done():
+				// 连接断开时清理资源，增强错误处理
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					// 检查是否为网络连接错误或超时错误
+					if isConnectionError(ctxErr) || ctxErr == context.DeadlineExceeded || ctxErr == context.Canceled {
+						// 静默处理网络连接错误、正常超时和取消，避免日志干扰
+						if singleton.Conf.Debug {
+							log.Printf("RequestTask连接正常断开: 客户端ID %d, 原因: %v", clientID, ctxErr)
+						}
+					} else {
+						log.Printf("RequestTask连接上下文错误: %v", ctxErr)
+					}
+				}
+
+				singleton.ServerLock.RLock()
+				if singleton.ServerList[clientID] != nil {
+					singleton.ServerList[clientID].TaskCloseLock.Lock()
+					if singleton.ServerList[clientID].TaskClose == closeCh {
+						// 只有当前连接才清理
+						singleton.ServerList[clientID].TaskStream = nil
+						singleton.ServerList[clientID].TaskClose = nil
+					}
+					singleton.ServerList[clientID].TaskCloseLock.Unlock()
+				}
+				singleton.ServerLock.RUnlock()
+
+				// 安全地发送关闭信号，使用非阻塞发送
+				select {
+				case closeCh <- ctx.Err():
+				case <-done: // 如果主goroutine已经退出，停止发送
+					return
+				default:
+					// 通道可能已关闭或已满，忽略
+				}
 				return
-			default:
-				// 通道可能已关闭或已满，忽略
+			case <-done:
+				// 主goroutine要求停止监控
+				return
+			case <-ticker.C:
+				// 定期检查连接状态，防止僵尸连接
+				if ctx.Err() != nil {
+					// 上下文已经取消，退出监控
+					return
+				}
+				// 检查服务器是否还存在
+				singleton.ServerLock.RLock()
+				serverExists := singleton.ServerList[clientID] != nil
+				singleton.ServerLock.RUnlock()
+				if !serverExists {
+					// 服务器已被删除，退出监控
+					return
+				}
 			}
-		case <-done:
-			// 主goroutine要求停止监控
-			return
 		}
 	}()
 
@@ -252,32 +273,58 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 		singleton.ServerLock.RUnlock()
 	}()
 
-	// 等待连接关闭或超时
-	select {
-	case err := <-closeCh:
-		// 检查是否为网络连接错误
-		if isConnectionError(err) {
-			log.Printf("客户端 %d 网络连接中断: %v", clientID, err)
-			return nil // 将网络连接错误视为正常断开
-		}
-		return err
-	case <-ctx.Done():
-		// 超时或连接取消，增强错误分类
-		if ctx.Err() == context.DeadlineExceeded {
-			if singleton.Conf.Debug {
-				log.Printf("客户端 %d RequestTask连接超时 (20分钟)", clientID)
+	// 等待连接关闭或超时，使用定时器避免无限等待
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case err := <-closeCh:
+			// 检查是否为网络连接错误
+			if isConnectionError(err) {
+				if singleton.Conf.Debug {
+					log.Printf("客户端 %d 网络连接中断: %v", clientID, err)
+				}
+				return nil // 将网络连接错误视为正常断开
 			}
-			return nil // 将超时视为正常断开，不返回错误
-		}
-		// 检查是否为网络连接错误或取消
-		if isConnectionError(ctx.Err()) || ctx.Err() == context.Canceled {
-			if singleton.Conf.Debug {
-				log.Printf("客户端 %d 连接正常断开: %v", clientID, ctx.Err())
+			return err
+		case <-ctx.Done():
+			// 超时或连接取消，增强错误分类
+			if ctx.Err() == context.DeadlineExceeded {
+				if singleton.Conf.Debug {
+					log.Printf("客户端 %d RequestTask连接超时 (5分钟)", clientID)
+				}
+				return nil // 将超时视为正常断开，不返回错误
 			}
-			return nil // 将网络连接错误和取消视为正常断开
+			// 检查是否为网络连接错误或取消
+			if isConnectionError(ctx.Err()) || ctx.Err() == context.Canceled {
+				if singleton.Conf.Debug {
+					log.Printf("客户端 %d 连接正常断开: %v", clientID, ctx.Err())
+				}
+				return nil // 将网络连接错误和取消视为正常断开
+			}
+			if singleton.Conf.Debug {
+				log.Printf("客户端 %d RequestTask异常断开: %v", clientID, ctx.Err())
+			}
+			return nil // 即使异常也不返回错误，避免程序重启
+		case <-ticker.C:
+			// 定期检查连接状态和服务器存在性
+			if ctx.Err() != nil {
+				// 上下文已经取消，正常退出
+				return nil
+			}
+			// 检查服务器是否还存在
+			singleton.ServerLock.RLock()
+			serverExists := singleton.ServerList[clientID] != nil
+			singleton.ServerLock.RUnlock()
+			if !serverExists {
+				// 服务器已被删除，正常退出
+				if singleton.Conf.Debug {
+					log.Printf("客户端 %d 服务器已删除，RequestTask正常退出", clientID)
+				}
+				return nil
+			}
 		}
-		log.Printf("客户端 %d RequestTask异常断开: %v", clientID, ctx.Err())
-		return nil // 即使异常也不返回错误，避免程序重启
 	}
 }
 

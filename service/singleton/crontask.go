@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/robfig/cron/v3"
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	pb "github.com/xos/serverstatus/proto"
 )
@@ -67,10 +68,11 @@ func loadCronTasks() {
 	log.Println("加载计划任务...")
 	InitCronTask()
 
-	// 如果使用BadgerDB，初始化一个空的Cron列表然后返回，跳过后续处理
+	// 如果使用BadgerDB，从BadgerDB加载定时任务
 	if Conf.DatabaseType == "badger" {
-		log.Println("使用BadgerDB，跳过加载计划任务")
-		// 启动定时器服务，只初始化系统任务
+		log.Println("BadgerDB模式：从BadgerDB加载定时任务")
+		loadCronTasksFromBadgerDB()
+		// 启动定时器服务
 		Cron.Start()
 		return
 	}
@@ -123,6 +125,71 @@ func loadCronTasks() {
 
 	// 启动定时器服务
 	Cron.Start()
+}
+
+// loadCronTasksFromBadgerDB 从BadgerDB加载定时任务
+func loadCronTasksFromBadgerDB() {
+	if db.DB == nil {
+		log.Println("BadgerDB未初始化，跳过加载定时任务")
+		return
+	}
+
+	// 从BadgerDB获取所有定时任务
+	cronOps := db.NewCronOps(db.DB)
+	crons, err := cronOps.GetAllCrons()
+	if err != nil {
+		log.Printf("从BadgerDB加载定时任务失败: %v", err)
+		return
+	}
+
+	log.Printf("从BadgerDB加载了 %d 个定时任务", len(crons))
+
+	var taskErr error
+	var notificationTagList []string
+	notificationMsgMap := make(map[string]*bytes.Buffer)
+
+	for i := 0; i < len(crons); i++ {
+		// 触发任务类型无需注册到cron调度器
+		if crons[i].TaskType == model.CronTypeTriggerTask {
+			Crons[crons[i].ID] = crons[i]
+			log.Printf("加载触发任务: %s (ID: %d)", crons[i].Name, crons[i].ID)
+			continue
+		}
+
+		// 旧版本计划任务可能不存在通知组 为其添加默认通知组
+		if crons[i].NotificationTag == "" {
+			crons[i].NotificationTag = "default"
+			// 更新到BadgerDB
+			if err := cronOps.SaveCron(crons[i]); err != nil {
+				log.Printf("更新定时任务通知组失败: %v", err)
+			}
+		}
+
+		// 注册计划任务到cron调度器
+		crons[i].CronJobID, taskErr = Cron.AddFunc(crons[i].Scheduler, CronTrigger(*crons[i]))
+		if taskErr == nil {
+			Crons[crons[i].ID] = crons[i]
+			log.Printf("成功注册定时任务: %s (ID: %d, 调度: %s, 推送成功通知: %t)",
+				crons[i].Name, crons[i].ID, crons[i].Scheduler, crons[i].PushSuccessful)
+		} else {
+			log.Printf("注册定时任务失败: %s (ID: %d), 错误: %v", crons[i].Name, crons[i].ID, taskErr)
+			// 当前通知组首次出现 将其加入通知组列表并初始化通知组消息缓存
+			if _, ok := notificationMsgMap[crons[i].NotificationTag]; !ok {
+				notificationTagList = append(notificationTagList, crons[i].NotificationTag)
+				notificationMsgMap[crons[i].NotificationTag] = bytes.NewBufferString("")
+				notificationMsgMap[crons[i].NotificationTag].WriteString("调度失败的计划任务：[")
+			}
+			notificationMsgMap[crons[i].NotificationTag].WriteString(fmt.Sprintf("%d,", crons[i].ID))
+		}
+	}
+
+	// 向注册错误的计划任务所在通知组发送通知
+	for _, tag := range notificationTagList {
+		notificationMsgMap[tag].WriteString("] 这些任务将无法正常执行,请进入后点重新修改保存。")
+		SafeSendNotification(tag, notificationMsgMap[tag].String(), nil)
+	}
+
+	log.Printf("BadgerDB模式：成功加载 %d 个定时任务到内存", len(Crons))
 }
 
 func ManualTrigger(c model.Cron) {

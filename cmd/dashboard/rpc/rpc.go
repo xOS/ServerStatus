@@ -2,9 +2,12 @@ package rpc
 
 import (
 	"fmt"
+	"log"
 	"net"
+	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 
 	"github.com/xos/serverstatus/model"
 	pb "github.com/xos/serverstatus/proto"
@@ -13,14 +16,44 @@ import (
 )
 
 func ServeRPC(port uint) {
-	server := grpc.NewServer()
+	// 配置 gRPC 服务器选项，防止 goroutine 泄漏
+	opts := []grpc.ServerOption{
+		// 设置 keepalive 参数，防止僵尸连接
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			MaxConnectionIdle:     5 * time.Minute,  // 连接空闲5分钟后关闭
+			MaxConnectionAge:      10 * time.Minute, // 连接最大存活10分钟
+			MaxConnectionAgeGrace: 30 * time.Second, // 优雅关闭等待30秒
+			Time:                  30 * time.Second, // 每30秒发送keepalive ping
+			Timeout:               5 * time.Second,  // keepalive ping超时5秒
+		}),
+		// 设置 keepalive 强制策略
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             10 * time.Second, // 客户端最小keepalive间隔
+			PermitWithoutStream: true,             // 允许没有活跃流时发送keepalive
+		}),
+		// 设置最大接收消息大小
+		grpc.MaxRecvMsgSize(4 * 1024 * 1024), // 4MB
+		// 设置最大发送消息大小
+		grpc.MaxSendMsgSize(4 * 1024 * 1024), // 4MB
+		// 设置连接超时
+		grpc.ConnectionTimeout(30 * time.Second),
+	}
+
+	server := grpc.NewServer(opts...)
 	rpcService.ServerHandlerSingleton = rpcService.NewServerHandler()
 	pb.RegisterServerServiceServer(server, rpcService.ServerHandlerSingleton)
+
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
+		log.Printf("gRPC服务器监听端口 %d 失败: %v", port, err)
 		panic(err)
 	}
-	server.Serve(listen)
+
+	log.Printf("gRPC服务器启动在端口 %d，配置了连接管理和超时控制", port)
+
+	if err := server.Serve(listen); err != nil {
+		log.Printf("gRPC服务器运行错误: %v", err)
+	}
 }
 
 func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
