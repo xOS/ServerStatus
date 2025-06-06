@@ -79,7 +79,15 @@
                     <td>{{$rule.Enable}}</td>
                     <td>
                         <div class="ui mini icon buttons">
-                            <button class="ui button" onclick="addOrEditAlertRule({{$rule}})">
+                            <button class="ui button edit-alert-rule-btn"
+                                data-id="{{$rule.ID}}"
+                                data-name="{{$rule.Name}}"
+                                data-notification-tag="{{$rule.NotificationTag}}"
+                                data-trigger-mode="{{$rule.TriggerMode}}"
+                                data-rules-raw="{{$rule.RulesRaw}}"
+                                data-fail-trigger-tasks-raw="{{$rule.FailTriggerTasksRaw}}"
+                                data-recover-trigger-tasks-raw="{{$rule.RecoverTriggerTasksRaw}}"
+                                data-enable="{{$rule.Enable}}">
                                 <i class="edit icon"></i>
                             </button>
                             <button class="ui button"
@@ -98,6 +106,22 @@
 {{template "component/rule"}}
 {{template "common/footer" .}}
 <script>
-    $('.checkbox').checkbox()
+    $('.checkbox').checkbox();
+
+    // 为编辑报警规则按钮添加事件监听器
+    $(document).on('click', '.edit-alert-rule-btn', function() {
+        const btn = $(this);
+        const rule = {
+            ID: parseInt(btn.data('id')),
+            Name: btn.data('name'),
+            NotificationTag: btn.data('notification-tag'),
+            TriggerMode: parseInt(btn.data('trigger-mode')),
+            RulesRaw: btn.data('rules-raw'),
+            FailTriggerTasksRaw: btn.data('fail-trigger-tasks-raw'),
+            RecoverTriggerTasksRaw: btn.data('recover-trigger-tasks-raw'),
+            Enable: btn.data('enable') === 'true' || btn.data('enable') === true
+        };
+        addOrEditAlertRule(rule);
+    });
 </script>
 {{end}}

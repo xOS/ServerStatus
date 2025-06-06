@@ -199,18 +199,34 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 	// 在数据库中删除该Token
 	var err error
 	if singleton.Conf.DatabaseType == "badger" {
-		// 在BadgerDB模式下，需要通过ID删除
+		// 在BadgerDB模式下，需要删除所有匹配的Token记录（解决重复记录问题）
 		if tokenObj != nil && db.DB != nil {
 			apiTokenOps := db.NewApiTokenOps(db.DB)
-			err = apiTokenOps.DeleteApiToken(tokenObj.ID)
-			if err != nil {
-				c.JSON(http.StatusOK, model.Response{
-					Code:    http.StatusBadRequest,
-					Message: fmt.Sprintf("删除API令牌失败：%s", err),
-				})
-				return
+
+			// 先获取所有API Token，找到所有匹配的记录
+			allTokens, getAllErr := apiTokenOps.GetAllApiTokens()
+			if getAllErr != nil {
+				log.Printf("获取所有API令牌失败: %v", getAllErr)
+			} else {
+				// 删除所有匹配的Token记录
+				deletedCount := 0
+				for _, t := range allTokens {
+					if t.Token == token {
+						if deleteErr := apiTokenOps.DeleteApiToken(t.ID); deleteErr != nil {
+							log.Printf("删除API令牌记录失败 (ID: %d): %v", t.ID, deleteErr)
+						} else {
+							deletedCount++
+							log.Printf("BadgerDB: 成功删除API令牌记录 %s (ID: %d, Note: %s)", token, t.ID, t.Note)
+						}
+					}
+				}
+				if deletedCount > 1 {
+					log.Printf("BadgerDB: 发现并删除了 %d 个重复的API令牌记录: %s", deletedCount, token)
+				}
+				if deletedCount == 0 {
+					err = fmt.Errorf("未找到要删除的API令牌记录")
+				}
 			}
-			log.Printf("BadgerDB: 成功删除API令牌 %s (Note: %s)", token, tokenObj.Note)
 		}
 	} else if singleton.DB != nil {
 		err = singleton.DB.Unscoped().Delete(&model.ApiToken{}, "token = ?", token).Error
