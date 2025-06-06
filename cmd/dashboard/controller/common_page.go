@@ -93,12 +93,56 @@ func (p *commonPage) issueViewPassword(c *gin.Context) {
 
 func (p *commonPage) service(c *gin.Context) {
 	res, _, _ := p.requestGroup.Do("servicePage", func() (interface{}, error) {
+		// 使用深拷贝确保并发安全
 		singleton.AlertsLock.RLock()
-		defer singleton.AlertsLock.RUnlock()
 		var stats map[uint64]model.ServiceItemResponse
 		var statsStore map[uint64]model.CycleTransferStats
-		copier.Copy(&stats, singleton.ServiceSentinelShared.LoadStats())
-		copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
+
+		// 安全获取ServiceSentinel的统计数据
+		originalStats := singleton.ServiceSentinelShared.LoadStats()
+		if originalStats != nil {
+			stats = make(map[uint64]model.ServiceItemResponse)
+			for k, v := range originalStats {
+				if v != nil {
+					// 深拷贝每个ServiceItemResponse
+					statsCopy := model.ServiceItemResponse{}
+					if err := copier.Copy(&statsCopy, v); err == nil {
+						stats[k] = statsCopy
+					}
+				}
+			}
+		}
+
+		// 深拷贝AlertsCycleTransferStatsStore
+		if singleton.AlertsCycleTransferStatsStore != nil {
+			statsStore = make(map[uint64]model.CycleTransferStats)
+			for cycleID, statData := range singleton.AlertsCycleTransferStatsStore {
+				// 深拷贝每个CycleTransferStats
+				newStats := model.CycleTransferStats{
+					Name: statData.Name,
+					Max:  statData.Max,
+				}
+
+				// 深拷贝Transfer map
+				if statData.Transfer != nil {
+					newStats.Transfer = make(map[uint64]uint64)
+					for serverID, transfer := range statData.Transfer {
+						newStats.Transfer[serverID] = transfer
+					}
+				}
+
+				// 深拷贝ServerName map
+				if statData.ServerName != nil {
+					newStats.ServerName = make(map[uint64]string)
+					for serverID, name := range statData.ServerName {
+						newStats.ServerName[serverID] = name
+					}
+				}
+
+				statsStore[cycleID] = newStats
+			}
+		}
+		singleton.AlertsLock.RUnlock()
 		for k, service := range stats {
 			if !service.Monitor.EnableShowInService {
 				delete(stats, k)
@@ -564,46 +608,79 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 		}
 
 		// 组装 trafficData，逻辑与 home handler 保持一致
-		singleton.AlertsLock.RLock()
-		defer singleton.AlertsLock.RUnlock()
-		var statsStore map[uint64]model.CycleTransferStats
-		copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
-
+		// 使用深拷贝确保并发安全
 		var trafficData []map[string]interface{}
+
+		// 在锁保护下进行深拷贝
+		singleton.AlertsLock.RLock()
+		var statsStore map[uint64]model.CycleTransferStats
+		if singleton.AlertsCycleTransferStatsStore != nil {
+			statsStore = make(map[uint64]model.CycleTransferStats)
+			for cycleID, stats := range singleton.AlertsCycleTransferStatsStore {
+				// 深拷贝每个CycleTransferStats
+				newStats := model.CycleTransferStats{
+					Name: stats.Name,
+					Max:  stats.Max,
+				}
+
+				// 深拷贝Transfer map
+				if stats.Transfer != nil {
+					newStats.Transfer = make(map[uint64]uint64)
+					for serverID, transfer := range stats.Transfer {
+						newStats.Transfer[serverID] = transfer
+					}
+				}
+
+				// 深拷贝ServerName map
+				if stats.ServerName != nil {
+					newStats.ServerName = make(map[uint64]string)
+					for serverID, name := range stats.ServerName {
+						newStats.ServerName[serverID] = name
+					}
+				}
+
+				statsStore[cycleID] = newStats
+			}
+		}
+		singleton.AlertsLock.RUnlock()
+
+		// 现在可以安全地访问深拷贝的数据
 		if statsStore != nil {
 			for cycleID, stats := range statsStore {
-				for serverID, transfer := range stats.Transfer {
-					serverName := ""
-					if stats.ServerName != nil {
-						if name, exists := stats.ServerName[serverID]; exists {
-							serverName = name
+				if stats.Transfer != nil {
+					for serverID, transfer := range stats.Transfer {
+						serverName := ""
+						if stats.ServerName != nil {
+							if name, exists := stats.ServerName[serverID]; exists {
+								serverName = name
+							}
 						}
-					}
 
-					usedPercent := float64(0)
-					if stats.Max > 0 {
-						usedPercent = (float64(transfer) / float64(stats.Max)) * 100
-						if usedPercent > 100 {
-							usedPercent = 100
+						usedPercent := float64(0)
+						if stats.Max > 0 {
+							usedPercent = (float64(transfer) / float64(stats.Max)) * 100
+							if usedPercent > 100 {
+								usedPercent = 100
+							}
+							if usedPercent < 0 {
+								usedPercent = 0
+							}
 						}
-						if usedPercent < 0 {
-							usedPercent = 0
-						}
-					}
 
-					trafficItem := map[string]interface{}{
-						"server_id":       serverID,
-						"server_name":     serverName,
-						"max_bytes":       stats.Max,
-						"used_bytes":      transfer,
-						"max_formatted":   bytefmt.ByteSize(stats.Max),
-						"used_formatted":  bytefmt.ByteSize(transfer),
-						"used_percent":    math.Round(usedPercent*100) / 100,
-						"cycle_name":      stats.Name,
-						"cycle_id":        strconv.FormatUint(cycleID, 10),
-						"is_bytes_source": true, // 标识这是字节数据源
+						trafficItem := map[string]interface{}{
+							"server_id":       serverID,
+							"server_name":     serverName,
+							"max_bytes":       stats.Max,
+							"used_bytes":      transfer,
+							"max_formatted":   bytefmt.ByteSize(stats.Max),
+							"used_formatted":  bytefmt.ByteSize(transfer),
+							"used_percent":    math.Round(usedPercent*100) / 100,
+							"cycle_name":      stats.Name,
+							"cycle_id":        strconv.FormatUint(cycleID, 10),
+							"is_bytes_source": true, // 标识这是字节数据源
+						}
+						trafficData = append(trafficData, trafficItem)
 					}
-					trafficData = append(trafficData, trafficItem)
 				}
 			}
 		}
@@ -727,16 +804,43 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 
 func (cp *commonPage) home(c *gin.Context) {
 	stat, err := cp.getServerStat(c, true)
-	singleton.AlertsLock.RLock()
-	defer singleton.AlertsLock.RUnlock()
+
+	// 使用深拷贝确保并发安全
 	var statsStore map[uint64]model.CycleTransferStats
-	copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
+	singleton.AlertsLock.RLock()
+	if singleton.AlertsCycleTransferStatsStore != nil {
+		statsStore = make(map[uint64]model.CycleTransferStats)
+		for cycleID, stats := range singleton.AlertsCycleTransferStatsStore {
+			// 深拷贝每个CycleTransferStats
+			newStats := model.CycleTransferStats{
+				Name: stats.Name,
+				Max:  stats.Max,
+			}
+
+			// 深拷贝Transfer map
+			if stats.Transfer != nil {
+				newStats.Transfer = make(map[uint64]uint64)
+				for serverID, transfer := range stats.Transfer {
+					newStats.Transfer[serverID] = transfer
+				}
+			}
+
+			// 深拷贝ServerName map
+			if stats.ServerName != nil {
+				newStats.ServerName = make(map[uint64]string)
+				for serverID, name := range stats.ServerName {
+					newStats.ServerName[serverID] = name
+				}
+			}
+
+			statsStore[cycleID] = newStats
+		}
+	}
+	singleton.AlertsLock.RUnlock()
 
 	// 预处理流量数据
 	var trafficData []map[string]interface{}
 	if statsStore != nil {
-		// 使用锁保护，避免并发读写
-		singleton.AlertsLock.RLock()
 		for cycleID, stats := range statsStore {
 			if stats.Transfer != nil {
 				for serverID, transfer := range stats.Transfer {
@@ -774,7 +878,6 @@ func (cp *commonPage) home(c *gin.Context) {
 				}
 			}
 		}
-		singleton.AlertsLock.RUnlock()
 	}
 
 	// 回退机制：为没有警报规则的服务器创建默认流量数据（10TB月配额）
@@ -1277,44 +1380,74 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 		return
 	}
 
-	singleton.AlertsLock.RLock()
-	defer singleton.AlertsLock.RUnlock()
+	// 使用深拷贝确保并发安全
 	var statsStore map[uint64]model.CycleTransferStats
-	copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
+	singleton.AlertsLock.RLock()
+	if singleton.AlertsCycleTransferStatsStore != nil {
+		statsStore = make(map[uint64]model.CycleTransferStats)
+		for cycleID, stats := range singleton.AlertsCycleTransferStatsStore {
+			// 深拷贝每个CycleTransferStats
+			newStats := model.CycleTransferStats{
+				Name: stats.Name,
+				Max:  stats.Max,
+			}
+
+			// 深拷贝Transfer map
+			if stats.Transfer != nil {
+				newStats.Transfer = make(map[uint64]uint64)
+				for serverID, transfer := range stats.Transfer {
+					newStats.Transfer[serverID] = transfer
+				}
+			}
+
+			// 深拷贝ServerName map
+			if stats.ServerName != nil {
+				newStats.ServerName = make(map[uint64]string)
+				for serverID, name := range stats.ServerName {
+					newStats.ServerName[serverID] = name
+				}
+			}
+
+			statsStore[cycleID] = newStats
+		}
+	}
+	singleton.AlertsLock.RUnlock()
 
 	var trafficData []map[string]interface{}
 	if statsStore != nil {
 		for cycleID, stats := range statsStore {
-			for serverID, transfer := range stats.Transfer {
-				serverName := ""
-				if stats.ServerName != nil {
-					if name, exists := stats.ServerName[serverID]; exists {
-						serverName = name
+			if stats.Transfer != nil {
+				for serverID, transfer := range stats.Transfer {
+					serverName := ""
+					if stats.ServerName != nil {
+						if name, exists := stats.ServerName[serverID]; exists {
+							serverName = name
+						}
 					}
-				}
-				usedPercent := float64(0)
-				if stats.Max > 0 {
-					usedPercent = (float64(transfer) / float64(stats.Max)) * 100
-					if usedPercent > 100 {
-						usedPercent = 100
+					usedPercent := float64(0)
+					if stats.Max > 0 {
+						usedPercent = (float64(transfer) / float64(stats.Max)) * 100
+						if usedPercent > 100 {
+							usedPercent = 100
+						}
+						if usedPercent < 0 {
+							usedPercent = 0
+						}
 					}
-					if usedPercent < 0 {
-						usedPercent = 0
+					trafficItem := map[string]interface{}{
+						"server_id":       serverID,
+						"server_name":     serverName,
+						"max_bytes":       stats.Max,
+						"used_bytes":      transfer,
+						"max_formatted":   bytefmt.ByteSize(stats.Max),
+						"used_formatted":  bytefmt.ByteSize(transfer),
+						"used_percent":    math.Round(usedPercent*100) / 100,
+						"cycle_name":      stats.Name,
+						"cycle_id":        strconv.FormatUint(cycleID, 10),
+						"is_bytes_source": true, // 标识这是字节数据源
 					}
+					trafficData = append(trafficData, trafficItem)
 				}
-				trafficItem := map[string]interface{}{
-					"server_id":       serverID,
-					"server_name":     serverName,
-					"max_bytes":       stats.Max,
-					"used_bytes":      transfer,
-					"max_formatted":   bytefmt.ByteSize(stats.Max),
-					"used_formatted":  bytefmt.ByteSize(transfer),
-					"used_percent":    math.Round(usedPercent*100) / 100,
-					"cycle_name":      stats.Name,
-					"cycle_id":        strconv.FormatUint(cycleID, 10),
-					"is_bytes_source": true, // 标识这是字节数据源
-				}
-				trafficData = append(trafficData, trafficItem)
 			}
 		}
 	}
@@ -1428,44 +1561,74 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 		return
 	}
 
-	singleton.AlertsLock.RLock()
-	defer singleton.AlertsLock.RUnlock()
+	// 使用深拷贝确保并发安全
 	var statsStore map[uint64]model.CycleTransferStats
-	copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
+	singleton.AlertsLock.RLock()
+	if singleton.AlertsCycleTransferStatsStore != nil {
+		statsStore = make(map[uint64]model.CycleTransferStats)
+		for cycleID, stats := range singleton.AlertsCycleTransferStatsStore {
+			// 深拷贝每个CycleTransferStats
+			newStats := model.CycleTransferStats{
+				Name: stats.Name,
+				Max:  stats.Max,
+			}
+
+			// 深拷贝Transfer map
+			if stats.Transfer != nil {
+				newStats.Transfer = make(map[uint64]uint64)
+				for sID, transfer := range stats.Transfer {
+					newStats.Transfer[sID] = transfer
+				}
+			}
+
+			// 深拷贝ServerName map
+			if stats.ServerName != nil {
+				newStats.ServerName = make(map[uint64]string)
+				for sID, name := range stats.ServerName {
+					newStats.ServerName[sID] = name
+				}
+			}
+
+			statsStore[cycleID] = newStats
+		}
+	}
+	singleton.AlertsLock.RUnlock()
 
 	var trafficData []map[string]interface{}
 	if statsStore != nil {
 		for cycleID, stats := range statsStore {
-			if transfer, exists := stats.Transfer[serverID]; exists {
-				serverName := ""
-				if stats.ServerName != nil {
-					if name, exists := stats.ServerName[serverID]; exists {
-						serverName = name
+			if stats.Transfer != nil {
+				if transfer, exists := stats.Transfer[serverID]; exists {
+					serverName := ""
+					if stats.ServerName != nil {
+						if name, exists := stats.ServerName[serverID]; exists {
+							serverName = name
+						}
 					}
-				}
-				usedPercent := float64(0)
-				if stats.Max > 0 {
-					usedPercent = (float64(transfer) / float64(stats.Max)) * 100
-					if usedPercent > 100 {
-						usedPercent = 100
+					usedPercent := float64(0)
+					if stats.Max > 0 {
+						usedPercent = (float64(transfer) / float64(stats.Max)) * 100
+						if usedPercent > 100 {
+							usedPercent = 100
+						}
+						if usedPercent < 0 {
+							usedPercent = 0
+						}
 					}
-					if usedPercent < 0 {
-						usedPercent = 0
+					trafficItem := map[string]interface{}{
+						"server_id":       serverID,
+						"server_name":     serverName,
+						"max_bytes":       stats.Max,
+						"used_bytes":      transfer,
+						"max_formatted":   bytefmt.ByteSize(stats.Max),
+						"used_formatted":  bytefmt.ByteSize(transfer),
+						"used_percent":    math.Round(usedPercent*100) / 100,
+						"cycle_name":      stats.Name,
+						"cycle_id":        strconv.FormatUint(cycleID, 10),
+						"is_bytes_source": true, // 标识这是字节数据源
 					}
+					trafficData = append(trafficData, trafficItem)
 				}
-				trafficItem := map[string]interface{}{
-					"server_id":       serverID,
-					"server_name":     serverName,
-					"max_bytes":       stats.Max,
-					"used_bytes":      transfer,
-					"max_formatted":   bytefmt.ByteSize(stats.Max),
-					"used_formatted":  bytefmt.ByteSize(transfer),
-					"used_percent":    math.Round(usedPercent*100) / 100,
-					"cycle_name":      stats.Name,
-					"cycle_id":        strconv.FormatUint(cycleID, 10),
-					"is_bytes_source": true, // 标识这是字节数据源
-				}
-				trafficData = append(trafficData, trafficItem)
 			}
 		}
 	}

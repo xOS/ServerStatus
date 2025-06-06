@@ -215,6 +215,12 @@ func OnDeleteAlert(id uint64) {
 	delete(AlertsCycleTransferStatsStore, id)
 }
 
+// 用于控制空规则警告的输出频率
+var (
+	emptyRulesWarningTime  = make(map[uint64]time.Time)
+	emptyRulesWarningMutex sync.RWMutex
+)
+
 // checkStatus 检查报警规则并发送报警
 func checkStatus() {
 	AlertsLock.RLock()
@@ -225,7 +231,7 @@ func checkStatus() {
 	for _, alert := range Alerts {
 		// 安全检查：确保alert不为nil
 		if alert == nil {
-			if Conf.Debug {
+			if Conf != nil && Conf.Debug {
 				log.Printf("警告：发现nil报警规则，跳过检查")
 			}
 			continue
@@ -238,9 +244,8 @@ func checkStatus() {
 
 		// 确保Rules属性已初始化
 		if alert.Rules == nil || len(alert.Rules) == 0 {
-			if Conf.Debug {
-				log.Printf("警告：报警规则 %s (ID=%d) 的Rules为空，跳过检查", alert.Name, alert.ID)
-			}
+			// 完全禁用空规则的警告输出，避免日志刷屏
+			// 这些报警规则的Rules为空是正常状态，不需要每次都警告
 			continue
 		}
 

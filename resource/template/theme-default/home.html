@@ -21,40 +21,48 @@
         return originalAddEventListener.call(this, type, listener, options);
     };
 })();
-// jQuery 事件优化
-$(document).ready(function() {
-    if ($.fn.on) {
-        const originalOn = $.fn.on;
-        $.fn.on = function(events, selector, data, handler) {
-            if (typeof events === 'string' && 
-                (events.includes('touchstart') || events.includes('touchmove') || 
-                 events.includes('wheel') || events.includes('mousewheel'))) {
-                
-                const passiveHandler = function(e) {
-                    if (typeof handler === 'function') {
-                        return handler.call(this, e);
-                    } else if (typeof data === 'function') {
-                        return data.call(this, e);
+// jQuery 事件优化 - 延迟到jQuery加载完成后执行
+document.addEventListener('DOMContentLoaded', function() {
+    // 等待jQuery加载完成
+    function waitForJQuery() {
+        if (typeof $ !== 'undefined' && $.fn && $.fn.on) {
+            const originalOn = $.fn.on;
+            $.fn.on = function(events, selector, data, handler) {
+                if (typeof events === 'string' &&
+                    (events.includes('touchstart') || events.includes('touchmove') ||
+                     events.includes('wheel') || events.includes('mousewheel'))) {
+
+                    const passiveHandler = function(e) {
+                        if (typeof handler === 'function') {
+                            return handler.call(this, e);
+                        } else if (typeof data === 'function') {
+                            return data.call(this, e);
+                        }
+                    };
+
+                    if (typeof data === 'function') {
+                        handler = data;
+                        data = undefined;
                     }
-                };
-                
-                if (typeof data === 'function') {
-                    handler = data;
-                    data = undefined;
+
+                    this.each(function() {
+                        if (this.addEventListener) {
+                            this.addEventListener(events, passiveHandler, { passive: true });
+                        }
+                    });
+
+                    return this;
                 }
-                
-                this.each(function() {
-                    if (this.addEventListener) {
-                        this.addEventListener(events, passiveHandler, { passive: true });
-                    }
-                });
-                
-                return this;
-            }
-            
-            return originalOn.apply(this, arguments);
-        };
+
+                return originalOn.apply(this, arguments);
+            };
+        } else {
+            // jQuery还没加载完成，100ms后重试
+            setTimeout(waitForJQuery, 100);
+        }
     }
+
+    waitForJQuery();
 });
 </script>
 

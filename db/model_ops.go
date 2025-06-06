@@ -435,12 +435,29 @@ func NewApiTokenOps(db *BadgerDB) *ApiTokenOps {
 func (o *ApiTokenOps) SaveApiToken(token *model.ApiToken) error {
 	key := fmt.Sprintf("api_token:%d", token.ID)
 
+	// 先序列化API令牌数据
 	value, err := json.Marshal(token)
 	if err != nil {
 		return fmt.Errorf("failed to marshal API token: %w", err)
 	}
 
-	return o.db.Set(key, value)
+	// 反序列化为 map 以便手动添加 Token 字段
+	var tokenData map[string]interface{}
+	if err := json.Unmarshal(value, &tokenData); err != nil {
+		return fmt.Errorf("failed to unmarshal API token data: %w", err)
+	}
+
+	// 手动添加 Token 字段（确保它被保存）
+	tokenData["Token"] = token.Token
+	tokenData["token"] = token.Token // 同时保存小写版本作为备用
+
+	// 重新序列化包含 Token 的数据
+	finalValue, err := json.Marshal(tokenData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal API token with token: %w", err)
+	}
+
+	return o.db.Set(key, finalValue)
 }
 
 // GetAllApiTokens gets all API tokens

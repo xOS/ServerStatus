@@ -18,7 +18,6 @@ import (
 	"github.com/hashicorp/go-uuid"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 
-	"github.com/jinzhu/copier"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
@@ -380,9 +379,46 @@ func buildTrafficData() []map[string]interface{} {
 	singleton.AlertsLock.RLock()
 	defer singleton.AlertsLock.RUnlock()
 
-	// 创建一个AlertsCycleTransferStatsStore的副本
+	// 创建一个AlertsCycleTransferStatsStore的深拷贝副本，确保并发安全
 	var statsStore map[uint64]model.CycleTransferStats
-	copier.Copy(&statsStore, singleton.AlertsCycleTransferStatsStore)
+	if singleton.AlertsCycleTransferStatsStore != nil {
+		statsStore = make(map[uint64]model.CycleTransferStats)
+		for cycleID, stats := range singleton.AlertsCycleTransferStatsStore {
+			// 深拷贝每个CycleTransferStats
+			newStats := model.CycleTransferStats{
+				Name: stats.Name,
+				Max:  stats.Max,
+				From: stats.From,
+				To:   stats.To,
+			}
+
+			// 深拷贝Transfer map
+			if stats.Transfer != nil {
+				newStats.Transfer = make(map[uint64]uint64)
+				for serverID, transfer := range stats.Transfer {
+					newStats.Transfer[serverID] = transfer
+				}
+			}
+
+			// 深拷贝ServerName map
+			if stats.ServerName != nil {
+				newStats.ServerName = make(map[uint64]string)
+				for serverID, name := range stats.ServerName {
+					newStats.ServerName[serverID] = name
+				}
+			}
+
+			// 深拷贝NextUpdate map
+			if stats.NextUpdate != nil {
+				newStats.NextUpdate = make(map[uint64]time.Time)
+				for serverID, updateTime := range stats.NextUpdate {
+					newStats.NextUpdate[serverID] = updateTime
+				}
+			}
+
+			statsStore[cycleID] = newStats
+		}
+	}
 
 	// 从statsStore构建流量数据
 	var trafficData []map[string]interface{}
@@ -524,7 +560,7 @@ func buildTrafficData() []map[string]interface{} {
 
 		// 计算当月累积流量（模拟月度重置）
 		var monthlyTransfer uint64
-		
+
 		// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
 		if !server.LastActive.IsZero() && server.LastActive.After(currentMonthStart) {
 			monthlyTransfer = server.CumulativeNetInTransfer + server.CumulativeNetOutTransfer

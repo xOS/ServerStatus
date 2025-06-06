@@ -734,7 +734,8 @@ function logout(id) {
     });
 }
 
-$(document).ready(() => {
+// 延迟初始化dropdown，确保在模态框显示后执行
+function initializeServersDropdown() {
   try {
     $(".ui.servers.search.dropdown").dropdown({
       clearable: true,
@@ -764,32 +765,44 @@ $(document).ready(() => {
         var $label = this;
         var dropdown = $label.closest('.dropdown');
 
-        $label.find('.delete.icon').on('click', function(e) {
-          e.stopPropagation();
-          $label.remove();
+        // 延迟绑定删除事件，确保标签完全渲染
+        setTimeout(function() {
+          $label.find('.delete.icon').off('click').on('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
 
-          // 更新隐藏的input值
-          var hiddenInput = dropdown.find('input[type="hidden"]');
-          var currentValues = [];
-          dropdown.find('a.ui.label.visible').each(function() {
-            var labelValue = $(this).attr('data-value');
-            if (labelValue && $(this)[0] !== $label[0]) {
-              currentValues.push(parseInt(labelValue));
-            }
+            // 更新隐藏的input值
+            var hiddenInput = dropdown.find('input[type="hidden"]');
+            var currentValues = [];
+            dropdown.find('a.ui.label.visible').each(function() {
+              var labelValue = $(this).attr('data-value');
+              if (labelValue && $(this)[0] !== $label[0]) {
+                currentValues.push(parseInt(labelValue));
+              }
+            });
+
+            hiddenInput.val(JSON.stringify(currentValues));
+            console.log('服务器删除后值更新:', currentValues);
+
+            // 移除标签
+            $label.remove();
           });
+        }, 100);
 
-          hiddenInput.val(JSON.stringify(currentValues));
-          console.log('服务器删除后值更新:', currentValues);
-        });
         return $label;
       }
     });
   } catch (error) {
     console.error('初始化服务器搜索dropdown失败:', error);
   }
-});
+}
 
 $(document).ready(() => {
+  initializeServersDropdown();
+});
+
+// 延迟初始化任务dropdown
+function initializeTasksDropdown() {
   try {
     $(".ui.tasks.search.dropdown").dropdown({
       clearable: true,
@@ -819,32 +832,44 @@ $(document).ready(() => {
         var $label = this;
         var dropdown = $label.closest('.dropdown');
 
-        $label.find('.delete.icon').on('click', function(e) {
-          e.stopPropagation();
-          $label.remove();
+        // 延迟绑定删除事件
+        setTimeout(function() {
+          $label.find('.delete.icon').off('click').on('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
 
-          // 更新隐藏的input值
-          var hiddenInput = dropdown.find('input[type="hidden"]');
-          var currentValues = [];
-          dropdown.find('a.ui.label.visible').each(function() {
-            var labelValue = $(this).attr('data-value');
-            if (labelValue && $(this)[0] !== $label[0]) {
-              currentValues.push(parseInt(labelValue));
-            }
+            // 更新隐藏的input值
+            var hiddenInput = dropdown.find('input[type="hidden"]');
+            var currentValues = [];
+            dropdown.find('a.ui.label.visible').each(function() {
+              var labelValue = $(this).attr('data-value');
+              if (labelValue && $(this)[0] !== $label[0]) {
+                currentValues.push(parseInt(labelValue));
+              }
+            });
+
+            hiddenInput.val(JSON.stringify(currentValues));
+            console.log('任务删除后值更新:', currentValues);
+
+            // 移除标签
+            $label.remove();
           });
+        }, 100);
 
-          hiddenInput.val(JSON.stringify(currentValues));
-          console.log('任务删除后值更新:', currentValues);
-        });
         return $label;
       }
     });
   } catch (error) {
     console.error('初始化任务搜索dropdown失败:', error);
   }
-});
+}
 
 $(document).ready(() => {
+  initializeTasksDropdown();
+});
+
+// 延迟初始化DDNS dropdown
+function initializeDDNSDropdown() {
   try {
     $(".ui.ddns.search.dropdown").dropdown({
       clearable: true,
@@ -874,28 +899,71 @@ $(document).ready(() => {
         var $label = this;
         var dropdown = $label.closest('.dropdown');
 
-        $label.find('.delete.icon').on('click', function(e) {
-          e.stopPropagation();
-          $label.remove();
+        // 延迟绑定删除事件
+        setTimeout(function() {
+          $label.find('.delete.icon').off('click').on('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
 
-          // 更新隐藏的input值
-          var hiddenInput = dropdown.find('input[type="hidden"]');
-          var currentValues = [];
-          dropdown.find('a.ui.label.visible').each(function() {
-            var labelValue = $(this).attr('data-value');
-            if (labelValue && $(this)[0] !== $label[0]) {
-              currentValues.push(parseInt(labelValue));
-            }
+            // 更新隐藏的input值
+            var hiddenInput = dropdown.find('input[type="hidden"]');
+            var currentValues = [];
+            dropdown.find('a.ui.label.visible').each(function() {
+              var labelValue = $(this).attr('data-value');
+              if (labelValue && $(this)[0] !== $label[0]) {
+                currentValues.push(parseInt(labelValue));
+              }
+            });
+
+            hiddenInput.val(JSON.stringify(currentValues));
+            console.log('DDNS删除后值更新:', currentValues);
+
+            // 移除标签
+            $label.remove();
           });
+        }, 100);
 
-          hiddenInput.val(JSON.stringify(currentValues));
-          console.log('DDNS删除后值更新:', currentValues);
-        });
         return $label;
       }
     });
   } catch (error) {
     console.error('初始化DDNS搜索dropdown失败:', error);
+  }
+}
+
+$(document).ready(() => {
+  initializeDDNSDropdown();
+});
+
+// 全局函数：重新初始化所有dropdown
+window.reinitializeAllDropdowns = function() {
+  console.log('重新初始化所有dropdown...');
+
+  // 销毁现有的dropdown
+  $(".ui.servers.search.dropdown").dropdown('destroy');
+  $(".ui.tasks.search.dropdown").dropdown('destroy');
+  $(".ui.ddns.search.dropdown").dropdown('destroy');
+
+  // 重新初始化
+  setTimeout(function() {
+    initializeServersDropdown();
+    initializeTasksDropdown();
+    initializeDDNSDropdown();
+    console.log('所有dropdown重新初始化完成');
+  }, 200);
+};
+
+// 监听模态框显示事件，重新初始化dropdown
+$(document).on('shown.bs.modal', '.modal', function() {
+  window.reinitializeAllDropdowns();
+});
+
+// 监听Semantic UI模态框显示事件
+$(document).on('DOMNodeInserted', function(e) {
+  if ($(e.target).hasClass('ui modal visible active')) {
+    setTimeout(function() {
+      window.reinitializeAllDropdowns();
+    }, 300);
   }
 });
 

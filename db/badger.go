@@ -521,6 +521,15 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 
 			// 转换字段类型，确保布尔字段正确
 			convertDbFieldTypes(&data)
+
+			// 确保Token字段存在且不为空
+			if tokenVal, exists := data["Token"]; !exists || tokenVal == "" {
+				// 如果Token字段不存在或为空，尝试从其他字段获取
+				if token, ok := data["token"]; ok && token != "" {
+					data["Token"] = token
+				}
+			}
+
 			tokens = append(tokens, &data)
 		}
 
@@ -541,8 +550,16 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 				if token != nil && i < len(tokens) {
 					tokenData := tokens[i]
 					if tokenVal, exists := (*tokenData)["Token"]; exists {
-						if tokenStr, isStr := tokenVal.(string); isStr {
+						if tokenStr, isStr := tokenVal.(string); isStr && tokenStr != "" {
 							token.Token = tokenStr
+						}
+					}
+					// 如果Token仍然为空，尝试从小写token字段获取
+					if token.Token == "" {
+						if tokenVal, exists := (*tokenData)["token"]; exists {
+							if tokenStr, isStr := tokenVal.(string); isStr && tokenStr != "" {
+								token.Token = tokenStr
+							}
 						}
 					}
 				}

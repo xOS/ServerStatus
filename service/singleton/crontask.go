@@ -6,8 +6,6 @@ import (
 	"log"
 	"sync"
 
-	"github.com/jinzhu/copier"
-
 	"github.com/robfig/cron/v3"
 	"github.com/xos/serverstatus/model"
 	pb "github.com/xos/serverstatus/proto"
@@ -181,9 +179,19 @@ func CronTrigger(cr model.Cron, triggerServer ...uint64) func() {
 						Type: model.TaskTypeCommand,
 					})
 				} else {
-					// 保存当前服务器状态信息
-					curServer := model.Server{}
-					copier.Copy(&curServer, s)
+					// 保存当前服务器状态信息 - 手动复制避免并发安全问题
+					curServer := model.Server{
+						Common: model.Common{
+							ID: s.ID,
+						},
+						Name:       s.Name,
+						Tag:        s.Tag,
+						Note:       s.Note,
+						PublicNote: s.PublicNote,
+						IsOnline:   s.IsOnline,
+						LastActive: s.LastActive,
+						LastOnline: s.LastOnline,
+					}
 					SafeSendNotification(cr.NotificationTag, fmt.Sprintf("[任务失败] %s，服务器 %s 离线，无法执行。", cr.Name, s.Name), nil, &curServer)
 				}
 			}
@@ -206,9 +214,19 @@ func CronTrigger(cr model.Cron, triggerServer ...uint64) func() {
 					Type: model.TaskTypeCommand,
 				})
 			} else {
-				// 保存当前服务器状态信息
-				curServer := model.Server{}
-				copier.Copy(&curServer, s)
+				// 保存当前服务器状态信息 - 手动复制避免并发安全问题
+				curServer := model.Server{
+					Common: model.Common{
+						ID: s.ID,
+					},
+					Name:       s.Name,
+					Tag:        s.Tag,
+					Note:       s.Note,
+					PublicNote: s.PublicNote,
+					IsOnline:   s.IsOnline,
+					LastActive: s.LastActive,
+					LastOnline: s.LastOnline,
+				}
 				SafeSendNotification(cr.NotificationTag, fmt.Sprintf("[任务失败] %s，服务器 %s 离线，无法执行。", cr.Name, s.Name), nil, &curServer)
 			}
 		}

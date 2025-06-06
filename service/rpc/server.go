@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jinzhu/copier"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
@@ -80,7 +79,16 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 			defer singleton.ServerLock.RUnlock()
 			// 保存当前服务器状态信息
 			curServer := model.Server{}
-			copier.Copy(&curServer, singleton.ServerList[clientID])
+			if server := singleton.ServerList[clientID]; server != nil {
+				// 手动复制关键字段，避免并发安全问题
+				curServer.ID = server.ID
+				curServer.Name = server.Name
+				curServer.Tag = server.Tag
+				curServer.Note = server.Note
+				curServer.PublicNote = server.PublicNote
+				curServer.IsOnline = server.IsOnline
+				curServer.LastActive = server.LastActive
+			}
 
 			// 计算执行时间
 			startTime := time.Now().Add(time.Second * -1 * time.Duration(r.GetDelay()))
@@ -96,7 +104,8 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 					startTime.Format("2006-01-02 15:04:05"),
 					endTime.Format("2006-01-02 15:04:05"),
 					r.GetData())
-				singleton.SendNotification(cr.NotificationTag, message, nil, &curServer)
+				log.Printf("发送任务成功通知: %s (NotificationTag: %s)", cr.Name, cr.NotificationTag)
+				singleton.SafeSendNotification(cr.NotificationTag, message, nil, &curServer)
 			}
 			if !r.GetSuccessful() {
 				message := fmt.Sprintf("[%s]\n任务名称: %s\n执行设备: %s (ID:%d)\n开始时间: %s\n结束时间: %s\n执行结果: 失败\n错误详情:\n%s",
@@ -288,12 +297,66 @@ func (s *ServerHandler) ReportSystemState(c context.Context, r *pb.State) (*pb.R
 	singleton.ServerLock.RLock()
 	if server := singleton.ServerList[clientID]; server != nil {
 		// 创建服务器信息的副本，避免长时间持锁
-		serverCopy = &model.Server{}
-		copier.Copy(serverCopy, server)
+		serverCopy = &model.Server{
+			Common: model.Common{
+				ID:        server.ID,
+				CreatedAt: server.CreatedAt,
+				UpdatedAt: server.UpdatedAt,
+			},
+			Name:                     server.Name,
+			Tag:                      server.Tag,
+			Secret:                   server.Secret,
+			Note:                     server.Note,
+			PublicNote:               server.PublicNote,
+			DisplayIndex:             server.DisplayIndex,
+			HideForGuest:             server.HideForGuest,
+			EnableDDNS:               server.EnableDDNS,
+			DDNSProfiles:             append([]uint64(nil), server.DDNSProfiles...),
+			IsOnline:                 server.IsOnline,
+			LastActive:               server.LastActive,
+			LastOnline:               server.LastOnline,
+			CumulativeNetInTransfer:  server.CumulativeNetInTransfer,
+			CumulativeNetOutTransfer: server.CumulativeNetOutTransfer,
+			LastDBUpdateTime:         server.LastDBUpdateTime,
+		}
+
+		// 复制Host信息
+		if server.Host != nil {
+			serverCopy.Host = &model.Host{
+				Platform:        server.Host.Platform,
+				PlatformVersion: server.Host.PlatformVersion,
+				CPU:             append([]string(nil), server.Host.CPU...),
+				MemTotal:        server.Host.MemTotal,
+				DiskTotal:       server.Host.DiskTotal,
+				SwapTotal:       server.Host.SwapTotal,
+				Arch:            server.Host.Arch,
+				Virtualization:  server.Host.Virtualization,
+				BootTime:        server.Host.BootTime,
+				IP:              server.Host.IP,
+				CountryCode:     server.Host.CountryCode,
+				Version:         server.Host.Version,
+			}
+		}
+
 		isFirstReport = server.LastActive.IsZero()
 		if server.State != nil {
-			prevState = &model.HostState{}
-			copier.Copy(prevState, server.State)
+			prevState = &model.HostState{
+				CPU:            server.State.CPU,
+				MemUsed:        server.State.MemUsed,
+				SwapUsed:       server.State.SwapUsed,
+				DiskUsed:       server.State.DiskUsed,
+				NetInTransfer:  server.State.NetInTransfer,
+				NetOutTransfer: server.State.NetOutTransfer,
+				NetInSpeed:     server.State.NetInSpeed,
+				NetOutSpeed:    server.State.NetOutSpeed,
+				Uptime:         server.State.Uptime,
+				Load1:          server.State.Load1,
+				Load5:          server.State.Load5,
+				Load15:         server.State.Load15,
+				TcpConnCount:   server.State.TcpConnCount,
+				UdpConnCount:   server.State.UdpConnCount,
+				ProcessCount:   server.State.ProcessCount,
+			}
 		}
 	}
 	singleton.ServerLock.RUnlock()
@@ -368,9 +431,24 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 	// 保存当前状态
 	server.State = state
 
-	// 准备状态数据保存
-	lastState := model.HostState{}
-	copier.Copy(&lastState, state)
+	// 准备状态数据保存 - 手动复制避免并发安全问题
+	lastState := model.HostState{
+		CPU:            state.CPU,
+		MemUsed:        state.MemUsed,
+		SwapUsed:       state.SwapUsed,
+		DiskUsed:       state.DiskUsed,
+		NetInTransfer:  state.NetInTransfer,
+		NetOutTransfer: state.NetOutTransfer,
+		NetInSpeed:     state.NetInSpeed,
+		NetOutSpeed:    state.NetOutSpeed,
+		Uptime:         state.Uptime,
+		Load1:          state.Load1,
+		Load5:          state.Load5,
+		Load15:         state.Load15,
+		TcpConnCount:   state.TcpConnCount,
+		UdpConnCount:   state.UdpConnCount,
+		ProcessCount:   state.ProcessCount,
+	}
 	server.LastStateBeforeOffline = &lastState
 
 	// 检查是否需要数据库更新
