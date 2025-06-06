@@ -241,41 +241,68 @@ function addOrEditAlertRule(rule) {
   modal.find("a.ui.label.visible").each((i, el) => {
     el.remove();
   });
-  var failTriggerTasks;
-  var recoverTriggerTasks;
-  if (rule) {
-    failTriggerTasks = rule.FailTriggerTasksRaw;
-    recoverTriggerTasks = rule.RecoverTriggerTasksRaw;
-    const failTriggerTasksList = JSON.parse(failTriggerTasks || "[]");
-    const recoverTriggerTasksList = JSON.parse(recoverTriggerTasks || "[]");
-    const node1 = modal.find("i.dropdown.icon.1");
-    const node2 = modal.find("i.dropdown.icon.2");
-    for (let i = 0; i < failTriggerTasksList.length; i++) {
-      node1.after(
-        '<a class="ui label transition visible" data-value="' +
-        failTriggerTasksList[i] +
-        '" style="display: inline-block !important;">' +
-        getTaskNameById(failTriggerTasksList[i]) +
-        '<i class="delete icon"></i></a>'
-      );
+
+  // 确保任务名称映射已初始化，然后再处理任务列表
+  function initializeAlertRuleLabels() {
+    var failTriggerTasks;
+    var recoverTriggerTasks;
+    if (rule) {
+      failTriggerTasks = rule.FailTriggerTasksRaw;
+      recoverTriggerTasks = rule.RecoverTriggerTasksRaw;
+      const failTriggerTasksList = JSON.parse(failTriggerTasks || "[]");
+      const recoverTriggerTasksList = JSON.parse(recoverTriggerTasks || "[]");
+      const node1 = modal.find("i.dropdown.icon.1");
+      const node2 = modal.find("i.dropdown.icon.2");
+      for (let i = 0; i < failTriggerTasksList.length; i++) {
+        node1.after(
+          '<a class="ui label transition visible" data-value="' +
+          failTriggerTasksList[i] +
+          '" style="display: inline-block !important;">' +
+          getTaskNameById(failTriggerTasksList[i]) +
+          '<i class="delete icon"></i></a>'
+        );
+      }
+      for (let i = 0; i < recoverTriggerTasksList.length; i++) {
+        node2.after(
+          '<a class="ui label transition visible" data-value="' +
+          recoverTriggerTasksList[i] +
+          '" style="display: inline-block !important;">' +
+          getTaskNameById(recoverTriggerTasksList[i]) +
+          '<i class="delete icon"></i></a>'
+        );
+      }
     }
-    for (let i = 0; i < recoverTriggerTasksList.length; i++) {
-      node2.after(
-        '<a class="ui label transition visible" data-value="' +
-        recoverTriggerTasksList[i] +
-        '" style="display: inline-block !important;">' +
-        getTaskNameById(recoverTriggerTasksList[i]) +
-        '<i class="delete icon"></i></a>'
-      );
-    }
+
+    // 需要在 showFormModal 进一步拼接数组
+    modal
+      .find("input[name=FailTriggerTasksRaw]")
+      .val(rule ? failTriggerTasks : "[]");
+    modal
+      .find("input[name=RecoverTriggerTasksRaw]")
+      .val(rule ? recoverTriggerTasks : "[]");
   }
-  // 需要在 showFormModal 进一步拼接数组
-  modal
-    .find("input[name=FailTriggerTasksRaw]")
-    .val(rule ? failTriggerTasks : "[]");
-  modal
-    .find("input[name=RecoverTriggerTasksRaw]")
-    .val(rule ? recoverTriggerTasks : "[]");
+
+  // 确保名称映射已初始化后再初始化标签
+  if (Object.keys(window.taskIdToName || {}).length === 0) {
+    // 如果映射未初始化，先更新映射再初始化标签
+    $.get('/api/search-tasks?word=').then(function(response) {
+      // 更新任务映射
+      if (response.success && response.results) {
+        window.taskIdToName = {};
+        response.results.forEach(task => {
+          window.taskIdToName[task.value] = task.name;
+        });
+      }
+      // 初始化标签
+      initializeAlertRuleLabels();
+    }).catch(function() {
+      // 即使失败也要初始化标签
+      initializeAlertRuleLabels();
+    });
+  } else {
+    // 映射已存在，直接初始化标签
+    initializeAlertRuleLabels();
+  }
 
   showFormModal(".rule.modal", "#ruleForm", "/api/alert-rule");
 }
@@ -440,37 +467,65 @@ function addOrEditServer(server, conf) {
   modal.find("a.ui.label.visible").each((i, el) => {
     el.remove();
   });
-  var ddns = "[]";
-  if (server) {
-    ddns = server.DDNSProfilesRaw || "[]";
-    let serverList;
-    try {
-      serverList = JSON.parse(ddns);
-      // 确保它是一个数组
-      if (!Array.isArray(serverList)) {
-        console.error("DDNS配置不是数组格式:", ddns);
+
+  // 确保DDNS名称映射已初始化，然后再处理DDNS列表
+  function initializeServerLabels() {
+    var ddns = "[]";
+    if (server) {
+      ddns = server.DDNSProfilesRaw || "[]";
+      let serverList;
+      try {
+        serverList = JSON.parse(ddns);
+        // 确保它是一个数组
+        if (!Array.isArray(serverList)) {
+          console.error("DDNS配置不是数组格式:", ddns);
+          serverList = [];
+        }
+      } catch (error) {
+        console.error("解析DDNS配置出错:", error);
         serverList = [];
       }
-    } catch (error) {
-      console.error("解析DDNS配置出错:", error);
-      serverList = [];
+      const node = modal.find("i.dropdown.icon.ddnsProfiles");
+      for (let i = 0; i < serverList.length; i++) {
+        node.after(
+          '<a class="ui label transition visible" data-value="' +
+          serverList[i] +
+          '" style="display: inline-block !important;">' +
+          getDDNSNameById(serverList[i]) +
+          '<i class="delete icon"></i></a>'
+        );
+      }
     }
-    const node = modal.find("i.dropdown.icon.ddnsProfiles");
-    for (let i = 0; i < serverList.length; i++) {
-      node.after(
-        '<a class="ui label transition visible" data-value="' +
-        serverList[i] +
-        '" style="display: inline-block !important;">' +
-        getDDNSNameById(serverList[i]) +
-        '<i class="delete icon"></i></a>'
-      );
-    }
+
+    // 需要在 showFormModal 进一步拼接数组
+    // 正确处理DDNS配置文件数组
+    modal
+      .find("input[name=DDNSProfilesRaw]")
+      .val(server ? ddns : "[]");
   }
-  // 需要在 showFormModal 进一步拼接数组
-  // 正确处理DDNS配置文件数组
-  modal
-    .find("input[name=DDNSProfilesRaw]")
-    .val(server ? ddns : "[]");
+
+  // 确保名称映射已初始化后再初始化标签
+  if (Object.keys(window.ddnsIdToName || {}).length === 0) {
+    // 如果映射未初始化，先更新映射再初始化标签
+    $.get('/api/search-ddns?word=').then(function(response) {
+      // 更新DDNS映射
+      if (response.success && response.results) {
+        window.ddnsIdToName = {};
+        response.results.forEach(ddns => {
+          window.ddnsIdToName[ddns.value] = ddns.name;
+        });
+      }
+      // 初始化标签
+      initializeServerLabels();
+    }).catch(function() {
+      // 即使失败也要初始化标签
+      initializeServerLabels();
+    });
+  } else {
+    // 映射已存在，直接初始化标签
+    initializeServerLabels();
+  }
+
   modal
     .find("input[name=DisplayIndex]")
     .val(server ? server.DisplayIndex : null);
@@ -543,59 +598,98 @@ function addOrEditMonitor(monitor) {
   } else {
     modal.find(".ui.nb-EnableTriggerTask.checkbox").checkbox("set unchecked");
   }
-  var servers;
-  var failTriggerTasks;
-  var recoverTriggerTasks;
-  if (monitor) {
-    servers = monitor.SkipServersRaw;
-    const serverList = JSON.parse(servers || "[]");
-    const node = modal.find("i.dropdown.icon.specificServer");
-    for (let i = 0; i < serverList.length; i++) {
-      node.after(
-        '<a class="ui label transition visible" data-value="' +
-        serverList[i] +
-        '" style="display: inline-block !important;">' +
-        getServerNameById(serverList[i]) +
-        '<i class="delete icon"></i></a>'
-      );
+
+  // 确保服务器名称映射已初始化，然后再处理服务器列表
+  function initializeServerLabels() {
+    var servers;
+    var failTriggerTasks;
+    var recoverTriggerTasks;
+    if (monitor) {
+      servers = monitor.SkipServersRaw;
+      const serverList = JSON.parse(servers || "[]");
+      const node = modal.find("i.dropdown.icon.specificServer");
+      for (let i = 0; i < serverList.length; i++) {
+        node.after(
+          '<a class="ui label transition visible" data-value="' +
+          serverList[i] +
+          '" style="display: inline-block !important;">' +
+          getServerNameById(serverList[i]) +
+          '<i class="delete icon"></i></a>'
+        );
+      }
+
+      failTriggerTasks = monitor.FailTriggerTasksRaw;
+      recoverTriggerTasks = monitor.RecoverTriggerTasksRaw;
+      const failTriggerTasksList = JSON.parse(failTriggerTasks || "[]");
+      const recoverTriggerTasksList = JSON.parse(recoverTriggerTasks || "[]");
+      const node1 = modal.find("i.dropdown.icon.failTask");
+      const node2 = modal.find("i.dropdown.icon.recoverTask");
+      for (let i = 0; i < failTriggerTasksList.length; i++) {
+        node1.after(
+          '<a class="ui label transition visible" data-value="' +
+          failTriggerTasksList[i] +
+          '" style="display: inline-block !important;">' +
+          getTaskNameById(failTriggerTasksList[i]) +
+          '<i class="delete icon"></i></a>'
+        );
+      }
+      for (let i = 0; i < recoverTriggerTasksList.length; i++) {
+        node2.after(
+          '<a class="ui label transition visible" data-value="' +
+          recoverTriggerTasksList[i] +
+          '" style="display: inline-block !important;">' +
+          getTaskNameById(recoverTriggerTasksList[i]) +
+          '<i class="delete icon"></i></a>'
+        );
+      }
     }
 
-    failTriggerTasks = monitor.FailTriggerTasksRaw;
-    recoverTriggerTasks = monitor.RecoverTriggerTasksRaw;
-    const failTriggerTasksList = JSON.parse(failTriggerTasks || "[]");
-    const recoverTriggerTasksList = JSON.parse(recoverTriggerTasks || "[]");
-    const node1 = modal.find("i.dropdown.icon.failTask");
-    const node2 = modal.find("i.dropdown.icon.recoverTask");
-    for (let i = 0; i < failTriggerTasksList.length; i++) {
-      node1.after(
-        '<a class="ui label transition visible" data-value="' +
-        failTriggerTasksList[i] +
-        '" style="display: inline-block !important;">' +
-        getTaskNameById(failTriggerTasksList[i]) +
-        '<i class="delete icon"></i></a>'
-      );
-    }
-    for (let i = 0; i < recoverTriggerTasksList.length; i++) {
-      node2.after(
-        '<a class="ui label transition visible" data-value="' +
-        recoverTriggerTasksList[i] +
-        '" style="display: inline-block !important;">' +
-        getTaskNameById(recoverTriggerTasksList[i]) +
-        '<i class="delete icon"></i></a>'
-      );
-    }
+    // 需要在 showFormModal 进一步拼接数组
+    modal
+      .find("input[name=FailTriggerTasksRaw]")
+      .val(monitor ? failTriggerTasks : "[]");
+    modal
+      .find("input[name=RecoverTriggerTasksRaw]")
+      .val(monitor ? recoverTriggerTasks : "[]");
+
+    modal
+      .find("input[name=SkipServersRaw]")
+      .val(monitor ? servers : "[]");
   }
-  // 需要在 showFormModal 进一步拼接数组
-  modal
-    .find("input[name=FailTriggerTasksRaw]")
-    .val(monitor ? failTriggerTasks : "[]");
-  modal
-    .find("input[name=RecoverTriggerTasksRaw]")
-    .val(monitor ? recoverTriggerTasks : "[]");
 
-  modal
-    .find("input[name=SkipServersRaw]")
-    .val(monitor ? servers : "[]");
+  // 确保名称映射已初始化后再初始化标签
+  if (Object.keys(window.serverIdToName || {}).length === 0 ||
+      Object.keys(window.taskIdToName || {}).length === 0) {
+    // 如果映射未初始化，先更新映射再初始化标签
+    Promise.all([
+      $.get('/api/search-server?word='),
+      $.get('/api/search-tasks?word=')
+    ]).then(function(responses) {
+      // 更新服务器映射
+      if (responses[0].success && responses[0].results) {
+        window.serverIdToName = {};
+        responses[0].results.forEach(server => {
+          window.serverIdToName[server.value] = server.name;
+        });
+      }
+      // 更新任务映射
+      if (responses[1].success && responses[1].results) {
+        window.taskIdToName = {};
+        responses[1].results.forEach(task => {
+          window.taskIdToName[task.value] = task.name;
+        });
+      }
+      // 初始化标签
+      initializeServerLabels();
+    }).catch(function() {
+      // 即使失败也要初始化标签
+      initializeServerLabels();
+    });
+  } else {
+    // 映射已存在，直接初始化标签
+    initializeServerLabels();
+  }
+
   showFormModal(".monitor.modal", "#monitorForm", "/api/monitor");
 
   // 为动态添加的删除图标绑定点击事件
@@ -618,25 +712,53 @@ function addOrEditCron(cron) {
   modal.find("a.ui.label.visible").each((i, el) => {
     el.remove();
   });
-  var servers;
-  if (cron) {
-    servers = cron.ServersRaw;
-    const serverList = JSON.parse(servers || "[]");
-    const node = modal.find("i.dropdown.icon");
-    for (let i = 0; i < serverList.length; i++) {
-      node.after(
-        '<a class="ui label transition visible" data-value="' +
-        serverList[i] +
-        '" style="display: inline-block !important;">' +
-        getServerNameById(serverList[i]) +
-        '<i class="delete icon"></i></a>'
-      );
+
+  // 确保服务器名称映射已初始化，然后再处理服务器列表
+  function initializeCronLabels() {
+    var servers;
+    if (cron) {
+      servers = cron.ServersRaw;
+      const serverList = JSON.parse(servers || "[]");
+      const node = modal.find("i.dropdown.icon");
+      for (let i = 0; i < serverList.length; i++) {
+        node.after(
+          '<a class="ui label transition visible" data-value="' +
+          serverList[i] +
+          '" style="display: inline-block !important;">' +
+          getServerNameById(serverList[i]) +
+          '<i class="delete icon"></i></a>'
+        );
+      }
     }
+
+    // 需要在 showFormModal 进一步拼接数组
+    modal
+      .find("input[name=ServersRaw]")
+      .val(cron ? servers : "[]");
   }
-  // 需要在 showFormModal 进一步拼接数组
-  modal
-    .find("input[name=ServersRaw]")
-    .val(cron ? servers : "[]");
+
+  // 确保名称映射已初始化后再初始化标签
+  if (Object.keys(window.serverIdToName || {}).length === 0) {
+    // 如果映射未初始化，先更新映射再初始化标签
+    $.get('/api/search-server?word=').then(function(response) {
+      // 更新服务器映射
+      if (response.success && response.results) {
+        window.serverIdToName = {};
+        response.results.forEach(server => {
+          window.serverIdToName[server.value] = server.name;
+        });
+      }
+      // 初始化标签
+      initializeCronLabels();
+    }).catch(function() {
+      // 即使失败也要初始化标签
+      initializeCronLabels();
+    });
+  } else {
+    // 映射已存在，直接初始化标签
+    initializeCronLabels();
+  }
+
   modal.find("textarea[name=Command]").val(cron ? cron.Command : null);
   if (cron && cron.PushSuccessful) {
     modal.find(".ui.push-successful.checkbox").checkbox("set checked");
@@ -1686,11 +1808,100 @@ function updateTaskNameMapping() {
     });
 }
 
+// 转换表格中的JSON数据为可读名称
+function convertTableJsonToNames() {
+  // 转换监控配置表格中的服务器ID
+  $('table tbody tr').each(function() {
+    const $row = $(this);
+
+    // 转换SkipServersRaw列（监控配置页面）
+    const $skipServersCell = $row.find('td').eq(4); // 第5列是SpecificServers
+    if ($skipServersCell.length > 0) {
+      const skipServersText = $skipServersCell.text().trim();
+      if (skipServersText.startsWith('[') && skipServersText.endsWith(']')) {
+        try {
+          const serverIds = JSON.parse(skipServersText);
+          if (Array.isArray(serverIds) && serverIds.length > 0) {
+            const serverNames = serverIds.map(id => getServerNameById(id)).join(', ');
+            $skipServersCell.text(serverNames);
+          } else if (serverIds.length === 0) {
+            $skipServersCell.text('无');
+          }
+        } catch (e) {
+          // 如果解析失败，保持原样
+        }
+      }
+    }
+
+    // 转换FailTriggerTasksRaw列（监控配置页面）
+    const $failTasksCell = $row.find('td').eq(11); // 第12列是FailTriggerTasks
+    if ($failTasksCell.length > 0) {
+      const failTasksText = $failTasksCell.text().trim();
+      if (failTasksText.startsWith('[') && failTasksText.endsWith(']')) {
+        try {
+          const taskIds = JSON.parse(failTasksText);
+          if (Array.isArray(taskIds) && taskIds.length > 0) {
+            const taskNames = taskIds.map(id => getTaskNameById(id)).join(', ');
+            $failTasksCell.text(taskNames);
+          } else if (taskIds.length === 0) {
+            $failTasksCell.text('无');
+          }
+        } catch (e) {
+          // 如果解析失败，保持原样
+        }
+      }
+    }
+
+    // 转换RecoverTriggerTasksRaw列（监控配置页面）
+    const $recoverTasksCell = $row.find('td').eq(12); // 第13列是RecoverTriggerTasks
+    if ($recoverTasksCell.length > 0) {
+      const recoverTasksText = $recoverTasksCell.text().trim();
+      if (recoverTasksText.startsWith('[') && recoverTasksText.endsWith(']')) {
+        try {
+          const taskIds = JSON.parse(recoverTasksText);
+          if (Array.isArray(taskIds) && taskIds.length > 0) {
+            const taskNames = taskIds.map(id => getTaskNameById(id)).join(', ');
+            $recoverTasksCell.text(taskNames);
+          } else if (taskIds.length === 0) {
+            $recoverTasksCell.text('无');
+          }
+        } catch (e) {
+          // 如果解析失败，保持原样
+        }
+      }
+    }
+
+    // 转换ServersRaw列（Cron任务页面）
+    const $cronServersCell = $row.find('td').eq(8); // Cron页面第9列是服务器列表
+    if ($cronServersCell.length > 0) {
+      const cronServersText = $cronServersCell.text().trim();
+      if (cronServersText.startsWith('[') && cronServersText.endsWith(']')) {
+        try {
+          const serverIds = JSON.parse(cronServersText);
+          if (Array.isArray(serverIds) && serverIds.length > 0) {
+            const serverNames = serverIds.map(id => getServerNameById(id)).join(', ');
+            $cronServersCell.text(serverNames);
+          } else if (serverIds.length === 0) {
+            $cronServersCell.text('无');
+          }
+        } catch (e) {
+          // 如果解析失败，保持原样
+        }
+      }
+    }
+  });
+}
+
 // 在页面加载时初始化所有映射
 $(document).ready(() => {
   updateServerNameMapping();
   updateDDNSNameMapping();
   updateTaskNameMapping();
+
+  // 等待映射初始化完成后转换表格
+  setTimeout(() => {
+    convertTableJsonToNames();
+  }, 1000); // 延迟1秒确保映射已加载
 });
 
 // 统一的系统信息格式化

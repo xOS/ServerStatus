@@ -208,8 +208,20 @@ func (cp *commonPage) network(c *gin.Context) {
 					singleton.ServerLock.RLock()
 					for serverID, server := range singleton.ServerList {
 						if server != nil {
-							// 检查服务器是否被跳过
-							if monitor.SkipServers == nil || !monitor.SkipServers[serverID] {
+							var shouldInclude bool
+
+							// 根据Cover字段和SkipServers字段判断是否应该包含此服务器
+							if monitor.Cover == 0 {
+								// Cover=0: 覆盖所有，仅特定服务器不请求
+								// 如果服务器不在SkipServers中，则包含
+								shouldInclude = monitor.SkipServers == nil || !monitor.SkipServers[serverID]
+							} else {
+								// Cover=1: 忽略所有，仅通过特定服务器请求
+								// 如果服务器在SkipServers中，则包含
+								shouldInclude = monitor.SkipServers != nil && monitor.SkipServers[serverID]
+							}
+
+							if shouldInclude {
 								// 检查是否已经在列表中
 								found := false
 								for _, existingID := range serverIdsWithMonitor {
@@ -221,7 +233,7 @@ func (cp *commonPage) network(c *gin.Context) {
 								if !found {
 									serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
 									if singleton.Conf.Debug {
-										log.Printf("network: 添加服务器 %d (%s) 到监控列表", serverID, server.Name)
+										log.Printf("network: 添加服务器 %d (%s) 到监控列表 (Cover=%d)", serverID, server.Name, monitor.Cover)
 									}
 								}
 								// 如果还没有选定ID，或者服务器在线，则将此服务器ID设为当前ID
@@ -229,7 +241,7 @@ func (cp *commonPage) network(c *gin.Context) {
 									id = serverID
 								}
 							} else if singleton.Conf.Debug {
-								log.Printf("network: 服务器 %d (%s) 被监控 %d 跳过", serverID, server.Name, monitor.ID)
+								log.Printf("network: 服务器 %d (%s) 被监控 %d 跳过 (Cover=%d)", serverID, server.Name, monitor.ID, monitor.Cover)
 							}
 						}
 					}

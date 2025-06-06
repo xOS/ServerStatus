@@ -193,13 +193,16 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 		})
 		return
 	}
+	// 获取Token对象用于后续清理
+	tokenObj := singleton.ApiTokenList[token]
+
 	// 在数据库中删除该Token
+	var err error
 	if singleton.Conf.DatabaseType == "badger" {
 		// 在BadgerDB模式下，需要通过ID删除
-		tokenObj := singleton.ApiTokenList[token]
 		if tokenObj != nil && db.DB != nil {
 			apiTokenOps := db.NewApiTokenOps(db.DB)
-			err := apiTokenOps.DeleteApiToken(tokenObj.ID)
+			err = apiTokenOps.DeleteApiToken(tokenObj.ID)
 			if err != nil {
 				c.JSON(http.StatusOK, model.Response{
 					Code:    http.StatusBadRequest,
@@ -210,7 +213,7 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 			log.Printf("BadgerDB: 成功删除API令牌 %s (Note: %s)", token, tokenObj.Note)
 		}
 	} else if singleton.DB != nil {
-		err := singleton.DB.Unscoped().Delete(&model.ApiToken{}, "token = ?", token).Error
+		err = singleton.DB.Unscoped().Delete(&model.ApiToken{}, "token = ?", token).Error
 		if err != nil {
 			c.JSON(http.StatusOK, model.Response{
 				Code:    http.StatusBadRequest,
@@ -221,27 +224,29 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 		log.Printf("SQLite: 成功删除API令牌 %s", token)
 	}
 
-	// 获取Token对象用于后续清理
-	tokenObj := singleton.ApiTokenList[token]
-
-	// 从UserIDToApiTokenList中删除该Token
-	if tokenObj != nil {
-		userTokens := singleton.UserIDToApiTokenList[tokenObj.UserID]
-		for i, userToken := range userTokens {
-			if userToken == token {
-				// 从切片中删除该token
-				singleton.UserIDToApiTokenList[tokenObj.UserID] = append(userTokens[:i], userTokens[i+1:]...)
-				break
+	// 只有数据库删除成功后才清理内存
+	if err == nil {
+		// 从UserIDToApiTokenList中删除该Token
+		if tokenObj != nil {
+			userTokens := singleton.UserIDToApiTokenList[tokenObj.UserID]
+			for i, userToken := range userTokens {
+				if userToken == token {
+					// 从切片中删除该token
+					singleton.UserIDToApiTokenList[tokenObj.UserID] = append(userTokens[:i], userTokens[i+1:]...)
+					break
+				}
+			}
+			// 如果用户没有其他token，删除整个条目
+			if len(singleton.UserIDToApiTokenList[tokenObj.UserID]) == 0 {
+				delete(singleton.UserIDToApiTokenList, tokenObj.UserID)
 			}
 		}
-		// 如果用户没有其他token，删除整个条目
-		if len(singleton.UserIDToApiTokenList[tokenObj.UserID]) == 0 {
-			delete(singleton.UserIDToApiTokenList, tokenObj.UserID)
-		}
-	}
 
-	// 在ApiTokenList中删除该Token
-	delete(singleton.ApiTokenList, token)
+		// 在ApiTokenList中删除该Token
+		delete(singleton.ApiTokenList, token)
+
+		log.Printf("成功从内存中清理API令牌: %s", token)
+	}
 
 	c.JSON(http.StatusOK, model.Response{
 		Code:    http.StatusOK,
