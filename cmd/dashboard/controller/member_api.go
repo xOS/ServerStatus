@@ -127,7 +127,35 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 		Token:  secureToken,
 		Note:   tf.Note,
 	}
-	singleton.DB.Create(token)
+
+	// BadgerDB 模式下使用 BadgerDB 操作
+	if singleton.Conf.DatabaseType == "badger" {
+		// 为新API令牌生成ID
+		token.ID = uint64(time.Now().UnixNano())
+		err = db.DB.SaveModel("api_token", token.ID, token)
+		if err != nil {
+			c.JSON(http.StatusOK, model.Response{
+				Code:    http.StatusBadRequest,
+				Message: fmt.Sprintf("保存API令牌失败：%s", err),
+			})
+			return
+		}
+	} else if singleton.DB != nil {
+		err = singleton.DB.Create(token).Error
+		if err != nil {
+			c.JSON(http.StatusOK, model.Response{
+				Code:    http.StatusBadRequest,
+				Message: fmt.Sprintf("保存API令牌失败：%s", err),
+			})
+			return
+		}
+	} else {
+		c.JSON(http.StatusOK, model.Response{
+			Code:    http.StatusBadRequest,
+			Message: "数据库未初始化",
+		})
+		return
+	}
 
 	singleton.ApiLock.Lock()
 	singleton.ApiTokenList[token.Token] = token
@@ -164,7 +192,29 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 		return
 	}
 	// 在数据库中删除该Token
-	singleton.DB.Unscoped().Delete(&model.ApiToken{}, "token = ?", token)
+	if singleton.Conf.DatabaseType == "badger" {
+		// 在BadgerDB模式下，需要通过ID删除
+		tokenObj := singleton.ApiTokenList[token]
+		if tokenObj != nil {
+			err := db.DB.DeleteModel("api_token", tokenObj.ID)
+			if err != nil {
+				c.JSON(http.StatusOK, model.Response{
+					Code:    http.StatusBadRequest,
+					Message: fmt.Sprintf("删除API令牌失败：%s", err),
+				})
+				return
+			}
+		}
+	} else if singleton.DB != nil {
+		err := singleton.DB.Unscoped().Delete(&model.ApiToken{}, "token = ?", token).Error
+		if err != nil {
+			c.JSON(http.StatusOK, model.Response{
+				Code:    http.StatusBadRequest,
+				Message: fmt.Sprintf("删除API令牌失败：%s", err),
+			})
+			return
+		}
+	}
 
 	// 在UserIDToApiTokenList中删除该Token
 	for i, t := range singleton.UserIDToApiTokenList[singleton.ApiTokenList[token].UserID] {
@@ -663,7 +713,21 @@ func (ma *memberAPI) addOrEditMonitor(c *gin.Context) {
 		m.EnableTriggerTask = mf.EnableTriggerTask == "on"
 		m.RecoverTriggerTasksRaw = mf.RecoverTriggerTasksRaw
 		m.FailTriggerTasksRaw = mf.FailTriggerTasksRaw
+
+		// 处理 SkipServersRaw，确保它是有效的JSON数组
+		if mf.SkipServersRaw == "" {
+			mf.SkipServersRaw = "[]"
+			m.SkipServersRaw = "[]"
+		}
+
+		// 尝试初始化跳过服务器列表，如果失败则设置为空数组
 		err = m.InitSkipServers()
+		if err != nil {
+			log.Printf("解析监控器跳过服务器列表失败（%s），重置为空数组: %v", mf.SkipServersRaw, err)
+			m.SkipServers = make(map[uint64]bool)
+			m.SkipServersRaw = "[]"
+			err = nil
+		}
 	}
 	if err == nil {
 		// 保证NotificationTag不为空
@@ -751,7 +815,21 @@ func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 		cr.NotificationTag = cf.NotificationTag
 		cr.ID = cf.ID
 		cr.Cover = cf.Cover
+
+		// 处理 ServersRaw，确保它是有效的JSON数组
+		if cf.ServersRaw == "" {
+			cf.ServersRaw = "[]"
+			cr.ServersRaw = "[]"
+		}
+
+		// 尝试解析JSON，如果失败则设置为空数组
 		err = utils.Json.Unmarshal([]byte(cf.ServersRaw), &cr.Servers)
+		if err != nil {
+			log.Printf("解析计划任务服务器列表失败（%s），重置为空数组: %v", cf.ServersRaw, err)
+			cr.Servers = []uint64{}
+			cr.ServersRaw = "[]"
+			err = nil
+		}
 	}
 
 	// 计划任务类型不得使用触发服务器执行方式
@@ -1248,9 +1326,14 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 	var r model.AlertRule
 	err := c.ShouldBindJSON(&arf)
 	if err == nil {
-		// 清理 RulesRaw 中的千位分隔符
+		// 清理 RulesRaw 中的千位分隔符和修复 ignore 字段格式
 		cleanedRulesRaw := cleanNumbersInJSON(arf.RulesRaw)
+		// 修复 ignore 字段的格式：将 {40:true} 转换为 {"40":true}
+		cleanedRulesRaw = fixIgnoreFieldFormat(cleanedRulesRaw)
 		err = utils.Json.Unmarshal([]byte(cleanedRulesRaw), &r.Rules)
+		if err != nil {
+			log.Printf("报警规则JSON解析失败: %v", err)
+		}
 	}
 	if err == nil {
 		if len(r.Rules) == 0 {
@@ -1592,5 +1675,30 @@ func cleanNumbersInJSON(jsonStr string) string {
 		}
 		// 如果不是有效数字，保持原样
 		return match
+	})
+}
+
+// fixIgnoreFieldFormat 修复 ignore 字段的格式，将 {40:true} 转换为 {"40":true}
+func fixIgnoreFieldFormat(jsonStr string) string {
+	// 匹配 ignore 字段中的数字键，将其转换为字符串键
+	// 匹配模式：ignore":{数字:值,数字:值}
+	re := regexp.MustCompile(`("ignore"\s*:\s*\{)([^}]+)(\})`)
+
+	return re.ReplaceAllStringFunc(jsonStr, func(match string) string {
+		// 提取 ignore 对象的内容
+		parts := re.FindStringSubmatch(match)
+		if len(parts) != 4 {
+			return match
+		}
+
+		prefix := parts[1]  // "ignore":{
+		content := parts[2] // 40:true,41:false
+		suffix := parts[3]  // }
+
+		// 修复内容中的数字键
+		keyRe := regexp.MustCompile(`(\d+)(\s*:\s*)`)
+		fixedContent := keyRe.ReplaceAllString(content, `"$1"$2`)
+
+		return prefix + fixedContent + suffix
 	})
 }

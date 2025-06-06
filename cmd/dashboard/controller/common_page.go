@@ -581,11 +581,16 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 		// 获取所有已被警报规则覆盖的服务器ID
 		coveredServerIDs := make(map[uint64]bool)
 		if statsStore != nil {
+			// 使用锁保护，避免并发读写
+			singleton.AlertsLock.RLock()
 			for _, stats := range statsStore {
-				for serverID := range stats.Transfer {
-					coveredServerIDs[serverID] = true
+				if stats.Transfer != nil {
+					for serverID := range stats.Transfer {
+						coveredServerIDs[serverID] = true
+					}
 				}
 			}
+			singleton.AlertsLock.RUnlock()
 		}
 
 		// 为未覆盖的在线服务器创建默认配额
@@ -700,41 +705,46 @@ func (cp *commonPage) home(c *gin.Context) {
 	// 预处理流量数据
 	var trafficData []map[string]interface{}
 	if statsStore != nil {
+		// 使用锁保护，避免并发读写
+		singleton.AlertsLock.RLock()
 		for cycleID, stats := range statsStore {
-			for serverID, transfer := range stats.Transfer {
-				serverName := ""
-				if stats.ServerName != nil {
-					if name, exists := stats.ServerName[serverID]; exists {
-						serverName = name
+			if stats.Transfer != nil {
+				for serverID, transfer := range stats.Transfer {
+					serverName := ""
+					if stats.ServerName != nil {
+						if name, exists := stats.ServerName[serverID]; exists {
+							serverName = name
+						}
 					}
-				}
 
-				usedPercent := float64(0)
-				if stats.Max > 0 {
-					usedPercent = (float64(transfer) / float64(stats.Max)) * 100
-					if usedPercent > 100 {
-						usedPercent = 100
+					usedPercent := float64(0)
+					if stats.Max > 0 {
+						usedPercent = (float64(transfer) / float64(stats.Max)) * 100
+						if usedPercent > 100 {
+							usedPercent = 100
+						}
+						if usedPercent < 0 {
+							usedPercent = 0
+						}
 					}
-					if usedPercent < 0 {
-						usedPercent = 0
-					}
-				}
 
-				trafficItem := map[string]interface{}{
-					"server_id":       serverID,
-					"server_name":     serverName,
-					"max_bytes":       stats.Max,
-					"used_bytes":      transfer,
-					"max_formatted":   bytefmt.ByteSize(stats.Max),
-					"used_formatted":  bytefmt.ByteSize(transfer),
-					"used_percent":    math.Round(usedPercent*100) / 100,
-					"cycle_name":      stats.Name,
-					"cycle_id":        strconv.FormatUint(cycleID, 10),
-					"is_bytes_source": true, // 标识这是字节数据源
+					trafficItem := map[string]interface{}{
+						"server_id":       serverID,
+						"server_name":     serverName,
+						"max_bytes":       stats.Max,
+						"used_bytes":      transfer,
+						"max_formatted":   bytefmt.ByteSize(stats.Max),
+						"used_formatted":  bytefmt.ByteSize(transfer),
+						"used_percent":    math.Round(usedPercent*100) / 100,
+						"cycle_name":      stats.Name,
+						"cycle_id":        strconv.FormatUint(cycleID, 10),
+						"is_bytes_source": true, // 标识这是字节数据源
+					}
+					trafficData = append(trafficData, trafficItem)
 				}
-				trafficData = append(trafficData, trafficItem)
 			}
 		}
+		singleton.AlertsLock.RUnlock()
 	}
 
 	// 回退机制：为没有警报规则的服务器创建默认流量数据（10TB月配额）

@@ -28,10 +28,16 @@
                         <button class="ui icon mini button" data-clipboard-text="{{$token.Token}}">
                             <i class="copy icon"></i>
                         </button>
+                        {{if $token.Token}}
                         <button class="ui button"
-                                onclick="showConfirm('{{tr "DeleteToken"}}'+'[{{$token.Note}}]','{{tr "ConfirmToDeleteThisToken"}}',deleteRequest,'/api/token/'+{{$token.Token}})">
+                                onclick="showConfirm('{{tr "DeleteToken"}}'+'[{{$token.Note}}]','{{tr "ConfirmToDeleteThisToken"}}',deleteRequest,'/api/token/{{$token.Token}}')">
                         <i class="trash alternate outline icon"></i>
                         </button>
+                        {{else}}
+                        <button class="ui button disabled" title="无效的令牌">
+                        <i class="trash alternate outline icon"></i>
+                        </button>
+                        {{end}}
                     </div>
                 </td>
             </tr>
