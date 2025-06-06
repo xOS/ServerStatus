@@ -197,17 +197,25 @@ func (ma *memberAPI) delete(c *gin.Context) {
 	var err error
 	switch c.Param("model") {
 	case "server":
-		err := singleton.DB.Transaction(func(tx *gorm.DB) error {
-			err = singleton.DB.Unscoped().Delete(&model.Server{}, "id = ?", id).Error
-			if err != nil {
-				return err
-			}
-			err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "server_id = ?", id).Error
-			if err != nil {
-				return err
-			}
-			return nil
-		})
+		// BadgerDB 模式下使用 BadgerDB 操作
+		if singleton.Conf.DatabaseType == "badger" {
+			err = db.DB.DeleteModel("server", id)
+			// BadgerDB 模式下暂不支持复杂的监控历史删除
+		} else if singleton.DB != nil {
+			err = singleton.DB.Transaction(func(tx *gorm.DB) error {
+				err = singleton.DB.Unscoped().Delete(&model.Server{}, "id = ?", id).Error
+				if err != nil {
+					return err
+				}
+				err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "server_id = ?", id).Error
+				if err != nil {
+					return err
+				}
+				return nil
+			})
+		} else {
+			err = errors.New("数据库未初始化")
+		}
 		if err == nil {
 			// 删除服务器
 			singleton.ServerLock.Lock()
@@ -216,28 +224,66 @@ func (ma *memberAPI) delete(c *gin.Context) {
 			singleton.ReSortServer()
 		}
 	case "notification":
-		err = singleton.DB.Unscoped().Delete(&model.Notification{}, "id = ?", id).Error
+		// BadgerDB 模式下使用 BadgerDB 操作
+		if singleton.Conf.DatabaseType == "badger" {
+			err = db.DB.DeleteModel("notification", id)
+		} else if singleton.DB != nil {
+			err = singleton.DB.Unscoped().Delete(&model.Notification{}, "id = ?", id).Error
+		} else {
+			err = errors.New("数据库未初始化")
+		}
 		if err == nil {
 			singleton.OnDeleteNotification(id)
 		}
 	case "ddns":
-		err = singleton.DB.Unscoped().Delete(&model.DDNSProfile{}, "id = ?", id).Error
+		// BadgerDB 模式下使用 BadgerDB 操作
+		if singleton.Conf.DatabaseType == "badger" {
+			err = db.DB.DeleteModel("ddns_profile", id)
+		} else if singleton.DB != nil {
+			err = singleton.DB.Unscoped().Delete(&model.DDNSProfile{}, "id = ?", id).Error
+		} else {
+			err = errors.New("数据库未初始化")
+		}
 		if err == nil {
 			singleton.OnDDNSUpdate()
 		}
 	case "nat":
-		err = singleton.DB.Unscoped().Delete(&model.NAT{}, "id = ?", id).Error
+		// BadgerDB 模式下使用 BadgerDB 操作
+		if singleton.Conf.DatabaseType == "badger" {
+			err = db.DB.DeleteModel("nat", id)
+		} else if singleton.DB != nil {
+			err = singleton.DB.Unscoped().Delete(&model.NAT{}, "id = ?", id).Error
+		} else {
+			err = errors.New("数据库未初始化")
+		}
 		if err == nil {
 			singleton.OnNATUpdate()
 		}
 	case "monitor":
-		err = singleton.DB.Unscoped().Delete(&model.Monitor{}, "id = ?", id).Error
+		// BadgerDB 模式下使用 BadgerDB 操作
+		if singleton.Conf.DatabaseType == "badger" {
+			err = db.DB.DeleteModel("monitor", id)
+			// BadgerDB 模式下暂不支持复杂的监控历史删除
+		} else if singleton.DB != nil {
+			err = singleton.DB.Unscoped().Delete(&model.Monitor{}, "id = ?", id).Error
+			if err == nil {
+				err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ?", id).Error
+			}
+		} else {
+			err = errors.New("数据库未初始化")
+		}
 		if err == nil {
 			singleton.ServiceSentinelShared.OnMonitorDelete(id)
-			err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ?", id).Error
 		}
 	case "cron":
-		err = singleton.DB.Unscoped().Delete(&model.Cron{}, "id = ?", id).Error
+		// BadgerDB 模式下使用 BadgerDB 操作
+		if singleton.Conf.DatabaseType == "badger" {
+			err = db.DB.DeleteModel("cron", id)
+		} else if singleton.DB != nil {
+			err = singleton.DB.Unscoped().Delete(&model.Cron{}, "id = ?", id).Error
+		} else {
+			err = errors.New("数据库未初始化")
+		}
 		if err == nil {
 			singleton.CronLock.RLock()
 			defer singleton.CronLock.RUnlock()
@@ -248,7 +294,14 @@ func (ma *memberAPI) delete(c *gin.Context) {
 			delete(singleton.Crons, id)
 		}
 	case "alert-rule":
-		err = singleton.DB.Unscoped().Delete(&model.AlertRule{}, "id = ?", id).Error
+		// BadgerDB 模式下使用 BadgerDB 操作
+		if singleton.Conf.DatabaseType == "badger" {
+			err = db.DB.DeleteModel("alert_rule", id)
+		} else if singleton.DB != nil {
+			err = singleton.DB.Unscoped().Delete(&model.AlertRule{}, "id = ?", id).Error
+		} else {
+			err = errors.New("数据库未初始化")
+		}
 		if err == nil {
 			singleton.OnDeleteAlert(id)
 		}
@@ -488,11 +541,29 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 			if s.ID == 0 {
 				s.Secret, err = utils.GenerateRandomString(18)
 				if err == nil {
-					err = singleton.DB.Create(&s).Error
+					// BadgerDB 模式下使用 BadgerDB 操作
+					if singleton.Conf.DatabaseType == "badger" {
+						// 为新服务器生成ID
+						if s.ID == 0 {
+							s.ID = uint64(time.Now().UnixNano())
+						}
+						err = db.DB.SaveModel("server", s.ID, &s)
+					} else if singleton.DB != nil {
+						err = singleton.DB.Create(&s).Error
+					} else {
+						err = errors.New("数据库未初始化")
+					}
 				}
 			} else {
 				isEdit = true
-				err = singleton.DB.Save(&s).Error
+				// BadgerDB 模式下使用 BadgerDB 操作
+				if singleton.Conf.DatabaseType == "badger" {
+					err = db.DB.SaveModel("server", s.ID, &s)
+				} else if singleton.DB != nil {
+					err = singleton.DB.Save(&s).Error
+				} else {
+					err = errors.New("数据库未初始化")
+				}
 			}
 		}
 	}
@@ -606,16 +677,37 @@ func (ma *memberAPI) addOrEditMonitor(c *gin.Context) {
 	}
 	if err == nil {
 		if m.ID == 0 {
-			err = singleton.DB.Create(&m).Error
+			// BadgerDB 模式下使用 BadgerDB 操作
+			if singleton.Conf.DatabaseType == "badger" {
+				// 为新监控器生成ID
+				if m.ID == 0 {
+					m.ID = uint64(time.Now().UnixNano())
+				}
+				err = db.DB.SaveModel("monitor", m.ID, &m)
+			} else if singleton.DB != nil {
+				err = singleton.DB.Create(&m).Error
+			} else {
+				err = errors.New("数据库未初始化")
+			}
 		} else {
-			err = singleton.DB.Save(&m).Error
+			// BadgerDB 模式下使用 BadgerDB 操作
+			if singleton.Conf.DatabaseType == "badger" {
+				err = db.DB.SaveModel("monitor", m.ID, &m)
+			} else if singleton.DB != nil {
+				err = singleton.DB.Save(&m).Error
+			} else {
+				err = errors.New("数据库未初始化")
+			}
 		}
 	}
 	if err == nil {
-		if m.Cover == 0 {
-			err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ? and server_id in (?)", m.ID, strings.Split(m.SkipServersRaw[1:len(m.SkipServersRaw)-1], ",")).Error
-		} else {
-			err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ? and server_id not in (?)", m.ID, strings.Split(m.SkipServersRaw[1:len(m.SkipServersRaw)-1], ",")).Error
+		// BadgerDB 模式下跳过监控历史删除操作（暂不支持复杂查询）
+		if singleton.Conf.DatabaseType != "badger" && singleton.DB != nil {
+			if m.Cover == 0 {
+				err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ? and server_id in (?)", m.ID, strings.Split(m.SkipServersRaw[1:len(m.SkipServersRaw)-1], ",")).Error
+			} else {
+				err = singleton.DB.Unscoped().Delete(&model.MonitorHistory{}, "monitor_id = ? and server_id not in (?)", m.ID, strings.Split(m.SkipServersRaw[1:len(m.SkipServersRaw)-1], ",")).Error
+			}
 		}
 	}
 	if err == nil {
@@ -672,28 +764,58 @@ func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 		return
 	}
 
-	tx := singleton.DB.Begin()
-	if err == nil {
-		// 保证NotificationTag不为空
-		if cr.NotificationTag == "" {
-			cr.NotificationTag = "default"
+	// BadgerDB 模式下使用不同的事务处理
+	if singleton.Conf.DatabaseType == "badger" {
+		if err == nil {
+			// 保证NotificationTag不为空
+			if cr.NotificationTag == "" {
+				cr.NotificationTag = "default"
+			}
+			if cf.ID == 0 {
+				// 为新计划任务生成ID
+				if cr.ID == 0 {
+					cr.ID = uint64(time.Now().UnixNano())
+				}
+				err = db.DB.SaveModel("cron", cr.ID, &cr)
+			} else {
+				err = db.DB.SaveModel("cron", cr.ID, &cr)
+			}
 		}
-		if cf.ID == 0 {
-			err = tx.Create(&cr).Error
-		} else {
-			err = tx.Save(&cr).Error
+		if err == nil {
+			// 对于计划任务类型，需要更新CronJob
+			if cf.TaskType == model.CronTypeCronTask {
+				cr.CronJobID, err = singleton.Cron.AddFunc(cr.Scheduler, singleton.CronTrigger(cr))
+			}
 		}
-	}
-	if err == nil {
-		// 对于计划任务类型，需要更新CronJob
-		if cf.TaskType == model.CronTypeCronTask {
-			cr.CronJobID, err = singleton.Cron.AddFunc(cr.Scheduler, singleton.CronTrigger(cr))
-		}
-	}
-	if err == nil {
-		err = tx.Commit().Error
 	} else {
-		tx.Rollback()
+		// SQLite 模式下使用事务
+		if singleton.DB == nil {
+			err = errors.New("数据库未初始化")
+		} else {
+			tx := singleton.DB.Begin()
+			if err == nil {
+				// 保证NotificationTag不为空
+				if cr.NotificationTag == "" {
+					cr.NotificationTag = "default"
+				}
+				if cf.ID == 0 {
+					err = tx.Create(&cr).Error
+				} else {
+					err = tx.Save(&cr).Error
+				}
+			}
+			if err == nil {
+				// 对于计划任务类型，需要更新CronJob
+				if cf.TaskType == model.CronTypeCronTask {
+					cr.CronJobID, err = singleton.Cron.AddFunc(cr.Scheduler, singleton.CronTrigger(cr))
+				}
+			}
+			if err == nil {
+				err = tx.Commit().Error
+			} else {
+				tx.Rollback()
+			}
+		}
 	}
 	if err != nil {
 		c.JSON(http.StatusOK, model.Response{
@@ -720,7 +842,25 @@ func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 
 func (ma *memberAPI) manualTrigger(c *gin.Context) {
 	var cr model.Cron
-	if err := singleton.DB.First(&cr, "id = ?", c.Param("id")).Error; err != nil {
+	cronID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusOK, model.Response{
+			Code:    http.StatusBadRequest,
+			Message: "无效的任务ID",
+		})
+		return
+	}
+
+	// BadgerDB 模式下使用 BadgerDB 操作
+	if singleton.Conf.DatabaseType == "badger" {
+		err = db.DB.FindModel(cronID, "cron", &cr)
+	} else if singleton.DB != nil {
+		err = singleton.DB.First(&cr, "id = ?", cronID).Error
+	} else {
+		err = errors.New("数据库未初始化")
+	}
+
+	if err != nil {
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: err.Error(),
@@ -750,10 +890,39 @@ func (ma *memberAPI) batchUpdateServerGroup(c *gin.Context) {
 		return
 	}
 
-	if err := singleton.DB.Model(&model.Server{}).Where("id in (?)", req.Servers).Update("tag", req.Group).Error; err != nil {
+	// BadgerDB 模式下使用不同的更新方式
+	if singleton.Conf.DatabaseType == "badger" {
+		// 在BadgerDB模式下，逐个更新服务器
+		for _, serverID := range req.Servers {
+			var server model.Server
+			if err := db.DB.FindModel(serverID, "server", &server); err != nil {
+				c.JSON(http.StatusOK, model.Response{
+					Code:    http.StatusBadRequest,
+					Message: fmt.Sprintf("找不到服务器 %d: %v", serverID, err),
+				})
+				return
+			}
+			server.Tag = req.Group
+			if err := db.DB.SaveModel("server", serverID, &server); err != nil {
+				c.JSON(http.StatusOK, model.Response{
+					Code:    http.StatusBadRequest,
+					Message: fmt.Sprintf("更新服务器 %d 失败: %v", serverID, err),
+				})
+				return
+			}
+		}
+	} else if singleton.DB != nil {
+		if err := singleton.DB.Model(&model.Server{}).Where("id in (?)", req.Servers).Update("tag", req.Group).Error; err != nil {
+			c.JSON(http.StatusOK, model.Response{
+				Code:    http.StatusBadRequest,
+				Message: err.Error(),
+			})
+			return
+		}
+	} else {
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
-			Message: err.Error(),
+			Message: "数据库未初始化",
 		})
 		return
 	}
@@ -877,9 +1046,27 @@ func (ma *memberAPI) addOrEditNotification(c *gin.Context) {
 			n.Tag = "default"
 		}
 		if n.ID == 0 {
-			err = singleton.DB.Create(&n).Error
+			// BadgerDB 模式下使用 BadgerDB 操作
+			if singleton.Conf.DatabaseType == "badger" {
+				// 为新通知配置生成ID
+				if n.ID == 0 {
+					n.ID = uint64(time.Now().UnixNano())
+				}
+				err = db.DB.SaveModel("notification", n.ID, &n)
+			} else if singleton.DB != nil {
+				err = singleton.DB.Create(&n).Error
+			} else {
+				err = errors.New("数据库未初始化")
+			}
 		} else {
-			err = singleton.DB.Save(&n).Error
+			// BadgerDB 模式下使用 BadgerDB 操作
+			if singleton.Conf.DatabaseType == "badger" {
+				err = db.DB.SaveModel("notification", n.ID, &n)
+			} else if singleton.DB != nil {
+				err = singleton.DB.Save(&n).Error
+			} else {
+				err = errors.New("数据库未初始化")
+			}
 		}
 	}
 	if err != nil {
@@ -952,9 +1139,27 @@ func (ma *memberAPI) addOrEditDDNS(c *gin.Context) {
 	}
 	if err == nil {
 		if p.ID == 0 {
-			err = singleton.DB.Create(&p).Error
+			// BadgerDB 模式下使用 BadgerDB 操作
+			if singleton.Conf.DatabaseType == "badger" {
+				// 为新DDNS配置生成ID
+				if p.ID == 0 {
+					p.ID = uint64(time.Now().UnixNano())
+				}
+				err = db.DB.SaveModel("ddns_profile", p.ID, &p)
+			} else if singleton.DB != nil {
+				err = singleton.DB.Create(&p).Error
+			} else {
+				err = errors.New("数据库未初始化")
+			}
 		} else {
-			err = singleton.DB.Save(&p).Error
+			// BadgerDB 模式下使用 BadgerDB 操作
+			if singleton.Conf.DatabaseType == "badger" {
+				err = db.DB.SaveModel("ddns_profile", p.ID, &p)
+			} else if singleton.DB != nil {
+				err = singleton.DB.Save(&p).Error
+			} else {
+				err = errors.New("数据库未初始化")
+			}
 		}
 	}
 	if err != nil {
@@ -991,9 +1196,27 @@ func (ma *memberAPI) addOrEditNAT(c *gin.Context) {
 	}
 	if err == nil {
 		if n.ID == 0 {
-			err = singleton.DB.Create(&n).Error
+			// BadgerDB 模式下使用 BadgerDB 操作
+			if singleton.Conf.DatabaseType == "badger" {
+				// 为新NAT配置生成ID
+				if n.ID == 0 {
+					n.ID = uint64(time.Now().UnixNano())
+				}
+				err = db.DB.SaveModel("nat", n.ID, &n)
+			} else if singleton.DB != nil {
+				err = singleton.DB.Create(&n).Error
+			} else {
+				err = errors.New("数据库未初始化")
+			}
 		} else {
-			err = singleton.DB.Save(&n).Error
+			// BadgerDB 模式下使用 BadgerDB 操作
+			if singleton.Conf.DatabaseType == "badger" {
+				err = db.DB.SaveModel("nat", n.ID, &n)
+			} else if singleton.DB != nil {
+				err = singleton.DB.Save(&n).Error
+			} else {
+				err = errors.New("数据库未初始化")
+			}
 		}
 	}
 	if err != nil {
@@ -1079,9 +1302,27 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 			r.NotificationTag = "default"
 		}
 		if r.ID == 0 {
-			err = singleton.DB.Create(&r).Error
+			// BadgerDB 模式下使用 BadgerDB 操作
+			if singleton.Conf.DatabaseType == "badger" {
+				// 为新报警规则生成ID
+				if r.ID == 0 {
+					r.ID = uint64(time.Now().UnixNano())
+				}
+				err = db.DB.SaveModel("alert_rule", r.ID, &r)
+			} else if singleton.DB != nil {
+				err = singleton.DB.Create(&r).Error
+			} else {
+				err = errors.New("数据库未初始化")
+			}
 		} else {
-			err = singleton.DB.Save(&r).Error
+			// BadgerDB 模式下使用 BadgerDB 操作
+			if singleton.Conf.DatabaseType == "badger" {
+				err = db.DB.SaveModel("alert_rule", r.ID, &r)
+			} else if singleton.DB != nil {
+				err = singleton.DB.Save(&r).Error
+			} else {
+				err = errors.New("数据库未初始化")
+			}
 		}
 	}
 	if err != nil {
@@ -1118,10 +1359,19 @@ func (ma *memberAPI) logout(c *gin.Context) {
 		})
 		return
 	}
-	singleton.DB.Model(admin).UpdateColumns(model.User{
-		Token:        "",
-		TokenExpired: time.Now(),
-	})
+	// BadgerDB 模式下使用 BadgerDB 操作
+	if singleton.Conf.DatabaseType == "badger" {
+		admin.Token = ""
+		admin.TokenExpired = time.Now()
+		if err := db.DB.SaveModel("user", admin.ID, admin); err != nil {
+			log.Printf("更新用户登出状态到BadgerDB失败: %v", err)
+		}
+	} else if singleton.DB != nil {
+		singleton.DB.Model(admin).UpdateColumns(model.User{
+			Token:        "",
+			TokenExpired: time.Now(),
+		})
+	}
 	c.JSON(http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
@@ -1250,10 +1500,30 @@ func (ma *memberAPI) batchDeleteServer(c *gin.Context) {
 		})
 		return
 	}
-	if err := singleton.DB.Unscoped().Delete(&model.Server{}, "id in (?)", servers).Error; err != nil {
+	// BadgerDB 模式下使用不同的删除方式
+	if singleton.Conf.DatabaseType == "badger" {
+		// 在BadgerDB模式下，逐个删除服务器
+		for _, serverID := range servers {
+			if err := db.DB.DeleteModel("server", serverID); err != nil {
+				c.JSON(http.StatusOK, model.Response{
+					Code:    http.StatusBadRequest,
+					Message: fmt.Sprintf("删除服务器 %d 失败: %v", serverID, err),
+				})
+				return
+			}
+		}
+	} else if singleton.DB != nil {
+		if err := singleton.DB.Unscoped().Delete(&model.Server{}, "id in (?)", servers).Error; err != nil {
+			c.JSON(http.StatusOK, model.Response{
+				Code:    http.StatusBadRequest,
+				Message: err.Error(),
+			})
+			return
+		}
+	} else {
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
-			Message: err.Error(),
+			Message: "数据库未初始化",
 		})
 		return
 	}
@@ -1298,7 +1568,10 @@ func onServerDelete(id uint64) {
 	}
 	singleton.AlertsLock.Unlock()
 
-	singleton.DB.Unscoped().Delete(&model.Transfer{}, "server_id = ?", id)
+	// BadgerDB 模式下暂不支持复杂的流量数据删除
+	if singleton.Conf.DatabaseType != "badger" && singleton.DB != nil {
+		singleton.DB.Unscoped().Delete(&model.Transfer{}, "server_id = ?", id)
+	}
 }
 
 // cleanNumbersInJSON 清理JSON中带千位分隔符的数字
