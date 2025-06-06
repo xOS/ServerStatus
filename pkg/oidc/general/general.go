@@ -1,6 +1,8 @@
 package general
 
 import (
+	"log"
+
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/service/singleton"
 )
@@ -42,6 +44,11 @@ func (u UserInfo) MapToServerUser(loginClaim string, groupClaim string, adminGro
 			break
 		}
 	}
+	if singleton.DB == nil {
+		log.Printf("警告：数据库未初始化，OIDC用户创建失败")
+		return model.User{}
+	}
+
 	result := singleton.DB.Where("login = ?", login).First(&user)
 	user.Login = login
 	user.Email = u.Email

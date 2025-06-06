@@ -176,6 +176,11 @@ func DDNSChangeNotificationCallback(serverName string, serverID uint64, domain s
 
 	// 以下是SQLite逻辑
 	// 查询或创建DDNS记录状态
+	if DB == nil {
+		log.Printf("SQLite数据库未初始化，跳过DDNS记录状态更新")
+		return
+	}
+
 	var recordState model.DDNSRecordState
 	result := DB.Where("server_id = ? AND domain = ? AND record_type = ?", serverID, domain, recordType).First(&recordState)
 

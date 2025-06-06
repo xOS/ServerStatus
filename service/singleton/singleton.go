@@ -326,8 +326,11 @@ func LoadSingleton() {
 	Cron.AddFunc("0 0 */4 * * *", func() {
 		CleanMonitorHistory()
 		Cache.DeleteExpired()
-		CleanupServerState() // 添加服务器状态清理
-		SaveAllTrafficToDB() // 保存流量数据到数据库
+		// 只在SQLite模式下执行服务器状态清理
+		if Conf.DatabaseType != "badger" {
+			CleanupServerState() // 添加服务器状态清理
+			SaveAllTrafficToDB() // 保存流量数据到数据库
+		}
 	})
 
 	// 定期温和清理任务，改为每小时执行一次
@@ -429,30 +432,34 @@ func InitDBFromPath(path string) error {
 		return err
 	}
 
-	// 专门为monitor_histories表添加优化
-	DB.Exec("PRAGMA temp_store = MEMORY;")
-	DB.Exec("PRAGMA mmap_size = 1073741824;")        // 1GB
-	DB.Exec("PRAGMA cache_size = -131072;")          // 增加到128MB
-	DB.Exec("PRAGMA journal_size_limit = 67108864;") // 64MB
-	DB.Exec("PRAGMA busy_timeout = 180000;")         // 180秒等待超时
-	DB.Exec("PRAGMA locking_mode = EXCLUSIVE;")      // 独占锁定模式，减少锁冲突
-	DB.Exec("PRAGMA wal_autocheckpoint = 50000;")    // 增加自动检查点，从20000增加到50000
+	// 专门为monitor_histories表添加优化（仅在SQLite模式下）
+	if DB != nil {
+		DB.Exec("PRAGMA temp_store = MEMORY;")
+		DB.Exec("PRAGMA mmap_size = 1073741824;")        // 1GB
+		DB.Exec("PRAGMA cache_size = -131072;")          // 增加到128MB
+		DB.Exec("PRAGMA journal_size_limit = 67108864;") // 64MB
+		DB.Exec("PRAGMA busy_timeout = 180000;")         // 180秒等待超时
+		DB.Exec("PRAGMA locking_mode = EXCLUSIVE;")      // 独占锁定模式，减少锁冲突
+		DB.Exec("PRAGMA wal_autocheckpoint = 50000;")    // 增加自动检查点，从20000增加到50000
 
-	// 为monitor_histories表添加特定索引，提高查询性能
-	DB.Exec("CREATE INDEX IF NOT EXISTS idx_monitor_histories_created_at ON monitor_histories(created_at);")
-	DB.Exec("CREATE INDEX IF NOT EXISTS idx_monitor_histories_monitor_type ON monitor_histories(monitor_id);")
-	DB.Exec("CREATE INDEX IF NOT EXISTS idx_monitor_histories_server_id ON monitor_histories(server_id);")
-
-	// 优化连接池配置
-	rawDB, err := DB.DB()
-	if err != nil {
-		return err
+		// 为monitor_histories表添加特定索引，提高查询性能
+		DB.Exec("CREATE INDEX IF NOT EXISTS idx_monitor_histories_created_at ON monitor_histories(created_at);")
+		DB.Exec("CREATE INDEX IF NOT EXISTS idx_monitor_histories_monitor_type ON monitor_histories(monitor_id);")
+		DB.Exec("CREATE INDEX IF NOT EXISTS idx_monitor_histories_server_id ON monitor_histories(server_id);")
 	}
 
-	// 修改连接池配置，降低并发压力
-	rawDB.SetMaxIdleConns(3) // 降低空闲连接数，从10降到3
-	rawDB.SetMaxOpenConns(6) // 降低最大连接数，从20降到6
-	rawDB.SetConnMaxLifetime(time.Hour)
+	// 优化连接池配置（仅在SQLite模式下）
+	if DB != nil {
+		rawDB, err := DB.DB()
+		if err != nil {
+			return err
+		}
+
+		// 修改连接池配置，降低并发压力
+		rawDB.SetMaxIdleConns(3) // 降低空闲连接数，从10降到3
+		rawDB.SetMaxOpenConns(6) // 降低最大连接数，从20降到6
+		rawDB.SetConnMaxLifetime(time.Hour)
+	}
 
 	// 初始化数据库表
 	log.Println("开始数据库表迁移...")
@@ -534,6 +541,10 @@ func isSystemBusy() bool {
 	}
 
 	// 检查数据库连接池状态来判断系统繁忙程度
+	if DB == nil {
+		return true
+	}
+
 	sqlDB, err := DB.DB()
 	if err != nil {
 		return true
@@ -548,12 +559,14 @@ func isSystemBusy() bool {
 	}
 
 	// 快速检查是否存在数据库锁
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	var result int
-	err = DB.WithContext(ctx).Raw("SELECT 1").Scan(&result).Error
-	if err != nil && strings.Contains(err.Error(), "database is locked") {
-		return true
+	if DB != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		var result int
+		err = DB.WithContext(ctx).Raw("SELECT 1").Scan(&result).Error
+		if err != nil && strings.Contains(err.Error(), "database is locked") {
+			return true
+		}
 	}
 
 	return false
@@ -645,6 +658,12 @@ func CleanMonitorHistory() (int64, error) {
 		}
 	}
 
+	// 仅在SQLite模式下进行清理
+	if DB == nil {
+		log.Printf("SQLite数据库未初始化，跳过监控历史清理")
+		return 0, nil
+	}
+
 	// 检查是否有其他重要操作正在进行
 	if isSystemBusy() {
 		log.Printf("系统繁忙，延迟历史数据清理")
@@ -676,6 +695,9 @@ func CleanMonitorHistory() (int64, error) {
 				time.Sleep(time.Duration(retry*100) * time.Millisecond)
 
 				// 使用子查询删除，添加安全时间检查，确保不会删除新数据
+				if DB == nil {
+					return fmt.Errorf("数据库未初始化")
+				}
 				result := DB.Exec("DELETE FROM monitor_histories WHERE rowid IN (SELECT rowid FROM monitor_histories WHERE created_at < ? AND created_at < ? LIMIT ?)",
 					cutoffDate.Format("2006-01-02 15:04:05"),
 					safetyBuffer.Format("2006-01-02 15:04:05"),
@@ -727,6 +749,9 @@ func CleanMonitorHistory() (int64, error) {
 				time.Sleep(time.Duration(retry*100) * time.Millisecond)
 
 				// 使用子查询删除孤立记录，添加时间安全检查
+				if DB == nil {
+					return fmt.Errorf("数据库未初始化")
+				}
 				result := DB.Exec("DELETE FROM monitor_histories WHERE rowid IN (SELECT rowid FROM monitor_histories WHERE monitor_id NOT IN (SELECT id FROM monitors) AND created_at < ? LIMIT ?)",
 					safetyBuffer.Format("2006-01-02 15:04:05"),
 					batchSize)
@@ -770,6 +795,9 @@ func CleanMonitorHistory() (int64, error) {
 			// 等待确保没有其他操作在进行
 			time.Sleep(time.Duration(retry*100) * time.Millisecond)
 
+			if DB == nil {
+				return fmt.Errorf("数据库未初始化")
+			}
 			result := DB.Exec("DELETE FROM transfers WHERE server_id NOT IN (SELECT id FROM servers)")
 
 			if result.Error != nil {
@@ -876,21 +904,23 @@ func CheckServerOnlineStatus() {
 						server.LastStateJSON = string(lastStateJSON)
 						server.LastOnline = server.LastActive
 
-						// 更新数据库
-						DB.Model(server).Updates(map[string]interface{}{
-							"last_state_json": server.LastStateJSON,
-							"last_online":     server.LastOnline,
-						})
+						// 更新数据库（仅在SQLite模式下）
+						if Conf.DatabaseType != "badger" && DB != nil {
+							DB.Model(server).Updates(map[string]interface{}{
+								"last_state_json": server.LastStateJSON,
+								"last_online":     server.LastOnline,
+							})
 
-						// 确保Host信息也已保存
-						if server.Host != nil {
-							// 检查Host信息是否为空
-							if len(server.Host.CPU) > 0 || server.Host.MemTotal > 0 {
-								// 将Host信息保存到servers表
-								hostJSON, hostErr := utils.Json.Marshal(server.Host)
-								if hostErr == nil && len(hostJSON) > 0 {
-									DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
-										string(hostJSON), server.ID)
+							// 确保Host信息也已保存
+							if server.Host != nil {
+								// 检查Host信息是否为空
+								if len(server.Host.CPU) > 0 || server.Host.MemTotal > 0 {
+									// 将Host信息保存到servers表
+									hostJSON, hostErr := utils.Json.Marshal(server.Host)
+									if hostErr == nil && len(hostJSON) > 0 {
+										DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
+											string(hostJSON), server.ID)
+									}
 								}
 							}
 						}
@@ -1443,7 +1473,18 @@ func OptimizeDatabase() {
 
 	log.Println("开始数据库优化...")
 
+	// 仅在SQLite模式下进行数据库优化
+	if Conf.DatabaseType == "badger" {
+		log.Println("使用BadgerDB，跳过数据库优化")
+		return
+	}
+
 	// 先获取数据库状态
+	if DB == nil {
+		log.Printf("数据库未初始化，跳过优化")
+		return
+	}
+
 	sqlDB, err := DB.DB()
 	if err != nil {
 		log.Printf("获取数据库连接失败: %v", err)
@@ -1454,12 +1495,14 @@ func OptimizeDatabase() {
 	LogConnectionPoolStats()
 
 	// 只进行轻量级优化操作，避免长时间锁定
-	err = executeWithAdvancedRetry(func() error {
-		// 使用短超时执行optimize
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return DB.WithContext(ctx).Exec("PRAGMA optimize").Error
-	}, 3, 100*time.Millisecond, 500*time.Millisecond)
+	if DB != nil {
+		err = executeWithAdvancedRetry(func() error {
+			// 使用短超时执行optimize
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return DB.WithContext(ctx).Exec("PRAGMA optimize").Error
+		}, 3, 100*time.Millisecond, 500*time.Millisecond)
+	}
 
 	if err != nil {
 		log.Printf("数据库优化失败: %v", err)
@@ -1568,6 +1611,15 @@ func SafeDatabaseUpdate(tableName string, updateData map[string]interface{}, whe
 
 // SafeDatabaseDelete 安全的数据库删除操作
 func SafeDatabaseDelete(model interface{}, whereClause string, args ...interface{}) error {
+	// 仅在SQLite模式下执行
+	if Conf.DatabaseType == "badger" {
+		return fmt.Errorf("SafeDatabaseDelete不支持BadgerDB模式")
+	}
+
+	if DB == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+
 	return executeDatabaseOperation(func() error {
 		return executeWithoutLock(func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1931,9 +1983,11 @@ func WarmupDatabase() {
 			time.Sleep(time.Duration(index*500) * time.Millisecond)
 
 			// 执行简单查询来预热连接
-			var count int64
-			DB.Model(&model.Server{}).Count(&count)
-			log.Printf("预热连接 %d 完成，服务器数量: %d", index, count)
+			if DB != nil {
+				var count int64
+				DB.Model(&model.Server{}).Count(&count)
+				log.Printf("预热连接 %d 完成，服务器数量: %d", index, count)
+			}
 		}(i)
 	}
 
@@ -2769,18 +2823,21 @@ func VerifyMonitorHistoryConsistency() {
 	// 以下是SQLite的检查逻辑
 	// 使用重试机制执行数据库查询
 	var count int64
-	err := executeWithAdvancedRetry(func() error {
-		// 检查最近30分钟内添加的ICMP/TCP监控记录
-		checkTime := time.Now().Add(-30 * time.Minute)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	var err error
+	if DB != nil {
+		err = executeWithAdvancedRetry(func() error {
+			// 检查最近30分钟内添加的ICMP/TCP监控记录
+			checkTime := time.Now().Add(-30 * time.Minute)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-		return DB.WithContext(ctx).Model(&model.MonitorHistory{}).
-			Where("created_at > ? AND monitor_id IN (?, ?)",
-				checkTime.Format("2006-01-02 15:04:05"),
-				model.TaskTypeICMPPing, model.TaskTypeTCPPing).
-			Count(&count).Error
-	}, 5, 200*time.Millisecond, 2*time.Second)
+			return DB.WithContext(ctx).Model(&model.MonitorHistory{}).
+				Where("created_at > ? AND monitor_id IN (?, ?)",
+					checkTime.Format("2006-01-02 15:04:05"),
+					model.TaskTypeICMPPing, model.TaskTypeTCPPing).
+				Count(&count).Error
+		}, 5, 200*time.Millisecond, 2*time.Second)
+	}
 
 	if err != nil {
 		log.Printf("检查监控历史记录失败: %v", err)
@@ -2807,16 +2864,18 @@ func VerifyMonitorHistoryConsistency() {
 
 	// 检查空数据记录
 	var emptyCount int64
-	err = executeWithAdvancedRetry(func() error {
-		checkTime := time.Now().Add(-30 * time.Minute)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	if DB != nil {
+		err = executeWithAdvancedRetry(func() error {
+			checkTime := time.Now().Add(-30 * time.Minute)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-		return DB.WithContext(ctx).Model(&model.MonitorHistory{}).
-			Where("created_at > ? AND (data = '' OR data IS NULL)",
-				checkTime.Format("2006-01-02 15:04:05")).
-			Count(&emptyCount).Error
-	}, 5, 200*time.Millisecond, 2*time.Second)
+			return DB.WithContext(ctx).Model(&model.MonitorHistory{}).
+				Where("created_at > ? AND (data = '' OR data IS NULL)",
+					checkTime.Format("2006-01-02 15:04:05")).
+				Count(&emptyCount).Error
+		}, 5, 200*time.Millisecond, 2*time.Second)
+	}
 
 	if err != nil {
 		log.Printf("检查空数据记录失败: %v", err)

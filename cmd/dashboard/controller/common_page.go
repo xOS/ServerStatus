@@ -21,6 +21,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
@@ -267,14 +268,45 @@ func (cp *commonPage) network(c *gin.Context) {
 	// 获取监控历史记录
 	var monitorHistories interface{}
 	if singleton.Conf.DatabaseType == "badger" {
-		// BadgerDB 模式，使用空的历史记录
+		// BadgerDB 模式，查询监控历史记录
 		if singleton.Conf.Debug {
-			log.Printf("network: BadgerDB模式，使用空的监控历史记录")
+			log.Printf("network: BadgerDB模式，查询监控历史记录")
 		}
-		// 创建一个空的历史记录数组
-		monitorHistories = []model.MonitorHistory{}
+
+		// BadgerDB模式，使用BadgerDB查询监控历史记录
+		if db.DB != nil && id > 0 {
+			// 获取时间范围（最近30天）
+			endTime := time.Now()
+			startTime := endTime.AddDate(0, 0, -30)
+
+			monitorOps := db.NewMonitorHistoryOps(db.DB)
+			allHistories, err := monitorOps.GetAllMonitorHistoriesInRange(startTime, endTime)
+			if err != nil {
+				log.Printf("network: 从BadgerDB查询监控历史记录失败: %v", err)
+				monitorHistories = []model.MonitorHistory{}
+			} else {
+				// 过滤出指定服务器的记录并转换为值数组
+				var filteredHistories []model.MonitorHistory
+				for _, h := range allHistories {
+					if h != nil && h.ServerID == id {
+						filteredHistories = append(filteredHistories, *h)
+					}
+				}
+				monitorHistories = filteredHistories
+				log.Printf("network: BadgerDB为服务器 %d 找到 %d 条监控历史记录", id, len(filteredHistories))
+			}
+		} else {
+			log.Printf("network: BadgerDB未初始化或无效服务器ID，使用空数组")
+			monitorHistories = []model.MonitorHistory{}
+		}
+
 		// 序列化为JSON
-		monitorInfos, _ = utils.Json.Marshal(monitorHistories)
+		var err error
+		monitorInfos, err = utils.Json.Marshal(monitorHistories)
+		if err != nil {
+			log.Printf("network: 监控历史记录序列化失败: %v", err)
+			monitorInfos = []byte("[]")
+		}
 	} else {
 		// SQLite 模式，使用 MonitorAPI
 		if singleton.MonitorAPI != nil {

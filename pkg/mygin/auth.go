@@ -66,16 +66,21 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 						}
 					} else {
 						// 在内存中查找匹配token的用户
-						log.Printf("认证: 在 %d 个用户中查找token: %s", len(users), token[:8]+"...")
+						// 减少日志输出频率，只在调试模式下输出
+						if singleton.Conf.Debug {
+							log.Printf("认证: 在 %d 个用户中查找token: %s", len(users), token[:8]+"...")
+						}
 						for _, user := range users {
 							if user != nil && user.Token == token {
 								// 检查token是否过期
 								if user.TokenExpired.After(time.Now()) {
 									u = *user
 									isLogin = true
-									log.Printf("认证: 找到有效用户 %s (ID: %d)", user.Login, user.ID)
+									if singleton.Conf.Debug {
+										log.Printf("认证: 找到有效用户 %s (ID: %d)", user.Login, user.ID)
+									}
 									break
-								} else {
+								} else if singleton.Conf.Debug {
 									log.Printf("认证: 用户 %s 的token已过期", user.Login)
 								}
 							}
@@ -83,7 +88,9 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 
 						// 如果没有找到有效用户，但token是admin，则使用默认管理员账户
 						if !isLogin && token == "admin" {
-							log.Printf("使用默认管理员账户")
+							if singleton.Conf.Debug {
+								log.Printf("使用默认管理员账户")
+							}
 							u = model.User{
 								Common:     model.Common{ID: 1},
 								Login:      "admin",
@@ -92,7 +99,7 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 							isLogin = true
 						}
 
-						if !isLogin {
+						if !isLogin && singleton.Conf.Debug {
 							log.Printf("认证: 未找到匹配的有效用户，token: %s", token[:8]+"...")
 						}
 					}
@@ -118,6 +125,16 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 					}
 				} else {
 					log.Printf("警告：SQLite未初始化，用户认证将失败")
+					// 在调试模式下使用默认管理员账户
+					if singleton.Conf.Debug && token == "admin" {
+						log.Printf("调试模式：使用默认管理员账户")
+						u = model.User{
+							Common:     model.Common{ID: 1},
+							Login:      "admin",
+							SuperAdmin: true,
+						}
+						isLogin = true
+					}
 				}
 			}
 
@@ -161,6 +178,8 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 						if singleton.DB != nil {
 							err := singleton.DB.Where("id = ?", singleton.ApiTokenList[apiToken].UserID).First(&u).Error
 							isLogin = err == nil
+						} else {
+							log.Printf("警告：SQLite未初始化，API Token认证将失败")
 						}
 					}
 				}

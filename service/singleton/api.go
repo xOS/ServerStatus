@@ -472,13 +472,65 @@ func (m *MonitorAPIService) GetMonitorHistories(search map[string]any) []*model.
 		return make([]*model.MonitorHistory, 0)
 	}
 
-	if err := DB.Model(&model.MonitorHistory{}).
-		Where(search).
-		FindInBatches(&mhs, 100, func(tx *gorm.DB, batch int) error {
-			return nil
-		}).Error; err != nil {
-		log.Printf("获取监控记录失败: %v", err)
-		// 返回空数组而不是nil
+	// 根据数据库类型选择不同的查询方式
+	if Conf.DatabaseType == "badger" {
+		// 使用BadgerDB查询监控历史记录
+		if db.DB != nil {
+			// 获取服务器ID
+			var serverID uint64
+			if sid, ok := search["server_id"]; ok {
+				if sidVal, ok := sid.(uint64); ok {
+					serverID = sidVal
+				}
+			}
+
+			if serverID == 0 {
+				log.Printf("MonitorAPIService.GetMonitorHistories: 无效的服务器ID")
+				return make([]*model.MonitorHistory, 0)
+			}
+
+			// 获取时间范围（默认最近30天）
+			endTime := time.Now()
+			startTime := endTime.AddDate(0, 0, -30)
+
+			// 从BadgerDB查询监控历史记录
+			monitorOps := db.NewMonitorHistoryOps(db.DB)
+
+			// 获取所有监控历史记录并过滤
+			allHistories, err := monitorOps.GetAllMonitorHistoriesInRange(startTime, endTime)
+			if err != nil {
+				log.Printf("MonitorAPIService.GetMonitorHistories: 从BadgerDB查询失败: %v", err)
+				return make([]*model.MonitorHistory, 0)
+			}
+
+			// 过滤出指定服务器的记录
+			var filteredHistories []*model.MonitorHistory
+			for _, h := range allHistories {
+				if h != nil && h.ServerID == serverID {
+					filteredHistories = append(filteredHistories, h)
+				}
+			}
+
+			log.Printf("BadgerDB: 为服务器 %d 找到 %d 条监控历史记录", serverID, len(filteredHistories))
+			return filteredHistories
+		} else {
+			log.Printf("BadgerDB未初始化，返回空监控记录")
+			return make([]*model.MonitorHistory, 0)
+		}
+	} else if DB != nil {
+		// SQLite模式
+		if err := DB.Model(&model.MonitorHistory{}).
+			Where(search).
+			FindInBatches(&mhs, 100, func(tx *gorm.DB, batch int) error {
+				return nil
+			}).Error; err != nil {
+			log.Printf("获取监控记录失败: %v", err)
+			// 返回空数组而不是nil
+			return make([]*model.MonitorHistory, 0)
+		}
+	} else {
+		// 数据库未初始化，返回空数组
+		log.Printf("数据库未初始化，返回空监控记录")
 		return make([]*model.MonitorHistory, 0)
 	}
 

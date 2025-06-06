@@ -119,34 +119,74 @@ function showFormModal(modelSelector, formID, URL, getData) {
               }
 
               if (item.name.endsWith("ServersRaw")) {
+                // 直接使用隐藏input的值，它已经是正确的JSON格式
                 if (item.value && item.value.length > 2) {
-                  obj[item.name] = JSON.stringify(
-                    [...item.value.matchAll(/\d+/gm)].map((k) =>
-                      parseInt(k[0])
-                    )
-                  );
+                  try {
+                    // 验证是否为有效的JSON数组
+                    var parsedValue = JSON.parse(item.value);
+                    if (Array.isArray(parsedValue)) {
+                      obj[item.name] = item.value;
+                    } else {
+                      obj[item.name] = "[]";
+                    }
+                  } catch (e) {
+                    // 如果不是有效JSON，尝试从字符串中提取数字
+                    obj[item.name] = JSON.stringify(
+                      [...item.value.matchAll(/\d+/gm)].map((k) =>
+                        parseInt(k[0])
+                      )
+                    );
+                  }
                 } else {
                   obj[item.name] = "[]";
                 }
               }
 
               if (item.name.endsWith("TasksRaw")) {
-                if (item.value.length > 2) {
-                  obj[item.name] = JSON.stringify(
-                    [...item.value.matchAll(/\d+/gm)].map((k) =>
-                      parseInt(k[0])
-                    )
-                  );
+                // 直接使用隐藏input的值，它已经是正确的JSON格式
+                if (item.value && item.value.length > 2) {
+                  try {
+                    // 验证是否为有效的JSON数组
+                    var parsedValue = JSON.parse(item.value);
+                    if (Array.isArray(parsedValue)) {
+                      obj[item.name] = item.value;
+                    } else {
+                      obj[item.name] = "[]";
+                    }
+                  } catch (e) {
+                    // 如果不是有效JSON，尝试从字符串中提取数字
+                    obj[item.name] = JSON.stringify(
+                      [...item.value.matchAll(/\d+/gm)].map((k) =>
+                        parseInt(k[0])
+                      )
+                    );
+                  }
+                } else {
+                  obj[item.name] = "[]";
                 }
               }
 
               if (item.name.endsWith("DDNSProfilesRaw")) {
-                if (item.value.length > 2) {
-                  obj[item.name] = JSON.stringify(
-                    [...item.value.matchAll(/\d+/gm)].map((k) =>
-                      parseInt(k[0])
-                    )
-                  );
+                // 直接使用隐藏input的值，它已经是正确的JSON格式
+                if (item.value && item.value.length > 2) {
+                  try {
+                    // 验证是否为有效的JSON数组
+                    var parsedValue = JSON.parse(item.value);
+                    if (Array.isArray(parsedValue)) {
+                      obj[item.name] = item.value;
+                    } else {
+                      obj[item.name] = "[]";
+                    }
+                  } catch (e) {
+                    // 如果不是有效JSON，尝试从字符串中提取数字
+                    obj[item.name] = JSON.stringify(
+                      [...item.value.matchAll(/\d+/gm)].map((k) =>
+                        parseInt(k[0])
+                      )
+                    );
+                  }
+                } else {
+                  obj[item.name] = "[]";
                 }
               }
 
@@ -702,8 +742,51 @@ $(document).ready(() => {
         url: "/api/search-server?word={query}",
         cache: false,
       },
+      // 当选择项目时更新隐藏input
+      onChange: function(value, text, $choice) {
+        var dropdown = $(this);
+        var hiddenInput = dropdown.find('input[type="hidden"]');
+
+        // 获取当前所有可见的标签
+        var currentValues = [];
+        dropdown.find('a.ui.label.visible').each(function() {
+          var labelValue = $(this).attr('data-value');
+          if (labelValue) {
+            currentValues.push(parseInt(labelValue));
+          }
+        });
+
+        hiddenInput.val(JSON.stringify(currentValues));
+        console.log('服务器dropdown值更新:', currentValues);
+      },
+      // 添加删除标签的事件处理
+      onLabelCreate: function(value, text) {
+        var $label = this;
+        var dropdown = $label.closest('.dropdown');
+
+        $label.find('.delete.icon').on('click', function(e) {
+          e.stopPropagation();
+          $label.remove();
+
+          // 更新隐藏的input值
+          var hiddenInput = dropdown.find('input[type="hidden"]');
+          var currentValues = [];
+          dropdown.find('a.ui.label.visible').each(function() {
+            var labelValue = $(this).attr('data-value');
+            if (labelValue && $(this)[0] !== $label[0]) {
+              currentValues.push(parseInt(labelValue));
+            }
+          });
+
+          hiddenInput.val(JSON.stringify(currentValues));
+          console.log('服务器删除后值更新:', currentValues);
+        });
+        return $label;
+      }
     });
-  } catch (error) { }
+  } catch (error) {
+    console.error('初始化服务器搜索dropdown失败:', error);
+  }
 });
 
 $(document).ready(() => {
@@ -714,8 +797,51 @@ $(document).ready(() => {
         url: "/api/search-tasks?word={query}",
         cache: false,
       },
+      // 当选择项目时更新隐藏input
+      onChange: function(value, text, $choice) {
+        var dropdown = $(this);
+        var hiddenInput = dropdown.find('input[type="hidden"]');
+
+        // 获取当前所有可见的标签
+        var currentValues = [];
+        dropdown.find('a.ui.label.visible').each(function() {
+          var labelValue = $(this).attr('data-value');
+          if (labelValue) {
+            currentValues.push(parseInt(labelValue));
+          }
+        });
+
+        hiddenInput.val(JSON.stringify(currentValues));
+        console.log('任务dropdown值更新:', currentValues);
+      },
+      // 添加删除标签的事件处理
+      onLabelCreate: function(value, text) {
+        var $label = this;
+        var dropdown = $label.closest('.dropdown');
+
+        $label.find('.delete.icon').on('click', function(e) {
+          e.stopPropagation();
+          $label.remove();
+
+          // 更新隐藏的input值
+          var hiddenInput = dropdown.find('input[type="hidden"]');
+          var currentValues = [];
+          dropdown.find('a.ui.label.visible').each(function() {
+            var labelValue = $(this).attr('data-value');
+            if (labelValue && $(this)[0] !== $label[0]) {
+              currentValues.push(parseInt(labelValue));
+            }
+          });
+
+          hiddenInput.val(JSON.stringify(currentValues));
+          console.log('任务删除后值更新:', currentValues);
+        });
+        return $label;
+      }
     });
-  } catch (error) { }
+  } catch (error) {
+    console.error('初始化任务搜索dropdown失败:', error);
+  }
 });
 
 $(document).ready(() => {
@@ -726,8 +852,51 @@ $(document).ready(() => {
         url: "/api/search-ddns?word={query}",
         cache: false,
       },
+      // 当选择项目时更新隐藏input
+      onChange: function(value, text, $choice) {
+        var dropdown = $(this);
+        var hiddenInput = dropdown.find('input[type="hidden"]');
+
+        // 获取当前所有可见的标签
+        var currentValues = [];
+        dropdown.find('a.ui.label.visible').each(function() {
+          var labelValue = $(this).attr('data-value');
+          if (labelValue) {
+            currentValues.push(parseInt(labelValue));
+          }
+        });
+
+        hiddenInput.val(JSON.stringify(currentValues));
+        console.log('DDNS dropdown值更新:', currentValues);
+      },
+      // 添加删除标签的事件处理
+      onLabelCreate: function(value, text) {
+        var $label = this;
+        var dropdown = $label.closest('.dropdown');
+
+        $label.find('.delete.icon').on('click', function(e) {
+          e.stopPropagation();
+          $label.remove();
+
+          // 更新隐藏的input值
+          var hiddenInput = dropdown.find('input[type="hidden"]');
+          var currentValues = [];
+          dropdown.find('a.ui.label.visible').each(function() {
+            var labelValue = $(this).attr('data-value');
+            if (labelValue && $(this)[0] !== $label[0]) {
+              currentValues.push(parseInt(labelValue));
+            }
+          });
+
+          hiddenInput.val(JSON.stringify(currentValues));
+          console.log('DDNS删除后值更新:', currentValues);
+        });
+        return $label;
+      }
     });
-  } catch (error) { }
+  } catch (error) {
+    console.error('初始化DDNS搜索dropdown失败:', error);
+  }
 });
 
 // ===== 流量数据处理相关函数 =====

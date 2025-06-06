@@ -110,10 +110,27 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 					r.GetData())
 				singleton.SendNotification(cr.NotificationTag, message, nil, &curServer)
 			}
-			singleton.DB.Model(cr).Updates(model.Cron{
-				LastExecutedAt: time.Now().Add(time.Second * -1 * time.Duration(r.GetDelay())),
-				LastResult:     r.GetSuccessful(),
-			})
+			// 根据数据库类型选择不同的更新方式
+			if singleton.Conf.DatabaseType == "badger" {
+				// 使用BadgerDB更新任务执行时间
+				if db.DB != nil {
+					cronOps := db.NewCronOps(db.DB)
+					cr.LastExecutedAt = time.Now().Add(time.Second * -1 * time.Duration(r.GetDelay()))
+					cr.LastResult = r.GetSuccessful()
+					err := cronOps.SaveCron(cr)
+					if err != nil {
+						log.Printf("BadgerDB更新任务执行时间失败: %v", err)
+					} else {
+						log.Printf("任务 %s 执行完成，结束时间: %s", cr.Name, cr.LastExecutedAt.Format("2006-01-02 15:04:05"))
+					}
+				}
+			} else if singleton.DB != nil {
+				// 使用SQLite更新任务执行时间
+				singleton.DB.Model(cr).Updates(model.Cron{
+					LastExecutedAt: time.Now().Add(time.Second * -1 * time.Duration(r.GetDelay())),
+					LastResult:     r.GetSuccessful(),
+				})
+			}
 		}
 	} else if model.IsServiceSentinelNeeded(r.GetType()) {
 		singleton.ServiceSentinelShared.Dispatch(singleton.ReportData{

@@ -39,7 +39,12 @@ func OnNATUpdate() {
 		}
 	} else {
 		// 使用 GORM (SQLite) 加载NAT配置
-		DB.Find(&nats)
+		if DB != nil {
+			DB.Find(&nats)
+		} else {
+			log.Println("警告: SQLite数据库未初始化")
+			nats = []*model.NAT{}
+		}
 	}
 
 	natCache = make(map[string]*model.NAT)

@@ -48,19 +48,24 @@ func (mp *memberPage) api(c *gin.Context) {
 			if err != nil {
 				log.Printf("从BadgerDB查询API令牌失败: %v", err)
 			} else {
-				// 转换为map格式
+				// 转换为map格式，确保Token字段不为空
 				for _, tokenPtr := range tokenList {
-					if tokenPtr != nil {
+					if tokenPtr != nil && tokenPtr.Token != "" {
 						tokens[tokenPtr.Token] = tokenPtr
+						log.Printf("加载API令牌: %s (Note: %s)", tokenPtr.Token, tokenPtr.Note)
+					} else if tokenPtr != nil {
+						log.Printf("警告: 发现空Token的API令牌记录 (ID: %d, Note: %s)", tokenPtr.ID, tokenPtr.Note)
 					}
 				}
 			}
 		}
+		log.Printf("BadgerDB模式: 加载了 %d 个有效API令牌", len(tokens))
 	} else {
 		// 使用内存中的数据（SQLite模式）
 		singleton.ApiLock.RLock()
 		defer singleton.ApiLock.RUnlock()
 		tokens = singleton.ApiTokenList
+		log.Printf("SQLite模式: 使用内存中的 %d 个API令牌", len(tokens))
 	}
 
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/api", mygin.CommonEnvironment(c, gin.H{
@@ -197,7 +202,12 @@ func (mp *memberPage) ddns(c *gin.Context) {
 		}
 	} else {
 		// 使用SQLite
-		singleton.DB.Find(&data)
+		if singleton.DB != nil {
+			singleton.DB.Find(&data)
+		} else {
+			log.Printf("警告: SQLite数据库未初始化")
+			data = []model.DDNSProfile{}
+		}
 	}
 
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/ddns", mygin.CommonEnvironment(c, gin.H{
@@ -233,7 +243,12 @@ func (mp *memberPage) nat(c *gin.Context) {
 		}
 	} else {
 		// 使用SQLite
-		singleton.DB.Find(&data)
+		if singleton.DB != nil {
+			singleton.DB.Find(&data)
+		} else {
+			log.Printf("警告: SQLite数据库未初始化")
+			data = []model.NAT{}
+		}
 	}
 
 	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/nat", mygin.CommonEnvironment(c, gin.H{

@@ -197,8 +197,9 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 	if singleton.Conf.DatabaseType == "badger" {
 		// 在BadgerDB模式下，需要通过ID删除
 		tokenObj := singleton.ApiTokenList[token]
-		if tokenObj != nil {
-			err := db.DB.DeleteModel("api_token", tokenObj.ID)
+		if tokenObj != nil && db.DB != nil {
+			apiTokenOps := db.NewApiTokenOps(db.DB)
+			err := apiTokenOps.DeleteApiToken(tokenObj.ID)
 			if err != nil {
 				c.JSON(http.StatusOK, model.Response{
 					Code:    http.StatusBadRequest,
@@ -206,6 +207,7 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 				})
 				return
 			}
+			log.Printf("BadgerDB: 成功删除API令牌 %s (Note: %s)", token, tokenObj.Note)
 		}
 	} else if singleton.DB != nil {
 		err := singleton.DB.Unscoped().Delete(&model.ApiToken{}, "token = ?", token).Error
@@ -216,6 +218,7 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 			})
 			return
 		}
+		log.Printf("SQLite: 成功删除API令牌 %s", token)
 	}
 
 	// 在UserIDToApiTokenList中删除该Token

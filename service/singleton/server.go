@@ -307,8 +307,8 @@ func CleanupServerState() {
 	for _, server := range serversToCleanup {
 		// 清理长时间离线的服务器状态
 		if !server.IsOnline && now.Sub(server.LastActive) > 24*time.Hour {
-			// 保存最后状态到数据库
-			if server.State != nil {
+			// 保存最后状态到数据库（仅在SQLite模式下）
+			if server.State != nil && Conf.DatabaseType != "badger" && DB != nil {
 				lastStateJSON, err := utils.Json.Marshal(server.State)
 				if err == nil {
 					DB.Model(server).Update("last_state_json", string(lastStateJSON))
@@ -475,8 +475,8 @@ func cleanupSingleServerState(server *model.Server) bool {
 
 	// 清理长时间离线的服务器状态
 	if !server.IsOnline && now.Sub(server.LastActive) > 12*time.Hour {
-		// 保存最后状态到数据库（非阻塞）
-		if server.State != nil {
+		// 保存最后状态到数据库（非阻塞，仅在SQLite模式下）
+		if server.State != nil && Conf.DatabaseType != "badger" && DB != nil {
 			if lastStateJSON, err := utils.Json.Marshal(server.State); err == nil {
 				// 使用非阻塞的数据库更新
 				go func() {
@@ -614,11 +614,11 @@ func UpdateServer(s *model.Server) error {
 			shouldSave = true // 首次保存
 		}
 
-		if shouldSave {
-			updateSQL := `UPDATE servers SET 
-							cumulative_net_in_transfer = ?, 
-							cumulative_net_out_transfer = ?, 
-							last_active = ? 
+		if shouldSave && Conf.DatabaseType != "badger" && DB != nil {
+			updateSQL := `UPDATE servers SET
+							cumulative_net_in_transfer = ?,
+							cumulative_net_out_transfer = ?,
+							last_active = ?
 							WHERE id = ?`
 
 			result := DB.Exec(updateSQL,
@@ -633,6 +633,11 @@ func UpdateServer(s *model.Server) error {
 			}
 
 			// 更新最后保存时间
+			if server, ok := ServerList[s.ID]; ok && server != nil {
+				server.LastFlowSaveTime = time.Now()
+			}
+		} else if shouldSave && Conf.DatabaseType == "badger" {
+			// BadgerDB模式下，只更新最后保存时间，不进行数据库操作
 			if server, ok := ServerList[s.ID]; ok && server != nil {
 				server.LastFlowSaveTime = time.Now()
 			}
