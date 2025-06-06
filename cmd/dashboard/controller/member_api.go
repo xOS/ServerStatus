@@ -30,12 +30,6 @@ type memberAPI struct {
 }
 
 func (ma *memberAPI) serve() {
-	// 公共搜索 API，不需要登录
-	publicAPI := ma.r.Group("")
-	publicAPI.GET("/search-server", ma.searchServer)
-	publicAPI.GET("/search-tasks", ma.searchTask)
-	publicAPI.GET("/search-ddns", ma.searchDDNS)
-
 	// 需要登录的 API
 	mr := ma.r.Group("")
 	mr.Use(mygin.Authorize(mygin.AuthorizeOption{
@@ -45,6 +39,11 @@ func (ma *memberAPI) serve() {
 		Btn:        "点此登录",
 		Redirect:   "/login",
 	}))
+
+	// 搜索 API 现在需要登录
+	mr.GET("/search-server", ma.searchServer)
+	mr.GET("/search-tasks", ma.searchTask)
+	mr.GET("/search-ddns", ma.searchDDNS)
 	mr.POST("/server", ma.addOrEditServer)
 	mr.POST("/monitor", ma.addOrEditMonitor)
 	mr.POST("/traffic", ma.addOrEditAlertRule)

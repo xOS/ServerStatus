@@ -439,15 +439,8 @@ func (ss *ServiceSentinel) worker() {
 	cleanupTicker := time.NewTicker(30 * time.Minute) // 改为30分钟
 	defer cleanupTicker.Stop()
 
-	// 添加内存压力检查器，每5分钟检查内存压力
-	memoryPressureTicker := time.NewTicker(5 * time.Minute) // 每5分钟检查内存压力
-	defer memoryPressureTicker.Stop()
-
-	// 内存压力计数器
-	memoryPressureCounter := 0
-
-	// 添加内存监控
-	memoryCheckTicker := time.NewTicker(1 * time.Minute) // 每分钟检查内存
+	// 简化的内存监控，仅在必要时进行
+	memoryCheckTicker := time.NewTicker(10 * time.Minute) // 每10分钟检查内存
 	defer memoryCheckTicker.Stop()
 
 	for {
@@ -457,26 +450,20 @@ func (ss *ServiceSentinel) worker() {
 			ss.cleanupOldData()
 			ss.limitDataSize()
 
-		case <-memoryPressureTicker.C:
-			// 检查内存压力，决定是否进行温和清理
-			if GetMemoryPressureLevel() >= 2 {
-				log.Printf("内存压力较高，ServiceSentinel执行温和清理")
-				ss.limitDataSize()
-			}
-
 		case <-memoryCheckTicker.C:
-			// 每分钟检查内存使用情况
+			// 每10分钟检查内存使用情况
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
 			currentMemMB := m.Alloc / 1024 / 1024
 
-			if currentMemMB > 500 { // 如果内存超过500MB（从300MB提高）
+			// 提高内存阈值，减少不必要的清理
+			if currentMemMB > 1000 { // 提高到1GB
 				log.Printf("ServiceSentinel检测到高内存使用: %dMB，执行清理", currentMemMB)
 				ss.limitDataSize()
 				ss.cleanupOldData()
 
 				// 如果内存仍然很高，强制GC
-				if currentMemMB > 800 { // 从400MB提高到800MB
+				if currentMemMB > 1500 { // 提高到1.5GB
 					runtime.GC()
 					runtime.ReadMemStats(&m)
 					log.Printf("强制GC后内存: %dMB", m.Alloc/1024/1024)
@@ -486,18 +473,6 @@ func (ss *ServiceSentinel) worker() {
 		case r := <-ss.serviceReportChannel:
 			// 处理服务监控数据
 			ss.handleServiceReport(r)
-
-			// 动态调整清理频率：如果内存压力高，则更频繁地清理
-			if GetMemoryPressureLevel() >= 1 {
-				// 高内存压力下，每处理100个报告就清理一次
-				memoryPressureCounter++
-				if memoryPressureCounter >= 100 {
-					ss.limitDataSize()
-					memoryPressureCounter = 0
-				}
-			} else {
-				memoryPressureCounter = 0 // 重置计数器
-			}
 		}
 	}
 }
@@ -534,20 +509,46 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 			}
 			ts.count = 0
 
-			// 使用异步数据库插入队列来保存监控数据，避免并发冲突
-			monitorData := map[string]interface{}{
-				"monitor_id": mh.GetId(),
-				"avg_delay":  ts.ping,
-				"data":       mh.Data,
-				"server_id":  r.Reporter,
-			}
-
-			// 使用异步插入避免数据库锁冲突
-			AsyncDBInsert("monitor_histories", monitorData, func(err error) {
-				if err != nil {
-					log.Printf("NG>> TCP/ICMP监控数据持久化失败 (MonitorID: %d): %v", mh.GetId(), err)
+			// 根据数据库类型选择不同的保存方式
+			if Conf.DatabaseType == "badger" {
+				// BadgerDB模式：直接保存监控历史记录
+				history := &model.MonitorHistory{
+					MonitorID: mh.GetId(),
+					ServerID:  r.Reporter,
+					AvgDelay:  ts.ping,
+					Data:      mh.Data,
+					Up:        0,
+					Down:      0,
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
 				}
-			})
+
+				// 异步保存到BadgerDB
+				go func(h *model.MonitorHistory) {
+					if db.DB != nil {
+						monitorOps := db.NewMonitorHistoryOps(db.DB)
+						err := monitorOps.SaveMonitorHistory(h)
+						if err != nil {
+							log.Printf("NG>> BadgerDB TCP/ICMP监控数据保存失败 (MonitorID: %d): %v", h.MonitorID, err)
+						}
+					}
+				}(history)
+			} else {
+				// SQLite模式：使用原有的异步队列
+				monitorData := map[string]interface{}{
+					"monitor_id": mh.GetId(),
+					"avg_delay":  ts.ping,
+					"data":       mh.Data,
+					"server_id":  r.Reporter,
+				}
+
+				// 使用异步插入避免数据库锁冲突
+				AsyncDBInsert("monitor_histories", monitorData, func(err error) {
+					if err != nil {
+						log.Printf("NG>> TCP/ICMP监控数据持久化失败 (MonitorID: %d): %v", mh.GetId(), err)
+					}
+				})
+			}
 		}
 		monitorTcpMap[r.Reporter] = ts
 	}
@@ -662,18 +663,48 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 				"down":       ss.serviceResponseDataStoreCurrentDown[mh.GetId()],
 			}
 
-			// 直接使用监控历史记录专用队列，避免@id字段错误
-			AsyncMonitorHistoryInsert(monitorData, func(err error) {
-				if err != nil {
-					log.Printf("NG>> 服务监控数据持久化失败 (MonitorID: %d): %v", mh.GetId(), err)
-				} else {
-					ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime = now
-					log.Printf("监控数据已保存 (MonitorID: %d, Up: %d, Down: %d)",
-						mh.GetId(),
-						ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
-						ss.serviceResponseDataStoreCurrentDown[mh.GetId()])
+			// 根据数据库类型选择不同的保存方式
+			if Conf.DatabaseType == "badger" {
+				// BadgerDB模式：直接保存监控历史记录
+				history := &model.MonitorHistory{
+					MonitorID: mh.GetId(),
+					ServerID:  0, // 服务监控不关联特定服务器
+					AvgDelay:  ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()],
+					Data:      mh.Data,
+					Up:        ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
+					Down:      ss.serviceResponseDataStoreCurrentDown[mh.GetId()],
+					CreatedAt: now,
+					UpdatedAt: now,
 				}
-			})
+
+				// 异步保存到BadgerDB
+				go func(h *model.MonitorHistory) {
+					if db.DB != nil {
+						monitorOps := db.NewMonitorHistoryOps(db.DB)
+						err := monitorOps.SaveMonitorHistory(h)
+						if err != nil {
+							log.Printf("NG>> BadgerDB服务监控数据保存失败 (MonitorID: %d): %v", h.MonitorID, err)
+						} else {
+							ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime = now
+							log.Printf("BadgerDB监控数据已保存 (MonitorID: %d, Up: %d, Down: %d)",
+								h.MonitorID, h.Up, h.Down)
+						}
+					}
+				}(history)
+			} else {
+				// SQLite模式：使用原有的异步队列
+				AsyncMonitorHistoryInsert(monitorData, func(err error) {
+					if err != nil {
+						log.Printf("NG>> 服务监控数据持久化失败 (MonitorID: %d): %v", mh.GetId(), err)
+					} else {
+						ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime = now
+						log.Printf("监控数据已保存 (MonitorID: %d, Up: %d, Down: %d)",
+							mh.GetId(),
+							ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
+							ss.serviceResponseDataStoreCurrentDown[mh.GetId()])
+					}
+				})
+			}
 		}
 	}
 

@@ -127,13 +127,27 @@ func loadAPI() {
 		}
 	} else {
 		// 使用 GORM (SQLite) 加载API令牌
-		DB.Find(&tokenList)
+		if DB != nil {
+			DB.Find(&tokenList)
+			log.Printf("从 SQLite 加载了 %d 个API令牌", len(tokenList))
+		} else {
+			log.Println("警告: SQLite 数据库未初始化")
+			return
+		}
 	}
 
+	// 加载到内存中
+	ApiLock.Lock()
+	defer ApiLock.Unlock()
+
 	for _, token := range tokenList {
-		ApiTokenList[token.Token] = token
-		UserIDToApiTokenList[token.UserID] = append(UserIDToApiTokenList[token.UserID], token.Token)
+		if token != nil {
+			ApiTokenList[token.Token] = token
+			UserIDToApiTokenList[token.UserID] = append(UserIDToApiTokenList[token.UserID], token.Token)
+		}
 	}
+
+	log.Printf("API令牌加载完成，共加载 %d 个令牌", len(ApiTokenList))
 }
 
 // GetStatusByIDList 获取传入IDList的服务器状态信息

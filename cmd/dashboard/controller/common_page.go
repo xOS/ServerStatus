@@ -432,10 +432,9 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 			serverList = singleton.SortedServerListForGuest
 		}
 
-		// 添加调试日志
-		if singleton.Conf.Debug {
-			log.Printf("getServerStat: 获取服务器列表, 授权状态: %v, 获取到 %d 台服务器",
-				authorized, len(serverList))
+		// 仅在极度调试模式下输出日志
+		if singleton.Conf.Debug && len(serverList) == 0 {
+			log.Printf("getServerStat: 警告 - 服务器列表为空, 授权状态: %v", authorized)
 		}
 
 		// 修复：检查服务器列表是否为空或未初始化
@@ -679,10 +678,9 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 			TrafficData: trafficData,
 		}
 
-		// 添加调试日志
-		if singleton.Conf.Debug {
-			log.Printf("getServerStat: 返回数据 - %d 台服务器, %d 条流量数据",
-				len(servers), len(trafficData))
+		// 仅在出现异常时输出日志
+		if len(servers) == 0 && singleton.Conf.Debug {
+			log.Printf("getServerStat: 警告 - 返回空服务器列表")
 		}
 
 		return utils.Json.Marshal(data)
