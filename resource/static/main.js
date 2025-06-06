@@ -1889,6 +1889,83 @@ function convertTableJsonToNames() {
         }
       }
     }
+
+    // 转换报警规则页面的JSON字段
+    // 检查是否在报警规则页面（通过URL或页面特征判断）
+    if (window.location.pathname.includes('/notification') || $('table th:contains("规则")').length > 0) {
+      // 转换RulesRaw列（报警规则页面第5列）
+      const $rulesCell = $row.find('td').eq(4);
+      if ($rulesCell.length > 0) {
+        const rulesText = $rulesCell.text().trim();
+        if (rulesText.startsWith('[') && rulesText.endsWith(']')) {
+          try {
+            const rules = JSON.parse(rulesText);
+            if (Array.isArray(rules) && rules.length > 0) {
+              // 格式化规则显示
+              const ruleDescriptions = rules.map(rule => {
+                let desc = '';
+                if (rule.type === 'offline') {
+                  desc = `离线监控 (${rule.duration}秒)`;
+                } else if (rule.type === 'cpu') {
+                  desc = `CPU ${rule.max ? '>' + rule.max + '%' : rule.min ? '<' + rule.min + '%' : ''} (${rule.duration}秒)`;
+                } else if (rule.type === 'memory') {
+                  desc = `内存 ${rule.max ? '>' + rule.max + '%' : rule.min ? '<' + rule.min + '%' : ''} (${rule.duration}秒)`;
+                } else if (rule.type === 'transfer_in_cycle' || rule.type === 'transfer_all_cycle') {
+                  const maxGB = rule.max ? (rule.max / (1024 * 1024 * 1024)).toFixed(1) + 'GB' : '';
+                  desc = `流量监控 ${rule.type === 'transfer_in_cycle' ? '入站' : '总计'} <${maxGB}`;
+                } else {
+                  desc = rule.type || '未知规则';
+                }
+                return desc;
+              });
+              $rulesCell.text(ruleDescriptions.join('; '));
+            } else if (rules.length === 0) {
+              $rulesCell.text('无规则');
+            }
+          } catch (e) {
+            // 如果解析失败，保持原样
+          }
+        }
+      }
+
+      // 转换FailTriggerTasksRaw列（报警规则页面第6列）
+      const $failTasksCell = $row.find('td').eq(5);
+      if ($failTasksCell.length > 0) {
+        const failTasksText = $failTasksCell.text().trim();
+        if (failTasksText.startsWith('[') && failTasksText.endsWith(']')) {
+          try {
+            const taskIds = JSON.parse(failTasksText);
+            if (Array.isArray(taskIds) && taskIds.length > 0) {
+              const taskNames = taskIds.map(id => getTaskNameById(id)).join(', ');
+              $failTasksCell.text(taskNames);
+            } else if (taskIds.length === 0) {
+              $failTasksCell.text('无');
+            }
+          } catch (e) {
+            // 如果解析失败，保持原样
+          }
+        }
+      }
+
+      // 转换RecoverTriggerTasksRaw列（报警规则页面第7列）
+      const $recoverTasksCell = $row.find('td').eq(6);
+      if ($recoverTasksCell.length > 0) {
+        const recoverTasksText = $recoverTasksCell.text().trim();
+        if (recoverTasksText.startsWith('[') && recoverTasksText.endsWith(']')) {
+          try {
+            const taskIds = JSON.parse(recoverTasksText);
+            if (Array.isArray(taskIds) && taskIds.length > 0) {
+              const taskNames = taskIds.map(id => getTaskNameById(id)).join(', ');
+              $recoverTasksCell.text(taskNames);
+            } else if (taskIds.length === 0) {
+              $recoverTasksCell.text('无');
+            }
+          } catch (e) {
+            // 如果解析失败，保持原样
+          }
+        }
+      }
+    }
   });
 }
 

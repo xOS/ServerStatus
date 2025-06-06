@@ -1358,9 +1358,32 @@ func SaveAllAPITokensToDB() {
 	}
 
 	apiTokenOps := db.NewApiTokenOps(db.DB)
+
+	// 先获取已存在的API令牌，避免重复保存
+	existingTokens, err := apiTokenOps.GetAllApiTokens()
+	if err != nil {
+		log.Printf("获取现有API令牌失败: %v", err)
+		return
+	}
+
+	// 创建已存在token的映射
+	existingTokenMap := make(map[string]bool)
+	for _, existing := range existingTokens {
+		if existing != nil && existing.Token != "" {
+			existingTokenMap[existing.Token] = true
+		}
+	}
+
 	successCount := 0
+	skipCount := 0
 
 	for _, apiToken := range tokenData {
+		// 检查是否已存在，避免重复保存
+		if existingTokenMap[apiToken.Token] {
+			skipCount++
+			continue
+		}
+
 		if err := apiTokenOps.SaveApiToken(apiToken); err != nil {
 			log.Printf("保存API令牌失败: %v", err)
 		} else {
@@ -1368,7 +1391,9 @@ func SaveAllAPITokensToDB() {
 		}
 	}
 
-	log.Printf("BadgerDB: 成功保存 %d 个API令牌", successCount)
+	if successCount > 0 || skipCount > 0 {
+		log.Printf("BadgerDB: 成功保存 %d 个API令牌，跳过 %d 个已存在的令牌", successCount, skipCount)
+	}
 }
 
 // performHourlyCleanup 执行每小时的清理任务

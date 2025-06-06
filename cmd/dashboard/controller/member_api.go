@@ -207,6 +207,7 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 			allTokens, getAllErr := apiTokenOps.GetAllApiTokens()
 			if getAllErr != nil {
 				log.Printf("获取所有API令牌失败: %v", getAllErr)
+				err = getAllErr
 			} else {
 				// 删除所有匹配的Token记录
 				deletedCount := 0
