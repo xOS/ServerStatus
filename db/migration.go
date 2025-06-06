@@ -1283,7 +1283,7 @@ func extractColumnName(tag string) string {
 
 	// 检查是否有column:名称
 	for _, part := range splitTag(tag) {
-		if len(part) > 7 && part[:7] == "column:" {
+		if len(part) >= 8 && part[:7] == "column:" {
 			return part[7:]
 		}
 	}

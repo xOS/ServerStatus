@@ -68,7 +68,11 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 						// 在内存中查找匹配token的用户
 						// 减少日志输出频率，只在调试模式下输出
 						if singleton.Conf.Debug {
-							log.Printf("认证: 在 %d 个用户中查找token: %s", len(users), token[:8]+"...")
+							tokenPreview := token
+							if len(token) > 8 {
+								tokenPreview = token[:8] + "..."
+							}
+							log.Printf("认证: 在 %d 个用户中查找token: %s", len(users), tokenPreview)
 						}
 						for _, user := range users {
 							if user != nil && user.Token == token {
@@ -100,7 +104,11 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 						}
 
 						if !isLogin && singleton.Conf.Debug {
-							log.Printf("认证: 未找到匹配的有效用户，token: %s", token[:8]+"...")
+							tokenPreview := token
+							if len(token) > 8 {
+								tokenPreview = token[:8] + "..."
+							}
+							log.Printf("认证: 未找到匹配的有效用户，token: %s", tokenPreview)
 						}
 					}
 				} else {

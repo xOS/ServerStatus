@@ -636,10 +636,43 @@ func UpdateServer(s *model.Server) error {
 			if server, ok := ServerList[s.ID]; ok && server != nil {
 				server.LastFlowSaveTime = time.Now()
 			}
-		} else if shouldSave && Conf.DatabaseType == "badger" {
-			// BadgerDB模式下，只更新最后保存时间，不进行数据库操作
-			if server, ok := ServerList[s.ID]; ok && server != nil {
-				server.LastFlowSaveTime = time.Now()
+		} else if shouldSave && Conf.DatabaseType == "badger" && db.DB != nil {
+			// BadgerDB模式下，保存流量数据到BadgerDB
+			serverOps := db.NewServerOps(db.DB)
+			if serverOps != nil {
+				// 获取当前数据库中的服务器数据
+				dbServer, err := serverOps.GetServer(s.ID)
+				if err == nil && dbServer != nil {
+					// 更新累计流量数据
+					dbServer.CumulativeNetInTransfer = s.CumulativeNetInTransfer
+					dbServer.CumulativeNetOutTransfer = s.CumulativeNetOutTransfer
+
+					// 更新服务器状态信息
+					dbServer.LastActive = s.LastActive
+					dbServer.IsOnline = s.IsOnline
+
+					// 保存Host信息
+					if s.Host != nil {
+						dbServer.Host = s.Host
+					}
+
+					// 保存最后状态
+					if s.State != nil {
+						if lastStateJSON, err := utils.Json.Marshal(s.State); err == nil {
+							dbServer.LastStateJSON = string(lastStateJSON)
+						}
+					}
+
+					// 保存回数据库
+					if err := serverOps.SaveServer(dbServer); err != nil {
+						log.Printf("BadgerDB: 保存服务器 %s 的数据失败: %v", s.Name, err)
+					} else {
+						// 更新最后保存时间
+						if server, ok := ServerList[s.ID]; ok && server != nil {
+							server.LastFlowSaveTime = time.Now()
+						}
+					}
+				}
 			}
 		}
 

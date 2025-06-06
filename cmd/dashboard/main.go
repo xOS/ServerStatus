@@ -167,8 +167,13 @@ func main() {
 		singleton.AlertSentinelStart()
 	}()
 
+	log.Printf("正在初始化ServiceSentinel...")
 	singleton.NewServiceSentinel(serviceSentinelDispatchBus)
+	log.Printf("ServiceSentinel初始化完成")
+
+	log.Printf("正在创建HTTP服务器...")
 	srv := controller.ServeWeb(singleton.Conf.HTTPPort)
+	log.Printf("HTTP服务器创建完成")
 
 	go func() {
 		defer func() {
@@ -179,6 +184,7 @@ func main() {
 		dispatchReportInfoTask()
 	}()
 
+	log.Printf("正在启动HTTP服务器在端口 %d...", singleton.Conf.HTTPPort)
 	// 优雅关闭处理
 	if err := graceful.Graceful(func() error {
 		return srv.ListenAndServe()
@@ -191,9 +197,14 @@ func main() {
 		// 等待所有任务完成
 		done := make(chan struct{})
 		go func() {
+			log.Println("程序正在优雅关闭，保存所有数据...")
+
 			// 保存流量数据
 			singleton.RecordTransferHourlyUsage()
 			singleton.SaveAllTrafficToDB()
+
+			// 保存所有数据到数据库（BadgerDB模式下特别重要）
+			singleton.SaveAllDataToDB()
 
 			// 清理Goroutine池，防止内存泄漏
 			singleton.CleanupGoroutinePools()
@@ -214,6 +225,7 @@ func main() {
 			// 关闭HTTP服务器
 			srv.Shutdown(c)
 
+			log.Println("所有数据已保存，程序关闭完成")
 			close(done)
 		}()
 

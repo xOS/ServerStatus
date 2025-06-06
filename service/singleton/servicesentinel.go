@@ -523,16 +523,26 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 					UpdatedAt: time.Now(),
 				}
 
-				// 异步保存到BadgerDB
+				// 异步保存到BadgerDB，增加重试机制
 				go func(h *model.MonitorHistory) {
 					if db.DB != nil {
 						monitorOps := db.NewMonitorHistoryOps(db.DB)
-						err := monitorOps.SaveMonitorHistory(h)
-						if err != nil {
-							log.Printf("NG>> BadgerDB TCP/ICMP监控数据保存失败 (MonitorID: %d): %v", h.MonitorID, err)
-						} else {
-							log.Printf("BadgerDB TCP/ICMP监控数据已保存 (MonitorID: %d, ServerID: %d, Delay: %.2f)",
-								h.MonitorID, h.ServerID, h.AvgDelay)
+
+						// 重试机制，最多重试3次
+						maxRetries := 3
+						for retry := 0; retry < maxRetries; retry++ {
+							err := monitorOps.SaveMonitorHistory(h)
+							if err == nil {
+								log.Printf("BadgerDB TCP/ICMP监控数据已保存 (MonitorID: %d, ServerID: %d, Delay: %.2f)",
+									h.MonitorID, h.ServerID, h.AvgDelay)
+								break
+							} else {
+								log.Printf("NG>> BadgerDB TCP/ICMP监控数据保存失败 (MonitorID: %d, 重试 %d/%d): %v",
+									h.MonitorID, retry+1, maxRetries, err)
+								if retry < maxRetries-1 {
+									time.Sleep(time.Duration(retry+1) * 100 * time.Millisecond)
+								}
+							}
 						}
 					}
 				}(history)

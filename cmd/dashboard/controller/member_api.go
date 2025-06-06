@@ -234,39 +234,17 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 	// 在ApiTokenList中删除该Token
 	delete(singleton.ApiTokenList, token)
 
-	// 强制重新加载API Token列表，确保删除操作生效
+	// 在BadgerDB模式下，等待一小段时间确保删除操作完全生效
 	if singleton.Conf.DatabaseType == "badger" {
-		log.Printf("删除API Token后，重新加载API Token列表")
-		// 释放当前锁，重新初始化API Token列表
+		log.Printf("删除API Token后，等待删除操作生效")
+		// 释放锁，等待删除操作完全生效
 		singleton.ApiLock.Unlock()
-
-		// 重新初始化API Token列表
-		singleton.InitAPI()
-		var tokenList []*model.ApiToken
-		if db.DB != nil {
-			apiTokenOps := db.NewApiTokenOps(db.DB)
-			var err error
-			tokenList, err = apiTokenOps.GetAllApiTokens()
-			if err != nil {
-				log.Printf("重新加载API令牌失败: %v", err)
-			} else {
-				// 重新加载到内存中
-				singleton.ApiLock.Lock()
-				validTokenCount := 0
-				for _, token := range tokenList {
-					if token != nil && token.Token != "" && token.ID > 0 {
-						singleton.ApiTokenList[token.Token] = token
-						singleton.UserIDToApiTokenList[token.UserID] = append(singleton.UserIDToApiTokenList[token.UserID], token.Token)
-						validTokenCount++
-					}
-				}
-				log.Printf("重新加载了 %d 个有效API令牌", validTokenCount)
-				singleton.ApiLock.Unlock()
-			}
-		}
-
-		// 重新获取锁
+		time.Sleep(100 * time.Millisecond) // 等待100毫秒
 		singleton.ApiLock.Lock()
+
+		log.Printf("删除API Token后，从内存中移除已删除的Token")
+		// 简单地从内存中移除已删除的Token，不重新加载整个列表
+		// 这样可以避免重新加载时可能的缓存问题
 	}
 
 	c.JSON(http.StatusOK, model.Response{

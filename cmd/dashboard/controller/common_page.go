@@ -179,9 +179,9 @@ func (cp *commonPage) network(c *gin.Context) {
 			log.Printf("network: 使用BadgerDB模式，跳过GORM查询监控历史")
 		}
 
-		// 使用ServerList中的服务器ID构建serverIdsWithMonitor
+		// 从监控配置中获取有监控任务的服务器ID
 		if singleton.Conf.Debug {
-			log.Printf("network: 从ServerList构建监控服务器ID列表")
+			log.Printf("network: 从监控配置构建监控服务器ID列表")
 		}
 
 		// 安全初始化
@@ -192,27 +192,54 @@ func (cp *commonPage) network(c *gin.Context) {
 			serverIdsWithMonitor = []uint64{}
 		}
 
-		// 使用读锁安全访问ServerList
-		singleton.ServerLock.RLock()
-		// 检查ServerList是否初始化
-		if singleton.ServerList != nil {
-			// 从ServerList中获取所有服务器ID
-			for serverID, server := range singleton.ServerList {
-				if server != nil {
-					serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
-					// 如果还没有选定ID，或者服务器在线，则将此服务器ID设为当前ID
-					if id == 0 || server.IsOnline {
-						id = serverID
+		// 从监控配置中获取有监控任务的服务器ID
+		if singleton.ServiceSentinelShared != nil {
+			monitors := singleton.ServiceSentinelShared.Monitors()
+			if singleton.Conf.Debug {
+				log.Printf("network: 找到 %d 个监控配置", len(monitors))
+			}
+
+			for _, monitor := range monitors {
+				if monitor != nil {
+					if singleton.Conf.Debug {
+						log.Printf("network: 处理监控配置 %d: %s", monitor.ID, monitor.Name)
 					}
+					// 检查哪些服务器被这个监控任务覆盖
+					singleton.ServerLock.RLock()
+					for serverID, server := range singleton.ServerList {
+						if server != nil {
+							// 检查服务器是否被跳过
+							if monitor.SkipServers == nil || !monitor.SkipServers[serverID] {
+								// 检查是否已经在列表中
+								found := false
+								for _, existingID := range serverIdsWithMonitor {
+									if existingID == serverID {
+										found = true
+										break
+									}
+								}
+								if !found {
+									serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
+									if singleton.Conf.Debug {
+										log.Printf("network: 添加服务器 %d (%s) 到监控列表", serverID, server.Name)
+									}
+								}
+								// 如果还没有选定ID，或者服务器在线，则将此服务器ID设为当前ID
+								if id == 0 || server.IsOnline {
+									id = serverID
+								}
+							} else if singleton.Conf.Debug {
+								log.Printf("network: 服务器 %d (%s) 被监控 %d 跳过", serverID, server.Name, monitor.ID)
+							}
+						}
+					}
+					singleton.ServerLock.RUnlock()
 				}
 			}
-		} else {
-			log.Printf("network: 警告 - ServerList未初始化")
 		}
-		singleton.ServerLock.RUnlock()
 
 		if singleton.Conf.Debug {
-			log.Printf("network: 从ServerList获取到 %d 个监控服务器ID", len(serverIdsWithMonitor))
+			log.Printf("network: 从监控配置获取到 %d 个有监控任务的服务器", len(serverIdsWithMonitor))
 		}
 
 		// 如果仍然没有找到ID，并且有排序列表，则使用排序列表中的第一个ID
@@ -377,47 +404,6 @@ func (cp *commonPage) network(c *gin.Context) {
 	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
 	_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
 	authorized := isMember || isViewPasswordVerfied
-
-	// 如果使用BadgerDB且serverIdsWithMonitor为空，则检查是否有监控配置
-	if singleton.Conf.DatabaseType == "badger" && len(serverIdsWithMonitor) == 0 {
-		if singleton.Conf.Debug {
-			log.Printf("network: BadgerDB模式下，未找到监控历史记录服务器，检查监控配置")
-		}
-
-		// 从监控配置中获取有监控任务的服务器ID
-		if singleton.ServiceSentinelShared != nil {
-			monitors := singleton.ServiceSentinelShared.Monitors()
-			for _, monitor := range monitors {
-				if monitor != nil {
-					// 检查哪些服务器被这个监控任务覆盖
-					singleton.ServerLock.RLock()
-					for serverID, server := range singleton.ServerList {
-						if server != nil {
-							// 检查服务器是否被跳过
-							if monitor.SkipServers == nil || !monitor.SkipServers[serverID] {
-								// 检查是否已经在列表中
-								found := false
-								for _, existingID := range serverIdsWithMonitor {
-									if existingID == serverID {
-										found = true
-										break
-									}
-								}
-								if !found {
-									serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
-								}
-							}
-						}
-					}
-					singleton.ServerLock.RUnlock()
-				}
-			}
-		}
-
-		if singleton.Conf.Debug {
-			log.Printf("network: 从监控配置中找到 %d 个有监控任务的服务器", len(serverIdsWithMonitor))
-		}
-	}
 
 	// 根据权限过滤服务器列表
 	singleton.SortedServerLock.RLock()

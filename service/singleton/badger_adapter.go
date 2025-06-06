@@ -218,7 +218,8 @@ func loadServersFromBadgerDB() error {
 			continue
 		}
 
-		log.Printf("加载服务器: ID=%d, 名称=%s, Secret=%s", server.ID, server.Name, server.Secret)
+		log.Printf("加载服务器: ID=%d, 名称=%s, Secret=%s, 累计入站流量=%d, 累计出站流量=%d",
+			server.ID, server.Name, server.Secret, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
 
 		// 初始化必要的对象
 		server.Host = &model.Host{}

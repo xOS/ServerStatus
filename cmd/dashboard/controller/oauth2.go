@@ -142,6 +142,14 @@ func (oa *oauth2controller) login(c *gin.Context) {
 		}, true)
 		return
 	}
+	if len(randomString) < 32 {
+		mygin.ShowErrorPage(c, mygin.ErrInfo{
+			Code:  http.StatusBadRequest,
+			Title: "Something Wrong",
+			Msg:   "生成的随机字符串长度不足",
+		}, true)
+		return
+	}
 	state, stateKey := randomString[:16], randomString[16:]
 	singleton.Cache.Set(fmt.Sprintf("%s%s", model.CacheKeyOauth2State, stateKey), state, cache.DefaultExpiration)
 	url := oa.getCommonOauth2Config(c).AuthCodeURL(state, oauth2.AccessTypeOnline)

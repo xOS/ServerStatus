@@ -329,8 +329,21 @@ func LoadSingleton() {
 		// 只在SQLite模式下执行服务器状态清理
 		if Conf.DatabaseType != "badger" {
 			CleanupServerState() // 添加服务器状态清理
-			SaveAllTrafficToDB() // 保存流量数据到数据库
 		}
+		// 保存流量数据到数据库（支持所有数据库类型）
+		SaveAllTrafficToDB()
+	})
+
+	// 添加流量数据定时保存任务，每10分钟执行一次
+	Cron.AddFunc("0 */10 * * * *", func() {
+		log.Println("定时保存流量数据到数据库...")
+		SaveAllTrafficToDB()
+	})
+
+	// 添加全量数据保存任务，每5分钟执行一次，确保所有数据都被持久化
+	Cron.AddFunc("0 */5 * * * *", func() {
+		log.Println("定时保存所有数据到数据库...")
+		SaveAllDataToDB()
 	})
 
 	// 定期温和清理任务，改为每小时执行一次
@@ -1214,6 +1227,161 @@ func SaveAllTrafficToBadgerDB() {
 	wg.Wait()
 
 	log.Printf("BadgerDB: 成功保存 %d 个服务器的累计流量数据", successCount)
+}
+
+// SaveAllDataToDB 保存所有数据到数据库，确保数据永久化
+func SaveAllDataToDB() {
+	// 只在BadgerDB模式下执行全量数据保存
+	if Conf == nil || Conf.DatabaseType != "badger" || db.DB == nil {
+		return
+	}
+
+	log.Println("开始保存所有数据到BadgerDB...")
+
+	// 1. 保存服务器数据（包括Host信息和状态）
+	SaveAllServerDataToDB()
+
+	// 2. 保存用户数据（包括Token）
+	SaveAllUserDataToDB()
+
+	// 3. 保存DDNS状态
+	SaveAllDDNSStateToDB()
+
+	// 4. 保存API令牌
+	SaveAllAPITokensToDB()
+
+	log.Println("所有数据保存完成")
+}
+
+// SaveAllServerDataToDB 保存所有服务器数据到BadgerDB
+func SaveAllServerDataToDB() {
+	if db.DB == nil {
+		return
+	}
+
+	ServerLock.RLock()
+	serverData := make(map[uint64]*model.Server)
+	for id, server := range ServerList {
+		if server != nil {
+			serverData[id] = server
+		}
+	}
+	ServerLock.RUnlock()
+
+	if len(serverData) == 0 {
+		return
+	}
+
+	serverOps := db.NewServerOps(db.DB)
+	successCount := 0
+
+	for serverID, server := range serverData {
+		// 获取数据库中的服务器数据
+		dbServer, err := serverOps.GetServer(serverID)
+		if err != nil {
+			log.Printf("获取服务器 %d 数据失败: %v", serverID, err)
+			continue
+		}
+
+		// 更新所有重要字段
+		dbServer.CumulativeNetInTransfer = server.CumulativeNetInTransfer
+		dbServer.CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+		dbServer.LastActive = server.LastActive
+		dbServer.IsOnline = server.IsOnline
+
+		// 保存Host信息
+		if server.Host != nil {
+			dbServer.Host = server.Host
+		}
+
+		// 保存最后状态
+		if server.State != nil {
+			if lastStateJSON, err := utils.Json.Marshal(server.State); err == nil {
+				dbServer.LastStateJSON = string(lastStateJSON)
+			}
+		}
+
+		// 保存到数据库
+		if err := serverOps.SaveServer(dbServer); err != nil {
+			log.Printf("保存服务器 %s 数据失败: %v", server.Name, err)
+		} else {
+			successCount++
+		}
+	}
+
+	log.Printf("BadgerDB: 成功保存 %d 个服务器的完整数据", successCount)
+}
+
+// SaveAllUserDataToDB 保存所有用户数据到BadgerDB
+func SaveAllUserDataToDB() {
+	if db.DB == nil {
+		return
+	}
+
+	// 获取所有用户数据
+	var users []*model.User
+	err := db.DB.FindAll("user", &users)
+	if err != nil {
+		log.Printf("获取用户数据失败: %v", err)
+		return
+	}
+
+	userOps := db.NewUserOps(db.DB)
+	successCount := 0
+	for _, user := range users {
+		if user != nil {
+			if err := userOps.SaveUser(user); err != nil {
+				log.Printf("保存用户 %s 数据失败: %v", user.Login, err)
+			} else {
+				successCount++
+			}
+		}
+	}
+
+	log.Printf("BadgerDB: 成功保存 %d 个用户的数据", successCount)
+}
+
+// SaveAllDDNSStateToDB 保存所有DDNS状态到BadgerDB
+func SaveAllDDNSStateToDB() {
+	if db.DB == nil {
+		return
+	}
+
+	// DDNS状态通常在变更时已经保存，这里只是确保一致性
+	log.Printf("BadgerDB: DDNS状态数据已在变更时保存")
+}
+
+// SaveAllAPITokensToDB 保存所有API令牌到BadgerDB
+func SaveAllAPITokensToDB() {
+	if db.DB == nil {
+		return
+	}
+
+	ApiLock.RLock()
+	tokenData := make(map[string]*model.ApiToken)
+	for token, apiToken := range ApiTokenList {
+		if apiToken != nil {
+			tokenData[token] = apiToken
+		}
+	}
+	ApiLock.RUnlock()
+
+	if len(tokenData) == 0 {
+		return
+	}
+
+	apiTokenOps := db.NewApiTokenOps(db.DB)
+	successCount := 0
+
+	for _, apiToken := range tokenData {
+		if err := apiTokenOps.SaveApiToken(apiToken); err != nil {
+			log.Printf("保存API令牌失败: %v", err)
+		} else {
+			successCount++
+		}
+	}
+
+	log.Printf("BadgerDB: 成功保存 %d 个API令牌", successCount)
 }
 
 // AutoSyncTraffic 自动同步流量的空实现
