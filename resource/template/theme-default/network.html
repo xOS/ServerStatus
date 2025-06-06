@@ -63,6 +63,29 @@
     const monitorInfo =  JSON.parse('{{.MonitorInfos}}');
     const initData = JSON.parse('{{.Servers}}').servers;
     let MaxTCPPingValue = {{.MaxTCPPingValue}};
+
+    // 获取监控配置信息
+    let monitorConfigs = {};
+    try {
+        // 尝试从API获取监控配置
+        $.ajax({
+            url: '/api/v1/monitor/configs',
+            method: 'GET',
+            async: false,
+            success: function(data) {
+                if (data && Array.isArray(data)) {
+                    data.forEach(monitor => {
+                        monitorConfigs[monitor.ID] = monitor;
+                    });
+                }
+            },
+            error: function() {
+                console.log('无法获取监控配置，使用默认名称');
+            }
+        });
+    } catch (e) {
+        console.log('获取监控配置失败，使用默认名称');
+    }
     new Vue({
         el: '#app',
         delimiters: ['@#', '#@'],
@@ -243,7 +266,8 @@
 
                     // 记录监控器和服务器名称
                     if (!monitorNames[monitorId]) {
-                        monitorNames[monitorId] = `Monitor ${monitorId}`;
+                        // 尝试从监控配置中获取名称
+                        monitorNames[monitorId] = this.getMonitorName(monitorId);
                     }
                     if (!serverNames[serverId]) {
                         // 从全局服务器列表中获取服务器名称
@@ -342,6 +366,14 @@
                     url: "/api/v1/monitor/"+id,
                     method: "GET"
                   });
+            },
+            getMonitorName(monitorId) {
+                // 从监控配置中获取名称
+                if (monitorConfigs[monitorId] && monitorConfigs[monitorId].Name) {
+                    return monitorConfigs[monitorId].Name;
+                }
+                // 如果没有配置，返回默认名称
+                return `Monitor ${monitorId}`;
             },
             parseMonitorInfo(monitorInfo) {
                 let tSeries = [];

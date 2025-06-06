@@ -43,6 +43,7 @@ func (v *apiV1) serve() {
 		AbortWhenFail: true,
 	}))
 	mr.GET("/:id", v.monitorHistoriesById)
+	mr.GET("/configs", v.monitorConfigs)
 }
 
 // serverList 获取服务器列表 不传入Query参数则获取全部
@@ -161,5 +162,15 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 		} else {
 			c.JSON(200, []interface{}{})
 		}
+	}
+}
+
+func (v *apiV1) monitorConfigs(c *gin.Context) {
+	// 获取监控配置列表
+	if singleton.ServiceSentinelShared != nil {
+		monitors := singleton.ServiceSentinelShared.Monitors()
+		c.JSON(200, monitors)
+	} else {
+		c.JSON(200, []interface{}{})
 	}
 }

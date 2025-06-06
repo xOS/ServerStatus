@@ -378,20 +378,45 @@ func (cp *commonPage) network(c *gin.Context) {
 	_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
 	authorized := isMember || isViewPasswordVerfied
 
-	// 如果使用BadgerDB且serverIdsWithMonitor为空，则使用所有服务器
+	// 如果使用BadgerDB且serverIdsWithMonitor为空，则检查是否有监控配置
 	if singleton.Conf.DatabaseType == "badger" && len(serverIdsWithMonitor) == 0 {
 		if singleton.Conf.Debug {
-			log.Printf("network: BadgerDB模式下，未找到监控历史记录服务器，使用所有服务器列表")
+			log.Printf("network: BadgerDB模式下，未找到监控历史记录服务器，检查监控配置")
 		}
 
-		// 添加所有服务器到列表
-		singleton.ServerLock.RLock()
-		if singleton.ServerList != nil {
-			for serverID := range singleton.ServerList {
-				serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
+		// 从监控配置中获取有监控任务的服务器ID
+		if singleton.ServiceSentinelShared != nil {
+			monitors := singleton.ServiceSentinelShared.Monitors()
+			for _, monitor := range monitors {
+				if monitor != nil {
+					// 检查哪些服务器被这个监控任务覆盖
+					singleton.ServerLock.RLock()
+					for serverID, server := range singleton.ServerList {
+						if server != nil {
+							// 检查服务器是否被跳过
+							if monitor.SkipServers == nil || !monitor.SkipServers[serverID] {
+								// 检查是否已经在列表中
+								found := false
+								for _, existingID := range serverIdsWithMonitor {
+									if existingID == serverID {
+										found = true
+										break
+									}
+								}
+								if !found {
+									serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
+								}
+							}
+						}
+					}
+					singleton.ServerLock.RUnlock()
+				}
 			}
 		}
-		singleton.ServerLock.RUnlock()
+
+		if singleton.Conf.Debug {
+			log.Printf("network: 从监控配置中找到 %d 个有监控任务的服务器", len(serverIdsWithMonitor))
+		}
 	}
 
 	// 根据权限过滤服务器列表

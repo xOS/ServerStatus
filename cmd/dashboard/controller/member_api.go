@@ -233,6 +233,42 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 	}
 	// 在ApiTokenList中删除该Token
 	delete(singleton.ApiTokenList, token)
+
+	// 强制重新加载API Token列表，确保删除操作生效
+	if singleton.Conf.DatabaseType == "badger" {
+		log.Printf("删除API Token后，重新加载API Token列表")
+		// 释放当前锁，重新初始化API Token列表
+		singleton.ApiLock.Unlock()
+
+		// 重新初始化API Token列表
+		singleton.InitAPI()
+		var tokenList []*model.ApiToken
+		if db.DB != nil {
+			apiTokenOps := db.NewApiTokenOps(db.DB)
+			var err error
+			tokenList, err = apiTokenOps.GetAllApiTokens()
+			if err != nil {
+				log.Printf("重新加载API令牌失败: %v", err)
+			} else {
+				// 重新加载到内存中
+				singleton.ApiLock.Lock()
+				validTokenCount := 0
+				for _, token := range tokenList {
+					if token != nil && token.Token != "" && token.ID > 0 {
+						singleton.ApiTokenList[token.Token] = token
+						singleton.UserIDToApiTokenList[token.UserID] = append(singleton.UserIDToApiTokenList[token.UserID], token.Token)
+						validTokenCount++
+					}
+				}
+				log.Printf("重新加载了 %d 个有效API令牌", validTokenCount)
+				singleton.ApiLock.Unlock()
+			}
+		}
+
+		// 重新获取锁
+		singleton.ApiLock.Lock()
+	}
+
 	c.JSON(http.StatusOK, model.Response{
 		Code:    http.StatusOK,
 		Message: "success",
