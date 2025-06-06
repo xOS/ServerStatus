@@ -141,6 +141,7 @@ func loadAPI() {
 	defer ApiLock.Unlock()
 
 	validTokenCount := 0
+	invalidTokenCount := 0
 	for _, token := range tokenList {
 		if token != nil && token.Token != "" && token.ID > 0 {
 			ApiTokenList[token.Token] = token
@@ -148,13 +149,28 @@ func loadAPI() {
 			validTokenCount++
 			log.Printf("加载API令牌: %s (Note: %s)", token.Token, token.Note)
 		} else if token != nil {
-			log.Printf("警告: 发现空Token的API令牌记录 (ID: %d, Note: %s)", token.ID, token.Note)
+			invalidTokenCount++
+			log.Printf("警告: 发现空Token的API令牌记录 (ID: %d, Note: %s)，将清理此记录", token.ID, token.Note)
+
+			// 清理空Token记录
+			if Conf.DatabaseType == "badger" && db.DB != nil {
+				apiTokenOps := db.NewApiTokenOps(db.DB)
+				if err := apiTokenOps.DeleteApiToken(token.ID); err != nil {
+					log.Printf("清理空Token记录失败 (ID: %d): %v", token.ID, err)
+				} else {
+					log.Printf("已清理空Token记录 (ID: %d)", token.ID)
+				}
+			} else if DB != nil {
+				if err := DB.Unscoped().Delete(&model.ApiToken{}, "id = ?", token.ID).Error; err != nil {
+					log.Printf("清理空Token记录失败 (ID: %d): %v", token.ID, err)
+				} else {
+					log.Printf("已清理空Token记录 (ID: %d)", token.ID)
+				}
+			}
 		}
 	}
 
-	log.Printf("BadgerDB模式: 加载了 %d 个有效API令牌", validTokenCount)
-
-	log.Printf("API令牌加载完成，共加载 %d 个令牌", len(ApiTokenList))
+	log.Printf("API令牌加载完成: 有效 %d 个，清理无效 %d 个", validTokenCount, invalidTokenCount)
 }
 
 // GetStatusByIDList 获取传入IDList的服务器状态信息

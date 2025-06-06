@@ -175,6 +175,18 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 			if err != nil {
 				log.Printf("从BadgerDB加载监控器列表失败: %v", err)
 				monitors = []*model.Monitor{} // 使用空列表避免空指针
+			} else {
+				// BadgerDB模式下需要手动初始化SkipServers字段
+				for _, monitor := range monitors {
+					if monitor != nil {
+						err := monitor.InitSkipServers()
+						if err != nil {
+							log.Printf("初始化监控器 %s 的SkipServers失败: %v", monitor.Name, err)
+							// 设置为空map，避免nil指针
+							monitor.SkipServers = make(map[uint64]bool)
+						}
+					}
+				}
 			}
 		} else {
 			log.Println("BadgerDB未初始化，使用空的监控器列表")

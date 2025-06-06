@@ -221,31 +221,27 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 		log.Printf("SQLite: 成功删除API令牌 %s", token)
 	}
 
-	// 在UserIDToApiTokenList中删除该Token
-	for i, t := range singleton.UserIDToApiTokenList[singleton.ApiTokenList[token].UserID] {
-		if t == token {
-			singleton.UserIDToApiTokenList[singleton.ApiTokenList[token].UserID] = append(singleton.UserIDToApiTokenList[singleton.ApiTokenList[token].UserID][:i], singleton.UserIDToApiTokenList[singleton.ApiTokenList[token].UserID][i+1:]...)
-			break
+	// 获取Token对象用于后续清理
+	tokenObj := singleton.ApiTokenList[token]
+
+	// 从UserIDToApiTokenList中删除该Token
+	if tokenObj != nil {
+		userTokens := singleton.UserIDToApiTokenList[tokenObj.UserID]
+		for i, userToken := range userTokens {
+			if userToken == token {
+				// 从切片中删除该token
+				singleton.UserIDToApiTokenList[tokenObj.UserID] = append(userTokens[:i], userTokens[i+1:]...)
+				break
+			}
+		}
+		// 如果用户没有其他token，删除整个条目
+		if len(singleton.UserIDToApiTokenList[tokenObj.UserID]) == 0 {
+			delete(singleton.UserIDToApiTokenList, tokenObj.UserID)
 		}
 	}
-	if len(singleton.UserIDToApiTokenList[singleton.ApiTokenList[token].UserID]) == 0 {
-		delete(singleton.UserIDToApiTokenList, singleton.ApiTokenList[token].UserID)
-	}
+
 	// 在ApiTokenList中删除该Token
 	delete(singleton.ApiTokenList, token)
-
-	// 在BadgerDB模式下，等待一小段时间确保删除操作完全生效
-	if singleton.Conf.DatabaseType == "badger" {
-		log.Printf("删除API Token后，等待删除操作生效")
-		// 释放锁，等待删除操作完全生效
-		singleton.ApiLock.Unlock()
-		time.Sleep(100 * time.Millisecond) // 等待100毫秒
-		singleton.ApiLock.Lock()
-
-		log.Printf("删除API Token后，从内存中移除已删除的Token")
-		// 简单地从内存中移除已删除的Token，不重新加载整个列表
-		// 这样可以避免重新加载时可能的缓存问题
-	}
 
 	c.JSON(http.StatusOK, model.Response{
 		Code:    http.StatusOK,

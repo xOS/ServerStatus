@@ -266,6 +266,16 @@ func loadServersFromBadgerDB() error {
 			}
 		}
 
+		// 手动初始化DDNSProfiles字段（模拟AfterFind方法）
+		if server.DDNSProfilesRaw != "" {
+			if err := utils.Json.Unmarshal([]byte(server.DDNSProfilesRaw), &server.DDNSProfiles); err != nil {
+				log.Printf("解析服务器 %d 的DDNSProfiles失败: %v", server.ID, err)
+				server.DDNSProfiles = []uint64{}
+			}
+		} else {
+			server.DDNSProfiles = []uint64{}
+		}
+
 		// 检查并生成Secret
 		if server.Secret == "" {
 			log.Printf("服务器 %s (ID: %d) 没有Secret，正在生成新的Secret...", server.Name, server.ID)

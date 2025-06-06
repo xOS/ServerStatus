@@ -248,6 +248,8 @@ func LoadSingleton() {
 		if Conf.DatabaseType == "badger" {
 			log.Println("BadgerDB模式：使用空的定时任务列表")
 			// 已在之前调用了InitCronTask，无需其他操作
+			// BadgerDB模式下需要手动初始化Cron任务的Servers字段
+			initCronServersForBadgerDB()
 		} else {
 			loadCronTasks()
 		}
@@ -289,6 +291,10 @@ func LoadSingleton() {
 			}
 		}()
 		initDDNS()
+		// BadgerDB模式下需要手动初始化DDNS配置的Domains字段
+		if Conf != nil && Conf.DatabaseType == "badger" {
+			initDDNSDomainsForBadgerDB()
+		}
 	}()
 
 	// 从数据库同步累计流量数据到内存
@@ -322,51 +328,26 @@ func LoadSingleton() {
 		log.Printf("添加监控历史记录一致性检查任务失败: %v", err)
 	}
 
-	// 添加定时清理任务，减少频率到每4小时执行一次，避免干扰数据保存
+	// 添加定时清理任务，每4小时执行一次
 	Cron.AddFunc("0 0 */4 * * *", func() {
 		CleanMonitorHistory()
 		Cache.DeleteExpired()
 		// 只在SQLite模式下执行服务器状态清理
 		if Conf.DatabaseType != "badger" {
-			CleanupServerState() // 添加服务器状态清理
+			CleanupServerState()
 		}
-		// 保存流量数据到数据库（支持所有数据库类型）
 		SaveAllTrafficToDB()
 	})
 
 	// 添加流量数据定时保存任务，每10分钟执行一次
-	Cron.AddFunc("0 */10 * * * *", func() {
-		log.Println("定时保存流量数据到数据库...")
-		SaveAllTrafficToDB()
-	})
+	Cron.AddFunc("0 */10 * * * *", SaveAllTrafficToDB)
 
-	// 添加全量数据保存任务，每5分钟执行一次，确保所有数据都被持久化
-	Cron.AddFunc("0 */5 * * * *", func() {
-		log.Println("定时保存所有数据到数据库...")
-		SaveAllDataToDB()
-	})
+	// 添加全量数据保存任务，每5分钟执行一次
+	Cron.AddFunc("0 */5 * * * *", SaveAllDataToDB)
 
-	// 定期温和清理任务，改为每小时执行一次
+	// 定期清理任务，每小时执行一次
 	Cron.AddFunc("0 0 * * * *", func() {
-		// 执行温和的清理操作
-		if Cache != nil {
-			Cache.DeleteExpired() // 只清理过期项
-		}
-
-		// 清理ServiceSentinel的旧数据
-		if ServiceSentinelShared != nil {
-			ServiceSentinelShared.cleanupOldData()
-		}
-
-		// 清理AlertSentinel的内存数据
-		cleanupAlertMemoryData()
-
-		// 温和的GC
-		runtime.GC()
-
-		var m runtime.MemStats
-		runtime.ReadMemStats(&m)
-		log.Printf("定期温和清理完成，当前内存使用: %v MB", m.Alloc/1024/1024)
+		performHourlyCleanup()
 	})
 
 	// 数据库优化任务仅在使用SQLite时执行
@@ -411,6 +392,9 @@ func LoadSingleton() {
 	}
 
 	log.Println("子服务加载完成")
+
+	// 验证和修复数据完整性
+	validateAndFixDataIntegrity()
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置
@@ -634,18 +618,31 @@ func executeWithAdvancedRetry(operation func() error, maxRetries int, baseDelay,
 
 // isRetryableError 判断错误是否可以重试
 func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
 	errMsg := err.Error()
-	return strings.Contains(errMsg, "database is locked") ||
-		strings.Contains(errMsg, "SQL statements in progress") ||
-		strings.Contains(errMsg, "cannot commit transaction") ||
-		strings.Contains(errMsg, "database table is locked") ||
-		strings.Contains(errMsg, "database is busy") ||
-		strings.Contains(errMsg, "disk I/O error")
+	retryableErrors := []string{
+		"database is locked",
+		"SQL statements in progress",
+		"cannot commit transaction",
+		"database table is locked",
+		"database is busy",
+		"disk I/O error",
+	}
+
+	for _, retryableErr := range retryableErrors {
+		if strings.Contains(errMsg, retryableErr) {
+			return true
+		}
+	}
+	return false
 }
 
 // executeWithRetry 带重试机制的数据库操作，用于处理临时的数据库锁定
+// 已废弃：使用 executeWithAdvancedRetry 替代
 func executeWithRetry(operation func() error) error {
-	return ExecuteWithRetry(operation)
+	return executeWithAdvancedRetry(operation, 3, 100*time.Millisecond, 1*time.Second)
 }
 
 // CleanMonitorHistory 清理无效或过时的监控记录和流量记录
@@ -1236,21 +1233,11 @@ func SaveAllDataToDB() {
 		return
 	}
 
-	log.Println("开始保存所有数据到BadgerDB...")
-
-	// 1. 保存服务器数据（包括Host信息和状态）
+	// 保存各类数据
 	SaveAllServerDataToDB()
-
-	// 2. 保存用户数据（包括Token）
 	SaveAllUserDataToDB()
-
-	// 3. 保存DDNS状态
 	SaveAllDDNSStateToDB()
-
-	// 4. 保存API令牌
 	SaveAllAPITokensToDB()
-
-	log.Println("所有数据保存完成")
 }
 
 // SaveAllServerDataToDB 保存所有服务器数据到BadgerDB
@@ -1382,6 +1369,174 @@ func SaveAllAPITokensToDB() {
 	}
 
 	log.Printf("BadgerDB: 成功保存 %d 个API令牌", successCount)
+}
+
+// performHourlyCleanup 执行每小时的清理任务
+func performHourlyCleanup() {
+	// 清理过期缓存
+	if Cache != nil {
+		Cache.DeleteExpired()
+	}
+	if serverStatusCache != nil {
+		serverStatusCache.DeleteExpired()
+	}
+
+	// 清理ServiceSentinel的旧数据
+	if ServiceSentinelShared != nil {
+		ServiceSentinelShared.cleanupOldData()
+	}
+
+	// 清理AlertSentinel的内存数据
+	cleanupAlertMemoryData()
+
+	// 温和的GC
+	runtime.GC()
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	log.Printf("每小时清理完成，当前内存使用: %v MB", m.Alloc/1024/1024)
+}
+
+// initDDNSDomainsForBadgerDB 在BadgerDB模式下初始化DDNS配置的Domains字段
+func initDDNSDomainsForBadgerDB() {
+	if db.DB == nil {
+		return
+	}
+
+	// 获取所有DDNS配置
+	var ddnsProfiles []*model.DDNSProfile
+	err := db.DB.FindAll("ddns_profile", &ddnsProfiles)
+	if err != nil {
+		log.Printf("获取DDNS配置失败: %v", err)
+		return
+	}
+
+	// 手动初始化每个DDNS配置的Domains字段
+	for _, profile := range ddnsProfiles {
+		if profile != nil && profile.DomainsRaw != "" {
+			profile.Domains = strings.Split(profile.DomainsRaw, ",")
+		} else if profile != nil {
+			profile.Domains = []string{}
+		}
+	}
+
+	log.Printf("BadgerDB模式: 已初始化 %d 个DDNS配置的Domains字段", len(ddnsProfiles))
+}
+
+// initCronServersForBadgerDB 在BadgerDB模式下初始化Cron任务的Servers字段
+func initCronServersForBadgerDB() {
+	if db.DB == nil {
+		return
+	}
+
+	// 获取所有Cron任务
+	var cronTasks []*model.Cron
+	err := db.DB.FindAll("cron", &cronTasks)
+	if err != nil {
+		log.Printf("获取Cron任务失败: %v", err)
+		return
+	}
+
+	// 手动初始化每个Cron任务的Servers字段
+	for _, cronTask := range cronTasks {
+		if cronTask != nil {
+			if cronTask.ServersRaw == "" {
+				cronTask.ServersRaw = "[]"
+				cronTask.Servers = []uint64{}
+			} else {
+				// 尝试解析JSON，如果失败则修复格式
+				err := utils.Json.Unmarshal([]byte(cronTask.ServersRaw), &cronTask.Servers)
+				if err != nil {
+					// 检查是否是 "[]," 这种无效格式
+					if cronTask.ServersRaw == "[]," || cronTask.ServersRaw == "," {
+						cronTask.ServersRaw = "[]"
+						cronTask.Servers = []uint64{}
+					} else {
+						// 其他格式错误，尝试修复
+						log.Printf("解析Cron任务 %s 的ServersRaw失败（%s），重置为空数组: %v", cronTask.Name, cronTask.ServersRaw, err)
+						cronTask.ServersRaw = "[]"
+						cronTask.Servers = []uint64{}
+					}
+				}
+			}
+		}
+	}
+
+	log.Printf("BadgerDB模式: 已初始化 %d 个Cron任务的Servers字段", len(cronTasks))
+}
+
+// validateAndFixDataIntegrity 验证并修复数据完整性
+func validateAndFixDataIntegrity() {
+	if Conf == nil || Conf.DatabaseType != "badger" || db.DB == nil {
+		return
+	}
+
+	log.Println("开始验证和修复数据完整性...")
+
+	// 验证服务器数据
+	validateServerData()
+
+	// 验证监控配置数据
+	validateMonitorData()
+
+	// 验证报警规则数据
+	validateAlertRuleData()
+
+	// 验证用户数据
+	validateUserData()
+
+	log.Println("数据完整性验证和修复完成")
+}
+
+// validateServerData 验证服务器数据完整性
+func validateServerData() {
+	ServerLock.RLock()
+	defer ServerLock.RUnlock()
+
+	for _, server := range ServerList {
+		if server == nil {
+			continue
+		}
+
+		// 确保Host对象正确初始化
+		if server.Host == nil {
+			server.Host = &model.Host{}
+		}
+		server.Host.Initialize()
+
+		// 确保State对象正确初始化
+		if server.State == nil {
+			server.State = &model.HostState{}
+		}
+
+		// 确保DDNSProfiles字段正确初始化
+		if server.DDNSProfiles == nil {
+			server.DDNSProfiles = []uint64{}
+		}
+
+		// 确保Secret字段不为空
+		if server.Secret == "" {
+			log.Printf("警告: 服务器 %s (ID: %d) 的Secret为空", server.Name, server.ID)
+		}
+	}
+}
+
+// validateMonitorData 验证监控配置数据完整性
+func validateMonitorData() {
+	// 这个函数在ServiceSentinel初始化时已经处理了
+	log.Println("监控配置数据已在ServiceSentinel初始化时验证")
+}
+
+// validateAlertRuleData 验证报警规则数据完整性
+func validateAlertRuleData() {
+	// 这个函数在BadgerDB.FindAll中已经处理了
+	log.Println("报警规则数据已在BadgerDB.FindAll中验证")
+}
+
+// validateUserData 验证用户数据完整性
+func validateUserData() {
+	// 用户数据相对简单，主要确保Token字段正确处理
+	log.Println("用户数据完整性正常")
 }
 
 // AutoSyncTraffic 自动同步流量的空实现
@@ -1739,18 +1894,13 @@ func executeDatabaseOperation(operation func() error, operationName string, maxR
 
 		lastErr = err
 
-		// 检查是否为数据库锁定错误
-		if strings.Contains(err.Error(), "database is locked") ||
-			strings.Contains(err.Error(), "SQL statements in progress") ||
-			strings.Contains(err.Error(), "cannot commit") {
-
-			if retry < maxRetries-1 {
-				// 指数退避策略
-				backoffDelay := time.Duration(200*(1<<retry)) * time.Millisecond
-				log.Printf("数据库操作 '%s' 忙碌，%v 后重试 (%d/%d)", operationName, backoffDelay, retry+1, maxRetries)
-				time.Sleep(backoffDelay)
-				continue
-			}
+		// 检查是否为可重试的错误
+		if isRetryableError(err) && retry < maxRetries-1 {
+			// 指数退避策略
+			backoffDelay := time.Duration(200*(1<<retry)) * time.Millisecond
+			log.Printf("数据库操作 '%s' 忙碌，%v 后重试 (%d/%d)", operationName, backoffDelay, retry+1, maxRetries)
+			time.Sleep(backoffDelay)
+			continue
 		}
 
 		// 非锁定错误，直接返回

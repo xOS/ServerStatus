@@ -136,11 +136,21 @@ func IsServiceSentinelNeeded(t uint64) bool {
 }
 
 func (m *Monitor) InitSkipServers() error {
+	m.SkipServers = make(map[uint64]bool)
+
+	// 如果SkipServersRaw为空或无效，设置为空数组
+	if m.SkipServersRaw == "" || m.SkipServersRaw == "null" {
+		m.SkipServersRaw = "[]"
+		return nil
+	}
+
 	var skipServers []uint64
 	if err := utils.Json.Unmarshal([]byte(m.SkipServersRaw), &skipServers); err != nil {
-		return err
+		log.Printf("监控器 %s 的SkipServersRaw格式无效（%s），重置为空数组: %v", m.Name, m.SkipServersRaw, err)
+		m.SkipServersRaw = "[]"
+		return nil
 	}
-	m.SkipServers = make(map[uint64]bool)
+
 	for i := 0; i < len(skipServers); i++ {
 		m.SkipServers[skipServers[i]] = true
 	}
