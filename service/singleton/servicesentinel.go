@@ -530,6 +530,9 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 						err := monitorOps.SaveMonitorHistory(h)
 						if err != nil {
 							log.Printf("NG>> BadgerDB TCP/ICMP监控数据保存失败 (MonitorID: %d): %v", h.MonitorID, err)
+						} else {
+							log.Printf("BadgerDB TCP/ICMP监控数据已保存 (MonitorID: %d, ServerID: %d, Delay: %.2f)",
+								h.MonitorID, h.ServerID, h.AvgDelay)
 						}
 					}
 				}(history)

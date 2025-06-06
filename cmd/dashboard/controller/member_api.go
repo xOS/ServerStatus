@@ -131,7 +131,9 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 	if singleton.Conf.DatabaseType == "badger" {
 		// 为新API令牌生成ID
 		token.ID = uint64(time.Now().UnixNano())
-		err = db.DB.SaveModel("api_token", token.ID, token)
+		// 使用ApiTokenOps保存
+		apiTokenOps := db.NewApiTokenOps(db.DB)
+		err = apiTokenOps.SaveApiToken(token)
 		if err != nil {
 			c.JSON(http.StatusOK, model.Response{
 				Code:    http.StatusBadRequest,
@@ -139,6 +141,7 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 			})
 			return
 		}
+		log.Printf("API Token已保存到BadgerDB: %s (Note: %s)", token.Token, token.Note)
 	} else if singleton.DB != nil {
 		err = singleton.DB.Create(token).Error
 		if err != nil {
@@ -618,7 +621,12 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 
 				// BadgerDB 模式下使用 BadgerDB 操作
 				if singleton.Conf.DatabaseType == "badger" {
-					err = db.DB.SaveModel("server", s.ID, &s)
+					// 使用ServerOps来确保Secret字段正确保存
+					serverOps := db.NewServerOps(db.DB)
+					err = serverOps.SaveServer(&s)
+					if err == nil {
+						log.Printf("服务器 %d 的Secret已保存到BadgerDB: %s", s.ID, s.Secret)
+					}
 				} else if singleton.DB != nil {
 					err = singleton.DB.Save(&s).Error
 				} else {
@@ -1000,13 +1008,16 @@ func (ma *memberAPI) batchUpdateServerGroup(c *gin.Context) {
 			singleton.ServerLock.RUnlock()
 
 			server.Tag = req.Group
-			if err := db.DB.SaveModel("server", serverID, &server); err != nil {
+			// 使用ServerOps保存到数据库，确保Secret字段正确保存
+			serverOps := db.NewServerOps(db.DB)
+			if err := serverOps.SaveServer(&server); err != nil {
 				c.JSON(http.StatusOK, model.Response{
 					Code:    http.StatusBadRequest,
 					Message: fmt.Sprintf("更新服务器 %d 失败: %v", serverID, err),
 				})
 				return
 			}
+			log.Printf("批量更新服务器 %d 的Secret已保存: %s", serverID, server.Secret)
 		}
 	} else if singleton.DB != nil {
 		if err := singleton.DB.Model(&model.Server{}).Where("id in (?)", req.Servers).Update("tag", req.Group).Error; err != nil {
