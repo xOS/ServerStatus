@@ -649,7 +649,7 @@ func executeWithRetry(operation func() error) error {
 func CleanMonitorHistory() (int64, error) {
 	// 如果使用BadgerDB，使用BadgerDB专用的清理方法
 	if Conf.DatabaseType == "badger" {
-		log.Printf("使用BadgerDB，执行BadgerDB监控历史清理...")
+		// 移除冗余的日志输出
 		if db.DB != nil {
 			// 使用BadgerDB的MonitorHistoryOps清理过期数据
 			monitorOps := db.NewMonitorHistoryOps(db.DB)
@@ -659,7 +659,10 @@ func CleanMonitorHistory() (int64, error) {
 				log.Printf("BadgerDB监控历史清理失败: %v", err)
 				return 0, err
 			} else {
-				log.Printf("BadgerDB监控历史清理完成，清理了%d条记录", count)
+				// 只在清理了记录时才输出日志
+				if count > 0 {
+					log.Printf("BadgerDB监控历史清理完成，清理了%d条记录", count)
+				}
 				return int64(count), nil
 			}
 		} else {

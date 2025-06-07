@@ -545,12 +545,12 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 						for retry := 0; retry < maxRetries; retry++ {
 							err := monitorOps.SaveMonitorHistory(h)
 							if err == nil {
-								log.Printf("BadgerDB TCP/ICMP监控数据已保存 (MonitorID: %d, ServerID: %d, Delay: %.2f)",
-									h.MonitorID, h.ServerID, h.AvgDelay)
 								break
 							} else {
-								log.Printf("NG>> BadgerDB TCP/ICMP监控数据保存失败 (MonitorID: %d, 重试 %d/%d): %v",
-									h.MonitorID, retry+1, maxRetries, err)
+								// 只在最后一次重试失败时记录错误日志
+								if retry == maxRetries-1 {
+									log.Printf("NG>> BadgerDB TCP/ICMP监控数据保存失败 (MonitorID: %d): %v", h.MonitorID, err)
+								}
 								if retry < maxRetries-1 {
 									time.Sleep(time.Duration(retry+1) * 100 * time.Millisecond)
 								}
@@ -711,8 +711,6 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 							log.Printf("NG>> BadgerDB服务监控数据保存失败 (MonitorID: %d): %v", h.MonitorID, err)
 						} else {
 							ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime = now
-							log.Printf("BadgerDB监控数据已保存 (MonitorID: %d, Up: %d, Down: %d)",
-								h.MonitorID, h.Up, h.Down)
 						}
 					}
 				}(history)
@@ -723,10 +721,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 						log.Printf("NG>> 服务监控数据持久化失败 (MonitorID: %d): %v", mh.GetId(), err)
 					} else {
 						ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime = now
-						log.Printf("监控数据已保存 (MonitorID: %d, Up: %d, Down: %d)",
-							mh.GetId(),
-							ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
-							ss.serviceResponseDataStoreCurrentDown[mh.GetId()])
+						// 移除冗余的监控数据保存日志
 					}
 				})
 			}

@@ -681,7 +681,8 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 	d := *data
 
 	// 处理数值型字段，确保它们是正确的类型
-	numericFields := []string{"id", "group", "sort", "latest_version"}
+	// 注意：ID字段不应该被转换为float64，因为会导致精度丢失
+	numericFields := []string{"group", "sort", "latest_version"}
 	for _, field := range numericFields {
 		if val, ok := d[field]; ok {
 			switch v := val.(type) {
@@ -691,6 +692,28 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 				} else if f, err := strconv.ParseFloat(v, 64); err == nil {
 					d[field] = f
 				}
+			}
+		}
+	}
+
+	// 特殊处理ID字段，保持其原始类型（uint64）
+	idFields := []string{"id", "ID", "user_id", "UserID"}
+	for _, field := range idFields {
+		if val, ok := d[field]; ok {
+			switch v := val.(type) {
+			case string:
+				if v == "" {
+					d[field] = uint64(0)
+				} else if i, err := strconv.ParseUint(v, 10, 64); err == nil {
+					d[field] = i
+				}
+			case float64:
+				// 如果已经是float64，转换回uint64
+				d[field] = uint64(v)
+			case int:
+				d[field] = uint64(v)
+			case int64:
+				d[field] = uint64(v)
 			}
 		}
 	}

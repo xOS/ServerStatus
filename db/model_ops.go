@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
+	"strconv"
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
@@ -504,7 +506,122 @@ func (o *ApiTokenOps) GetApiTokenByToken(tokenStr string) (*model.ApiToken, erro
 
 // DeleteApiToken deletes an API token
 func (o *ApiTokenOps) DeleteApiToken(id uint64) error {
-	return o.db.Delete(fmt.Sprintf("api_token:%d", id))
+	log.Printf("BadgerDB: 开始删除API令牌 ID=%d", id)
+
+	// 直接从底层数据库获取所有api_token keys，避免FindAll的数据转换问题
+	keys, err := o.db.GetKeysWithPrefix("api_token:")
+	if err != nil {
+		log.Printf("BadgerDB: 获取api_token keys失败: %v", err)
+		return err
+	}
+
+	log.Printf("BadgerDB: 找到 %d 个api_token keys", len(keys))
+
+	deletedCount := 0
+	var targetTokenString string
+
+	// 首先遍历所有keys，找到要删除的Token字符串
+	for _, key := range keys {
+		data, err := o.db.Get(key)
+		if err != nil {
+			log.Printf("BadgerDB: 读取key '%s' 失败: %v", key, err)
+			continue
+		}
+
+		// 解析JSON数据
+		var tokenData map[string]interface{}
+		if err := json.Unmarshal(data, &tokenData); err != nil {
+			log.Printf("BadgerDB: 解析key '%s' 的JSON数据失败: %v", key, err)
+			continue
+		}
+
+		// 检查ID是否匹配
+		var tokenID uint64
+		if idVal, ok := tokenData["ID"]; ok {
+			switch v := idVal.(type) {
+			case float64:
+				tokenID = uint64(v)
+			case int64:
+				tokenID = uint64(v)
+			case uint64:
+				tokenID = v
+			case string:
+				if parsed, err := strconv.ParseUint(v, 10, 64); err == nil {
+					tokenID = parsed
+				}
+			}
+		}
+
+		// 如果ID匹配，记录Token字符串
+		if tokenID == id {
+			if tokenVal, ok := tokenData["token"]; ok {
+				if tokenStr, isStr := tokenVal.(string); isStr {
+					targetTokenString = tokenStr
+					log.Printf("BadgerDB: 找到目标Token字符串: '%s'", targetTokenString)
+					break
+				}
+			}
+			if tokenVal, ok := tokenData["Token"]; ok {
+				if tokenStr, isStr := tokenVal.(string); isStr {
+					targetTokenString = tokenStr
+					log.Printf("BadgerDB: 找到目标Token字符串: '%s'", targetTokenString)
+					break
+				}
+			}
+		}
+	}
+
+	if targetTokenString == "" {
+		log.Printf("BadgerDB: 未找到ID=%d对应的Token字符串", id)
+		return fmt.Errorf("未找到要删除的API令牌记录")
+	}
+
+	// 现在删除所有具有相同Token字符串的记录
+	for _, key := range keys {
+		data, err := o.db.Get(key)
+		if err != nil {
+			continue
+		}
+
+		// 解析JSON数据
+		var tokenData map[string]interface{}
+		if err := json.Unmarshal(data, &tokenData); err != nil {
+			continue
+		}
+
+		// 检查Token字符串是否匹配
+		shouldDelete := false
+		if tokenVal, ok := tokenData["token"]; ok {
+			if tokenStr, isStr := tokenVal.(string); isStr && tokenStr == targetTokenString {
+				shouldDelete = true
+			}
+		}
+		if !shouldDelete {
+			if tokenVal, ok := tokenData["Token"]; ok {
+				if tokenStr, isStr := tokenVal.(string); isStr && tokenStr == targetTokenString {
+					shouldDelete = true
+				}
+			}
+		}
+
+		if shouldDelete {
+			log.Printf("BadgerDB: 删除key '%s' (Token: '%s')", key, targetTokenString)
+			if delErr := o.db.Delete(key); delErr == nil {
+				log.Printf("BadgerDB: 成功删除key '%s'", key)
+				deletedCount++
+			} else {
+				log.Printf("BadgerDB: 删除key '%s' 失败: %v", key, delErr)
+			}
+		}
+	}
+
+	log.Printf("BadgerDB: 删除操作完成，共删除了 %d 个记录", deletedCount)
+
+	if deletedCount == 0 {
+		return fmt.Errorf("未找到要删除的API令牌记录")
+	}
+
+	return nil
 }
 
 // NATOps provides specialized operations for NAT configurations
