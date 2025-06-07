@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 服务标识符 -->
+    <key>Label</key>
+    <string>com.serverstatus.agent</string>
+    
+    <!-- 程序路径和参数 -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/server-status/agent/server-agent</string>
+        <string>-c</string>
+        <string>/opt/server-status/agent/config.yml</string>
+    </array>
+    
+    <!-- 工作目录 -->
+    <key>WorkingDirectory</key>
+    <string>/opt/server-status/agent</string>
+    
+    <!-- 自动启动 -->
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <!-- 保持运行 -->
+    <key>KeepAlive</key>
+    <true/>
+    
+    <!-- 标准输出日志 -->
+    <key>StandardOutPath</key>
+    <string>/tmp/server-agent.log</string>
+    
+    <!-- 标准错误日志 -->
+    <key>StandardErrorPath</key>
+    <string>/tmp/server-agent_error.log</string>
+    
+    <!-- 环境变量 -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    
+    <!-- 进程类型 -->
+    <key>ProcessType</key>
+    <string>Background</string>
+    
+    <!-- 退出时重启 -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+    
+    <!-- 启动间隔（防止频繁重启） -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    
+    <!-- 软资源限制 -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <!-- 最大文件描述符数 -->
+        <key>NumberOfFiles</key>
+        <integer>1024</integer>
+    </dict>
+    
+    <!-- 硬资源限制 -->
+    <key>HardResourceLimits</key>
+    <dict>
+        <!-- 最大文件描述符数 -->
+        <key>NumberOfFiles</key>
+        <integer>2048</integer>
+    </dict>
+    
+    <!-- 用户模式运行 -->
+    <key>SessionCreate</key>
+    <false/>
+    
+    <!-- 不在控制台显示 -->
+    <key>AbandonProcessGroup</key>
+    <true/>
+</dict>
+</plist>

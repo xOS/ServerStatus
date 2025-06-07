@@ -396,7 +396,7 @@
                         isUpCompleted = true;
                         return;
                     } else {
-                        // Unknown identifier
+                        console.log('Unknown identifier');
                         return;
                     }
                 } else {
@@ -417,7 +417,7 @@
         };
 
         socket.onclose = function (event) {
-            // WebSocket connection closed
+            console.log('WebSocket connection closed:', event);
         };
 
         document.getElementById('refresh').addEventListener('click', listFile);

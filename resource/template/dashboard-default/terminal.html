@@ -103,7 +103,7 @@
                 await sleep(1500);
                 doResize();
             } catch (error) {
-                // resize error
+                console.log('resize', error);
             } finally {
                 sendResizing = false
             }

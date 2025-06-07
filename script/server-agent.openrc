@@ -1,0 +1,116 @@
+#!/sbin/openrc-run
+
+# ServerStatus Agent OpenRC Service Script
+# For Alpine Linux
+
+name="server-agent"
+description="ServerStatus Agent Service"
+
+# 服务配置
+command="/opt/server-status/agent/server-agent"
+command_args="-c /opt/server-status/agent/config.yml"
+command_user="root"
+command_background="yes"
+pidfile="/var/run/${name}.pid"
+
+# 日志配置
+output_log="/var/log/${name}.log"
+error_log="/var/log/${name}_error.log"
+
+# 依赖服务
+depend() {
+    need net
+    after firewall
+}
+
+# 启动前检查
+start_pre() {
+    # 检查可执行文件是否存在
+    if [ ! -x "${command}" ]; then
+        eerror "ServerStatus Agent executable not found: ${command}"
+        return 1
+    fi
+    
+    # 检查配置文件是否存在
+    if [ ! -f "/opt/server-status/agent/config.yml" ]; then
+        eerror "ServerStatus Agent config file not found: /opt/server-status/agent/config.yml"
+        return 1
+    fi
+    
+    # 创建日志目录
+    checkpath --directory --owner root:root --mode 0755 /var/log
+    
+    # 创建PID文件目录
+    checkpath --directory --owner root:root --mode 0755 /var/run
+    
+    return 0
+}
+
+# 启动后检查
+start_post() {
+    # 等待一秒确保服务启动
+    sleep 1
+    
+    # 检查进程是否真正启动
+    if [ -f "${pidfile}" ]; then
+        local pid=$(cat "${pidfile}")
+        if kill -0 "${pid}" 2>/dev/null; then
+            einfo "ServerStatus Agent started successfully with PID ${pid}"
+            return 0
+        else
+            eerror "ServerStatus Agent failed to start properly"
+            return 1
+        fi
+    else
+        eerror "ServerStatus Agent PID file not created"
+        return 1
+    fi
+}
+
+# 停止后清理
+stop_post() {
+    # 清理PID文件
+    if [ -f "${pidfile}" ]; then
+        rm -f "${pidfile}"
+    fi
+    
+    einfo "ServerStatus Agent stopped"
+    return 0
+}
+
+# 重载配置
+reload() {
+    ebegin "Reloading ServerStatus Agent configuration"
+    
+    if [ -f "${pidfile}" ]; then
+        local pid=$(cat "${pidfile}")
+        if kill -0 "${pid}" 2>/dev/null; then
+            # 发送HUP信号重载配置（如果支持的话）
+            kill -HUP "${pid}"
+            eend $?
+        else
+            eerror "ServerStatus Agent is not running"
+            eend 1
+        fi
+    else
+        eerror "ServerStatus Agent PID file not found"
+        eend 1
+    fi
+}
+
+# 状态检查
+status() {
+    if [ -f "${pidfile}" ]; then
+        local pid=$(cat "${pidfile}")
+        if kill -0 "${pid}" 2>/dev/null; then
+            einfo "ServerStatus Agent is running with PID ${pid}"
+            return 0
+        else
+            eerror "ServerStatus Agent PID file exists but process is not running"
+            return 1
+        fi
+    else
+        einfo "ServerStatus Agent is not running"
+        return 1
+    fi
+}
