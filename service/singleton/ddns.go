@@ -40,9 +40,8 @@ func OnDDNSUpdate() {
 			if err != nil {
 				log.Printf("从BadgerDB加载DDNS配置失败: %v", err)
 				ddns = []*model.DDNSProfile{}
-			} else {
-				log.Printf("从BadgerDB成功加载 %d 条DDNS配置", len(ddns))
 			}
+			// 移除频繁的DDNS配置加载日志
 		} else {
 			log.Println("警告: BadgerDB 未初始化")
 			ddns = []*model.DDNSProfile{}

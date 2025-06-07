@@ -302,7 +302,8 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		return json.Unmarshal([]byte("[]"), result)
 	}
 
-	log.Printf("FindAll: 查询前缀 %s 的数据", prefix)
+	// 移除频繁的查询日志输出，只在调试模式下输出
+	// log.Printf("FindAll: 查询前缀 %s 的数据", prefix)
 
 	err := b.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions

@@ -66,35 +66,23 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 						}
 					} else {
 						// 在内存中查找匹配token的用户
-						// 减少日志输出频率，只在调试模式下输出
-						if singleton.Conf.Debug {
-							tokenPreview := token
-							if len(token) > 8 {
-								tokenPreview = token[:8] + "..."
-							}
-							log.Printf("认证: 在 %d 个用户中查找token: %s", len(users), tokenPreview)
-						}
+						// 移除频繁的认证日志输出，只在出错时输出
 						for _, user := range users {
 							if user != nil && user.Token == token {
 								// 检查token是否过期
 								if user.TokenExpired.After(time.Now()) {
 									u = *user
 									isLogin = true
-									if singleton.Conf.Debug {
-										log.Printf("认证: 找到有效用户 %s (ID: %d)", user.Login, user.ID)
-									}
+									// 移除频繁的认证成功日志
 									break
-								} else if singleton.Conf.Debug {
-									log.Printf("认证: 用户 %s 的token已过期", user.Login)
 								}
+								// 移除token过期的日志输出
 							}
 						}
 
 						// 如果没有找到有效用户，但token是admin，则使用默认管理员账户
 						if !isLogin && token == "admin" {
-							if singleton.Conf.Debug {
-								log.Printf("使用默认管理员账户")
-							}
+							// 移除默认管理员账户的日志输出
 							u = model.User{
 								Common:     model.Common{ID: 1},
 								Login:      "admin",
@@ -103,13 +91,7 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 							isLogin = true
 						}
 
-						if !isLogin && singleton.Conf.Debug {
-							tokenPreview := token
-							if len(token) > 8 {
-								tokenPreview = token[:8] + "..."
-							}
-							log.Printf("认证: 未找到匹配的有效用户，token: %s", tokenPreview)
-						}
+						// 移除认证失败的频繁日志输出
 					}
 				} else {
 					log.Printf("警告：BadgerDB未初始化，用户认证将失败")

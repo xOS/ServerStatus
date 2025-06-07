@@ -566,6 +566,24 @@ function addOrEditServer(server, conf) {
 
   // 为动态添加的删除图标绑定点击事件
   bindDeleteIconEvents();
+
+  // 专门为服务器模态框初始化dropdown，避免干扰标签创建
+  setTimeout(function() {
+    console.log('服务器模态框：延迟初始化dropdown');
+    // 只初始化DDNS dropdown，因为这是服务器编辑需要的
+    $(".server.modal .ui.ddns.search.dropdown").dropdown({
+      clearable: true,
+      apiSettings: {
+        url: "/api/search-ddns?word={query}",
+        cache: false,
+      },
+      // 禁用onChange事件，避免干扰现有标签
+      onChange: function(value, text, $choice) {
+        // 不做任何操作，保持现有标签不变
+        console.log('服务器DDNS dropdown onChange被触发，但已禁用处理');
+      }
+    });
+  }, 500); // 延迟500ms确保标签已经创建完成
 }
 
 function addOrEditMonitor(monitor) {
@@ -960,7 +978,11 @@ function initializeServersDropdown() {
 }
 
 $(document).ready(() => {
-  initializeServersDropdown();
+  // 只在需要服务器dropdown的页面初始化
+  const currentPath = window.location.pathname;
+  if (currentPath === '/server' || currentPath === '/monitor' || currentPath === '/cron') {
+    initializeServersDropdown();
+  }
 });
 
 // 延迟初始化任务dropdown
@@ -1027,7 +1049,11 @@ function initializeTasksDropdown() {
 }
 
 $(document).ready(() => {
-  initializeTasksDropdown();
+  // 只在需要任务dropdown的页面初始化
+  const currentPath = window.location.pathname;
+  if (currentPath === '/monitor' || currentPath === '/notification') {
+    initializeTasksDropdown();
+  }
 });
 
 // 延迟初始化DDNS dropdown
@@ -1094,7 +1120,11 @@ function initializeDDNSDropdown() {
 }
 
 $(document).ready(() => {
-  initializeDDNSDropdown();
+  // 只在需要DDNS dropdown的页面初始化
+  const currentPath = window.location.pathname;
+  if (currentPath === '/server' || currentPath === '/ddns') {
+    initializeDDNSDropdown();
+  }
 });
 
 // 为动态添加的删除图标绑定点击事件
@@ -1158,10 +1188,10 @@ window.reinitializeAllDropdowns = function() {
 };
 
 // 监听模态框显示事件，但不要立即重新初始化dropdown
-// 因为这会干扰Cron编辑时的标签创建
+// 因为这会干扰编辑时的标签创建
 $(document).on('shown.bs.modal', '.modal', function() {
-  // 只在非Cron模态框时重新初始化dropdown
-  if (!$(this).hasClass('cron')) {
+  // 只在非编辑模态框时重新初始化dropdown
+  if (!$(this).hasClass('cron') && !$(this).hasClass('server')) {
     window.reinitializeAllDropdowns();
   }
 });
@@ -1171,7 +1201,7 @@ const modalObserver = new MutationObserver(function(mutations) {
   mutations.forEach(function(mutation) {
     if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
       const target = mutation.target;
-      if ($(target).hasClass('ui modal visible active') && !$(target).hasClass('cron')) {
+      if ($(target).hasClass('ui modal visible active') && !$(target).hasClass('cron') && !$(target).hasClass('server')) {
         setTimeout(function() {
           window.reinitializeAllDropdowns();
         }, 300);
@@ -1180,7 +1210,7 @@ const modalObserver = new MutationObserver(function(mutations) {
     // 监听新增的模态框节点
     if (mutation.type === 'childList') {
       mutation.addedNodes.forEach(function(node) {
-        if (node.nodeType === Node.ELEMENT_NODE && $(node).hasClass('ui modal visible active') && !$(node).hasClass('cron')) {
+        if (node.nodeType === Node.ELEMENT_NODE && $(node).hasClass('ui modal visible active') && !$(node).hasClass('cron') && !$(node).hasClass('server')) {
           setTimeout(function() {
             window.reinitializeAllDropdowns();
           }, 300);
@@ -1891,16 +1921,48 @@ function convertTableJsonToNames() {
   });
 }
 
-// 在页面加载时初始化所有映射
+// 根据当前页面智能初始化映射
 $(document).ready(() => {
-  updateServerNameMapping();
-  updateDDNSNameMapping();
-  updateTaskNameMapping();
+  const currentPath = window.location.pathname;
 
-  // 等待映射初始化完成后转换表格
-  setTimeout(() => {
-    convertTableJsonToNames();
-  }, 1000); // 延迟1秒确保映射已加载
+  // 只在需要的页面初始化相应的映射
+  let needsServerMapping = false;
+  let needsDDNSMapping = false;
+  let needsTaskMapping = false;
+
+  // 检查当前页面是否需要服务器映射
+  if (currentPath === '/server' || currentPath === '/monitor' || currentPath === '/cron' ||
+      currentPath === '/' || currentPath === '/home') {
+    needsServerMapping = true;
+  }
+
+  // 检查当前页面是否需要DDNS映射
+  if (currentPath === '/server' || currentPath === '/ddns') {
+    needsDDNSMapping = true;
+  }
+
+  // 检查当前页面是否需要任务映射
+  if (currentPath === '/monitor' || currentPath === '/cron' || currentPath === '/notification') {
+    needsTaskMapping = true;
+  }
+
+  // 只初始化需要的映射
+  if (needsServerMapping) {
+    updateServerNameMapping();
+  }
+  if (needsDDNSMapping) {
+    updateDDNSNameMapping();
+  }
+  if (needsTaskMapping) {
+    updateTaskNameMapping();
+  }
+
+  // 等待映射初始化完成后转换表格（只在有映射需要时）
+  if (needsServerMapping || needsDDNSMapping || needsTaskMapping) {
+    setTimeout(() => {
+      convertTableJsonToNames();
+    }, 1000); // 延迟1秒确保映射已加载
+  }
 });
 
 // 统一的系统信息格式化

@@ -544,6 +544,7 @@ func (ma *memberAPI) searchDDNS(c *gin.Context) {
 			ddnsOps := db.NewDDNSOps(db.DB)
 			ddnsProfiles, err := ddnsOps.GetAllDDNSProfiles()
 			if err != nil {
+				// 只在严重错误时记录日志
 				log.Printf("searchDDNS: 查询DDNS配置失败: %v", err)
 				c.JSON(http.StatusOK, map[string]interface{}{
 					"success": true,
