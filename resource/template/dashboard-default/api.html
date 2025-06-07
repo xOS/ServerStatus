@@ -49,4 +49,31 @@
 {{template "component/api"}}
 {{template "common/footer" .}}
 <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/clipboard.js/2.0.10/clipboard.min.js"></script>
+<script>
+    // 初始化clipboard.js
+    var clipboard = new ClipboardJS('.ui.icon.mini.button');
+
+    // 添加复制成功提示
+    clipboard.on('success', function(e) {
+        $.suiAlert({
+            title: "复制成功",
+            type: "success",
+            description: "API Token已复制到剪贴板",
+            time: "2",
+            position: "top-center",
+        });
+        e.clearSelection();
+    });
+
+    // 添加复制失败提示
+    clipboard.on('error', function(e) {
+        $.suiAlert({
+            title: "复制失败",
+            type: "error",
+            description: "请手动复制API Token",
+            time: "3",
+            position: "top-center",
+        });
+    });
+</script>
 {{end}}
