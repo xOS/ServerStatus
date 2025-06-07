@@ -207,10 +207,7 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					// 检查是否为网络连接错误或超时错误
 					if isConnectionError(ctxErr) || ctxErr == context.DeadlineExceeded || ctxErr == context.Canceled {
-						// 静默处理网络连接错误、正常超时和取消，避免日志干扰
-						if singleton.Conf.Debug {
-							log.Printf("RequestTask连接正常断开: 客户端ID %d, 原因: %v", clientID, ctxErr)
-						}
+						// 静默处理网络连接错误、正常超时和取消，移除频繁的连接断开日志
 					} else {
 						log.Printf("RequestTask连接上下文错误: %v", ctxErr)
 					}
@@ -282,30 +279,22 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 		case err := <-closeCh:
 			// 检查是否为网络连接错误
 			if isConnectionError(err) {
-				if singleton.Conf.Debug {
-					log.Printf("客户端 %d 网络连接中断: %v", clientID, err)
-				}
+				// 移除频繁的网络连接中断日志
 				return nil // 将网络连接错误视为正常断开
 			}
 			return err
 		case <-ctx.Done():
 			// 超时或连接取消，增强错误分类
 			if ctx.Err() == context.DeadlineExceeded {
-				if singleton.Conf.Debug {
-					log.Printf("客户端 %d RequestTask连接超时 (5分钟)", clientID)
-				}
+				// 移除频繁的连接超时日志
 				return nil // 将超时视为正常断开，不返回错误
 			}
 			// 检查是否为网络连接错误或取消
 			if isConnectionError(ctx.Err()) || ctx.Err() == context.Canceled {
-				if singleton.Conf.Debug {
-					log.Printf("客户端 %d 连接正常断开: %v", clientID, ctx.Err())
-				}
+				// 移除频繁的连接正常断开日志
 				return nil // 将网络连接错误和取消视为正常断开
 			}
-			if singleton.Conf.Debug {
-				log.Printf("客户端 %d RequestTask异常断开: %v", clientID, ctx.Err())
-			}
+			// 移除频繁的RequestTask异常断开日志
 			return nil // 即使异常也不返回错误，避免程序重启
 		case <-ticker.C:
 			// 定期检查连接状态和服务器存在性
@@ -318,10 +307,7 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 			serverExists := singleton.ServerList[clientID] != nil
 			singleton.ServerLock.RUnlock()
 			if !serverExists {
-				// 服务器已被删除，正常退出
-				if singleton.Conf.Debug {
-					log.Printf("客户端 %d 服务器已删除，RequestTask正常退出", clientID)
-				}
+				// 服务器已被删除，正常退出，移除频繁的退出日志
 				return nil
 			}
 		}

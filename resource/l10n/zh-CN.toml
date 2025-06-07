@@ -837,3 +837,42 @@ other = "自定义DDNS使用的公共DNS服务器（逗号分隔）"
 
 [Plan]
 other = "套餐"
+
+[TrafficAlert]
+other = "流量告警"
+
+[SetupTrafficAlert]
+other = "设置流量告警"
+
+[MonthlyTrafficLimit]
+other = "月流量限制"
+
+[NotificationGroup]
+other = "通知组"
+
+[AlertThresholds]
+other = "告警阈值"
+
+[Alert50Percent]
+other = "50% 流量告警"
+
+[Alert90Percent]
+other = "90% 流量告警"
+
+[Alert100Percent]
+other = "100% 流量告警"
+
+[CreateAlert]
+other = "创建告警"
+
+[TrafficAlertInfo]
+other = "流量告警说明"
+
+[TrafficAlertInfo1]
+other = "流量统计周期为自然月（每月1号重置）"
+
+[TrafficAlertInfo2]
+other = "可同时启用多个阈值告警"
+
+[TrafficAlertInfo3]
+other = "告警将发送到指定的通知组"

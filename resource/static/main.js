@@ -427,6 +427,8 @@ function addOrEditNAT(nat) {
   );
 }
 
+
+
 function connectToServer(id) {
   post('/terminal', { Host: window.location.host, Protocol: window.location.protocol, ID: id })
 }

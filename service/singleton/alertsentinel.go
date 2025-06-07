@@ -407,6 +407,11 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 				// 更新最后更新时间
 				stats.NextUpdate[serverID] = time.Now()
 
+				// 检查多级流量阈值并发送通知
+				if server := ServerList[serverID]; server != nil {
+					checkTrafficThresholds(alert, server, &alert.Rules[j], totalTransfer)
+				}
+
 				// 找到一个满足条件的规则即可退出循环
 				break
 			}
@@ -535,7 +540,7 @@ func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, 
 	return message
 }
 
-// generateTrafficAlertDetails 生成流量报警的详细信息
+// generateTrafficAlertDetails 生成流量报警的详细信息，支持多级阈值通知
 func generateTrafficAlertDetails(rule *model.Rule, server *model.Server, alertID uint64) string {
 	var details string
 
@@ -548,12 +553,6 @@ func generateTrafficAlertDetails(rule *model.Rule, server *model.Server, alertID
 
 	currentUsage := stats.Transfer[server.ID]
 	maxLimit := uint64(rule.Max)
-
-	// 计算超额部分
-	var overageAmount uint64
-	if currentUsage > maxLimit {
-		overageAmount = currentUsage - maxLimit
-	}
 
 	// 计算使用率
 	usagePercent := float64(0)
@@ -577,13 +576,38 @@ func generateTrafficAlertDetails(rule *model.Rule, server *model.Server, alertID
 		stats.From.Format("2006-01-02 15:04:05"),
 		stats.To.Format("2006-01-02 15:04:05"))
 
+	// 根据使用率生成不同级别的告警信息
+	var alertLevel string
+	var alertIcon string
+
+	switch {
+	case usagePercent >= 100:
+		alertLevel = "🚨 流量超限告警"
+		alertIcon = "🚨"
+	case usagePercent >= 90:
+		alertLevel = "⚠️ 流量高使用率告警 (90%)"
+		alertIcon = "⚠️"
+	case usagePercent >= 50:
+		alertLevel = "📊 流量使用率提醒 (50%)"
+		alertIcon = "📊"
+	default:
+		alertLevel = "📈 流量监控提醒"
+		alertIcon = "📈"
+	}
+
 	// 生成详细信息
-	details += fmt.Sprintf("• %s超限:\n", trafficType)
-	details += fmt.Sprintf("  - 当前使用: %s (%.2f%%)\n", formatBytes(currentUsage), usagePercent)
+	details += fmt.Sprintf("• %s %s:\n", alertIcon, alertLevel)
+	details += fmt.Sprintf("  - 服务器: %s\n", server.Name)
+	details += fmt.Sprintf("  - %s使用: %s (%.2f%%)\n", trafficType, formatBytes(currentUsage), usagePercent)
 	details += fmt.Sprintf("  - 额定流量: %s\n", formatBytes(maxLimit))
 
-	if overageAmount > 0 {
-		details += fmt.Sprintf("  - 超额: %s\n", formatBytes(overageAmount))
+	// 计算剩余流量
+	if currentUsage < maxLimit {
+		remainingBytes := maxLimit - currentUsage
+		details += fmt.Sprintf("  - 剩余流量: %s\n", formatBytes(remainingBytes))
+	} else {
+		overageAmount := currentUsage - maxLimit
+		details += fmt.Sprintf("  - 超额流量: %s\n", formatBytes(overageAmount))
 	}
 
 	details += fmt.Sprintf("  - %s\n", periodInfo)
@@ -774,6 +798,97 @@ func generateDetailedRecoveryMessage(alert *model.AlertRule, server *model.Serve
 			server.State.CPU,
 			memPercent,
 			diskPercent)
+	}
+
+	return message
+}
+
+// checkTrafficThresholds 检查流量阈值并发送相应通知
+func checkTrafficThresholds(alert *model.AlertRule, server *model.Server, rule *model.Rule, currentUsage uint64) {
+	if rule.Max <= 0 {
+		return
+	}
+
+	usagePercent := float64(currentUsage) / rule.Max * 100
+
+	// 定义阈值
+	thresholds := []struct {
+		percent float64
+		name    string
+		icon    string
+	}{
+		{50.0, "50%流量使用提醒", "📊"},
+		{90.0, "90%流量高使用率告警", "⚠️"},
+		{100.0, "流量超限告警", "🚨"},
+	}
+
+	// 检查每个阈值（从高到低）
+	for i := len(thresholds) - 1; i >= 0; i-- {
+		threshold := thresholds[i]
+		if usagePercent >= threshold.percent {
+			// 生成阈值通知的静音标签，避免重复发送
+			muteLabel := fmt.Sprintf("traffic-threshold-%d-%d-%.0f", alert.ID, server.ID, threshold.percent)
+
+			// 检查是否已经发送过此阈值的通知
+			if _, exists := Cache.Get(muteLabel); exists {
+				return // 已经发送过，跳过
+			}
+
+			// 生成通知消息
+			message := generateThresholdAlertMessage(alert, server, rule, currentUsage, threshold.percent, threshold.name, threshold.icon)
+
+			// 发送通知
+			SafeSendNotification(alert.NotificationTag, message, &muteLabel, server)
+
+			// 设置静音缓存，避免短时间内重复发送（1小时）
+			Cache.Set(muteLabel, true, time.Hour)
+
+			// 只发送最高达到的阈值通知
+			return
+		}
+	}
+}
+
+// generateThresholdAlertMessage 生成阈值告警消息
+func generateThresholdAlertMessage(alert *model.AlertRule, server *model.Server, rule *model.Rule, currentUsage uint64, thresholdPercent float64, thresholdName, icon string) string {
+	now := time.Now()
+
+	// 获取流量统计信息
+	stats := AlertsCycleTransferStatsStore[alert.ID]
+
+	// 确定流量类型
+	trafficType := "流量"
+	switch rule.Type {
+	case "transfer_in_cycle":
+		trafficType = "入站流量"
+	case "transfer_out_cycle":
+		trafficType = "出站流量"
+	case "transfer_all_cycle":
+		trafficType = "总流量"
+	}
+
+	message := fmt.Sprintf("%s %s\n", icon, thresholdName)
+	message += fmt.Sprintf("时间: %s\n", now.Format("2006-01-02 15:04:05"))
+	message += fmt.Sprintf("服务器: %s\n", server.Name)
+	message += fmt.Sprintf("报警规则: %s\n\n", alert.Name)
+
+	usagePercent := float64(currentUsage) / rule.Max * 100
+	message += fmt.Sprintf("• %s使用情况:\n", trafficType)
+	message += fmt.Sprintf("  - 当前使用: %s (%.2f%%)\n", formatBytes(currentUsage), usagePercent)
+	message += fmt.Sprintf("  - 额定流量: %s\n", formatBytes(uint64(rule.Max)))
+
+	if currentUsage < uint64(rule.Max) {
+		remainingBytes := uint64(rule.Max) - currentUsage
+		message += fmt.Sprintf("  - 剩余流量: %s\n", formatBytes(remainingBytes))
+	} else {
+		overageAmount := currentUsage - uint64(rule.Max)
+		message += fmt.Sprintf("  - 超额流量: %s\n", formatBytes(overageAmount))
+	}
+
+	if stats != nil {
+		message += fmt.Sprintf("  - 统计周期: %s - %s\n",
+			stats.From.Format("2006-01-02 15:04:05"),
+			stats.To.Format("2006-01-02 15:04:05"))
 	}
 
 	return message

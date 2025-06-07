@@ -240,9 +240,8 @@ func (cp *commonPage) network(c *gin.Context) {
 								if id == 0 || server.IsOnline {
 									id = serverID
 								}
-							} else if singleton.Conf.Debug {
-								log.Printf("network: 服务器 %d (%s) 被监控 %d 跳过 (Cover=%d)", serverID, server.Name, monitor.ID, monitor.Cover)
 							}
+							// 移除频繁的"服务器被监控跳过"日志输出
 						}
 					}
 					singleton.ServerLock.RUnlock()
@@ -376,7 +375,7 @@ func (cp *commonPage) network(c *gin.Context) {
 					}
 				}
 				monitorHistories = filteredHistories
-				log.Printf("network: BadgerDB为服务器 %d 找到 %d 条监控历史记录", id, len(filteredHistories))
+				// 移除频繁的监控历史记录查询日志
 			}
 		} else {
 			log.Printf("network: BadgerDB未初始化或无效服务器ID，使用空数组")
