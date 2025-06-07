@@ -120,15 +120,15 @@ func (h *Host) Initialize() {
 		h.GPU = []string{}
 	}
 	// 确保其他字段有合理的默认值
-	if h.OS == "" {
-		h.OS = "Unknown"
-	}
-	if h.Platform == "" {
-		h.Platform = "Unknown"
-	}
-	if h.Arch == "" {
-		h.Arch = "Unknown"
-	}
+	// if h.OS == "" {
+	// 	h.OS = "Unknown"
+	// }
+	// if h.Platform == "" {
+	// 	h.Platform = "Unknown"
+	// }
+	// if h.Arch == "" {
+	// 	h.Arch = "Unknown"
+	// }
 }
 
 func (h *Host) PB() *pb.Host {

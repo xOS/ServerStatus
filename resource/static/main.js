@@ -1222,67 +1222,7 @@ function debugOfflineServersConfig() {
   }
 }
 
-// 初始化WebSocket连接
-function initWebSocket() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
-    const ws = new WebSocket(wsUrl);
-    
-    ws.onopen = function() {
-        try {
-            ws.send(JSON.stringify({ type: 'ping' }));
-        } catch (e) {
-        }
-    };
-    
-    ws.onmessage = function(event) {
-        try {
-            const data = JSON.parse(event.data);
-            
-            // 处理服务器状态更新
-            if (data.servers && Array.isArray(data.servers)) {
-                if (window.statusCards) {
-                    window.statusCards.updateServerLiveStatus(data);
-                }
-            }
-            
-            // 处理流量数据更新 - 流量数据可能单独发送或与服务器状态一起发送
-            if (data.trafficData && Array.isArray(data.trafficData)) {
-                window.serverTrafficRawData = data.trafficData;
-                if (window.trafficManager) {
-                    window.trafficManager.processTrafficData(data.trafficData);
-                } else {
-                    window.extractTrafficData();
-                }
-            }
-        } catch (e) {
-        }
-    };
-    
-    ws.onerror = function(error) {
-    };
-    
-    ws.onclose = function(event) {
-        setTimeout(initWebSocket, 5000);
-    };
-    
-    return ws;
-}
-
-// 在页面加载完成后初始化WebSocket
-$(document).ready(function() {
-    window.ws = initWebSocket();
-    
-    // 添加页面可见性变化监听
-    document.addEventListener('visibilitychange', function() {
-        if (document.visibilityState === 'visible') {
-            if (!window.ws || window.ws.readyState !== WebSocket.OPEN) {
-                window.ws = initWebSocket();
-            }
-        }
-    });
-});
+// WebSocket相关代码已移动到home.html中，仅在首页使用
 
 // 保留WebSocket的流量数据处理
 window.extractTrafficData = function() {

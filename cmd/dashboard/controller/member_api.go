@@ -210,23 +210,31 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 				log.Printf("获取所有API令牌失败: %v", getAllErr)
 				err = getAllErr
 			} else {
-				// 删除所有匹配的Token记录
+				// 删除所有匹配的Token记录（包括重复记录）
 				deletedCount := 0
+				var deleteErrors []error
+
 				for _, t := range allTokens {
-					if t.Token == token {
+					if t != nil && t.Token == token {
 						if deleteErr := apiTokenOps.DeleteApiToken(t.ID); deleteErr != nil {
 							log.Printf("删除API令牌记录失败 (ID: %d): %v", t.ID, deleteErr)
+							deleteErrors = append(deleteErrors, deleteErr)
 						} else {
 							deletedCount++
 							log.Printf("BadgerDB: 成功删除API令牌记录 %s (ID: %d, Note: %s)", token, t.ID, t.Note)
 						}
 					}
 				}
+
 				if deletedCount > 1 {
 					log.Printf("BadgerDB: 发现并删除了 %d 个重复的API令牌记录: %s", deletedCount, token)
 				}
+
 				if deletedCount == 0 {
 					err = fmt.Errorf("未找到要删除的API令牌记录")
+				} else if len(deleteErrors) > 0 {
+					// 如果有部分删除失败，记录警告但不影响整体结果
+					log.Printf("警告: %d 个API令牌记录删除失败，但已成功删除 %d 个记录", len(deleteErrors), deletedCount)
 				}
 			}
 		}
