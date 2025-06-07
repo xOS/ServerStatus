@@ -13,7 +13,7 @@ AGENT_SERVICE="/etc/systemd/system/server-agent.service"
 AGENT_CONFIG="${AGENT_PATH}/config.yml"
 AGENT_OPENRC_SERVICE="/etc/init.d/server-agent"
 AGENT_LAUNCHD_SERVICE="$HOME/Library/LaunchAgents/com.serverstatus.agent.plist"
-VERSION="v0.2.4"
+VERSION="v0.2.5"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -392,7 +392,7 @@ install_agent() {
 
     # 下载配置文件模板
     echo "正在下载配置文件模板"
-    wget -t 2 -T 10 -O $AGENT_CONFIG https://${GITHUB_RAW_URL}/cmd/config.yml >/dev/null 2>&1
+    wget -t 2 -T 10 -O $AGENT_CONFIG https://${GITHUB_RAW_URL}/script/config.yml >/dev/null 2>&1
     if [[ $? != 0 ]]; then
         echo -e "${red}配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
         return 1
@@ -485,7 +485,7 @@ update_agent() {
     # 检查配置文件是否存在，如果不存在则下载
     if [[ ! -f ${AGENT_CONFIG} ]]; then
         echo "配置文件不存在，正在下载配置文件模板"
-        wget -t 2 -T 10 -O $AGENT_CONFIG https://${GITHUB_RAW_URL}/cmd/config.yml >/dev/null 2>&1
+        wget -t 2 -T 10 -O $AGENT_CONFIG https://${GITHUB_RAW_URL}/script/config.yml >/dev/null 2>&1
         if [[ $? != 0 ]]; then
             echo -e "${yellow}配置文件下载失败，将使用默认配置${plain}"
         fi
@@ -785,7 +785,7 @@ modify_agent_config() {
     # 确保配置文件存在
     if [[ ! -f ${AGENT_CONFIG} ]]; then
         echo "配置文件不存在，正在下载配置文件模板"
-        wget -t 2 -T 10 -O $AGENT_CONFIG https://${GITHUB_RAW_URL}/cmd/config.yml >/dev/null 2>&1
+        wget -t 2 -T 10 -O $AGENT_CONFIG https://${GITHUB_RAW_URL}/script/config.yml >/dev/null 2>&1
         if [[ $? != 0 ]]; then
             echo -e "${red}配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
             return 0
