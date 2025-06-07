@@ -10,8 +10,6 @@
     <key>ProgramArguments</key>
     <array>
         <string>/opt/server-status/agent/server-agent</string>
-        <string>-c</string>
-        <string>/opt/server-status/agent/config.yml</string>
     </array>
     
     <!-- 工作目录 -->

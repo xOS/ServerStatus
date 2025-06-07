@@ -8,7 +8,7 @@ description="ServerStatus Agent Service"
 
 # 服务配置
 command="/opt/server-status/agent/server-agent"
-command_args="-c /opt/server-status/agent/config.yml"
+# command_args="-c /opt/server-status/agent/config.yml"
 command_user="root"
 command_background="yes"
 pidfile="/var/run/${name}.pid"
