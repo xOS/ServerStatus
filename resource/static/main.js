@@ -490,11 +490,9 @@ function addOrEditServer(server, conf) {
         serverList = JSON.parse(ddns);
         // 确保它是一个数组
         if (!Array.isArray(serverList)) {
-          console.error("DDNS配置不是数组格式:", ddns);
           serverList = [];
         }
       } catch (error) {
-        console.error("解析DDNS配置出错:", error);
         serverList = [];
       }
       const node = modal.find("i.dropdown.icon.ddnsProfiles");
@@ -571,7 +569,6 @@ function addOrEditServer(server, conf) {
 
   // 专门为服务器模态框初始化dropdown，避免干扰标签创建
   setTimeout(function() {
-    console.log('服务器模态框：延迟初始化dropdown');
     // 只初始化DDNS dropdown，因为这是服务器编辑需要的
     $(".server.modal .ui.ddns.search.dropdown").dropdown({
       clearable: true,
@@ -582,7 +579,6 @@ function addOrEditServer(server, conf) {
       // 禁用onChange事件，避免干扰现有标签
       onChange: function(value, text, $choice) {
         // 不做任何操作，保持现有标签不变
-        console.log('服务器DDNS dropdown onChange被触发，但已禁用处理');
       }
     });
   }, 500); // 延迟500ms确保标签已经创建完成
@@ -777,17 +773,17 @@ function addOrEditCron(cron) {
         response.results.forEach(server => {
           window.serverIdToName[server.value] = server.name;
         });
-        console.log('Cron编辑：服务器名称映射更新完成:', window.serverIdToName);
+
       }
       // 初始化标签
       initializeCronLabels();
     }).catch(function() {
-      console.log('Cron编辑：服务器名称映射获取失败，使用默认标签');
+
       // 即使失败也要初始化标签
       initializeCronLabels();
     });
   } else {
-    console.log('Cron编辑：使用现有的服务器名称映射');
+
     // 映射已存在，直接初始化标签
     initializeCronLabels();
   }
@@ -805,7 +801,6 @@ function addOrEditCron(cron) {
 
   // 专门为Cron模态框初始化dropdown，避免干扰标签创建
   setTimeout(function() {
-    console.log('Cron模态框：延迟初始化dropdown');
     // 只初始化服务器dropdown，因为这是Cron任务需要的
     $(".cron.modal .ui.servers.search.dropdown").dropdown({
       clearable: true,
@@ -816,7 +811,6 @@ function addOrEditCron(cron) {
       // 禁用onChange事件，避免干扰现有标签
       onChange: function(value, text, $choice) {
         // 不做任何操作，保持现有标签不变
-        console.log('Cron dropdown onChange被触发，但已禁用处理');
       }
     });
   }, 500); // 延迟500ms确保标签已经创建完成
@@ -940,7 +934,7 @@ function initializeServersDropdown() {
         });
 
         hiddenInput.val(JSON.stringify(currentValues));
-        console.log('服务器dropdown值更新:', currentValues);
+
       },
       // 添加删除标签的事件处理
       onLabelCreate: function(value, text) {
@@ -964,7 +958,7 @@ function initializeServersDropdown() {
             });
 
             hiddenInput.val(JSON.stringify(currentValues));
-            console.log('服务器删除后值更新:', currentValues);
+
 
             // 移除标签
             $label.remove();
@@ -1011,7 +1005,7 @@ function initializeTasksDropdown() {
         });
 
         hiddenInput.val(JSON.stringify(currentValues));
-        console.log('任务dropdown值更新:', currentValues);
+
       },
       // 添加删除标签的事件处理
       onLabelCreate: function(value, text) {
@@ -1035,7 +1029,7 @@ function initializeTasksDropdown() {
             });
 
             hiddenInput.val(JSON.stringify(currentValues));
-            console.log('任务删除后值更新:', currentValues);
+
 
             // 移除标签
             $label.remove();
@@ -1082,7 +1076,7 @@ function initializeDDNSDropdown() {
         });
 
         hiddenInput.val(JSON.stringify(currentValues));
-        console.log('DDNS dropdown值更新:', currentValues);
+
       },
       // 添加删除标签的事件处理
       onLabelCreate: function(value, text) {
@@ -1106,7 +1100,7 @@ function initializeDDNSDropdown() {
             });
 
             hiddenInput.val(JSON.stringify(currentValues));
-            console.log('DDNS删除后值更新:', currentValues);
+
 
             // 移除标签
             $label.remove();
@@ -1173,7 +1167,7 @@ function bindDeleteIconEvents() {
 
 // 全局函数：重新初始化所有dropdown
 window.reinitializeAllDropdowns = function() {
-  console.log('重新初始化所有dropdown...');
+
 
   // 销毁现有的dropdown
   $(".ui.servers.search.dropdown").dropdown('destroy');
@@ -1185,7 +1179,7 @@ window.reinitializeAllDropdowns = function() {
     initializeServersDropdown();
     initializeTasksDropdown();
     initializeDDNSDropdown();
-    console.log('所有dropdown重新初始化完成');
+
   }, 200);
 };
 
@@ -1755,23 +1749,23 @@ function getServerNameById(serverId) {
 
 // 更新服务器名称映射的函数
 function updateServerNameMapping() {
-  console.log('开始更新服务器名称映射...'); // 调试日志
+
   // 在页面加载时和每次修改后更新映射
   $.get('/api/search-server?word=')
     .done(function(resp) {
-      console.log('服务器搜索API响应:', resp); // 调试日志
+
       if (resp.success && resp.results) {
         window.serverIdToName = {};
         resp.results.forEach(server => {
           window.serverIdToName[server.value] = server.name;
         });
-        console.log('服务器名称映射更新完成:', window.serverIdToName); // 调试日志
+
       } else {
-        console.log('服务器搜索API响应无效'); // 调试日志
+
       }
     })
     .fail(function(xhr, status, error) {
-      console.error('服务器名称映射更新失败:', status, error); // 调试日志
+
     });
 }
 
@@ -1823,10 +1817,10 @@ function updateTaskNameMapping() {
 
 // 转换表格中的JSON数据为可读名称
 function convertTableJsonToNames() {
-  console.log('开始转换表格JSON数据为可读名称，当前路径:', window.location.pathname); // 调试日志
+
   // 只在监控配置页面和Cron任务页面运行，跳过报警规则页面
   if (window.location.pathname.includes('/notification')) {
-    console.log('跳过报警规则页面'); // 调试日志
+
     return; // 跳过报警规则页面，保持原始显示
   }
 
@@ -1895,21 +1889,21 @@ function convertTableJsonToNames() {
     const $cronServersCell = $row.find('td').eq(8); // Cron页面第9列是服务器列表
     if ($cronServersCell.length > 0) {
       const cronServersText = $cronServersCell.text().trim();
-      console.log('Cron服务器列表原始文本:', cronServersText); // 调试日志
+
       if (cronServersText.startsWith('[') && cronServersText.endsWith(']')) {
         try {
           const serverIds = JSON.parse(cronServersText);
-          console.log('解析的服务器ID数组:', serverIds); // 调试日志
+
           if (Array.isArray(serverIds) && serverIds.length > 0) {
             const serverNames = serverIds.map(id => {
               const name = getServerNameById(id);
-              console.log(`服务器ID ${id} -> 名称: ${name}`); // 调试日志
+
               return name;
             }).join(', ');
-            console.log('转换后的服务器名称:', serverNames); // 调试日志
+
             $cronServersCell.text(serverNames);
           } else if (serverIds.length === 0) {
-            console.log('服务器ID数组为空，设置为"无"'); // 调试日志
+
             $cronServersCell.text('无');
           }
         } catch (e) {

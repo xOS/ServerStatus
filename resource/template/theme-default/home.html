@@ -1010,7 +1010,7 @@ function initWebSocket() {
     };
 
     ws.onclose = function(event) {
-        console.log('WebSocket closed, reconnecting in 5 seconds...');
+        // WebSocket closed, reconnecting in 5 seconds
         setTimeout(initWebSocket, 5000);
     };
 
