@@ -1,0 +1,177 @@
+# ServerAgent 配置文件
+# 此配置文件用于自定义 Agent 的所有运行参数
+# 配置文件中的设置可以被命令行参数覆盖
+
+# ==================== 监控配置 ====================
+
+# 硬盘分区白名单 - 指定要监控的硬盘分区挂载点
+# 如果为空，则监控所有分区
+# 示例：
+# harddrivePartitionAllowlist:
+#   - "/"
+#   - "/home"
+#   - "/var"
+harddrivePartitionAllowlist: []
+
+# 网卡白名单 - 指定要监控的网络接口
+# 如果为空，则监控所有网卡
+# 示例：
+# nicAllowlist:
+#   eth0: true
+#   wlan0: true
+#   lo: false
+nicAllowlist: {}
+
+# 自定义 DNS 服务器列表
+# 如果为空，则使用默认的 DNS 服务器
+# 默认 DNS 服务器包括：
+# IPv4: 8.8.4.4:53, 223.5.5.5:53, 94.140.14.140:53, 119.29.29.29:53
+# IPv6: [2001:4860:4860::8844]:53, [2400:3200::1]:53, [2a10:50c0::1:ff]:53, [2402:4e00::]:53
+# 示例：
+# dns:
+#   - "1.1.1.1:53"
+#   - "1.0.0.1:53"
+#   - "8.8.8.8:53"
+#   - "8.8.4.4:53"
+dns: []
+
+# GPU 监控开关
+# 设置为 true 启用 GPU 监控，false 禁用
+# 注意：启用 GPU 监控可能需要额外的系统权限和驱动支持
+gpu: true
+
+# 温度监控开关
+# 设置为 true 启用温度监控，false 禁用
+# 注意：温度监控可能需要额外的系统权限和硬件支持
+temperature: true
+
+# 调试模式开关
+# 设置为 true 启用调试日志输出，false 禁用
+# 调试模式会输出更详细的运行信息，有助于问题排查
+debug: true
+
+# ==================== 连接配置 ====================
+
+# 服务器地址 - 管理面板的 RPC 端口
+# 格式：主机名:端口 或 IP:端口
+server: "grpc.nange.cn:443"
+
+# 客户端密钥 - Agent 连接到服务器的认证密钥
+# 这是必需的参数，如果为空程序将退出
+clientSecret: "MD3Msdfh0S58h67sk"
+
+# TLS 加密 - 是否启用 SSL/TLS 加密传输
+# 设置为 true 启用加密传输，false 使用明文传输
+tls: true
+
+# 不安全的 TLS - 是否禁用证书检查
+# 设置为 true 时将跳过 TLS 证书验证（不推荐在生产环境使用）
+insecureTLS: false
+
+# ==================== 功能开关 ====================
+
+# 跳过连接数检查 - 是否禁用网络连接数监控
+# 设置为 true 将不监控 TCP/UDP 连接数
+skipConnectionCount: false
+
+# 跳过进程数检查 - 是否禁用进程数量监控
+# 设置为 true 将不监控系统进程数量
+skipProcsCount: false
+
+# 禁用自动更新 - 是否禁用自动升级功能
+# 设置为 true 将禁用定时检查和自动更新
+disableAutoUpdate: false
+
+# 禁用强制更新 - 是否禁用服务器强制升级
+# 设置为 true 将忽略服务器发送的强制更新指令
+disableForceUpdate: false
+
+# 禁用命令执行 - 是否禁止在此机器上执行命令
+# 设置为 true 将禁用远程命令执行、终端和文件管理功能
+disableCommandExecute: false
+
+# 禁用内网穿透 - 是否禁止此机器的内网穿透功能
+# 设置为 true 将禁用 NAT 穿透功能
+disableNat: false
+
+# 禁用发送查询 - 是否禁止此机器发送网络请求
+# 设置为 true 将禁用 TCP/ICMP/HTTP 请求功能
+disableSendQuery: false
+
+# ==================== 其他配置 ====================
+
+# 报告间隔 - 系统状态上报间隔（秒）
+# 取值范围：1-4 秒，建议使用 1 秒以获得最佳监控精度
+reportDelay: 1
+
+# IP 上报周期 - 本地 IP 更新间隔（秒）
+# 默认 30 分钟（1800 秒），上报频率依旧取决于 reportDelay 的值
+ipReportPeriod: 1800
+
+# 使用 IPv6 国家代码 - 是否优先展示 IPv6 位置信息
+# 设置为 true 将优先使用 IPv6 地址进行地理位置查询
+useIPv6CountryCode: false
+
+# 使用 Gitee 更新 - 是否强制从 Gitee 获取更新
+# 设置为 true 将从 Gitee 而不是 GitHub 获取更新（适用于中国大陆用户）
+useGiteeToUpgrade: false
+
+# ==================== 配置说明 ====================
+
+# 1. 配置文件优先级：
+#    - 命令行参数 > 配置文件 > 默认值
+#    - 可以在配置文件中设置常用参数，临时使用命令行参数覆盖
+#
+# 2. 必需参数：
+#    - clientSecret: 必须设置，否则程序无法启动
+#
+# 3. 监控配置：
+#    - harddrivePartitionAllowlist: 指定要监控的分区挂载点
+#    - nicAllowlist: 指定要监控的网络接口
+#    - dns: 自定义 DNS 服务器，支持 IPv4 和 IPv6
+#    - gpu: 启用 GPU 监控（需要驱动支持）
+#    - temperature: 启用温度监控（需要硬件支持）
+#
+# 4. 连接配置：
+#    - server: 服务器地址，格式为 "主机:端口"
+#    - tls: 启用 TLS 加密传输
+#    - insecureTLS: 跳过证书验证（仅用于测试）
+#
+# 5. 功能开关：
+#    - 各种 disable* 选项可以禁用特定功能
+#    - skip* 选项可以跳过特定的监控项目
+#
+# 6. 性能配置：
+#    - reportDelay: 影响监控精度和网络流量
+#    - ipReportPeriod: 影响 IP 地址更新频率
+#
+# 7. 配置修改：
+#    - 修改配置文件后需要重启 Agent 才能生效
+#    - 可以使用 `agent edit` 命令进行交互式配置
+
+# ==================== 示例配置 ====================
+
+# 生产环境示例配置：
+# server: "monitor.example.com:2222"
+# clientSecret: "your-secret-key-here"
+# tls: true
+# insecureTLS: false
+# debug: false
+# reportDelay: 1
+# disableCommandExecute: true  # 生产环境建议禁用命令执行
+# disableNat: true             # 生产环境建议禁用内网穿透
+
+# 开发环境示例配置：
+# server: "localhost:2222"
+# clientSecret: "dev-secret"
+# tls: false
+# debug: true
+# gpu: true
+# temperature: true
+
+# 中国大陆用户示例配置：
+# useGiteeToUpgrade: true
+# dns:
+#   - "223.5.5.5:53"    # 阿里 DNS
+#   - "119.29.29.29:53" # 腾讯 DNS
+#   - "114.114.114.114:53" # 114 DNS
