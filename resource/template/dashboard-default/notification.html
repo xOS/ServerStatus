@@ -79,15 +79,7 @@
                     <td>{{$rule.Enable}}</td>
                     <td>
                         <div class="ui mini icon buttons">
-                            <button class="ui button edit-alert-rule-btn"
-                                data-id="{{$rule.ID}}"
-                                data-name="{{$rule.Name}}"
-                                data-notification-tag="{{$rule.NotificationTag}}"
-                                data-trigger-mode="{{$rule.TriggerMode}}"
-                                data-rules-raw="{{$rule.RulesRaw}}"
-                                data-fail-trigger-tasks-raw="{{$rule.FailTriggerTasksRaw}}"
-                                data-recover-trigger-tasks-raw="{{$rule.RecoverTriggerTasksRaw}}"
-                                data-enable="{{$rule.Enable}}">
+                            <button class="ui button edit-alert-rule-btn" data-id="{{$rule.ID}}">
                                 <i class="edit icon"></i>
                             </button>
                             <button class="ui button"
@@ -111,17 +103,39 @@
     // 为编辑报警规则按钮添加事件监听器
     $(document).on('click', '.edit-alert-rule-btn', function() {
         const btn = $(this);
-        const rule = {
-            ID: parseInt(btn.data('id')),
-            Name: btn.data('name'),
-            NotificationTag: btn.data('notification-tag'),
-            TriggerMode: parseInt(btn.data('trigger-mode')),
-            RulesRaw: btn.data('rules-raw'),
-            FailTriggerTasksRaw: btn.data('fail-trigger-tasks-raw'),
-            RecoverTriggerTasksRaw: btn.data('recover-trigger-tasks-raw'),
-            Enable: btn.data('enable') === 'true' || btn.data('enable') === true
-        };
-        addOrEditAlertRule(rule);
+        const ruleId = btn.data('id');
+
+        if (!ruleId) {
+            console.error('告警规则ID不存在');
+            return;
+        }
+
+        // 显示加载状态
+        btn.addClass('loading');
+
+        // 通过AJAX获取告警规则详细数据
+        $.ajax({
+            url: '/api/alert-rule/' + ruleId,
+            type: 'GET',
+            timeout: 10000
+        })
+        .done(function(response) {
+            if (response && response.code === 200 && response.result) {
+                const rule = response.result;
+                console.log('获取到告警规则数据:', rule);
+                addOrEditAlertRule(rule);
+            } else {
+                console.error('获取告警规则数据失败:', response);
+                alert('获取告警规则数据失败: ' + (response.message || '未知错误'));
+            }
+        })
+        .fail(function(xhr, status, error) {
+            console.error('获取告警规则数据网络错误:', error);
+            alert('获取告警规则数据失败: ' + error);
+        })
+        .always(function() {
+            btn.removeClass('loading');
+        });
     });
 </script>
 {{end}}

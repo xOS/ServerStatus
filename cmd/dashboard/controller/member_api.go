@@ -56,6 +56,7 @@ func (ma *memberAPI) serve() {
 	mr.POST("/ddns", ma.addOrEditDDNS)
 	mr.POST("/nat", ma.addOrEditNAT)
 	mr.POST("/alert-rule", ma.addOrEditAlertRule)
+	mr.GET("/alert-rule/:id", ma.getAlertRule)
 	mr.POST("/setting", ma.updateSetting)
 	mr.DELETE("/:model/:id", ma.delete)
 	mr.POST("/logout", ma.logout)
@@ -241,28 +242,31 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 		log.Printf("SQLite: 成功删除API令牌 %s", token)
 	}
 
-	// 只有数据库删除成功后才清理内存
-	if err == nil {
-		// 从UserIDToApiTokenList中删除该Token
-		if tokenObj != nil {
-			userTokens := singleton.UserIDToApiTokenList[tokenObj.UserID]
-			for i, userToken := range userTokens {
-				if userToken == token {
-					// 从切片中删除该token
-					singleton.UserIDToApiTokenList[tokenObj.UserID] = append(userTokens[:i], userTokens[i+1:]...)
-					break
-				}
-			}
-			// 如果用户没有其他token，删除整个条目
-			if len(singleton.UserIDToApiTokenList[tokenObj.UserID]) == 0 {
-				delete(singleton.UserIDToApiTokenList, tokenObj.UserID)
+	// 无论数据库删除是否成功，都要清理内存，避免重新保存
+	// 从UserIDToApiTokenList中删除该Token
+	if tokenObj != nil {
+		userTokens := singleton.UserIDToApiTokenList[tokenObj.UserID]
+		for i, userToken := range userTokens {
+			if userToken == token {
+				// 从切片中删除该token
+				singleton.UserIDToApiTokenList[tokenObj.UserID] = append(userTokens[:i], userTokens[i+1:]...)
+				break
 			}
 		}
+		// 如果用户没有其他token，删除整个条目
+		if len(singleton.UserIDToApiTokenList[tokenObj.UserID]) == 0 {
+			delete(singleton.UserIDToApiTokenList, tokenObj.UserID)
+		}
+	}
 
-		// 在ApiTokenList中删除该Token
-		delete(singleton.ApiTokenList, token)
+	// 在ApiTokenList中删除该Token
+	delete(singleton.ApiTokenList, token)
 
-		log.Printf("成功从内存中清理API令牌: %s", token)
+	log.Printf("已从内存中清理API令牌: %s (数据库删除结果: %v)", token, err)
+
+	// 如果数据库删除失败，记录错误但不影响响应
+	if err != nil {
+		log.Printf("警告: 数据库删除API令牌失败，但已从内存中清理: %v", err)
 	}
 
 	c.JSON(http.StatusOK, model.Response{
@@ -1483,6 +1487,42 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 	singleton.OnRefreshOrAddAlert(r)
 	c.JSON(http.StatusOK, model.Response{
 		Code: http.StatusOK,
+	})
+}
+
+func (ma *memberAPI) getAlertRule(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusOK, model.Response{
+			Code:    http.StatusBadRequest,
+			Message: "ID格式错误",
+		})
+		return
+	}
+
+	var alertRule model.AlertRule
+
+	// BadgerDB 模式下使用 BadgerDB 操作
+	if singleton.Conf.DatabaseType == "badger" {
+		err = db.DB.FindModel(id, "alert_rule", &alertRule)
+	} else if singleton.DB != nil {
+		err = singleton.DB.First(&alertRule, "id = ?", id).Error
+	} else {
+		err = errors.New("数据库未初始化")
+	}
+
+	if err != nil {
+		c.JSON(http.StatusOK, model.Response{
+			Code:    http.StatusNotFound,
+			Message: fmt.Sprintf("告警规则不存在：%s", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Response{
+		Code:   http.StatusOK,
+		Result: alertRule,
 	})
 }
 

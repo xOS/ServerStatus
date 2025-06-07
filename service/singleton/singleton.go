@@ -1354,6 +1354,7 @@ func SaveAllAPITokensToDB() {
 	ApiLock.RUnlock()
 
 	if len(tokenData) == 0 {
+		log.Printf("BadgerDB: 内存中没有API令牌，跳过保存")
 		return
 	}
 
@@ -1374,6 +1375,25 @@ func SaveAllAPITokensToDB() {
 		}
 	}
 
+	// 检查是否有需要删除的token（存在于数据库但不在内存中）
+	memoryTokenMap := make(map[string]bool)
+	for token := range tokenData {
+		memoryTokenMap[token] = true
+	}
+
+	deleteCount := 0
+	for _, existing := range existingTokens {
+		if existing != nil && existing.Token != "" && !memoryTokenMap[existing.Token] {
+			// 这个token在数据库中存在但不在内存中，应该删除
+			if err := apiTokenOps.DeleteApiToken(existing.ID); err != nil {
+				log.Printf("删除过期API令牌失败 (ID: %d): %v", existing.ID, err)
+			} else {
+				deleteCount++
+				log.Printf("BadgerDB: 删除过期API令牌 %s (ID: %d)", existing.Token, existing.ID)
+			}
+		}
+	}
+
 	successCount := 0
 	skipCount := 0
 
@@ -1391,8 +1411,8 @@ func SaveAllAPITokensToDB() {
 		}
 	}
 
-	if successCount > 0 || skipCount > 0 {
-		log.Printf("BadgerDB: 成功保存 %d 个API令牌，跳过 %d 个已存在的令牌", successCount, skipCount)
+	if successCount > 0 || skipCount > 0 || deleteCount > 0 {
+		log.Printf("BadgerDB: 成功保存 %d 个API令牌，跳过 %d 个已存在的令牌，删除 %d 个过期令牌", successCount, skipCount, deleteCount)
 	}
 }
 
