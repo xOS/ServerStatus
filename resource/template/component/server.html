@@ -82,8 +82,37 @@
 </div>
 <script>
 // 初始化标签页功能
-$(document).ready(function() {
-    $('.tabular.menu .item').tab();
+document.addEventListener('DOMContentLoaded', function() {
+    // 使用原生JavaScript初始化Semantic UI标签页
+    if (typeof $ !== 'undefined') {
+        $('.tabular.menu .item').tab();
+    } else {
+        // 如果jQuery不可用，使用原生JavaScript实现简单的标签页切换
+        const tabItems = document.querySelectorAll('.tabular.menu .item');
+        const tabSegments = document.querySelectorAll('.tab.segment');
+
+        tabItems.forEach(function(item) {
+            item.addEventListener('click', function(e) {
+                e.preventDefault();
+
+                // 移除所有active类
+                tabItems.forEach(function(tab) {
+                    tab.classList.remove('active');
+                });
+                tabSegments.forEach(function(segment) {
+                    segment.classList.remove('active');
+                });
+
+                // 添加active类到当前项
+                this.classList.add('active');
+                const targetTab = this.getAttribute('data-tab');
+                const targetSegment = document.querySelector('[data-tab="' + targetTab + '"]');
+                if (targetSegment) {
+                    targetSegment.classList.add('active');
+                }
+            });
+        });
+    }
 });
 </script>
 {{end}}

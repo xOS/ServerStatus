@@ -817,7 +817,13 @@ func (ma *memberAPI) addOrEditMonitor(c *gin.Context) {
 			if singleton.Conf.DatabaseType == "badger" {
 				// 为新监控器生成ID
 				if m.ID == 0 {
-					m.ID = uint64(time.Now().UnixNano())
+					nextID, err := db.GenerateNextID("monitor")
+					if err != nil {
+						log.Printf("生成监控器ID失败: %v", err)
+						m.ID = 1 // 使用默认ID
+					} else {
+						m.ID = nextID
+					}
 				}
 				err = db.DB.SaveModel("monitor", m.ID, &m)
 			} else if singleton.DB != nil {
@@ -924,7 +930,13 @@ func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 			if cf.ID == 0 {
 				// 为新计划任务生成ID
 				if cr.ID == 0 {
-					cr.ID = uint64(time.Now().UnixNano())
+					nextID, err := db.GenerateNextID("cron")
+					if err != nil {
+						log.Printf("生成计划任务ID失败: %v", err)
+						cr.ID = 1 // 使用默认ID
+					} else {
+						cr.ID = nextID
+					}
 				}
 				err = db.DB.SaveModel("cron", cr.ID, &cr)
 			} else {
