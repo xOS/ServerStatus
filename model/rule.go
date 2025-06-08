@@ -145,8 +145,11 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 	case "transfer_all":
 		src = float64(server.State.NetOutTransfer + server.State.NetInTransfer)
 	case "offline":
+		// 修复离线检测逻辑：区分"从未上线"和"曾经在线但现在离线"
 		if server.LastActive.IsZero() {
-			src = 0
+			// 从未上线过的服务器，不应该触发离线告警
+			// 使用当前时间戳，确保不会触发离线检测
+			src = float64(time.Now().Unix())
 		} else {
 			src = float64(server.LastActive.Unix())
 		}
@@ -260,8 +263,13 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 		cycleTransferStats.To = u.GetTransferDurationEnd()
 	}
 
-	if u.Type == "offline" && float64(time.Now().Unix())-src > 6 {
-		return struct{}{}
+	if u.Type == "offline" {
+		// 修复离线检测逻辑：只有曾经上线过且当前离线的服务器才能触发离线告警
+		if !server.LastActive.IsZero() && !server.IsOnline && float64(time.Now().Unix())-src > 6 {
+			return struct{}{}
+		}
+		// 从未上线的服务器或当前在线的服务器不触发离线告警
+		return nil
 	} else if (u.Max > 0 && src > u.Max) || (u.Min > 0 && src < u.Min) {
 		return struct{}{}
 	}

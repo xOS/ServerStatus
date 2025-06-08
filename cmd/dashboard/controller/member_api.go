@@ -645,7 +645,13 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 					if singleton.Conf.DatabaseType == "badger" {
 						// 为新服务器生成ID
 						if s.ID == 0 {
-							s.ID = uint64(time.Now().UnixNano())
+							nextID, err := db.GenerateNextID("server")
+							if err != nil {
+								log.Printf("生成服务器ID失败: %v", err)
+								s.ID = 1 // 使用默认ID
+							} else {
+								s.ID = nextID
+							}
 						}
 						err = db.DB.SaveModel("server", s.ID, &s)
 					} else if singleton.DB != nil {
@@ -1299,7 +1305,13 @@ func (ma *memberAPI) addOrEditDDNS(c *gin.Context) {
 			if singleton.Conf.DatabaseType == "badger" {
 				// 为新DDNS配置生成ID
 				if p.ID == 0 {
-					p.ID = uint64(time.Now().UnixNano())
+					nextID, err := db.GenerateNextID("ddns_profile")
+					if err != nil {
+						log.Printf("生成DDNS配置ID失败: %v", err)
+						p.ID = 1 // 使用默认ID
+					} else {
+						p.ID = nextID
+					}
 				}
 				err = db.DB.SaveModel("ddns_profile", p.ID, &p)
 			} else if singleton.DB != nil {
@@ -1356,7 +1368,13 @@ func (ma *memberAPI) addOrEditNAT(c *gin.Context) {
 			if singleton.Conf.DatabaseType == "badger" {
 				// 为新NAT配置生成ID
 				if n.ID == 0 {
-					n.ID = uint64(time.Now().UnixNano())
+					nextID, err := db.GenerateNextID("nat")
+					if err != nil {
+						log.Printf("生成NAT配置ID失败: %v", err)
+						n.ID = 1 // 使用默认ID
+					} else {
+						n.ID = nextID
+					}
 				}
 				err = db.DB.SaveModel("nat", n.ID, &n)
 			} else if singleton.DB != nil {
@@ -1467,7 +1485,13 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 			if singleton.Conf.DatabaseType == "badger" {
 				// 为新报警规则生成ID
 				if r.ID == 0 {
-					r.ID = uint64(time.Now().UnixNano())
+					nextID, err := db.GenerateNextID("alert_rule")
+					if err != nil {
+						log.Printf("生成告警规则ID失败: %v", err)
+						r.ID = 1 // 使用默认ID
+					} else {
+						r.ID = nextID
+					}
 				}
 				err = db.DB.SaveModel("alert_rule", r.ID, &r)
 			} else if singleton.DB != nil {

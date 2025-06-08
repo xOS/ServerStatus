@@ -13,7 +13,7 @@ AGENT_SERVICE="/etc/systemd/system/server-agent.service"
 AGENT_CONFIG="${AGENT_PATH}/config.yml"
 AGENT_OPENRC_SERVICE="/etc/init.d/server-agent"
 AGENT_LAUNCHD_SERVICE="$HOME/Library/LaunchAgents/com.serverstatus.agent.plist"
-VERSION="v0.2.5"
+VERSION="v0.2.6"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -51,7 +51,11 @@ service_enable() {
     if [ "$os_alpine" = 1 ]; then
         rc-update add server-agent default
     elif [ "$os_macos" = 1 ]; then
-        launchctl load $AGENT_LAUNCHD_SERVICE
+        # macOS使用用户级LaunchAgent
+        echo "正在加载LaunchAgent..."
+        launchctl unload $AGENT_LAUNCHD_SERVICE 2>/dev/null || true
+        launchctl load $AGENT_LAUNCHD_SERVICE 2>/dev/null || true
+        launchctl enable gui/$(id -u)/com.serverstatus.agent 2>/dev/null || true
     else
         systemctl enable server-agent
     fi
@@ -61,7 +65,11 @@ service_start() {
     if [ "$os_alpine" = 1 ]; then
         rc-service server-agent start
     elif [ "$os_macos" = 1 ]; then
-        launchctl start com.serverstatus.agent
+        # macOS LaunchAgent通过load自动启动，如果没有启动则手动启动
+        if ! launchctl list | grep com.serverstatus.agent >/dev/null 2>&1; then
+            launchctl load $AGENT_LAUNCHD_SERVICE 2>/dev/null || true
+        fi
+        launchctl start com.serverstatus.agent 2>/dev/null || true
     else
         systemctl start server-agent
     fi
@@ -81,9 +89,14 @@ service_restart() {
     if [ "$os_alpine" = 1 ]; then
         rc-service server-agent restart
     elif [ "$os_macos" = 1 ]; then
+        echo "正在重启探针服务..."
         launchctl stop com.serverstatus.agent 2>/dev/null || true
-        sleep 1
-        launchctl start com.serverstatus.agent
+        sleep 2
+        # 确保plist已加载
+        if ! launchctl list | grep com.serverstatus.agent >/dev/null 2>&1; then
+            launchctl load $AGENT_LAUNCHD_SERVICE 2>/dev/null || true
+        fi
+        launchctl start com.serverstatus.agent 2>/dev/null || true
     else
         systemctl restart server-agent
     fi
@@ -103,6 +116,7 @@ service_disable() {
     if [ "$os_alpine" = 1 ]; then
         rc-update del server-agent default
     elif [ "$os_macos" = 1 ]; then
+        launchctl disable gui/$(id -u)/com.serverstatus.agent 2>/dev/null || true
         launchctl unload $AGENT_LAUNCHD_SERVICE 2>/dev/null || true
     else
         systemctl disable server-agent
@@ -358,8 +372,28 @@ install_agent() {
 
     # 探针文件夹
     if [ ! -z "${AGENT_PATH}" ]; then
-        mkdir -p $AGENT_PATH
-        chmod 777 -R $AGENT_PATH
+        # macOS下可能需要sudo权限创建/opt目录
+        if [ "$os_macos" = 1 ]; then
+            if [ ! -d "/opt" ]; then
+                echo "创建/opt目录需要管理员权限..."
+                sudo mkdir -p /opt 2>/dev/null || {
+                    echo "无法创建/opt目录，请手动执行: sudo mkdir -p /opt"
+                    exit 1
+                }
+            fi
+            if [ ! -w "/opt" ]; then
+                echo "设置目录权限需要管理员权限..."
+                sudo mkdir -p $AGENT_PATH
+                sudo chown $(whoami):staff $AGENT_PATH
+                sudo chmod 755 $AGENT_PATH
+            else
+                mkdir -p $AGENT_PATH
+                chmod 755 $AGENT_PATH
+            fi
+        else
+            mkdir -p $AGENT_PATH
+            chmod 777 -R $AGENT_PATH
+        fi
     fi
     echo "正在下载监控端"
 
@@ -387,8 +421,20 @@ install_agent() {
         return 1
     fi
     unzip -qo $AGENT_ZIP &&
+        chmod +x server-agent &&
         mv server-agent $AGENT_PATH &&
         rm -rf $AGENT_ZIP README.md
+
+    # macOS下设置正确的文件权限
+    if [ "$os_macos" = 1 ]; then
+        # 确保当前用户拥有文件权限
+        if [ -f "$AGENT_PATH/server-agent" ]; then
+            if [ "$(stat -f '%u' $AGENT_PATH/server-agent)" != "$(id -u)" ]; then
+                sudo chown $(whoami):staff "$AGENT_PATH/server-agent" 2>/dev/null || true
+            fi
+            chmod 755 "$AGENT_PATH/server-agent" 2>/dev/null || true
+        fi
+    fi
 
     # 下载配置文件模板
     echo "正在下载配置文件模板"
@@ -396,6 +442,16 @@ install_agent() {
     if [[ $? != 0 ]]; then
         echo -e "${red}配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
         return 1
+    fi
+
+    # macOS下设置配置文件权限
+    if [ "$os_macos" = 1 ]; then
+        if [ -f "$AGENT_CONFIG" ]; then
+            if [ "$(stat -f '%u' $AGENT_CONFIG)" != "$(id -u)" ]; then
+                sudo chown $(whoami):staff "$AGENT_CONFIG" 2>/dev/null || true
+            fi
+            chmod 644 "$AGENT_CONFIG" 2>/dev/null || true
+        fi
     fi
 
     # 根据系统类型下载相应的服务文件
@@ -414,6 +470,14 @@ install_agent() {
         wget -t 2 -T 10 -O $AGENT_LAUNCHD_SERVICE https://${GITHUB_RAW_URL}/script/com.serverstatus.agent.plist >/dev/null 2>&1
         if [[ $? != 0 ]]; then
             echo -e "${red}LaunchAgent配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
+            return 1
+        fi
+    else
+        # 其他系统使用systemd
+        echo "正在下载systemd服务文件"
+        wget -t 2 -T 10 -O $AGENT_SERVICE https://${GITHUB_RAW_URL}/script/server-agent.service >/dev/null 2>&1
+        if [[ $? != 0 ]]; then
+            echo -e "${red}Service文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
             return 1
         fi
     fi
@@ -448,8 +512,28 @@ update_agent() {
 
     # 探针文件夹
     if [ ! -z "${AGENT_PATH}" ]; then
-        mkdir -p $AGENT_PATH
-        chmod 777 -R $AGENT_PATH
+        # macOS下可能需要sudo权限创建/opt目录
+        if [ "$os_macos" = 1 ]; then
+            if [ ! -d "/opt" ]; then
+                echo "创建/opt目录需要管理员权限..."
+                sudo mkdir -p /opt 2>/dev/null || {
+                    echo "无法创建/opt目录，请手动执行: sudo mkdir -p /opt"
+                    exit 1
+                }
+            fi
+            if [ ! -w "/opt" ]; then
+                echo "设置目录权限需要管理员权限..."
+                sudo mkdir -p $AGENT_PATH
+                sudo chown $(whoami):staff $AGENT_PATH
+                sudo chmod 755 $AGENT_PATH
+            else
+                mkdir -p $AGENT_PATH
+                chmod 755 $AGENT_PATH
+            fi
+        else
+            mkdir -p $AGENT_PATH
+            chmod 777 -R $AGENT_PATH
+        fi
     fi
 
     echo "正在下载探针端"
@@ -891,8 +975,48 @@ modify_agent_config() {
     service_enable
     service_restart
 
+    # 等待服务启动并检查状态
+    echo -e "正在检查探针状态..."
+
+    # 等待最多10秒检查服务状态
+    for i in {1..10}; do
+        sleep 1
+        service_started=false
+
+        if [ "$os_alpine" = 1 ]; then
+            if rc-service server-agent status >/dev/null 2>&1; then
+                service_started=true
+            fi
+        elif [ "$os_macos" = 1 ]; then
+            if launchctl list | grep com.serverstatus.agent >/dev/null 2>&1; then
+                service_started=true
+            fi
+        else
+            if systemctl is-active server-agent >/dev/null 2>&1; then
+                service_started=true
+            fi
+        fi
+
+        if [ "$service_started" = true ]; then
+            echo -e "${green}探针服务启动成功！${plain}"
+            break
+        fi
+
+        if [ $i -eq 10 ]; then
+            echo -e "${yellow}探针服务可能未正常启动，请检查配置或查看日志${plain}"
+            echo -e "您可以使用以下命令查看服务状态："
+            if [ "$os_alpine" = 1 ]; then
+                echo -e "  rc-service server-agent status"
+            elif [ "$os_macos" = 1 ]; then
+                echo -e "  launchctl list | grep com.serverstatus.agent"
+            else
+                echo -e "  systemctl status server-agent"
+            fi
+        fi
+    done
+
     if [[ $# == 0 ]]; then
-        echo -e "探针 已重启完毕！"
+        echo -e "探针安装/配置完毕！"
         before_show_menu
     fi
 }
@@ -910,20 +1034,35 @@ show_agent_log() {
         fi
     elif [ "$os_macos" = 1 ]; then
         # macOS使用LaunchAgent，查看日志文件
-        if [ -f "/tmp/server-agent.log" ]; then
-            echo -e "标准输出日志:"
-            tail -f /tmp/server-agent.log &
-            LOG_PID=$!
-            if [ -f "/tmp/server-agent_error.log" ]; then
-                echo -e "错误日志:"
-                tail -f /tmp/server-agent_error.log &
-                ERROR_LOG_PID=$!
+        echo -e "正在检查日志文件..."
+
+        # 检查服务状态
+        if ! launchctl list | grep com.serverstatus.agent >/dev/null 2>&1; then
+            echo -e "${yellow}服务未运行，尝试启动服务...${plain}"
+            service_start
+            sleep 2
+        fi
+
+        # 显示日志
+        if [ -f "/tmp/server-agent.log" ] || [ -f "/tmp/server-agent_error.log" ]; then
+            if [ -f "/tmp/server-agent.log" ]; then
+                echo -e "${green}=== 标准输出日志 ===${plain}"
+                tail -20 /tmp/server-agent.log
+                echo ""
             fi
-            echo -e "${yellow}按 Ctrl+C 退出日志查看${plain}"
-            wait $LOG_PID
-            [ ! -z "$ERROR_LOG_PID" ] && kill $ERROR_LOG_PID 2>/dev/null
+            if [ -f "/tmp/server-agent_error.log" ]; then
+                echo -e "${red}=== 错误日志 ===${plain}"
+                tail -20 /tmp/server-agent_error.log
+                echo ""
+            fi
+            echo -e "${yellow}实时日志 (按 Ctrl+C 退出):${plain}"
+            if [ -f "/tmp/server-agent.log" ]; then
+                tail -f /tmp/server-agent.log
+            fi
         else
             echo -e "${yellow}日志文件不存在，请检查服务是否正在运行${plain}"
+            echo -e "尝试手动启动探针："
+            echo -e "  cd /opt/server-status/agent && ./server-agent"
             service_status
         fi
     else
@@ -946,14 +1085,69 @@ uninstall_agent() {
         rm -rf $AGENT_OPENRC_SERVICE
     elif [ "$os_macos" = 1 ]; then
         rm -rf $AGENT_LAUNCHD_SERVICE
-        # 清理日志文件
-        rm -f /tmp/server-agent.log /tmp/server-agent_error.log
+        # 清理日志文件（使用当前用户权限）
+        rm -f /tmp/server-agent.log /tmp/server-agent_error.log 2>/dev/null || true
     else
         rm -rf $AGENT_SERVICE
         daemon_reload
     fi
 
-    rm -rf $AGENT_PATH
+    # 删除探针文件
+    if [ "$os_macos" = 1 ]; then
+        echo "正在删除探针文件..."
+
+        # 首先尝试删除探针二进制文件
+        if [ -f "$AGENT_PATH/server-agent" ]; then
+            if [ -w "$AGENT_PATH/server-agent" ]; then
+                rm -f "$AGENT_PATH/server-agent"
+                echo "探针程序已删除"
+            else
+                sudo rm -f "$AGENT_PATH/server-agent" 2>/dev/null && echo "探针程序已删除" || echo "删除探针程序失败"
+            fi
+        fi
+
+        # 删除配置文件
+        if [ -f "$AGENT_CONFIG" ]; then
+            if [ -w "$AGENT_CONFIG" ]; then
+                rm -f "$AGENT_CONFIG"
+                echo "配置文件已删除"
+            else
+                sudo rm -f "$AGENT_CONFIG" 2>/dev/null && echo "配置文件已删除" || echo "删除配置文件失败"
+            fi
+        fi
+
+        # 尝试删除目录（如果为空）
+        if [ -d "$AGENT_PATH" ]; then
+            # 检查目录是否为空
+            if [ -z "$(ls -A $AGENT_PATH 2>/dev/null)" ]; then
+                if [ -w "$(dirname $AGENT_PATH)" ]; then
+                    rmdir "$AGENT_PATH" 2>/dev/null && echo "探针目录已删除"
+                else
+                    sudo rmdir "$AGENT_PATH" 2>/dev/null && echo "探针目录已删除"
+                fi
+            else
+                echo "探针目录不为空，保留目录: $AGENT_PATH"
+                echo "剩余文件:"
+                ls -la "$AGENT_PATH" 2>/dev/null || sudo ls -la "$AGENT_PATH" 2>/dev/null
+            fi
+        fi
+
+        # 尝试删除父目录（如果为空）
+        if [ -d "/opt/server-status" ]; then
+            if [ -z "$(ls -A /opt/server-status 2>/dev/null)" ]; then
+                if [ -w "/opt" ]; then
+                    rmdir "/opt/server-status" 2>/dev/null && echo "server-status目录已删除"
+                else
+                    sudo rmdir "/opt/server-status" 2>/dev/null && echo "server-status目录已删除"
+                fi
+            fi
+        fi
+
+        echo "探针卸载完成"
+    else
+        rm -rf $AGENT_PATH
+    fi
+
     clean_all
 
     if [[ $# == 0 ]]; then

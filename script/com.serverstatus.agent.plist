@@ -20,30 +20,7 @@
     <key>RunAtLoad</key>
     <true/>
     
-    <!-- 保持运行 -->
-    <key>KeepAlive</key>
-    <true/>
-    
-    <!-- 标准输出日志 -->
-    <key>StandardOutPath</key>
-    <string>/tmp/server-agent.log</string>
-    
-    <!-- 标准错误日志 -->
-    <key>StandardErrorPath</key>
-    <string>/tmp/server-agent_error.log</string>
-    
-    <!-- 环境变量 -->
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    </dict>
-    
-    <!-- 进程类型 -->
-    <key>ProcessType</key>
-    <string>Background</string>
-    
-    <!-- 退出时重启 -->
+    <!-- 保持运行和退出时重启 -->
     <key>KeepAlive</key>
     <dict>
         <key>SuccessfulExit</key>
@@ -51,6 +28,25 @@
         <key>Crashed</key>
         <true/>
     </dict>
+
+    <!-- 标准输出日志 -->
+    <key>StandardOutPath</key>
+    <string>/tmp/server-agent.log</string>
+
+    <!-- 标准错误日志 -->
+    <key>StandardErrorPath</key>
+    <string>/tmp/server-agent_error.log</string>
+
+    <!-- 环境变量 -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- 进程类型 -->
+    <key>ProcessType</key>
+    <string>Background</string>
     
     <!-- 启动间隔（防止频繁重启） -->
     <key>ThrottleInterval</key>

@@ -57,7 +57,7 @@
                     </td>
                     <td>
                         <div class="ui mini icon buttons">
-                            <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}curl -L https://gitee.com/ten/ServerStatus/raw/master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && sudo ./server-status.sh install_agent {{$.Conf.GRPCHost}} {{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}" data-tooltip="{{tr "ClickToCopy"}}">
+                            <button class="ui icon mini button linux-install-btn" data-server-id="{{$server.ID}}" data-secret="{{$server.Secret}}" data-tooltip="{{tr "ClickToCopy"}}">
                                 <i class="linux icon"></i>
                             </button>
                             <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Ssl3 -bor [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12;set-ExecutionPolicy RemoteSigned;Invoke-WebRequest https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.ps1 -OutFile C:\server-status.ps1;powershell.exe C:\server-status.ps1 {{$.Conf.GRPCHost}}:{{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}" data-tooltip="{{tr "ClickToCopy"}}">
@@ -100,7 +100,85 @@
 {{template "common/footer" .}}
 <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/clipboard.js/2.0.10/clipboard.min.js"></script>
 <script>
-    var clipboard = new ClipboardJS('.ui.icon.mini.button');
+    // IP地址检测和脚本切换功能
+    let userLocation = null;
+
+    // 检测用户IP地址所在地区
+    async function detectUserLocation() {
+        try {
+            const response = await fetch('https://ipapi.co/json/');
+            const data = await response.json();
+            userLocation = data.country_code;
+            console.log('检测到用户地区:', userLocation);
+            return userLocation;
+        } catch (error) {
+            console.warn('IP地址检测失败，使用默认设置:', error);
+            return null;
+        }
+    }
+
+    // 生成安装脚本
+    function generateInstallScript(secret, isChinaUser = false) {
+        const host = '{{.Conf.GRPCHost}}';
+        const port = '{{if .Conf.ProxyGRPCPort}}{{.Conf.ProxyGRPCPort}}{{else}}{{.Conf.GRPCPort}}{{end}}';
+        const tls = '{{if .Conf.TLS}} --tls{{end}}';
+
+        if (!host) {
+            return '{{tr "NoDomainAlert"}}';
+        }
+
+        const baseUrl = isChinaUser ?
+            'https://gitee.com/ten/ServerStatus/raw/master' :
+            'https://raw.githubusercontent.com/xos/serverstatus/master';
+
+        return `curl -L ${baseUrl}/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && sudo ./server-status.sh install_agent ${host} ${port} ${secret}${tls}`;
+    }
+
+    // 初始化剪贴板功能
+    function initClipboard() {
+        // 为Linux安装按钮设置动态剪贴板文本
+        const linuxButtons = document.querySelectorAll('.linux-install-btn');
+        linuxButtons.forEach(button => {
+            button.addEventListener('click', async function() {
+                const secret = this.getAttribute('data-secret');
+
+                // 如果还没有检测过用户位置，先检测
+                if (userLocation === null) {
+                    await detectUserLocation();
+                }
+
+                // 判断是否为中国用户
+                const isChinaUser = userLocation === 'CN';
+                const script = generateInstallScript(secret, isChinaUser);
+
+                // 复制到剪贴板
+                try {
+                    await navigator.clipboard.writeText(script);
+                    console.log('安装脚本已复制到剪贴板');
+                } catch (err) {
+                    console.error('复制失败:', err);
+                    // 降级处理
+                    const textArea = document.createElement('textarea');
+                    textArea.value = script;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                }
+            });
+        });
+    }
+
+    // 初始化其他剪贴板按钮（Windows等）
+    var clipboard = new ClipboardJS('.ui.icon.mini.button:not(.linux-install-btn)');
+
+    // 页面加载完成后初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        initClipboard();
+        // 预先检测用户位置
+        detectUserLocation();
+    });
+
     const checkBoxList = document.querySelectorAll('tbody > tr > td > input.server-servers[type=checkbox]')
 
     function checkAllServer() {

@@ -305,18 +305,33 @@ func checkStatus() {
 					alertsPrevState[alert.ID] = make(map[uint64]uint)
 				}
 
-				// 始终触发模式或上次检查不为失败时触发报警（跳过单次触发+上次失败的情况）
-				if alert.TriggerMode == model.ModeAlwaysTrigger || alertsPrevState[alert.ID][server.ID] != _RuleCheckFail {
-					alertsPrevState[alert.ID][server.ID] = _RuleCheckFail
-					log.Printf("[事件]\n%s\n规则：%s %s", server.Name, alert.Name, *NotificationMuteLabel.ServerIncident(alert.ID, server.ID))
+				// 检查是否为离线告警且服务器从未上线过
+				isOfflineAlert := false
+				for _, rule := range alert.Rules {
+					if rule.Type == "offline" {
+						isOfflineAlert = true
+						break
+					}
+				}
 
-					// 生成详细的报警消息
-					message := generateDetailedAlertMessage(alert, server, alertsStore[alert.ID][server.ID])
+				// 如果是离线告警且服务器从未上线过，不触发告警
+				if isOfflineAlert && server.LastActive.IsZero() {
+					// 从未上线的服务器，设置为通过状态，避免误报
+					alertsPrevState[alert.ID][server.ID] = _RuleCheckPass
+				} else {
+					// 始终触发模式或上次检查不为失败时触发报警（跳过单次触发+上次失败的情况）
+					if alert.TriggerMode == model.ModeAlwaysTrigger || alertsPrevState[alert.ID][server.ID] != _RuleCheckFail {
+						alertsPrevState[alert.ID][server.ID] = _RuleCheckFail
+						log.Printf("[事件]\n%s\n规则：%s %s", server.Name, alert.Name, *NotificationMuteLabel.ServerIncident(alert.ID, server.ID))
 
-					SafeSendTriggerTasks(alert.FailTriggerTasks, curServer.ID)
-					SafeSendNotification(alert.NotificationTag, message, NotificationMuteLabel.ServerIncident(alert.ID, server.ID), &curServer)
-					// 清除恢复通知的静音缓存
-					UnMuteNotification(alert.NotificationTag, NotificationMuteLabel.ServerIncidentResolved(alert.ID, server.ID))
+						// 生成详细的报警消息
+						message := generateDetailedAlertMessage(alert, server, alertsStore[alert.ID][server.ID])
+
+						SafeSendTriggerTasks(alert.FailTriggerTasks, curServer.ID)
+						SafeSendNotification(alert.NotificationTag, message, NotificationMuteLabel.ServerIncident(alert.ID, server.ID), &curServer)
+						// 清除恢复通知的静音缓存
+						UnMuteNotification(alert.NotificationTag, NotificationMuteLabel.ServerIncidentResolved(alert.ID, server.ID))
+					}
 				}
 			} else {
 				// 确保alertsPrevState正确初始化
