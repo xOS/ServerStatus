@@ -337,8 +337,10 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 	// 针对不同的数据类型进行特殊处理
 	switch prefix {
 	case "server":
-		// 服务器记录可能需要特殊处理
+		// 服务器记录可能需要特殊处理，并且需要去重
 		var servers []*map[string]interface{}
+		seenIDs := make(map[uint64]bool) // 用于去重
+
 		for _, item := range items {
 			var data map[string]interface{}
 			if err := json.Unmarshal(item, &data); err != nil {
@@ -347,8 +349,22 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 
 			// 转换字段类型，确保 JSON 字段正确
 			convertDbFieldTypes(&data)
+
+			// 检查是否重复ID
+			if idVal, exists := data["ID"]; exists {
+				if id, ok := idVal.(uint64); ok {
+					if seenIDs[id] {
+						log.Printf("FindAll: 跳过重复的服务器ID %d", id)
+						continue // 跳过重复的ID
+					}
+					seenIDs[id] = true
+				}
+			}
+
 			servers = append(servers, &data)
 		}
+
+		log.Printf("FindAll: 去重后保留 %d 个服务器记录", len(servers))
 
 		// 重新序列化为 JSON
 		serversJSON, err := json.Marshal(servers)
