@@ -1044,18 +1044,43 @@ func CleanupDuplicateServerKeys() error {
 
 	log.Println("开始清理BadgerDB中重复的服务器键...")
 
-	// 直接检查所有服务器记录，而不是依赖键列表
-	var servers []model.Server
-	if err := DB.FindAll("server", &servers); err != nil {
-		return fmt.Errorf("获取服务器记录失败: %w", err)
+	// 直接获取所有服务器键，绕过FindAll的去重逻辑
+	keys, err := DB.GetKeysWithPrefix("server:")
+	if err != nil {
+		return fmt.Errorf("获取服务器键失败: %w", err)
 	}
 
-	log.Printf("找到 %d 个服务器记录", len(servers))
+	log.Printf("找到 %d 个服务器键", len(keys))
 
-	// 按ID分组服务器记录
+	// 按ID分组键和对应的服务器数据
+	keysByID := make(map[uint64][]string)
 	serversByID := make(map[uint64][]model.Server)
-	for _, server := range servers {
-		serversByID[server.ID] = append(serversByID[server.ID], server)
+
+	for _, key := range keys {
+		var id uint64
+		_, err := fmt.Sscanf(key, "server:%d", &id)
+		if err != nil {
+			log.Printf("解析服务器键失败: %s, 错误: %v", key, err)
+			continue
+		}
+
+		// 记录键
+		keysByID[id] = append(keysByID[id], key)
+
+		// 直接从BadgerDB读取数据，绕过FindModel的特殊处理
+		data, err := DB.Get(key)
+		if err != nil {
+			log.Printf("读取服务器数据失败: %s, 错误: %v", key, err)
+			continue
+		}
+
+		var server model.Server
+		if err := json.Unmarshal(data, &server); err != nil {
+			log.Printf("解析服务器数据失败: %s, 错误: %v", key, err)
+			continue
+		}
+
+		serversByID[id] = append(serversByID[id], server)
 	}
 
 	// 处理重复的记录
@@ -1091,12 +1116,13 @@ func CleanupDuplicateServerKeys() error {
 				log.Printf("为服务器ID %d 生成新Secret: %s", id, bestServer.Secret)
 			}
 
-			// 删除所有记录
-			key := fmt.Sprintf("server:%d", id)
-			if err := DB.Delete(key); err != nil {
-				log.Printf("删除服务器键 %s 失败: %v", key, err)
-			} else {
-				log.Printf("删除服务器键: %s", key)
+			// 删除所有重复的键
+			for _, key := range keysByID[id] {
+				if err := DB.Delete(key); err != nil {
+					log.Printf("删除重复键 %s 失败: %v", key, err)
+				} else {
+					log.Printf("删除重复键: %s", key)
+				}
 			}
 
 			// 重新保存最佳记录
