@@ -1028,78 +1028,66 @@ func CleanupDuplicateServerKeys() error {
 
 	log.Println("开始清理BadgerDB中重复的服务器键...")
 
-	// 获取所有服务器键
-	keys, err := DB.GetKeysWithPrefix("server:")
-	if err != nil {
-		return fmt.Errorf("获取服务器键失败: %w", err)
+	// 直接检查所有服务器记录，而不是依赖键列表
+	var servers []model.Server
+	if err := DB.FindAll("server", &servers); err != nil {
+		return fmt.Errorf("获取服务器记录失败: %w", err)
 	}
 
-	log.Printf("找到 %d 个服务器键", len(keys))
+	log.Printf("找到 %d 个服务器记录", len(servers))
 
-	// 按ID分组键，记录每个ID的所有键
-	keysByID := make(map[uint64][]string)
-	for _, key := range keys {
-		var id uint64
-		_, err := fmt.Sscanf(key, "server:%d", &id)
-		if err != nil {
-			log.Printf("解析服务器键失败: %s, 错误: %v", key, err)
-			continue
-		}
-		keysByID[id] = append(keysByID[id], key)
+	// 按ID分组服务器记录
+	serversByID := make(map[uint64][]model.Server)
+	for _, server := range servers {
+		serversByID[server.ID] = append(serversByID[server.ID], server)
 	}
 
-	// 处理重复的键
+	// 处理重复的记录
 	duplicateCount := 0
-	for id, idKeys := range keysByID {
-		if len(idKeys) > 1 {
-			log.Printf("发现重复的服务器ID %d，有 %d 个键: %v", id, len(idKeys), idKeys)
+	for id, serverList := range serversByID {
+		if len(serverList) > 1 {
+			log.Printf("发现重复的服务器ID %d，有 %d 个记录", id, len(serverList))
 			duplicateCount++
 
-			// 尝试找到有效的服务器记录（有Secret的）
-			var validKey string
-			var validServer *model.Server
-
-			for _, key := range idKeys {
-				var server model.Server
-				if err := DB.FindModel(id, "server", &server); err == nil {
-					if server.Secret != "" {
-						validKey = key
-						validServer = &server
-						log.Printf("找到有效的服务器记录: ID=%d, Secret=%s", id, server.Secret)
-						break
+			// 找到最好的记录（有Secret的，或者最新的）
+			var bestServer *model.Server
+			for i := range serverList {
+				server := &serverList[i]
+				if bestServer == nil {
+					bestServer = server
+				} else {
+					// 优先选择有Secret的记录
+					if server.Secret != "" && bestServer.Secret == "" {
+						bestServer = server
+					}
+					// 如果都有Secret或都没有Secret，选择更新时间更晚的
+					if (server.Secret != "") == (bestServer.Secret != "") {
+						if server.UpdatedAt.After(bestServer.UpdatedAt) {
+							bestServer = server
+						}
 					}
 				}
 			}
 
-			// 如果没有找到有效记录，使用第一个键并生成新Secret
-			if validKey == "" {
-				validKey = idKeys[0]
-				var server model.Server
-				if err := DB.FindModel(id, "server", &server); err == nil {
-					if server.Secret == "" {
-						server.Secret, _ = utils.GenerateRandomString(18)
-						log.Printf("为服务器ID %d 生成新Secret: %s", id, server.Secret)
-					}
-					validServer = &server
-				}
+			// 如果最佳记录没有Secret，生成一个
+			if bestServer.Secret == "" {
+				bestServer.Secret, _ = utils.GenerateRandomString(18)
+				log.Printf("为服务器ID %d 生成新Secret: %s", id, bestServer.Secret)
 			}
 
-			// 删除所有重复键
-			for _, key := range idKeys {
-				if err := DB.Delete(key); err != nil {
-					log.Printf("删除重复键 %s 失败: %v", key, err)
-				} else {
-					log.Printf("删除重复键: %s", key)
-				}
+			// 删除所有记录
+			key := fmt.Sprintf("server:%d", id)
+			if err := DB.Delete(key); err != nil {
+				log.Printf("删除服务器键 %s 失败: %v", key, err)
+			} else {
+				log.Printf("删除服务器键: %s", key)
 			}
 
-			// 重新保存有效的服务器记录
-			if validServer != nil {
-				if err := DB.SaveModel("server", id, validServer); err != nil {
-					log.Printf("重新保存服务器ID %d 失败: %v", id, err)
-				} else {
-					log.Printf("重新保存服务器: ID=%d, Name=%s, Secret=%s", id, validServer.Name, validServer.Secret)
-				}
+			// 重新保存最佳记录
+			if err := DB.SaveModel("server", id, bestServer); err != nil {
+				log.Printf("重新保存服务器ID %d 失败: %v", id, err)
+			} else {
+				log.Printf("重新保存服务器: ID=%d, Name=%s, Secret=%s", id, bestServer.Name, bestServer.Secret)
 			}
 		}
 	}
