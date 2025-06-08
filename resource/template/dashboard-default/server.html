@@ -57,7 +57,7 @@
                     </td>
                     <td>
                         <div class="ui mini icon buttons">
-                            <button class="ui icon mini button linux-install-btn" data-server-id="{{$server.ID}}" data-secret="{{$server.Secret}}" data-server-ip="{{$server.Host.IP}}" data-tooltip="{{tr "ClickToCopy"}}">
+                            <button class="ui icon mini button linux-install-btn" data-server-id="{{$server.ID}}" data-secret="{{$server.Secret}}" data-server-ip="{{if $server.Host}}{{$server.Host.IP}}{{end}}" data-tooltip="{{tr "ClickToCopy"}}">
                                 <i class="linux icon"></i>
                             </button>
                             <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Ssl3 -bor [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12;set-ExecutionPolicy RemoteSigned;Invoke-WebRequest https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.ps1 -OutFile C:\server-status.ps1;powershell.exe C:\server-status.ps1 {{$.Conf.GRPCHost}}:{{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}" data-tooltip="{{tr "ClickToCopy"}}">
@@ -137,15 +137,22 @@
             return '{{tr "NoDomainAlert"}}';
         }
 
-        // 检测服务器IP所在地区
-        const serverLocation = await detectServerLocation(serverIP);
+        // 默认使用gitee，只有明确检测到非中国大陆服务器才使用github
+        let baseUrl = 'https://gitee.com/ten/ServerStatus/raw/master'; // 默认gitee
 
-        // 默认使用github，只有中国大陆服务器才使用gitee
-        let baseUrl = 'https://raw.githubusercontent.com/xos/serverstatus/master'; // 默认github
+        // 如果有服务器IP，检测服务器IP所在地区
+        if (serverIP && serverIP.trim() !== '') {
+            const serverLocation = await detectServerLocation(serverIP);
 
-        // 只有中国大陆服务器才使用gitee
-        if (serverLocation === 'CN') {
-            baseUrl = 'https://gitee.com/ten/ServerStatus/raw/master';
+            // 只有明确检测到非中国大陆服务器才使用github
+            if (serverLocation && serverLocation !== 'CN' && serverLocation !== 'DEFAULT') {
+                baseUrl = 'https://raw.githubusercontent.com/xos/serverstatus/master';
+                console.log(`服务器 ${serverIP} 位于 ${serverLocation}，使用github链接`);
+            } else {
+                console.log(`服务器 ${serverIP} 位于中国大陆或检测失败，使用gitee链接`);
+            }
+        } else {
+            console.log('无服务器IP信息，使用默认gitee链接');
         }
 
         return `curl -L ${baseUrl}/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && sudo ./server-status.sh install_agent ${host} ${port} ${secret}${tls}`;
@@ -160,8 +167,25 @@
                 const secret = this.getAttribute('data-secret');
                 const serverIP = this.getAttribute('data-server-ip');
 
-                if (!serverIP) {
-                    console.error('未找到服务器IP地址');
+                if (!serverIP || serverIP.trim() === '') {
+                    console.warn('未找到服务器IP地址，使用默认gitee链接');
+                    // 使用默认的gitee链接
+                    const script = await generateInstallScript(secret, null);
+
+                    // 复制到剪贴板
+                    try {
+                        await navigator.clipboard.writeText(script);
+                        console.log('安装脚本已复制到剪贴板（默认gitee）');
+                    } catch (err) {
+                        console.error('复制失败:', err);
+                        // 降级处理
+                        const textArea = document.createElement('textarea');
+                        textArea.value = script;
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textArea);
+                    }
                     return;
                 }
 

@@ -222,6 +222,7 @@ func (m *Migration) migrateServers() error {
 
 	count := 0
 	errorCount := 0
+	nextNewID := uint64(1) // 从1开始分配新的递增ID
 
 	// 获取列名
 	columns, err := rows.Columns()
@@ -446,8 +447,10 @@ func (m *Migration) migrateServers() error {
 				log.Printf("服务器ID %d: 反序列化为Server对象失败: %v. JSON Data: %s", id, err, string(serverJSON))
 				// Fallback to trying to save raw data if model processing fails
 			} else {
-				// 确保ID正确
-				server.ID = id
+				// 使用新的递增ID替代原始的长ID
+				oldID := id
+				server.ID = nextNewID
+				nextNewID++
 
 				// 手动设置被json:"-"忽略的字段
 				server.HostJSON = hostJSON
@@ -455,13 +458,13 @@ func (m *Migration) migrateServers() error {
 
 				// 如果服务器名称为空，给一个默认名称
 				if server.Name == "" {
-					server.Name = fmt.Sprintf("Server-%d", id)
-					log.Printf("服务器ID %d: 名称为空，设置为默认名称 '%s'", id, server.Name)
+					server.Name = fmt.Sprintf("Server-%d", server.ID)
+					log.Printf("服务器原ID %d -> 新ID %d: 名称为空，设置为默认名称 '%s'", oldID, server.ID, server.Name)
 				}
 
 				// 添加额外的日志
-				log.Printf("服务器ID %d: 准备迁移的服务器对象: %+v", server.ID, server)
-				log.Printf("服务器ID %d: HostJSON长度=%d, LastStateJSON长度=%d", server.ID, len(server.HostJSON), len(server.LastStateJSON))
+				log.Printf("服务器原ID %d -> 新ID %d: 准备迁移的服务器对象: %+v", oldID, server.ID, server)
+				log.Printf("服务器新ID %d: HostJSON长度=%d, LastStateJSON长度=%d", server.ID, len(server.HostJSON), len(server.LastStateJSON))
 
 				// 重新序列化为JSON以保存
 				// 注意：HostJSON和LastStateJSON字段有json:"-"标签，需要特殊处理
@@ -500,16 +503,16 @@ func (m *Migration) migrateServers() error {
 			continue
 		}
 
-		// Save to BadgerDB
-		key := fmt.Sprintf("server:%v", id) // Ensure correct prefix
-		log.Printf("服务器ID %d: 准备保存到BadgerDB. Key: '%s', Value: %s", id, key, string(serverJSON))
+		// Save to BadgerDB using new ID
+		key := fmt.Sprintf("server:%v", server.ID) // Use new ID for key
+		log.Printf("服务器原ID %d -> 新ID %d: 准备保存到BadgerDB. Key: '%s', Value: %s", id, server.ID, key, string(serverJSON))
 		if err := m.badgerDB.Set(key, serverJSON); err != nil {
-			log.Printf("服务器ID %d: 保存到BadgerDB失败: %v. Key: '%s'", id, err, key)
+			log.Printf("服务器新ID %d: 保存到BadgerDB失败: %v. Key: '%s'", server.ID, err, key)
 			errorCount++
 			continue
 		}
 
-		log.Printf("服务器ID %d: 成功保存到BadgerDB. Key: '%s'", id, key)
+		log.Printf("服务器原ID %d -> 新ID %d: 成功保存到BadgerDB. Key: '%s'", id, server.ID, key)
 		count++
 		if count%10 == 0 {
 			log.Printf("已迁移 %d 条服务器记录...", count)
