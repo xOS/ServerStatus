@@ -112,13 +112,14 @@
             console.log('检测到用户地区:', userLocation);
             return userLocation;
         } catch (error) {
-            console.warn('IP地址检测失败，使用默认设置:', error);
+            console.warn('IP地址检测失败，使用默认设置(gitee):', error);
+            userLocation = 'DEFAULT'; // 标记为默认状态
             return null;
         }
     }
 
     // 生成安装脚本
-    function generateInstallScript(secret, isChinaUser = false) {
+    function generateInstallScript(secret) {
         const host = '{{.Conf.GRPCHost}}';
         const port = '{{if .Conf.ProxyGRPCPort}}{{.Conf.ProxyGRPCPort}}{{else}}{{.Conf.GRPCPort}}{{end}}';
         const tls = '{{if .Conf.TLS}} --tls{{end}}';
@@ -127,9 +128,13 @@
             return '{{tr "NoDomainAlert"}}';
         }
 
-        const baseUrl = isChinaUser ?
-            'https://gitee.com/ten/ServerStatus/raw/master' :
-            'https://raw.githubusercontent.com/xos/serverstatus/master';
+        // 默认使用gitee，只有明确检测到非中国大陆IP才使用github
+        let baseUrl = 'https://gitee.com/ten/ServerStatus/raw/master'; // 默认gitee
+
+        // 只有明确检测到非中国大陆IP才使用github
+        if (userLocation && userLocation !== 'CN' && userLocation !== 'DEFAULT') {
+            baseUrl = 'https://raw.githubusercontent.com/xos/serverstatus/master';
+        }
 
         return `curl -L ${baseUrl}/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && sudo ./server-status.sh install_agent ${host} ${port} ${secret}${tls}`;
     }
@@ -147,9 +152,7 @@
                     await detectUserLocation();
                 }
 
-                // 判断是否为中国用户
-                const isChinaUser = userLocation === 'CN';
-                const script = generateInstallScript(secret, isChinaUser);
+                const script = generateInstallScript(secret);
 
                 // 复制到剪贴板
                 try {
