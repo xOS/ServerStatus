@@ -103,8 +103,56 @@
     // 服务器IP地址检测和脚本切换功能
     const serverLocationCache = new Map();
 
+    // 解析多个IP地址，优先选择IPv4
+    function parseServerIPs(serverIPString) {
+        if (!serverIPString || serverIPString.trim() === '') {
+            return null;
+        }
+
+        // 分割多个IP地址（可能用/、,、;、空格等分隔）
+        const ipList = serverIPString.split(/[\/,;\s]+/).filter(ip => ip.trim() !== '');
+
+        // IPv4正则表达式
+        const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+        // IPv6正则表达式（简化版）
+        const ipv6Regex = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
+
+        const ipv4List = [];
+        const ipv6List = [];
+
+        // 分类IPv4和IPv6地址
+        for (const ip of ipList) {
+            const cleanIP = ip.trim();
+            if (ipv4Regex.test(cleanIP)) {
+                ipv4List.push(cleanIP);
+            } else if (ipv6Regex.test(cleanIP)) {
+                ipv6List.push(cleanIP);
+            }
+        }
+
+        // 优先返回第一个IPv4，如果没有IPv4则返回第一个IPv6
+        if (ipv4List.length > 0) {
+            console.log(`从多个IP中选择IPv4: ${ipv4List[0]} (全部IP: ${serverIPString})`);
+            return ipv4List[0];
+        } else if (ipv6List.length > 0) {
+            console.log(`从多个IP中选择IPv6: ${ipv6List[0]} (全部IP: ${serverIPString})`);
+            return ipv6List[0];
+        } else {
+            console.warn(`无法解析有效IP地址: ${serverIPString}`);
+            return null;
+        }
+    }
+
     // 检测服务器IP地址所在地区
-    async function detectServerLocation(serverIP) {
+    async function detectServerLocation(serverIPString) {
+        // 解析出优先IP地址
+        const serverIP = parseServerIPs(serverIPString);
+
+        if (!serverIP) {
+            console.warn(`无法解析服务器IP地址: ${serverIPString}`);
+            return 'DEFAULT';
+        }
+
         // 检查缓存
         if (serverLocationCache.has(serverIP)) {
             return serverLocationCache.get(serverIP);
@@ -120,7 +168,7 @@
             serverLocationCache.set(serverIP, countryCode);
             return countryCode;
         } catch (error) {
-            console.warn(`服务器 ${serverIP} IP地址检测失败，使用默认设置(github):`, error);
+            console.warn(`服务器 ${serverIP} IP地址检测失败，使用默认设置(gitee):`, error);
             // 缓存默认结果
             serverLocationCache.set(serverIP, 'DEFAULT');
             return 'DEFAULT';

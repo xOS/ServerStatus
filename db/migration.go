@@ -1414,11 +1414,20 @@ func GenerateNextID(modelType string) (uint64, error) {
 			continue
 		}
 
-		if id > maxID {
+		// 忽略长ID（时间戳ID），只考虑简短ID（小于10000的ID）
+		// 这样可以避免基于迁移过来的长ID生成新的长ID
+		if id < 10000 && id > maxID {
 			maxID = id
 		}
 	}
 
+	// 如果没有找到简短ID，从1开始
+	if maxID == 0 {
+		log.Printf("GenerateNextID: 没有找到简短ID，从1开始生成 %s ID", modelType)
+		return 1, nil
+	}
+
+	log.Printf("GenerateNextID: 找到最大简短ID %d，生成新ID %d (modelType: %s)", maxID, maxID+1, modelType)
 	return maxID + 1, nil
 }
 
