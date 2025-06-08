@@ -1019,3 +1019,96 @@ func (b *BadgerDB) CleanupExpiredData(prefix string, maxAge time.Duration) (int,
 	}
 	return count, nil
 }
+
+// CleanupDuplicateServerKeys 清理BadgerDB中重复的服务器键
+func CleanupDuplicateServerKeys() error {
+	if DB == nil {
+		return fmt.Errorf("BadgerDB未初始化")
+	}
+
+	log.Println("开始清理BadgerDB中重复的服务器键...")
+
+	// 获取所有服务器键
+	keys, err := DB.GetKeysWithPrefix("server:")
+	if err != nil {
+		return fmt.Errorf("获取服务器键失败: %w", err)
+	}
+
+	log.Printf("找到 %d 个服务器键", len(keys))
+
+	// 按ID分组键，记录每个ID的所有键
+	keysByID := make(map[uint64][]string)
+	for _, key := range keys {
+		var id uint64
+		_, err := fmt.Sscanf(key, "server:%d", &id)
+		if err != nil {
+			log.Printf("解析服务器键失败: %s, 错误: %v", key, err)
+			continue
+		}
+		keysByID[id] = append(keysByID[id], key)
+	}
+
+	// 处理重复的键
+	duplicateCount := 0
+	for id, idKeys := range keysByID {
+		if len(idKeys) > 1 {
+			log.Printf("发现重复的服务器ID %d，有 %d 个键: %v", id, len(idKeys), idKeys)
+			duplicateCount++
+
+			// 尝试找到有效的服务器记录（有Secret的）
+			var validKey string
+			var validServer *model.Server
+
+			for _, key := range idKeys {
+				var server model.Server
+				if err := DB.FindModel(id, "server", &server); err == nil {
+					if server.Secret != "" {
+						validKey = key
+						validServer = &server
+						log.Printf("找到有效的服务器记录: ID=%d, Secret=%s", id, server.Secret)
+						break
+					}
+				}
+			}
+
+			// 如果没有找到有效记录，使用第一个键并生成新Secret
+			if validKey == "" {
+				validKey = idKeys[0]
+				var server model.Server
+				if err := DB.FindModel(id, "server", &server); err == nil {
+					if server.Secret == "" {
+						server.Secret, _ = utils.GenerateRandomString(18)
+						log.Printf("为服务器ID %d 生成新Secret: %s", id, server.Secret)
+					}
+					validServer = &server
+				}
+			}
+
+			// 删除所有重复键
+			for _, key := range idKeys {
+				if err := DB.Delete(key); err != nil {
+					log.Printf("删除重复键 %s 失败: %v", key, err)
+				} else {
+					log.Printf("删除重复键: %s", key)
+				}
+			}
+
+			// 重新保存有效的服务器记录
+			if validServer != nil {
+				if err := DB.SaveModel("server", id, validServer); err != nil {
+					log.Printf("重新保存服务器ID %d 失败: %v", id, err)
+				} else {
+					log.Printf("重新保存服务器: ID=%d, Name=%s, Secret=%s", id, validServer.Name, validServer.Secret)
+				}
+			}
+		}
+	}
+
+	if duplicateCount > 0 {
+		log.Printf("清理完成，处理了 %d 个重复的服务器ID", duplicateCount)
+	} else {
+		log.Println("没有发现重复的服务器ID")
+	}
+
+	return nil
+}

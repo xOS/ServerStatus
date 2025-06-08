@@ -39,6 +39,11 @@ func InitBadgerDBFromPath(path string) error {
 		return fmt.Errorf("初始化BadgerDB失败: %w", err)
 	}
 
+	// 清理BadgerDB中的重复服务器键
+	if err := db.CleanupDuplicateServerKeys(); err != nil {
+		log.Printf("警告：清理重复服务器键失败: %v", err)
+	}
+
 	// 初始化BadgerDB的索引和缓存
 	if err := initializeBadgerDBIndexes(); err != nil {
 		log.Printf("警告：初始化BadgerDB索引失败: %v", err)
