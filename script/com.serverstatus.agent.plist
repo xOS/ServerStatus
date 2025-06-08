@@ -27,6 +27,8 @@
         <false/>
         <key>Crashed</key>
         <true/>
+        <key>NetworkState</key>
+        <true/>
     </dict>
 
     <!-- 标准输出日志 -->
@@ -36,6 +38,10 @@
     <!-- 标准错误日志 -->
     <key>StandardErrorPath</key>
     <string>/tmp/server-agent_error.log</string>
+
+    <!-- 启动超时 -->
+    <key>StartInterval</key>
+    <integer>30</integer>
 
     <!-- 环境变量 -->
     <key>EnvironmentVariables</key>

@@ -13,7 +13,7 @@ AGENT_SERVICE="/etc/systemd/system/server-agent.service"
 AGENT_CONFIG="${AGENT_PATH}/config.yml"
 AGENT_OPENRC_SERVICE="/etc/init.d/server-agent"
 AGENT_LAUNCHD_SERVICE="$HOME/Library/LaunchAgents/com.serverstatus.agent.plist"
-VERSION="v0.2.6"
+VERSION="v0.2.7"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -427,12 +427,26 @@ install_agent() {
 
     # macOS下设置正确的文件权限
     if [ "$os_macos" = 1 ]; then
+        echo "设置文件权限..."
         # 确保当前用户拥有文件权限
         if [ -f "$AGENT_PATH/server-agent" ]; then
+            # 检查并修复所有者
             if [ "$(stat -f '%u' $AGENT_PATH/server-agent)" != "$(id -u)" ]; then
+                echo "修复探针程序所有者..."
                 sudo chown $(whoami):staff "$AGENT_PATH/server-agent" 2>/dev/null || true
             fi
+            # 设置执行权限
             chmod 755 "$AGENT_PATH/server-agent" 2>/dev/null || true
+            echo "探针程序权限设置完成"
+        fi
+
+        # 确保整个目录的权限正确
+        if [ -d "$AGENT_PATH" ]; then
+            if [ "$(stat -f '%u' $AGENT_PATH)" != "$(id -u)" ]; then
+                echo "修复目录所有者..."
+                sudo chown -R $(whoami):staff "$AGENT_PATH" 2>/dev/null || true
+            fi
+            chmod 755 "$AGENT_PATH" 2>/dev/null || true
         fi
     fi
 
@@ -451,6 +465,20 @@ install_agent() {
                 sudo chown $(whoami):staff "$AGENT_CONFIG" 2>/dev/null || true
             fi
             chmod 644 "$AGENT_CONFIG" 2>/dev/null || true
+            echo "配置文件权限设置完成"
+        fi
+    fi
+
+    # 验证配置文件
+    if [ -f "$AGENT_CONFIG" ]; then
+        echo "验证配置文件..."
+        # 检查配置文件是否包含必要的字段
+        if grep -q "server:" "$AGENT_CONFIG" && grep -q "clientSecret:" "$AGENT_CONFIG"; then
+            echo -e "${green}配置文件验证通过${plain}"
+        else
+            echo -e "${yellow}配置文件可能不完整，请检查${plain}"
+            echo "配置文件内容预览:"
+            head -10 "$AGENT_CONFIG" 2>/dev/null || echo "无法读取配置文件"
         fi
     fi
 
@@ -978,8 +1006,8 @@ modify_agent_config() {
     # 等待服务启动并检查状态
     echo -e "正在检查探针状态..."
 
-    # 等待最多10秒检查服务状态
-    for i in {1..10}; do
+    # 等待最多15秒检查服务状态
+    for i in {1..15}; do
         sleep 1
         service_started=false
 
@@ -988,8 +1016,13 @@ modify_agent_config() {
                 service_started=true
             fi
         elif [ "$os_macos" = 1 ]; then
+            # macOS需要更详细的检查
             if launchctl list | grep com.serverstatus.agent >/dev/null 2>&1; then
-                service_started=true
+                # 检查进程是否真正在运行
+                agent_status=$(launchctl list | grep com.serverstatus.agent)
+                if echo "$agent_status" | grep -v "^-" >/dev/null 2>&1; then
+                    service_started=true
+                fi
             fi
         else
             if systemctl is-active server-agent >/dev/null 2>&1; then
@@ -999,18 +1032,39 @@ modify_agent_config() {
 
         if [ "$service_started" = true ]; then
             echo -e "${green}探针服务启动成功！${plain}"
+
+            # macOS下额外检查日志文件是否有内容
+            if [ "$os_macos" = 1 ]; then
+                sleep 2  # 等待日志写入
+                if [ -f "/tmp/server-agent.log" ] && [ -s "/tmp/server-agent.log" ]; then
+                    echo -e "${green}探针日志正常生成${plain}"
+                elif [ -f "/tmp/server-agent_error.log" ] && [ -s "/tmp/server-agent_error.log" ]; then
+                    echo -e "${yellow}探针启动但有错误，请查看日志${plain}"
+                else
+                    echo -e "${yellow}探针已启动，等待日志生成...${plain}"
+                fi
+            fi
             break
         fi
 
-        if [ $i -eq 10 ]; then
-            echo -e "${yellow}探针服务可能未正常启动，请检查配置或查看日志${plain}"
-            echo -e "您可以使用以下命令查看服务状态："
+        # 每5秒显示一次进度
+        if [ $((i % 5)) -eq 0 ]; then
+            echo -e "等待服务启动... ($i/15)"
+        fi
+
+        if [ $i -eq 15 ]; then
+            echo -e "${yellow}探针服务启动超时，请检查配置或查看日志${plain}"
+            echo -e "您可以使用以下命令诊断问题："
             if [ "$os_alpine" = 1 ]; then
                 echo -e "  rc-service server-agent status"
+                echo -e "  tail -f /var/log/server-agent.log"
             elif [ "$os_macos" = 1 ]; then
                 echo -e "  launchctl list | grep com.serverstatus.agent"
+                echo -e "  ./server-status.sh show_agent_log  # 查看详细诊断"
+                echo -e "  cd $AGENT_PATH && ./server-agent  # 手动测试"
             else
                 echo -e "  systemctl status server-agent"
+                echo -e "  journalctl -u server-agent"
             fi
         fi
     done
@@ -1034,37 +1088,79 @@ show_agent_log() {
         fi
     elif [ "$os_macos" = 1 ]; then
         # macOS使用LaunchAgent，查看日志文件
-        echo -e "正在检查日志文件..."
+        echo -e "正在检查探针状态..."
+
+        # 详细的诊断信息
+        echo -e "${green}=== 诊断信息 ===${plain}"
+
+        # 检查文件是否存在
+        if [ -f "$AGENT_PATH/server-agent" ]; then
+            echo -e "✓ 探针程序存在: $AGENT_PATH/server-agent"
+            ls -la "$AGENT_PATH/server-agent"
+        else
+            echo -e "✗ 探针程序不存在: $AGENT_PATH/server-agent"
+        fi
+
+        # 检查配置文件
+        if [ -f "$AGENT_CONFIG" ]; then
+            echo -e "✓ 配置文件存在: $AGENT_CONFIG"
+        else
+            echo -e "✗ 配置文件不存在: $AGENT_CONFIG"
+        fi
+
+        # 检查LaunchAgent文件
+        if [ -f "$AGENT_LAUNCHD_SERVICE" ]; then
+            echo -e "✓ LaunchAgent配置存在: $AGENT_LAUNCHD_SERVICE"
+        else
+            echo -e "✗ LaunchAgent配置不存在: $AGENT_LAUNCHD_SERVICE"
+        fi
 
         # 检查服务状态
-        if ! launchctl list | grep com.serverstatus.agent >/dev/null 2>&1; then
-            echo -e "${yellow}服务未运行，尝试启动服务...${plain}"
+        echo -e "\n${green}=== 服务状态 ===${plain}"
+        if launchctl list | grep com.serverstatus.agent >/dev/null 2>&1; then
+            echo -e "✓ LaunchAgent已加载"
+            launchctl list | grep com.serverstatus.agent
+        else
+            echo -e "✗ LaunchAgent未加载，尝试启动..."
             service_start
-            sleep 2
+            sleep 3
+            if launchctl list | grep com.serverstatus.agent >/dev/null 2>&1; then
+                echo -e "✓ LaunchAgent启动成功"
+                launchctl list | grep com.serverstatus.agent
+            else
+                echo -e "✗ LaunchAgent启动失败"
+            fi
+        fi
+
+        # 尝试手动测试
+        echo -e "\n${green}=== 手动测试 ===${plain}"
+        if [ -f "$AGENT_PATH/server-agent" ] && [ -f "$AGENT_CONFIG" ]; then
+            echo -e "尝试手动启动探针（测试5秒）..."
+            cd "$AGENT_PATH"
+            timeout 5 ./server-agent 2>&1 | head -10 || echo "手动启动测试完成"
         fi
 
         # 显示日志
-        if [ -f "/tmp/server-agent.log" ] || [ -f "/tmp/server-agent_error.log" ]; then
-            if [ -f "/tmp/server-agent.log" ]; then
-                echo -e "${green}=== 标准输出日志 ===${plain}"
-                tail -20 /tmp/server-agent.log
-                echo ""
-            fi
-            if [ -f "/tmp/server-agent_error.log" ]; then
-                echo -e "${red}=== 错误日志 ===${plain}"
-                tail -20 /tmp/server-agent_error.log
-                echo ""
-            fi
-            echo -e "${yellow}实时日志 (按 Ctrl+C 退出):${plain}"
-            if [ -f "/tmp/server-agent.log" ]; then
-                tail -f /tmp/server-agent.log
-            fi
+        echo -e "\n${green}=== 日志文件 ===${plain}"
+        if [ -f "/tmp/server-agent.log" ]; then
+            echo -e "标准输出日志 (最近20行):"
+            tail -20 /tmp/server-agent.log
         else
-            echo -e "${yellow}日志文件不存在，请检查服务是否正在运行${plain}"
-            echo -e "尝试手动启动探针："
-            echo -e "  cd /opt/server-status/agent && ./server-agent"
-            service_status
+            echo -e "标准输出日志文件不存在"
         fi
+
+        if [ -f "/tmp/server-agent_error.log" ]; then
+            echo -e "\n错误日志 (最近20行):"
+            tail -20 /tmp/server-agent_error.log
+        else
+            echo -e "错误日志文件不存在"
+        fi
+
+        echo -e "\n${yellow}如果问题持续，请尝试：${plain}"
+        echo -e "1. 手动启动: cd $AGENT_PATH && ./server-agent"
+        echo -e "2. 检查配置: cat $AGENT_CONFIG"
+        echo -e "3. 重新安装: ./server-status.sh uninstall_agent && ./server-status.sh install_agent"
+
     else
         # 其他系统使用systemd
         journalctl -xf -u server-agent.service

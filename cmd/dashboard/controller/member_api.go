@@ -131,7 +131,13 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 	// BadgerDB 模式下使用 BadgerDB 操作
 	if singleton.Conf.DatabaseType == "badger" {
 		// 为新API令牌生成ID
-		token.ID = uint64(time.Now().UnixNano())
+		nextID, err := db.GenerateNextID("api_token")
+		if err != nil {
+			log.Printf("生成API令牌ID失败: %v", err)
+			token.ID = 1 // 使用默认ID
+		} else {
+			token.ID = nextID
+		}
 		// 使用ApiTokenOps保存
 		apiTokenOps := db.NewApiTokenOps(db.DB)
 		err = apiTokenOps.SaveApiToken(token)
@@ -1224,7 +1230,13 @@ func (ma *memberAPI) addOrEditNotification(c *gin.Context) {
 			if singleton.Conf.DatabaseType == "badger" {
 				// 为新通知配置生成ID
 				if n.ID == 0 {
-					n.ID = uint64(time.Now().UnixNano())
+					nextID, err := db.GenerateNextID("notification")
+					if err != nil {
+						log.Printf("生成通知配置ID失败: %v", err)
+						n.ID = 1 // 使用默认ID
+					} else {
+						n.ID = nextID
+					}
 				}
 				err = db.DB.SaveModel("notification", n.ID, &n)
 			} else if singleton.DB != nil {
