@@ -141,14 +141,6 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 		// 使用ApiTokenOps保存
 		apiTokenOps := db.NewApiTokenOps(db.DB)
 		err = apiTokenOps.SaveApiToken(token)
-		if err != nil {
-			c.JSON(http.StatusOK, model.Response{
-				Code:    http.StatusBadRequest,
-				Message: fmt.Sprintf("保存API令牌失败：%s", err),
-			})
-			return
-		}
-		log.Printf("API Token已保存到BadgerDB: %s (Note: %s)", token.Token, token.Note)
 	} else if singleton.DB != nil {
 		err = singleton.DB.Create(token).Error
 		if err != nil {
@@ -158,10 +150,13 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 			})
 			return
 		}
-	} else {
+		log.Printf("API Token已保存到BadgerDB: %s (Note: %s)", token.Token, token.Note)
+	}
+
+	if err != nil {
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
-			Message: "数据库未初始化",
+			Message: fmt.Sprintf("保存API令牌失败：%s", err),
 		})
 		return
 	}
@@ -647,19 +642,24 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 			if s.ID == 0 {
 				s.Secret, err = utils.GenerateRandomString(18)
 				if err == nil {
-					// BadgerDB 模式下使用 BadgerDB 操作
+					// 为新服务器生成递增ID（BadgerDB模式）
 					if singleton.Conf.DatabaseType == "badger" {
-						// 为新服务器生成ID
-						if s.ID == 0 {
-							nextID, err := db.GenerateNextID("server")
-							if err != nil {
-								log.Printf("生成服务器ID失败: %v", err)
-								s.ID = 1 // 使用默认ID
-							} else {
-								s.ID = nextID
-							}
+						nextID, err := db.GenerateNextID("server")
+						if err != nil {
+							log.Printf("生成服务器ID失败: %v", err)
+							s.ID = 1 // 使用默认ID
+						} else {
+							s.ID = nextID
+							log.Printf("为新服务器生成ID: %d", s.ID)
 						}
+					}
+
+					// 保存到数据库
+					if singleton.Conf.DatabaseType == "badger" {
 						err = db.DB.SaveModel("server", s.ID, &s)
+						if err == nil {
+							log.Printf("新服务器已保存到BadgerDB: ID=%d, Name=%s", s.ID, s.Name)
+						}
 					} else if singleton.DB != nil {
 						err = singleton.DB.Create(&s).Error
 					} else {

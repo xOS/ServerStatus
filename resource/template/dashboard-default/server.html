@@ -57,7 +57,7 @@
                     </td>
                     <td>
                         <div class="ui mini icon buttons">
-                            <button class="ui icon mini button linux-install-btn" data-server-id="{{$server.ID}}" data-secret="{{$server.Secret}}" data-tooltip="{{tr "ClickToCopy"}}">
+                            <button class="ui icon mini button linux-install-btn" data-server-id="{{$server.ID}}" data-secret="{{$server.Secret}}" data-server-ip="{{$server.Host.IP}}" data-tooltip="{{tr "ClickToCopy"}}">
                                 <i class="linux icon"></i>
                             </button>
                             <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Ssl3 -bor [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12;set-ExecutionPolicy RemoteSigned;Invoke-WebRequest https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.ps1 -OutFile C:\server-status.ps1;powershell.exe C:\server-status.ps1 {{$.Conf.GRPCHost}}:{{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}" data-tooltip="{{tr "ClickToCopy"}}">
@@ -100,26 +100,35 @@
 {{template "common/footer" .}}
 <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/clipboard.js/2.0.10/clipboard.min.js"></script>
 <script>
-    // IP地址检测和脚本切换功能
-    let userLocation = null;
+    // 服务器IP地址检测和脚本切换功能
+    const serverLocationCache = new Map();
 
-    // 检测用户IP地址所在地区
-    async function detectUserLocation() {
+    // 检测服务器IP地址所在地区
+    async function detectServerLocation(serverIP) {
+        // 检查缓存
+        if (serverLocationCache.has(serverIP)) {
+            return serverLocationCache.get(serverIP);
+        }
+
         try {
-            const response = await fetch('https://ipapi.co/json/');
+            const response = await fetch(`https://ipapi.co/${serverIP}/json/`);
             const data = await response.json();
-            userLocation = data.country_code;
-            console.log('检测到用户地区:', userLocation);
-            return userLocation;
+            const countryCode = data.country_code;
+            console.log(`检测到服务器 ${serverIP} 地区:`, countryCode);
+
+            // 缓存结果
+            serverLocationCache.set(serverIP, countryCode);
+            return countryCode;
         } catch (error) {
-            console.warn('IP地址检测失败，使用默认设置(gitee):', error);
-            userLocation = 'DEFAULT'; // 标记为默认状态
-            return null;
+            console.warn(`服务器 ${serverIP} IP地址检测失败，使用默认设置(github):`, error);
+            // 缓存默认结果
+            serverLocationCache.set(serverIP, 'DEFAULT');
+            return 'DEFAULT';
         }
     }
 
     // 生成安装脚本
-    function generateInstallScript(secret) {
+    async function generateInstallScript(secret, serverIP) {
         const host = '{{.Conf.GRPCHost}}';
         const port = '{{if .Conf.ProxyGRPCPort}}{{.Conf.ProxyGRPCPort}}{{else}}{{.Conf.GRPCPort}}{{end}}';
         const tls = '{{if .Conf.TLS}} --tls{{end}}';
@@ -128,12 +137,15 @@
             return '{{tr "NoDomainAlert"}}';
         }
 
-        // 默认使用gitee，只有明确检测到非中国大陆IP才使用github
-        let baseUrl = 'https://gitee.com/ten/ServerStatus/raw/master'; // 默认gitee
+        // 检测服务器IP所在地区
+        const serverLocation = await detectServerLocation(serverIP);
 
-        // 只有明确检测到非中国大陆IP才使用github
-        if (userLocation && userLocation !== 'CN' && userLocation !== 'DEFAULT') {
-            baseUrl = 'https://raw.githubusercontent.com/xos/serverstatus/master';
+        // 默认使用github，只有中国大陆服务器才使用gitee
+        let baseUrl = 'https://raw.githubusercontent.com/xos/serverstatus/master'; // 默认github
+
+        // 只有中国大陆服务器才使用gitee
+        if (serverLocation === 'CN') {
+            baseUrl = 'https://gitee.com/ten/ServerStatus/raw/master';
         }
 
         return `curl -L ${baseUrl}/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && sudo ./server-status.sh install_agent ${host} ${port} ${secret}${tls}`;
@@ -146,13 +158,14 @@
         linuxButtons.forEach(button => {
             button.addEventListener('click', async function() {
                 const secret = this.getAttribute('data-secret');
+                const serverIP = this.getAttribute('data-server-ip');
 
-                // 如果还没有检测过用户位置，先检测
-                if (userLocation === null) {
-                    await detectUserLocation();
+                if (!serverIP) {
+                    console.error('未找到服务器IP地址');
+                    return;
                 }
 
-                const script = generateInstallScript(secret);
+                const script = await generateInstallScript(secret, serverIP);
 
                 // 复制到剪贴板
                 try {
@@ -178,8 +191,6 @@
     // 页面加载完成后初始化
     document.addEventListener('DOMContentLoaded', function() {
         initClipboard();
-        // 预先检测用户位置
-        detectUserLocation();
     });
 
     const checkBoxList = document.querySelectorAll('tbody > tr > td > input.server-servers[type=checkbox]')

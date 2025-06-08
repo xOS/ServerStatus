@@ -54,16 +54,16 @@
                 <div class="ui message">
                     {{if .Conf.GRPCHost}}
                     <div class="ui top attached tabular menu">
-                        <a class="item active" data-tab="china-script">China (默认)</a>
-                        <a class="item" data-tab="global-script">Global</a>
+                        <a class="item active" data-tab="global-script">Global (默认)</a>
+                        <a class="item" data-tab="china-script">China</a>
                     </div>
-                    <div class="ui bottom attached tab segment active" data-tab="china-script">
-                        curl -L https://gitee.com/ten/ServerStatus/raw/master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && sudo ./server-status.sh install_agent <code class="command">{{.Conf.GRPCHost}}</code> <code
+                    <div class="ui bottom attached tab segment active" data-tab="global-script">
+                        curl -L https://raw.githubusercontent.com/xos/serverstatus/master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && sudo ./server-status.sh install_agent <code class="command">{{.Conf.GRPCHost}}</code> <code
                             class="command">{{if .Conf.ProxyGRPCPort}}{{.Conf.ProxyGRPCPort}}{{else}}{{.Conf.GRPCPort}}{{end}}</code> <code
                             class="command hostSecret"></code> <code class="command">{{if .Conf.TLS}}--tls{{end}}</code>
                     </div>
-                    <div class="ui bottom attached tab segment" data-tab="global-script">
-                        curl -L https://raw.githubusercontent.com/xos/serverstatus/master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && sudo ./server-status.sh install_agent <code class="command">{{.Conf.GRPCHost}}</code> <code
+                    <div class="ui bottom attached tab segment" data-tab="china-script">
+                        curl -L https://gitee.com/ten/ServerStatus/raw/master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh && sudo ./server-status.sh install_agent <code class="command">{{.Conf.GRPCHost}}</code> <code
                             class="command">{{if .Conf.ProxyGRPCPort}}{{.Conf.ProxyGRPCPort}}{{else}}{{.Conf.GRPCPort}}{{end}}</code> <code
                             class="command hostSecret"></code> <code class="command">{{if .Conf.TLS}}--tls{{end}}</code>
                     </div>
