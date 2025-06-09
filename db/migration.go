@@ -512,7 +512,6 @@ func (m *Migration) migrateServers() error {
 			continue
 		}
 
-		log.Printf("服务器原ID %d -> 新ID %d: 成功保存到BadgerDB. Key: '%s'", id, server.ID, key)
 		count++
 		if count%10 == 0 {
 			log.Printf("已迁移 %d 条服务器记录...", count)
@@ -601,7 +600,6 @@ func (m *Migration) migrateUsers() error {
 			continue
 		}
 
-		log.Printf("用户ID %d: 成功保存到BadgerDB. Key: '%s'", id, key)
 		count++
 	}
 
@@ -687,7 +685,6 @@ func (m *Migration) migrateMonitors() error {
 			continue
 		}
 
-		log.Printf("监控器ID %d: 成功保存到BadgerDB. Key: '%s'", id, key)
 		count++
 	}
 
@@ -825,7 +822,6 @@ func (m *Migration) migrateNotifications() error {
 			continue
 		}
 
-		log.Printf("通知ID %d: 成功保存到BadgerDB. Key: '%s'", id, key)
 		count++
 	}
 
@@ -1167,7 +1163,6 @@ func (m *Migration) migrateDDNSProfiles() error {
 			continue
 		}
 
-		log.Printf("DDNS配置ID %d: 成功保存到BadgerDB. Key: '%s'", id, key)
 		count++
 	}
 

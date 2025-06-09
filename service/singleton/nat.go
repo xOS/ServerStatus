@@ -30,8 +30,6 @@ func OnNATUpdate() {
 			if err != nil {
 				log.Printf("从BadgerDB加载NAT配置失败: %v", err)
 				nats = []*model.NAT{}
-			} else {
-				log.Printf("从BadgerDB成功加载 %d 条NAT配置", len(nats))
 			}
 		} else {
 			log.Println("警告: BadgerDB 未初始化")

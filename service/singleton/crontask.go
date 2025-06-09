@@ -189,7 +189,6 @@ func loadCronTasksFromBadgerDB() {
 		SafeSendNotification(tag, notificationMsgMap[tag].String(), nil)
 	}
 
-	log.Printf("BadgerDB模式：成功加载 %d 个定时任务到内存", len(Crons))
 }
 
 func ManualTrigger(c model.Cron) {

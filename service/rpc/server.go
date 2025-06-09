@@ -104,7 +104,7 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 					startTime.Format("2006-01-02 15:04:05"),
 					endTime.Format("2006-01-02 15:04:05"),
 					r.GetData())
-				log.Printf("发送任务成功通知: %s (NotificationTag: %s)", cr.Name, cr.NotificationTag)
+
 				singleton.SafeSendNotification(cr.NotificationTag, message, nil, &curServer)
 			}
 			if !r.GetSuccessful() {

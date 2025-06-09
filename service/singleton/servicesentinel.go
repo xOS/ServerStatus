@@ -292,7 +292,7 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 						mhs[i] = *h
 					}
 				}
-				log.Printf("从BadgerDB成功加载 %d 条监控历史记录", len(mhs))
+
 			}
 		} else {
 			log.Println("BadgerDB未初始化，跳过加载监控历史记录")

@@ -343,7 +343,7 @@ func (oa *oauth2controller) callback(c *gin.Context) {
 				}, true)
 				return
 			}
-			log.Printf("OAuth2: 用户 %s (ID: %d) 保存成功", user.Login, user.ID)
+
 		} else {
 			// BadgerDB未初始化，但在调试模式下仍然允许继续
 			if singleton.Conf.Debug {

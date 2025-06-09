@@ -500,8 +500,6 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 						if err := utils.Json.Unmarshal([]byte(rule.RulesRaw), &rule.Rules); err != nil {
 							log.Printf("解析报警规则 %d 的 RulesRaw 失败: %v, RulesRaw内容: %s", rule.ID, err, rule.RulesRaw)
 							rule.Rules = []model.Rule{} // 设置为空数组
-						} else {
-							log.Printf("成功解析报警规则 %d 的 RulesRaw，解析出 %d 条规则", rule.ID, len(rule.Rules))
 						}
 
 						// 解析 FailTriggerTasksRaw 到 FailTriggerTasks 字段

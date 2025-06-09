@@ -157,6 +157,10 @@ func (c *Config) Read(path string) error {
 	if c.EnableIPChangeNotification && c.IPChangeNotificationTag == "" {
 		c.IPChangeNotificationTag = "default"
 	}
+	// 修复通知组标签：将中文"默认"转换为英文"default"
+	if c.IPChangeNotificationTag == "默认" {
+		c.IPChangeNotificationTag = "default"
+	}
 	if c.Location == "" {
 		c.Location = "Asia/Shanghai"
 	}

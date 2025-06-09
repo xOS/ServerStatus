@@ -92,7 +92,6 @@ func AlertSentinelStart() {
 				return
 			}
 			Alerts = alerts
-			log.Printf("从BadgerDB成功加载 %d 条报警规则", len(Alerts))
 		} else {
 			log.Println("BadgerDB未初始化，跳过加载报警规则")
 			AlertsLock.Unlock()
