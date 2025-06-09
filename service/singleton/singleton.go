@@ -1799,6 +1799,9 @@ func (mm *MemoryMonitor) moderateCleanup() {
 	// 清理报警数据
 	cleanupAlertMemoryData()
 
+	// 清理僵尸 goroutine 连接
+	cleanupStaleGoroutineConnections()
+
 	// 适度的GC
 	runtime.GC()
 
@@ -1833,6 +1836,37 @@ func GetMemoryPressureLevel() int64 {
 // GetGoroutineCount 获取当前goroutine数量
 func GetGoroutineCount() int64 {
 	return atomic.LoadInt64(&goroutineCount)
+}
+
+// cleanupStaleGoroutineConnections 清理僵尸 goroutine 连接
+func cleanupStaleGoroutineConnections() {
+	cleaned := 0
+	ServerLock.Lock()
+	defer ServerLock.Unlock()
+
+	for _, server := range ServerList {
+		if server != nil && server.TaskClose != nil {
+			// 检查连接是否长时间无活动（超过5分钟）
+			if time.Since(server.LastActive) > 5*time.Minute {
+				server.TaskCloseLock.Lock()
+				if server.TaskClose != nil {
+					// 强制关闭僵尸连接
+					select {
+					case server.TaskClose <- fmt.Errorf("cleanup stale connection due to memory pressure"):
+					default:
+					}
+					server.TaskClose = nil
+					server.TaskStream = nil
+					cleaned++
+				}
+				server.TaskCloseLock.Unlock()
+			}
+		}
+	}
+
+	if cleaned > 0 {
+		log.Printf("内存清理：清理了 %d 个僵尸连接", cleaned)
+	}
 }
 
 // OptimizeDatabase 定期优化数据库性能
