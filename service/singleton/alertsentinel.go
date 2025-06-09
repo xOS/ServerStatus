@@ -529,18 +529,27 @@ func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, 
 				message += fmt.Sprintf("• 进程数过多: %d (阈值: %.0f)\n",
 					server.State.ProcessCount, rule.Max)
 			case ruleType == "offline":
-				// 使用正确的最后在线时间字段
+				// 修复离线时长计算：使用服务器实际离线的时间点
 				var lastSeenTime time.Time
+				var offlineDuration time.Duration
+
+				// 优先使用LastOnline字段（这是服务器最后一次在线的准确时间）
 				if !server.LastOnline.IsZero() {
 					lastSeenTime = server.LastOnline
+					offlineDuration = time.Since(lastSeenTime)
 				} else if !server.LastActive.IsZero() {
+					// 如果没有LastOnline，使用LastActive，但需要考虑离线超时时间
 					lastSeenTime = server.LastActive
+					// 减去离线检测的超时时间（3分钟），得到更准确的离线时长
+					offlineDuration = time.Since(lastSeenTime) - (3 * time.Minute)
+					if offlineDuration < 0 {
+						offlineDuration = time.Since(lastSeenTime)
+					}
 				} else {
-					lastSeenTime = time.Now().Add(-24 * time.Hour) // 默认24小时前
+					// 如果都没有，说明服务器从未上线过
+					lastSeenTime = time.Now().Add(-time.Hour) // 默认1小时前
+					offlineDuration = time.Hour
 				}
-
-				// 计算离线时长
-				offlineDuration := time.Since(lastSeenTime)
 
 				message += fmt.Sprintf("• 服务器离线: 最后在线时间 %s (离线时长: %s)\n",
 					lastSeenTime.Format("2006-01-02 15:04:05"),
@@ -782,18 +791,27 @@ func generateDetailedRecoveryMessage(alert *model.AlertRule, server *model.Serve
 	}
 
 	if hasOfflineRule {
-		// 使用正确的最后在线时间字段
+		// 修复恢复消息中的离线时长计算
 		var lastSeenTime time.Time
+		var offlineDuration time.Duration
+
+		// 优先使用LastOnline字段（这是服务器最后一次在线的准确时间）
 		if !server.LastOnline.IsZero() {
 			lastSeenTime = server.LastOnline
+			offlineDuration = now.Sub(lastSeenTime)
 		} else if !server.LastActive.IsZero() {
+			// 如果没有LastOnline，使用LastActive，但需要考虑离线超时时间
 			lastSeenTime = server.LastActive
+			// 减去离线检测的超时时间（3分钟），得到更准确的离线时长
+			offlineDuration = now.Sub(lastSeenTime) - (3 * time.Minute)
+			if offlineDuration < 0 {
+				offlineDuration = now.Sub(lastSeenTime)
+			}
 		} else {
+			// 如果都没有，说明服务器从未上线过
 			lastSeenTime = now.Add(-time.Hour) // 默认1小时前
+			offlineDuration = time.Hour
 		}
-
-		// 计算离线时长（从离线到恢复）
-		offlineDuration := now.Sub(lastSeenTime)
 
 		message += fmt.Sprintf("• 服务器已恢复上线: 上次离线时间 %s (离线时长: %s)\n",
 			lastSeenTime.Format("2006-01-02 15:04:05"),

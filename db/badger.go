@@ -491,10 +491,8 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 
 		// 手动解析 Rules 字段（模拟 GORM 的 AfterFind 钩子）
 		if alertRules, ok := result.(*[]*model.AlertRule); ok {
-			log.Printf("FindAll: 开始解析 %d 条报警规则的 Rules 字段", len(*alertRules))
-			for i, rule := range *alertRules {
+			for _, rule := range *alertRules {
 				if rule != nil {
-					log.Printf("FindAll: 处理报警规则 %d: ID=%d, Name=%s, RulesRaw=%s", i+1, rule.ID, rule.Name, rule.RulesRaw)
 					if rule.RulesRaw != "" {
 						// 解析 RulesRaw 到 Rules 字段
 						if err := utils.Json.Unmarshal([]byte(rule.RulesRaw), &rule.Rules); err != nil {

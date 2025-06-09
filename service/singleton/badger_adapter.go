@@ -330,18 +330,6 @@ func loadServersFromBadgerDB() error {
 		return SortedServerListForGuest[i].DisplayIndex < SortedServerListForGuest[j].DisplayIndex
 	})
 
-	log.Printf("服务器列表加载完成: 共 %d 台服务器, 排序后 %d 台, 访客可见 %d 台",
-		len(ServerList), len(SortedServerList), len(SortedServerListForGuest))
-
-	// 显示服务器ID列表，用于调试
-	if len(ServerList) > 0 {
-		ids := []uint64{}
-		for id := range ServerList {
-			ids = append(ids, id)
-		}
-		log.Printf("服务器ID列表: %v", ids)
-	}
-
 	return nil
 }
 

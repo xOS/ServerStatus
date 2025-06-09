@@ -273,8 +273,6 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 	if Conf.DatabaseType == "badger" {
 		if db.DB != nil {
 			// 使用BadgerDB加载监控历史记录
-			log.Printf("BadgerDB模式：正在加载监控历史记录...")
-
 			// 获取最近30天的监控历史记录
 			endTime := time.Now()
 			startTime := endTime.AddDate(0, 0, -30)

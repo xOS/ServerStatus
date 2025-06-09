@@ -41,18 +41,15 @@ func loadServers() {
 	if Conf.DatabaseType == "badger" {
 		// 使用 BadgerDB 加载服务器
 		if db.DB != nil {
-			log.Printf("使用BadgerDB加载服务器列表...")
 			serverOps := db.NewServerOps(db.DB)
 			var err error
 			servers, err = serverOps.GetAllServers()
 			if err != nil {
 				log.Printf("从 BadgerDB 加载服务器列表失败: %v", err)
 				// 检查具体错误类型，适当处理
-				log.Printf("尝试修复BadgerDB服务器加载问题...")
 				// 确保服务器列表为空数组而不是nil
 				servers = []*model.Server{}
 			} else {
-				log.Printf("从 BadgerDB 加载了 %d 台服务器", len(servers))
 				// 确保没有nil条目
 				for i, s := range servers {
 					if s == nil {
@@ -70,13 +67,11 @@ func loadServers() {
 		}
 	} else {
 		// 使用 GORM (SQLite) 加载服务器
-		log.Printf("使用SQLite加载服务器列表...")
 		var sqliteServers []model.Server
 		DB.Find(&sqliteServers)
 		for _, s := range sqliteServers {
 			servers = append(servers, &s)
 		}
-		log.Printf("从 SQLite 加载了 %d 台服务器", len(servers))
 	}
 
 	// 清空当前服务器列表，确保是干净的状态
@@ -173,7 +168,6 @@ func loadServers() {
 		innerS.TaskCloseLock = new(sync.Mutex)
 
 		// 将服务器添加到映射表
-		log.Printf("添加服务器到列表: ID=%d, 名称=%s", innerS.ID, innerS.Name)
 		ServerList[innerS.ID] = innerS
 
 		// 处理Secret映射
@@ -195,14 +189,10 @@ func loadServers() {
 				if Conf.DatabaseType == "badger" {
 					if err := SaveServerToBadgerDB(innerS); err != nil {
 						log.Printf("保存服务器 %s (ID: %d) 的新Secret到BadgerDB失败: %v", innerS.Name, innerS.ID, err)
-					} else {
-						log.Printf("已为服务器 %s (ID: %d) 生成并保存新Secret: %s", innerS.Name, innerS.ID, newSecret)
 					}
 				} else {
 					if err := DB.Save(innerS).Error; err != nil {
 						log.Printf("保存服务器 %s (ID: %d) 的新Secret到SQLite失败: %v", innerS.Name, innerS.ID, err)
-					} else {
-						log.Printf("已为服务器 %s (ID: %d) 生成并保存新Secret: %s", innerS.Name, innerS.ID, newSecret)
 					}
 				}
 			}
@@ -214,7 +204,6 @@ func loadServers() {
 		}
 	}
 
-	log.Printf("服务器加载完成，共加载 %d 台服务器", len(ServerList))
 	ReSortServer()
 }
 
