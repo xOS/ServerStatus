@@ -1043,6 +1043,7 @@ func CleanupDuplicateServerKeys() error {
 	}
 
 	log.Println("开始清理BadgerDB中重复的服务器键...")
+	log.Println("*** 使用新版本的清理逻辑 - 直接操作原始数据 ***")
 
 	// 直接获取所有服务器键，绕过FindAll的去重逻辑
 	keys, err := DB.GetKeysWithPrefix("server:")
@@ -1051,6 +1052,7 @@ func CleanupDuplicateServerKeys() error {
 	}
 
 	log.Printf("找到 %d 个服务器键", len(keys))
+	log.Printf("服务器键列表: %v", keys)
 
 	// 按ID分组键和对应的服务器数据
 	keysByID := make(map[uint64][]string)
