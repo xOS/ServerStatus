@@ -1059,15 +1059,12 @@ func CleanupDuplicateServerKeys() error {
 	serversByID := make(map[uint64][]model.Server)
 
 	for _, key := range keys {
-		var id uint64
-		_, err := fmt.Sscanf(key, "server:%d", &id)
+		var keyID uint64
+		_, err := fmt.Sscanf(key, "server:%d", &keyID)
 		if err != nil {
 			log.Printf("解析服务器键失败: %s, 错误: %v", key, err)
 			continue
 		}
-
-		// 记录键
-		keysByID[id] = append(keysByID[id], key)
 
 		// 直接从BadgerDB读取数据，绕过FindModel的特殊处理
 		data, err := DB.Get(key)
@@ -1082,7 +1079,21 @@ func CleanupDuplicateServerKeys() error {
 			continue
 		}
 
-		serversByID[id] = append(serversByID[id], server)
+		// 检查键名ID和数据内容ID是否一致
+		if keyID != server.ID {
+			log.Printf("发现键名和数据不一致: 键=%s (ID=%d), 数据ID=%d, 名称=%s", key, keyID, server.ID, server.Name)
+			log.Printf("将删除不一致的键: %s", key)
+			if err := DB.Delete(key); err != nil {
+				log.Printf("删除不一致键失败: %s, 错误: %v", key, err)
+			} else {
+				log.Printf("成功删除不一致键: %s", key)
+			}
+			continue
+		}
+
+		// 记录一致的键和数据
+		keysByID[keyID] = append(keysByID[keyID], key)
+		serversByID[keyID] = append(serversByID[keyID], server)
 	}
 
 	// 处理重复的记录
