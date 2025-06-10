@@ -416,10 +416,10 @@ const statusCards = new Vue({
             });
         }
         
-        // 设置定期更新
+        // 设置定期更新，降低频率减少跳动
         this._updateInterval = setInterval(() => {
             this.updateServerLiveStatus({ now: Date.now() });
-        }, 1000); // 改回1秒更新一次
+        }, 3000); // 改为3秒更新一次，减少频繁跳动
     },
     mounted() {
         this.$nextTick(() => {
@@ -551,7 +551,8 @@ const statusCards = new Vue({
                 let displayPercentValue = percent;
                 let classObject = { ui: true, progress: true };
                 let styleObject = {
-                    'transition-duration': '300ms',
+                    'transition-duration': '800ms', // 增加过渡时间，使变化更平滑
+                    'transition-timing-function': 'ease-out',
                     'min-width': 'unset',
                     width: (percent >= 0 ? percent : 0) + '% !important',
                 };
@@ -763,21 +764,43 @@ const statusCards = new Vue({
                     }
                 }
                 
-                // 计算在线状态
+                // 计算在线状态 - 增加稳定性，减少频繁跳动
                 const lastActiveTimestampMs = new Date(serverItem.LastActive).getTime();
                 const diffMs = nowMillisFromWS - lastActiveTimestampMs;
-                const newLiveStatus = !isNaN(lastActiveTimestampMs) && diffMs <= 30000 && diffMs >= -5000;
-                
-                // 只有在状态发生变化时才更新
+
+                // 增加容错时间，减少误判：60秒超时 + 10秒容错
+                const newLiveStatus = !isNaN(lastActiveTimestampMs) && diffMs <= 60000 && diffMs >= -10000;
+
+                // 添加状态稳定性检查，避免频繁切换
                 if (serverItem.live !== newLiveStatus) {
+                    // 如果状态要从在线变为离线，需要连续2次确认
+                    if (serverItem.live === true && newLiveStatus === false) {
+                        if (!serverItem._offlineConfirmCount) {
+                            serverItem._offlineConfirmCount = 1;
+                            return; // 第一次检测到离线，不立即更新
+                        } else {
+                            serverItem._offlineConfirmCount = 0; // 重置计数器
+                        }
+                    } else if (serverItem.live === false && newLiveStatus === true) {
+                        // 从离线恢复到在线，立即更新
+                        serverItem._offlineConfirmCount = 0;
+                    }
+
                     serverItem.live = newLiveStatus;
                     hasUpdates = true;
                 }
             });
             
-            // 只有在有实际更新时才强制更新视图
+            // 只有在有实际更新时才强制更新视图，并添加防抖
             if (hasUpdates) {
-                this.$forceUpdate();
+                // 使用防抖机制，避免频繁更新
+                if (this._updateDebounceTimer) {
+                    clearTimeout(this._updateDebounceTimer);
+                }
+                this._updateDebounceTimer = setTimeout(() => {
+                    this.$forceUpdate();
+                    this._updateDebounceTimer = null;
+                }, 500); // 500ms 防抖
             }
         },
         getTrafficProgressClass(serverId) {
@@ -955,6 +978,9 @@ const statusCards = new Vue({
     beforeDestroy() {
         if (this._updateInterval) {
             clearInterval(this._updateInterval);
+        }
+        if (this._updateDebounceTimer) {
+            clearTimeout(this._updateDebounceTimer);
         }
         if (window.trafficManager) {
             window.trafficManager.unsubscribe(this.updateTrafficData);

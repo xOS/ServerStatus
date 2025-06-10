@@ -879,7 +879,7 @@ func CheckServerOnlineStatus() {
 	defer ServerLock.Unlock()
 
 	now := time.Now()
-	offlineTimeout := time.Minute * 3 // 增加到3分钟无心跳视为离线，减少误报
+	offlineTimeout := time.Minute * 2 // 调整为2分钟无心跳视为离线，平衡稳定性和响应速度
 
 	// 检查是否需要重置累计流量数据
 	shouldResetTransferStats := checkShouldResetTransferStats()

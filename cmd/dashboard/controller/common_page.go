@@ -1034,7 +1034,7 @@ func (cp *commonPage) ws(c *gin.Context) {
 	defer cancel()
 
 	count := 0
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(2 * time.Second) // 从1秒改为2秒，减少推送频率
 	defer ticker.Stop()
 
 	// 使用ticker而非sleep循环，减少goroutine占用
