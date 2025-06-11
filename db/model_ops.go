@@ -51,6 +51,7 @@ func (o *ServerOps) SaveServer(server *model.Server) error {
 
 	// 手动添加有 json:"-" 标签的重要字段
 	serverData["Secret"] = server.Secret
+	serverData["Note"] = server.Note
 
 	// 确保 DDNSProfilesRaw 不为 nil，如果为空则设置为空数组字符串
 	if server.DDNSProfilesRaw == "" {
@@ -61,10 +62,6 @@ func (o *ServerOps) SaveServer(server *model.Server) error {
 
 	serverData["LastStateJSON"] = server.LastStateJSON
 	serverData["HostJSON"] = server.HostJSON
-
-	// 调试日志：记录保存的 DDNS 配置
-	log.Printf("BadgerDB SaveServer: 服务器 %d (%s) 保存 DDNSProfilesRaw: %s",
-		server.ID, server.Name, serverData["DDNSProfilesRaw"])
 
 	// 重新序列化包含所有字段的数据
 	finalJSON, err := json.Marshal(serverData)

@@ -190,21 +190,17 @@ func loadServersFromBadgerDB() error {
 	SortedServerListForGuest = make([]*model.Server, 0)
 
 	// 使用ServerOps获取所有服务器
-	log.Println("正在创建ServerOps...")
 	serverOps := db.NewServerOps(db.DB)
 	if serverOps == nil || db.DB == nil {
 		log.Println("警告: BadgerDB或ServerOps未初始化")
 		return errors.New("BadgerDB未初始化")
 	}
-	log.Println("ServerOps创建成功，正在获取所有服务器...")
 
 	servers, err := serverOps.GetAllServers()
 	if err != nil {
 		log.Printf("从BadgerDB获取服务器列表失败: %v", err)
 		return err
 	}
-
-	log.Printf("从BadgerDB加载了 %d 台服务器", len(servers))
 
 	// 初始化服务器列表
 	for _, server := range servers {

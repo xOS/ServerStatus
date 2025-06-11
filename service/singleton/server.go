@@ -41,7 +41,6 @@ func loadServers() {
 	if Conf.DatabaseType == "badger" {
 		// 使用 BadgerDB 加载服务器
 		if db.DB != nil {
-			log.Printf("OnServerUpdate: 开始从 BadgerDB 加载服务器列表...")
 			serverOps := db.NewServerOps(db.DB)
 			var err error
 			servers, err = serverOps.GetAllServers()
@@ -51,7 +50,6 @@ func loadServers() {
 				// 确保服务器列表为空数组而不是nil
 				servers = []*model.Server{}
 			} else {
-				log.Printf("OnServerUpdate: 从 BadgerDB 加载了 %d 个服务器", len(servers))
 				// 确保没有nil条目
 				for i, s := range servers {
 					if s == nil {
@@ -173,9 +171,7 @@ func loadServers() {
 		ServerList[innerS.ID] = innerS
 
 		// 处理Secret映射
-		log.Printf("检查服务器 %s (ID: %d) 的Secret: '%s' (长度: %d)", innerS.Name, innerS.ID, innerS.Secret, len(innerS.Secret))
 		if innerS.Secret != "" {
-			log.Printf("服务器 %s (ID: %d) 已有Secret: %s", innerS.Name, innerS.ID, innerS.Secret)
 			SecretToID[innerS.Secret] = innerS.ID
 		} else {
 			// 如果Secret为空，生成一个新的Secret
@@ -202,20 +198,13 @@ func loadServers() {
 
 		// BadgerDB 模式下手动解析 DDNS 配置（模拟 GORM 的 AfterFind 钩子）
 		if Conf.DatabaseType == "badger" {
-			log.Printf("OnServerUpdate: 服务器 %d (%s) DDNSProfilesRaw: '%s'",
-				innerS.ID, innerS.Name, innerS.DDNSProfilesRaw)
 			if innerS.DDNSProfilesRaw != "" {
 				if err := utils.Json.Unmarshal([]byte(innerS.DDNSProfilesRaw), &innerS.DDNSProfiles); err != nil {
 					log.Printf("解析服务器 %d 的DDNSProfiles失败: %v", innerS.ID, err)
 					innerS.DDNSProfiles = []uint64{}
-				} else {
-					log.Printf("OnServerUpdate: 服务器 %d (%s) 解析 DDNSProfiles 成功: %v",
-						innerS.ID, innerS.Name, innerS.DDNSProfiles)
 				}
 			} else {
 				innerS.DDNSProfiles = []uint64{}
-				log.Printf("OnServerUpdate: 服务器 %d (%s) DDNSProfilesRaw 为空，设置为空数组",
-					innerS.ID, innerS.Name)
 			}
 		}
 
