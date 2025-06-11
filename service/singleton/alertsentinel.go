@@ -366,6 +366,11 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 	var serverName string
 	if server := ServerList[serverID]; server != nil {
 		serverName = server.Name
+		// 确保服务器状态中的流量数据是最新的，不依赖报警规则
+		if server.State != nil {
+			server.State.NetInTransfer = inTransfer
+			server.State.NetOutTransfer = outTransfer
+		}
 	}
 	ServerLock.RUnlock()
 
@@ -373,7 +378,7 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 	AlertsLock.RLock()
 	defer AlertsLock.RUnlock()
 
-	// 没有报警规则时，不需要更新
+	// 即使没有报警规则，也要确保前端显示正确，但可以跳过报警相关的更新
 	if len(Alerts) == 0 || AlertsCycleTransferStatsStore == nil {
 		return
 	}

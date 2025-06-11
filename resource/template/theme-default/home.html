@@ -869,10 +869,10 @@ const statusCards = new Vue({
             if (!window.serverTrafficData) {
                 return;
             }
-            
+
             let hasUpdates = false;
             const trafficData = window.serverTrafficData;
-            
+
             this.servers.forEach(server => {
                 const trafficInfo = trafficData[server.ID];
                 if (trafficInfo) {
@@ -883,18 +883,18 @@ const statusCards = new Vue({
                         percent: trafficInfo.percent,
                         lastUpdate: trafficInfo.lastUpdate
                     };
-                    
-                    // 检查是否有实际更新
-                    if (!oldTraffic || 
+
+                    // 检查是否有实际更新，增加更详细的比较
+                    if (!oldTraffic ||
                         oldTraffic.used !== newTraffic.used ||
                         oldTraffic.total !== newTraffic.total ||
-                        oldTraffic.percent !== newTraffic.percent) {
+                        Math.abs(oldTraffic.percent - newTraffic.percent) > 0.01) { // 百分比变化超过0.01%才更新
                         server.traffic = newTraffic;
                         hasUpdates = true;
                     }
                 }
             });
-            
+
             if (hasUpdates) {
                 this.$forceUpdate();
             }

@@ -671,20 +671,22 @@ func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *mo
 	// 处理入站流量
 	if originalNetInTransfer < prevIn {
 		// 检测到流量回退
-		if float64(prevIn-originalNetInTransfer)/float64(prevIn+1) < 0.1 {
+		backwardAmount := prevIn - originalNetInTransfer
+		backwardPercent := float64(backwardAmount) / float64(prevIn+1)
+
+		if backwardPercent < 0.05 { // 从10%降低到5%，减少误判
 			// 小幅度回退，可能是统计误差，不计入增量
 			increaseIn = 0
 		} else {
 			// 大幅度回退，可能是重启，重置基准点
 			server.PrevTransferInSnapshot = int64(originalNetInTransfer)
-			// 重要：不计算负增量
 			increaseIn = 0
 		}
 	} else {
 		// 正常增量
 		increaseIn = originalNetInTransfer - prevIn
-		// 检查增量是否合理（防止异常大值）
-		if increaseIn > 1000*1024*1024*1024 { // 增量超过1TB，可能是异常值
+		// 检查增量是否合理（防止异常大值）- 调整阈值为10TB，更适合高流量服务器
+		if increaseIn > 10*1024*1024*1024*1024 { // 增量超过10TB，可能是异常值
 			log.Printf("警告：服务器 %d 入站流量增量异常大 (%d)，可能是统计错误，本次不计入", server.ID, increaseIn)
 			increaseIn = 0
 		} else if server.CumulativeNetInTransfer > 0 &&
@@ -701,20 +703,22 @@ func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *mo
 	// 处理出站流量
 	if originalNetOutTransfer < prevOut {
 		// 检测到流量回退
-		if float64(prevOut-originalNetOutTransfer)/float64(prevOut+1) < 0.1 {
+		backwardAmount := prevOut - originalNetOutTransfer
+		backwardPercent := float64(backwardAmount) / float64(prevOut+1)
+
+		if backwardPercent < 0.05 { // 从10%降低到5%，减少误判
 			// 小幅度回退，可能是统计误差，不计入增量
 			increaseOut = 0
 		} else {
 			// 大幅度回退，可能是重启，重置基准点
 			server.PrevTransferOutSnapshot = int64(originalNetOutTransfer)
-			// 重要：不计算负增量
 			increaseOut = 0
 		}
 	} else {
 		// 正常增量
 		increaseOut = originalNetOutTransfer - prevOut
-		// 检查增量是否合理（防止异常大值）
-		if increaseOut > 1000*1024*1024*1024 { // 增量超过1TB，可能是异常值
+		// 检查增量是否合理（防止异常大值）- 调整阈值为10TB，更适合高流量服务器
+		if increaseOut > 10*1024*1024*1024*1024 { // 增量超过10TB，可能是异常值
 			log.Printf("警告：服务器 %d 出站流量增量异常大 (%d)，可能是统计错误，本次不计入", server.ID, increaseOut)
 			increaseOut = 0
 		} else if server.CumulativeNetOutTransfer > 0 &&
@@ -732,7 +736,7 @@ func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *mo
 	state.NetInTransfer = server.CumulativeNetInTransfer
 	state.NetOutTransfer = server.CumulativeNetOutTransfer
 
-	// 仅在异常大流量增量时记录日志，减少日志输出
+	// 仅在异常大流量增量时记录警告日志
 	if increaseIn > 100*1024*1024*1024 || increaseOut > 100*1024*1024*1024 {
 		log.Printf("注意：服务器 %d 流量增量较大 (入站=%d, 出站=%d)", server.ID, increaseIn, increaseOut)
 	}
