@@ -404,16 +404,26 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 					if ddnsRaw, exists := serverData["DDNSProfilesRaw"]; exists {
 						if ddnsStr, isStr := ddnsRaw.(string); isStr {
 							server.DDNSProfilesRaw = ddnsStr
+							log.Printf("BadgerDB FindAll: 服务器 %d (%s) 加载 DDNSProfilesRaw: %s",
+								server.ID, server.Name, ddnsStr)
 							// 同时解析到 DDNSProfiles 字段
 							if ddnsStr != "" && ddnsStr != "[]" {
 								if err := utils.Json.Unmarshal([]byte(ddnsStr), &server.DDNSProfiles); err != nil {
 									log.Printf("解析服务器 %d 的DDNSProfiles失败: %v", server.ID, err)
 									server.DDNSProfiles = []uint64{}
+								} else {
+									log.Printf("BadgerDB FindAll: 服务器 %d (%s) 解析 DDNSProfiles: %v",
+										server.ID, server.Name, server.DDNSProfiles)
 								}
 							} else {
 								server.DDNSProfiles = []uint64{}
+								log.Printf("BadgerDB FindAll: 服务器 %d (%s) DDNSProfilesRaw 为空，设置为空数组",
+									server.ID, server.Name)
 							}
 						}
+					} else {
+						log.Printf("BadgerDB FindAll: 服务器 %d (%s) 没有找到 DDNSProfilesRaw 字段",
+							server.ID, server.Name)
 					}
 				}
 			}

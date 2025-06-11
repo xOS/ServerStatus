@@ -629,6 +629,8 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 		}
 		s.DDNSProfilesRaw = sf.DDNSProfilesRaw
 
+		log.Printf("编辑服务器: 接收到 DDNSProfilesRaw: %s", sf.DDNSProfilesRaw)
+
 		// 尝试解析JSON，如果失败则设置为空数组
 		err = utils.Json.Unmarshal([]byte(sf.DDNSProfilesRaw), &s.DDNSProfiles)
 		if err != nil {
@@ -636,6 +638,8 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 			s.DDNSProfiles = []uint64{}
 			s.DDNSProfilesRaw = "[]"
 			err = nil
+		} else {
+			log.Printf("编辑服务器: 解析 DDNSProfiles 成功: %v", s.DDNSProfiles)
 		}
 
 		if err == nil {
