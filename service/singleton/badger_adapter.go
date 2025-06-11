@@ -44,10 +44,7 @@ func InitBadgerDBFromPath(path string) error {
 		log.Printf("警告：初始化BadgerDB索引失败: %v", err)
 	}
 
-	// 加载服务器列表到内存
-	if err := loadServersFromBadgerDB(); err != nil {
-		log.Printf("警告：从BadgerDB加载服务器列表失败: %v", err)
-	}
+	// 注意：服务器列表将在 LoadSingleton 中统一加载，这里不需要重复加载
 
 	// 启动BadgerDB的后台维护任务
 	startBadgerDBMaintenanceTasks()
@@ -213,9 +210,6 @@ func loadServersFromBadgerDB() error {
 			log.Printf("警告: 服务器ID为0，跳过: %s", server.Name)
 			continue
 		}
-
-		log.Printf("加载服务器: ID=%d, 名称=%s, Secret=%s, 累计入站流量=%d, 累计出站流量=%d",
-			server.ID, server.Name, server.Secret, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
 
 		// 初始化必要的对象
 		server.Host = &model.Host{}

@@ -108,12 +108,6 @@ func loadServers() {
 			innerS.LastActive = time.Now().Add(-24 * time.Hour)
 		}
 
-		// 初始化主机信息
-		if innerS.Host == nil {
-			innerS.Host = &model.Host{}
-			innerS.Host.Initialize()
-		}
-
 		// 解析主机信息
 		if innerS.HostJSON != "" && len(innerS.HostJSON) > 0 {
 			host := &model.Host{}
@@ -125,6 +119,12 @@ func loadServers() {
 			// 确保Host对象正确初始化
 			host.Initialize()
 			innerS.Host = host
+		} else {
+			// 如果没有HostJSON数据，初始化空的Host对象
+			if innerS.Host == nil {
+				innerS.Host = &model.Host{}
+				innerS.Host.Initialize()
+			}
 		}
 
 		// 加载离线前的最后状态
