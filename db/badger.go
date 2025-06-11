@@ -201,6 +201,14 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 					server.Note = noteStr
 				}
 			}
+			// 恢复Host.IP字段（因为IP字段有json:"-"标签，不会被包含在HostJSON中）
+			if hostIP, exists := serverData["HostIP"]; exists {
+				if hostIPStr, isStr := hostIP.(string); isStr && hostIPStr != "" {
+					if server.Host != nil {
+						server.Host.IP = hostIPStr
+					}
+				}
+			}
 
 			// 设置 DDNSProfilesRaw 字段
 			if ddnsRaw, exists := serverData["DDNSProfilesRaw"]; exists {
@@ -428,6 +436,14 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 					if note, exists := serverData["Note"]; exists {
 						if noteStr, isStr := note.(string); isStr {
 							server.Note = noteStr
+						}
+					}
+					// 恢复Host.IP字段（因为IP字段有json:"-"标签，不会被包含在HostJSON中）
+					if hostIP, exists := serverData["HostIP"]; exists {
+						if hostIPStr, isStr := hostIP.(string); isStr && hostIPStr != "" {
+							if server.Host != nil {
+								server.Host.IP = hostIPStr
+							}
 						}
 					}
 

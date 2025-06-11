@@ -63,6 +63,13 @@ func (o *ServerOps) SaveServer(server *model.Server) error {
 	serverData["LastStateJSON"] = server.LastStateJSON
 	serverData["HostJSON"] = server.HostJSON
 
+	// 单独保存Host.IP字段（因为IP字段有json:"-"标签，不会被包含在HostJSON中）
+	if server.Host != nil {
+		serverData["HostIP"] = server.Host.IP
+	} else {
+		serverData["HostIP"] = ""
+	}
+
 	// 重新序列化包含所有字段的数据
 	finalJSON, err := json.Marshal(serverData)
 	if err != nil {
