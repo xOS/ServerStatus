@@ -515,21 +515,25 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 	// 检查周期流量重置
 	checkAndResetCycleTraffic(clientID)
 
-	// 检查是否是服务器重启或网络接口重置
+	// 检查是否是服务器重启或网络接口重置 - 优化频繁重启场景
 	isRestart := false
 	if serverCopy.Host != nil && prevState != nil {
 		// 获取之前显示的累计流量值
 		prevDisplayIn := prevState.NetInTransfer
 		prevDisplayOut := prevState.NetOutTransfer
 
-		// 修改流量回退检测逻辑，增加容错范围
-		if (prevDisplayIn > 0 && originalNetInTransfer < prevDisplayIn && float64(prevDisplayIn-originalNetInTransfer)/float64(prevDisplayIn) < 0.1) ||
-			(prevDisplayOut > 0 && originalNetOutTransfer < prevDisplayOut && float64(prevDisplayOut-originalNetOutTransfer)/float64(prevDisplayOut) < 0.1) {
-			isRestart = false
-		} else if (prevDisplayIn > 0 && originalNetInTransfer < prevDisplayIn/2) ||
-			(prevDisplayOut > 0 && originalNetOutTransfer < prevDisplayOut/2) {
-			isRestart = true
+		// 优化重启检测逻辑，减少频繁重启时的误判
+		// 只有在流量大幅回退（超过80%）且上次活跃时间超过5分钟时才认为是重启
+		timeSinceLastActive := now.Sub(serverCopy.LastActive)
+
+		if timeSinceLastActive > 5*time.Minute {
+			// 长时间离线后重新上线，检查流量回退
+			if (prevDisplayIn > 0 && originalNetInTransfer < prevDisplayIn/5) ||
+				(prevDisplayOut > 0 && originalNetOutTransfer < prevDisplayOut/5) {
+				isRestart = true
+			}
 		}
+		// 短时间内的重连不认为是重启，继续累加流量
 	}
 
 	// 准备数据库更新数据
@@ -674,11 +678,15 @@ func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *mo
 		backwardAmount := prevIn - originalNetInTransfer
 		backwardPercent := float64(backwardAmount) / float64(prevIn+1)
 
-		if backwardPercent < 0.05 { // 从10%降低到5%，减少误判
-			// 小幅度回退，可能是统计误差，不计入增量
+		if backwardPercent < 0.02 { // 进一步降低到2%，减少频繁重启时的误判
+			// 极小幅度回退，可能是统计误差，不计入增量
+			increaseIn = 0
+		} else if backwardPercent < 0.5 {
+			// 中等幅度回退，可能是频繁重启，保持累计流量，只重置基准点
+			server.PrevTransferInSnapshot = int64(originalNetInTransfer)
 			increaseIn = 0
 		} else {
-			// 大幅度回退，可能是重启，重置基准点
+			// 大幅度回退，确实是重启，重置基准点
 			server.PrevTransferInSnapshot = int64(originalNetInTransfer)
 			increaseIn = 0
 		}
@@ -706,11 +714,15 @@ func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *mo
 		backwardAmount := prevOut - originalNetOutTransfer
 		backwardPercent := float64(backwardAmount) / float64(prevOut+1)
 
-		if backwardPercent < 0.05 { // 从10%降低到5%，减少误判
-			// 小幅度回退，可能是统计误差，不计入增量
+		if backwardPercent < 0.02 { // 进一步降低到2%，减少频繁重启时的误判
+			// 极小幅度回退，可能是统计误差，不计入增量
+			increaseOut = 0
+		} else if backwardPercent < 0.5 {
+			// 中等幅度回退，可能是频繁重启，保持累计流量，只重置基准点
+			server.PrevTransferOutSnapshot = int64(originalNetOutTransfer)
 			increaseOut = 0
 		} else {
-			// 大幅度回退，可能是重启，重置基准点
+			// 大幅度回退，确实是重启，重置基准点
 			server.PrevTransferOutSnapshot = int64(originalNetOutTransfer)
 			increaseOut = 0
 		}
@@ -799,33 +811,41 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	/**
 	 * 这里的 singleton 中的数据都是关机前的旧数据
 	 * 当 agent 重启时，bootTime 变大，agent 端会先上报 host 信息，然后上报 state 信息
-	 * 这是可以借助上报顺序的空档，标记服务器为重启状态，表示从该节点开始累计流量
+	 * 优化：只有在 BootTime 显著变化时才认为是真正的重启
 	 */
-	if singleton.ServerList[clientID].Host != nil && singleton.ServerList[clientID].Host.BootTime < host.BootTime {
-		// 服务器重启时保持累计流量不变，只重置上次记录点
-		singleton.ServerList[clientID].PrevTransferInSnapshot = 0
-		singleton.ServerList[clientID].PrevTransferOutSnapshot = 0
+	if singleton.ServerList[clientID].Host != nil {
+		oldBootTime := singleton.ServerList[clientID].Host.BootTime
+		bootTimeDiff := host.BootTime - oldBootTime
 
-		// 确保从数据库读取最新的累计流量值（只在重启时读取一次）
-		if singleton.Conf.DatabaseType == "badger" {
-			// 使用BadgerDB读取累计流量
-			if db.DB != nil {
-				serverOps := db.NewServerOps(db.DB)
-				if server, err := serverOps.GetServer(clientID); err == nil && server != nil {
-					singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
-					singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+		// 只有在 BootTime 显著增加（超过1小时）或减少时才认为是重启
+		// 这样可以避免频繁重启或时间同步问题导致的误判
+		if bootTimeDiff > 3600 || bootTimeDiff < 0 {
+			// 真正的重启：保持累计流量不变，只重置上次记录点
+			singleton.ServerList[clientID].PrevTransferInSnapshot = 0
+			singleton.ServerList[clientID].PrevTransferOutSnapshot = 0
+
+			// 确保从数据库读取最新的累计流量值（只在重启时读取一次）
+			if singleton.Conf.DatabaseType == "badger" {
+				// 使用BadgerDB读取累计流量
+				if db.DB != nil {
+					serverOps := db.NewServerOps(db.DB)
+					if server, err := serverOps.GetServer(clientID); err == nil && server != nil {
+						singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
+						singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+					}
 				}
-			}
-		} else {
-			// 使用SQLite读取累计流量
-			if singleton.DB != nil {
-				var server model.Server
-				if err := singleton.DB.First(&server, clientID).Error; err == nil {
-					singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
-					singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+			} else {
+				// 使用SQLite读取累计流量
+				if singleton.DB != nil {
+					var server model.Server
+					if err := singleton.DB.First(&server, clientID).Error; err == nil {
+						singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
+						singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+					}
 				}
 			}
 		}
+		// 小幅度的 BootTime 变化不认为是重启，继续正常累加流量
 	}
 
 	// 不要冲掉国家码
