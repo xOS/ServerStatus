@@ -118,6 +118,14 @@ func loadServers() {
 			}
 			// 确保Host对象正确初始化
 			host.Initialize()
+
+			// 重要：恢复Host.IP字段（因为IP字段有json:"-"标签，不会被包含在HostJSON中）
+			// 如果之前的Host对象有IP信息，需要保留
+			if innerS.Host != nil && innerS.Host.IP != "" {
+				host.IP = innerS.Host.IP
+				log.Printf("服务器 %s (ID:%d) 恢复Host.IP字段: %s", innerS.Name, innerS.ID, host.IP)
+			}
+
 			innerS.Host = host
 		} else {
 			// 如果没有HostJSON数据，初始化空的Host对象
