@@ -402,12 +402,12 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 
 					// 设置 DDNSProfilesRaw 字段
 					if ddnsRaw, exists := serverData["DDNSProfilesRaw"]; exists {
-						if ddnsStr, isStr := ddnsRaw.(string); isStr {
+						if ddnsStr, isStr := ddnsRaw.(string); isStr && ddnsStr != "" {
 							server.DDNSProfilesRaw = ddnsStr
 							log.Printf("BadgerDB FindAll: 服务器 %d (%s) 加载 DDNSProfilesRaw: %s",
 								server.ID, server.Name, ddnsStr)
 							// 同时解析到 DDNSProfiles 字段
-							if ddnsStr != "" && ddnsStr != "[]" {
+							if ddnsStr != "[]" {
 								if err := utils.Json.Unmarshal([]byte(ddnsStr), &server.DDNSProfiles); err != nil {
 									log.Printf("解析服务器 %d 的DDNSProfiles失败: %v", server.ID, err)
 									server.DDNSProfiles = []uint64{}
@@ -417,12 +417,19 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 								}
 							} else {
 								server.DDNSProfiles = []uint64{}
-								log.Printf("BadgerDB FindAll: 服务器 %d (%s) DDNSProfilesRaw 为空，设置为空数组",
-									server.ID, server.Name)
 							}
+						} else {
+							// 处理 nil 或空字符串的情况
+							server.DDNSProfilesRaw = "[]"
+							server.DDNSProfiles = []uint64{}
+							log.Printf("BadgerDB FindAll: 服务器 %d (%s) DDNSProfilesRaw 为 nil/空，设置为空数组",
+								server.ID, server.Name)
 						}
 					} else {
-						log.Printf("BadgerDB FindAll: 服务器 %d (%s) 没有找到 DDNSProfilesRaw 字段",
+						// 字段不存在，设置默认值
+						server.DDNSProfilesRaw = "[]"
+						server.DDNSProfiles = []uint64{}
+						log.Printf("BadgerDB FindAll: 服务器 %d (%s) 没有找到 DDNSProfilesRaw 字段，设置默认值",
 							server.ID, server.Name)
 					}
 				}
