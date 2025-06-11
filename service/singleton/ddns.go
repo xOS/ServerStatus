@@ -3,6 +3,7 @@ package singleton
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,8 +24,16 @@ var (
 )
 
 func initDDNS() {
+	log.Printf("初始化DDNS配置...")
 	OnDDNSUpdate()
 	OnNameserverUpdate()
+
+	// 验证DDNS配置加载情况
+	ddnsCacheLock.RLock()
+	configCount := len(ddnsCache)
+	ddnsCacheLock.RUnlock()
+
+	log.Printf("DDNS初始化完成，加载了 %d 个配置", configCount)
 }
 
 func OnDDNSUpdate() {
@@ -55,6 +64,10 @@ func OnDDNSUpdate() {
 	defer ddnsCacheLock.Unlock()
 	ddnsCache = make(map[uint64]*model.DDNSProfile)
 	for i := 0; i < len(ddns); i++ {
+		// 确保 BadgerDB 模式下 Domains 字段正确解析
+		if ddns[i].DomainsRaw != "" && len(ddns[i].Domains) == 0 {
+			ddns[i].Domains = strings.Split(ddns[i].DomainsRaw, ",")
+		}
 		ddnsCache[ddns[i].ID] = ddns[i]
 	}
 }
@@ -68,6 +81,11 @@ func GetDDNSProvidersFromProfiles(profileId []uint64, ip *ddns2.IP) ([]*ddns2.Pr
 	ddnsCacheLock.RLock()
 	for _, id := range profileId {
 		if profile, ok := ddnsCache[id]; ok {
+			// 验证 DDNS 配置的完整性
+			if len(profile.Domains) == 0 {
+				log.Printf("警告: DDNS配置 ID %d 没有配置域名", id)
+				continue
+			}
 			profiles = append(profiles, profile)
 		} else {
 			ddnsCacheLock.RUnlock()
@@ -75,6 +93,10 @@ func GetDDNSProvidersFromProfiles(profileId []uint64, ip *ddns2.IP) ([]*ddns2.Pr
 		}
 	}
 	ddnsCacheLock.RUnlock()
+
+	if len(profiles) == 0 {
+		return nil, fmt.Errorf("没有有效的DDNS配置")
+	}
 
 	providers := make([]*ddns2.Provider, 0, len(profiles))
 	for _, profile := range profiles {

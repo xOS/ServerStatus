@@ -765,23 +765,42 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	defer singleton.ServerLock.RUnlock()
 
 	// 检查并更新DDNS
-	if singleton.ServerList[clientID].EnableDDNS && host.IP != "" &&
-		(singleton.ServerList[clientID].Host == nil || singleton.ServerList[clientID].Host.IP != host.IP) {
-		ipv4, ipv6, _ := utils.SplitIPAddr(host.IP)
-		providers, err := singleton.GetDDNSProvidersFromProfilesWithServer(
-			singleton.ServerList[clientID].DDNSProfiles,
-			&ddns.IP{Ipv4Addr: ipv4, Ipv6Addr: ipv6},
-			singleton.ServerList[clientID].Name,
-			clientID,
-		)
-		if err == nil {
-			for _, provider := range providers {
-				go func(provider *ddns.Provider) {
-					provider.UpdateDomain(context.Background())
-				}(provider)
-			}
+	server := singleton.ServerList[clientID]
+	if server.EnableDDNS {
+		if host.IP == "" {
+			log.Printf("服务器 %s (ID:%d) DDNS已启用但IP为空，跳过更新", server.Name, clientID)
+		} else if len(server.DDNSProfiles) == 0 {
+			log.Printf("服务器 %s (ID:%d) DDNS已启用但未配置DDNS配置文件", server.Name, clientID)
+		} else if server.Host != nil && server.Host.IP == host.IP {
+			// IP 没有变化，跳过更新（但不记录日志，避免频繁输出）
 		} else {
-			log.Printf("获取DDNS配置时发生错误: %v", err)
+			// IP 发生变化或首次设置，触发 DDNS 更新
+			ipv4, ipv6, _ := utils.SplitIPAddr(host.IP)
+			providers, err := singleton.GetDDNSProvidersFromProfilesWithServer(
+				server.DDNSProfiles,
+				&ddns.IP{Ipv4Addr: ipv4, Ipv6Addr: ipv6},
+				server.Name,
+				clientID,
+			)
+			if err == nil {
+				log.Printf("服务器 %s (ID:%d) IP变化 (%s -> %s)，触发DDNS更新，配置数量: %d",
+					server.Name, clientID,
+					func() string {
+						if server.Host != nil {
+							return server.Host.IP
+						} else {
+							return "无"
+						}
+					}(),
+					host.IP, len(providers))
+				for _, provider := range providers {
+					go func(provider *ddns.Provider) {
+						provider.UpdateDomain(context.Background())
+					}(provider)
+				}
+			} else {
+				log.Printf("服务器 %s (ID:%d) 获取DDNS配置时发生错误: %v", server.Name, clientID, err)
+			}
 		}
 	}
 

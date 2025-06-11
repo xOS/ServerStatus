@@ -50,14 +50,35 @@ func InitDNSServers(s string) {
 
 func (provider *Provider) UpdateDomain(ctx context.Context) {
 	provider.ctx = ctx
+
+	// 验证必要的配置
+	if len(provider.DDNSProfile.Domains) == 0 {
+		log.Printf("DDNS配置错误: 没有配置域名")
+		return
+	}
+
+	if provider.IPAddrs == nil {
+		log.Printf("DDNS配置错误: IP地址为空")
+		return
+	}
+
 	for _, domain := range provider.DDNSProfile.Domains {
-		for retries := 0; retries < int(provider.DDNSProfile.MaxRetries); retries++ {
+		maxRetries := int(provider.DDNSProfile.MaxRetries)
+		if maxRetries == 0 {
+			maxRetries = 3 // 默认重试3次
+		}
+
+		for retries := 0; retries < maxRetries; retries++ {
 			provider.domain = domain
-			log.Printf("NG>> 正在尝试更新域名(%s)DDNS(%d/%d)", provider.domain, retries+1, provider.DDNSProfile.MaxRetries)
+			log.Printf("正在尝试更新域名(%s)DDNS(%d/%d)", provider.domain, retries+1, maxRetries)
 			if err := provider.updateDomain(); err != nil {
-				log.Printf("NG>> 尝试更新域名(%s)DDNS失败: %v", provider.domain, err)
+				log.Printf("尝试更新域名(%s)DDNS失败: %v", provider.domain, err)
+				if retries < maxRetries-1 {
+					// 等待一段时间后重试
+					time.Sleep(time.Duration(retries+1) * 5 * time.Second)
+				}
 			} else {
-				log.Printf("NG>> 尝试更新域名(%s)DDNS成功", provider.domain)
+				log.Printf("更新域名(%s)DDNS成功", provider.domain)
 				break
 			}
 		}
@@ -102,8 +123,15 @@ func (provider *Provider) addDomainRecord() error {
 
 	// 检查IP是否实际发生了变化
 	if currentIP != "" && currentIP == provider.ipAddr {
-		log.Printf("域名 %s 的 %s 记录IP未发生变化 (%s)，跳过更新", provider.domain, provider.recordType, currentIP)
-		return nil // IP没有变化，不需要更新
+		// IP没有变化，不需要更新（减少日志输出）
+		return nil
+	}
+
+	// 记录IP变化信息
+	if currentIP != "" {
+		log.Printf("域名 %s 的 %s 记录IP发生变化: %s -> %s", provider.domain, provider.recordType, currentIP, provider.ipAddr)
+	} else {
+		log.Printf("域名 %s 设置 %s 记录IP: %s", provider.domain, provider.recordType, provider.ipAddr)
 	}
 
 	_, err = provider.Setter.SetRecords(provider.ctx, provider.zone,
