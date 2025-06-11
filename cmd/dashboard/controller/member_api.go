@@ -748,7 +748,20 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 			// 设置新的 Tag-ID 绑定关系
 			singleton.ServerTagToIDList[newTag] = append(singleton.ServerTagToIDList[newTag], s.ID)
 		}
-		singleton.ServerList[s.ID] = &s
+
+		// 更新内存中的服务器对象，确保配置字段被正确更新，但保留运行时状态
+		singleton.ServerList[s.ID].Name = s.Name
+		singleton.ServerList[s.ID].Tag = s.Tag
+		singleton.ServerList[s.ID].Note = s.Note
+		singleton.ServerList[s.ID].PublicNote = s.PublicNote
+		singleton.ServerList[s.ID].DisplayIndex = s.DisplayIndex
+		singleton.ServerList[s.ID].HideForGuest = s.HideForGuest
+		singleton.ServerList[s.ID].EnableDDNS = s.EnableDDNS
+		singleton.ServerList[s.ID].DDNSProfilesRaw = s.DDNSProfilesRaw
+		singleton.ServerList[s.ID].DDNSProfiles = s.DDNSProfiles
+		singleton.ServerList[s.ID].Secret = s.Secret
+
+		log.Printf("编辑服务器: 已更新内存中服务器 %d 的 DDNSProfilesRaw: %s", s.ID, s.DDNSProfilesRaw)
 		singleton.ServerLock.Unlock()
 	} else {
 		s.Host = &model.Host{}
