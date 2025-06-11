@@ -92,7 +92,7 @@ var ServerHandlerSingleton *ServerHandler
 // goroutine 计数器，用于监控 RequestTask goroutine 数量
 var (
 	activeRequestTaskGoroutines int64
-	maxRequestTaskGoroutines    int64 = 500 // 最大允许的 RequestTask goroutine 数量
+	maxRequestTaskGoroutines    int64 = 100 // 大幅降低最大允许的 RequestTask goroutine 数量
 )
 
 type ServerHandler struct {
@@ -209,10 +209,18 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 		current := activeRequestTaskGoroutines
 		total := int64(runtime.NumGoroutine())
 
-		// 如果总 goroutine 数量过多，拒绝新连接
-		if total > 1000 {
-			log.Printf("警告：总 goroutine 数量过多 (%d)，拒绝新的 RequestTask 连接", total)
-			return -1
+		// 如果总 goroutine 数量过多，先尝试强制清理
+		if total > 250 {
+			log.Printf("警告：总 goroutine 数量过多 (%d)，尝试强制清理", total)
+			cleaned := ForceCleanupStaleConnections()
+			if cleaned > 0 {
+				log.Printf("强制清理了 %d 个连接，当前 goroutine 数量: %d", cleaned, runtime.NumGoroutine())
+			}
+			// 清理后仍然过多，拒绝新连接
+			if runtime.NumGoroutine() > 300 {
+				log.Printf("清理后 goroutine 数量仍过多 (%d)，拒绝新的 RequestTask 连接", runtime.NumGoroutine())
+				return -1
+			}
 		}
 
 		// 如果 RequestTask goroutine 数量超过限制，拒绝新连接
@@ -262,7 +270,7 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	singleton.ServerLock.RUnlock()
 
 	// 创建一个带超时的上下文，大幅减少超时时间避免goroutine泄漏
-	ctx, cancel := context.WithTimeout(stream.Context(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(stream.Context(), 1*time.Minute) // 从2分钟缩短到1分钟
 	defer cancel()
 
 	// 监听连接状态，当连接断开时自动清理
@@ -275,7 +283,7 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 		}()
 
 		// 使用定时器避免无限等待，缩短检查间隔
-		ticker := time.NewTicker(15 * time.Second)
+		ticker := time.NewTicker(10 * time.Second) // 从15秒进一步减少到10秒
 		defer ticker.Stop()
 
 		for {
@@ -333,7 +341,7 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 				// 定期记录 goroutine 状态，帮助监控泄漏
 				totalGoroutines := runtime.NumGoroutine()
 				activeRequestTasks := activeRequestTaskGoroutines
-				if totalGoroutines > 800 || activeRequestTasks > 400 {
+				if totalGoroutines > 200 || activeRequestTasks > 80 {
 					log.Printf("Goroutine 监控 - 总数: %d, RequestTask: %d, 服务器: %d",
 						totalGoroutines, activeRequestTasks, clientID)
 				}
@@ -357,7 +365,7 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	}()
 
 	// 等待连接关闭或超时，使用定时器避免无限等待，缩短检查间隔
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(20 * time.Second) // 从30秒进一步减少到20秒
 	defer ticker.Stop()
 
 	for {
@@ -399,7 +407,7 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 
 			// 检查 goroutine 泄漏情况，如果过多则强制退出
 			totalGoroutines := runtime.NumGoroutine()
-			if totalGoroutines > 1200 {
+			if totalGoroutines > 400 {
 				log.Printf("严重警告：goroutine 数量过多 (%d)，强制断开服务器 %d 的连接以防止崩溃",
 					totalGoroutines, clientID)
 				return fmt.Errorf("goroutine 数量过多，强制断开连接")

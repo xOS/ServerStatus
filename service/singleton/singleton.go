@@ -1841,13 +1841,24 @@ func GetGoroutineCount() int64 {
 // cleanupStaleGoroutineConnections 清理僵尸 goroutine 连接
 func cleanupStaleGoroutineConnections() {
 	cleaned := 0
+	totalGoroutines := runtime.NumGoroutine()
+
+	// 如果 goroutine 数量过多，更激进地清理
+	cleanupThreshold := 3 * time.Minute
+	if totalGoroutines > 200 {
+		cleanupThreshold = 2 * time.Minute // 更激进的清理
+	}
+	if totalGoroutines > 300 {
+		cleanupThreshold = 1 * time.Minute // 非常激进的清理
+	}
+
 	ServerLock.Lock()
 	defer ServerLock.Unlock()
 
-	for _, server := range ServerList {
+	for serverID, server := range ServerList {
 		if server != nil && server.TaskClose != nil {
-			// 检查连接是否长时间无活动（超过5分钟）
-			if time.Since(server.LastActive) > 5*time.Minute {
+			// 检查连接是否长时间无活动
+			if time.Since(server.LastActive) > cleanupThreshold {
 				server.TaskCloseLock.Lock()
 				if server.TaskClose != nil {
 					// 强制关闭僵尸连接
@@ -1858,6 +1869,7 @@ func cleanupStaleGoroutineConnections() {
 					server.TaskClose = nil
 					server.TaskStream = nil
 					cleaned++
+					log.Printf("清理服务器 %d 的僵尸连接（无活动时间: %v）", serverID, time.Since(server.LastActive))
 				}
 				server.TaskCloseLock.Unlock()
 			}
@@ -1865,7 +1877,7 @@ func cleanupStaleGoroutineConnections() {
 	}
 
 	if cleaned > 0 {
-		log.Printf("内存清理：清理了 %d 个僵尸连接", cleaned)
+		log.Printf("内存清理：清理了 %d 个僵尸连接，当前 goroutine 数量: %d", cleaned, runtime.NumGoroutine())
 	}
 }
 
