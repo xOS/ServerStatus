@@ -198,6 +198,18 @@ func loadServers() {
 			}
 		}
 
+		// BadgerDB 模式下手动解析 DDNS 配置（模拟 GORM 的 AfterFind 钩子）
+		if Conf.DatabaseType == "badger" {
+			if innerS.DDNSProfilesRaw != "" && innerS.DDNSProfilesRaw != "[]" {
+				if err := utils.Json.Unmarshal([]byte(innerS.DDNSProfilesRaw), &innerS.DDNSProfiles); err != nil {
+					log.Printf("解析服务器 %d 的DDNSProfiles失败: %v", innerS.ID, err)
+					innerS.DDNSProfiles = []uint64{}
+				}
+			} else {
+				innerS.DDNSProfiles = []uint64{}
+			}
+		}
+
 		// 处理标签映射
 		if innerS.Tag != "" {
 			ServerTagToIDList[innerS.Tag] = append(ServerTagToIDList[innerS.Tag], innerS.ID)
