@@ -771,35 +771,36 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 			log.Printf("服务器 %s (ID:%d) DDNS已启用但IP为空，跳过更新", server.Name, clientID)
 		} else if len(server.DDNSProfiles) == 0 {
 			log.Printf("服务器 %s (ID:%d) DDNS已启用但未配置DDNS配置文件", server.Name, clientID)
-		} else if server.Host != nil && server.Host.IP == host.IP {
-			// IP 没有变化，跳过更新（但不记录日志，避免频繁输出）
 		} else {
-			// IP 发生变化或首次设置，触发 DDNS 更新
-			ipv4, ipv6, _ := utils.SplitIPAddr(host.IP)
-			providers, err := singleton.GetDDNSProvidersFromProfilesWithServer(
-				server.DDNSProfiles,
-				&ddns.IP{Ipv4Addr: ipv4, Ipv6Addr: ipv6},
-				server.Name,
-				clientID,
-			)
-			if err == nil {
-				log.Printf("服务器 %s (ID:%d) IP变化 (%s -> %s)，触发DDNS更新，配置数量: %d",
-					server.Name, clientID,
-					func() string {
-						if server.Host != nil {
-							return server.Host.IP
-						} else {
-							return "无"
-						}
-					}(),
-					host.IP, len(providers))
-				for _, provider := range providers {
-					go func(provider *ddns.Provider) {
-						provider.UpdateDomain(context.Background())
-					}(provider)
-				}
+			// 获取当前保存的IP地址
+			currentIP := ""
+			if server.Host != nil {
+				currentIP = server.Host.IP
+			}
+
+			// 检查IP是否实际发生了变化
+			if currentIP == host.IP {
+				// IP 没有变化，跳过更新（但不记录日志，避免频繁输出）
 			} else {
-				log.Printf("服务器 %s (ID:%d) 获取DDNS配置时发生错误: %v", server.Name, clientID, err)
+				// IP 发生变化或首次设置，触发 DDNS 更新
+				ipv4, ipv6, _ := utils.SplitIPAddr(host.IP)
+				providers, err := singleton.GetDDNSProvidersFromProfilesWithServer(
+					server.DDNSProfiles,
+					&ddns.IP{Ipv4Addr: ipv4, Ipv6Addr: ipv6},
+					server.Name,
+					clientID,
+				)
+				if err == nil {
+					log.Printf("服务器 %s (ID:%d) IP变化 (%s -> %s)，触发DDNS更新，配置数量: %d",
+						server.Name, clientID, currentIP, host.IP, len(providers))
+					for _, provider := range providers {
+						go func(provider *ddns.Provider) {
+							provider.UpdateDomain(context.Background())
+						}(provider)
+					}
+				} else {
+					log.Printf("服务器 %s (ID:%d) 获取DDNS配置时发生错误: %v", server.Name, clientID, err)
+				}
 			}
 		}
 	}
