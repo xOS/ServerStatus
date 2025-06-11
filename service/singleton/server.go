@@ -204,7 +204,7 @@ func loadServers() {
 		if Conf.DatabaseType == "badger" {
 			log.Printf("OnServerUpdate: 服务器 %d (%s) DDNSProfilesRaw: '%s'",
 				innerS.ID, innerS.Name, innerS.DDNSProfilesRaw)
-			if innerS.DDNSProfilesRaw != "" && innerS.DDNSProfilesRaw != "[]" {
+			if innerS.DDNSProfilesRaw != "" {
 				if err := utils.Json.Unmarshal([]byte(innerS.DDNSProfilesRaw), &innerS.DDNSProfiles); err != nil {
 					log.Printf("解析服务器 %d 的DDNSProfiles失败: %v", innerS.ID, err)
 					innerS.DDNSProfiles = []uint64{}
