@@ -150,7 +150,7 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 			})
 			return
 		}
-		log.Printf("API Token已保存到BadgerDB: %s (Note: %s)", token.Token, token.Note)
+		log.Printf("API Token已保存到SQLite: %s (Note: %s)", token.Token, token.Note)
 	}
 
 	if err != nil {
@@ -705,6 +705,17 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 	if isEdit {
 		singleton.ServerLock.Lock()
 		s.CopyFromRunningServer(singleton.ServerList[s.ID])
+
+		// 确保 DDNSProfiles 字段正确解析（特别是 BadgerDB 模式）
+		if s.DDNSProfilesRaw != "" {
+			if err := utils.Json.Unmarshal([]byte(s.DDNSProfilesRaw), &s.DDNSProfiles); err != nil {
+				log.Printf("编辑服务器时解析DDNS配置失败: %v", err)
+				s.DDNSProfiles = []uint64{}
+			}
+		} else {
+			s.DDNSProfiles = []uint64{}
+		}
+
 		// 如果修改了 Secret
 		if s.Secret != singleton.ServerList[s.ID].Secret {
 			// 删除旧 Secret-ID 绑定关系

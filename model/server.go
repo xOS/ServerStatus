@@ -65,6 +65,9 @@ func (s *Server) CopyFromRunningServer(old *Server) {
 	s.CumulativeNetInTransfer = old.CumulativeNetInTransfer
 	s.CumulativeNetOutTransfer = old.CumulativeNetOutTransfer
 	s.LastFlowSaveTime = old.LastFlowSaveTime
+
+	// 注意：不要复制配置相关的字段，因为这些可能已经在编辑时更新了
+	// 包括：DDNSProfiles, DDNSProfilesRaw, EnableDDNS 等
 }
 
 func (s *Server) AfterFind(tx *gorm.DB) error {

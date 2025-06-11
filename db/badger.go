@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -423,7 +424,52 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			return err
 		}
 
-		return json.Unmarshal(monitorsJSON, result)
+		// 反序列化到结果，然后手动解析特殊字段
+		if err := json.Unmarshal(monitorsJSON, result); err != nil {
+			return err
+		}
+
+		// 手动解析监控器的特殊字段（模拟 GORM 的 AfterFind 钩子）
+		if monitorSlice, ok := result.(*[]*model.Monitor); ok {
+			for _, monitor := range *monitorSlice {
+				if monitor != nil {
+					// 解析 SkipServersRaw 到 SkipServers 字段
+					monitor.SkipServers = make(map[uint64]bool)
+					if monitor.SkipServersRaw != "" {
+						var skipServers []uint64
+						if err := utils.Json.Unmarshal([]byte(monitor.SkipServersRaw), &skipServers); err != nil {
+							log.Printf("解析监控器 %d 的 SkipServersRaw 失败: %v", monitor.ID, err)
+							skipServers = []uint64{}
+						}
+						for _, serverID := range skipServers {
+							monitor.SkipServers[serverID] = true
+						}
+					}
+
+					// 解析 FailTriggerTasksRaw 到 FailTriggerTasks 字段
+					if monitor.FailTriggerTasksRaw != "" {
+						if err := utils.Json.Unmarshal([]byte(monitor.FailTriggerTasksRaw), &monitor.FailTriggerTasks); err != nil {
+							log.Printf("解析监控器 %d 的 FailTriggerTasksRaw 失败: %v", monitor.ID, err)
+							monitor.FailTriggerTasks = []uint64{}
+						}
+					} else {
+						monitor.FailTriggerTasks = []uint64{}
+					}
+
+					// 解析 RecoverTriggerTasksRaw 到 RecoverTriggerTasks 字段
+					if monitor.RecoverTriggerTasksRaw != "" {
+						if err := utils.Json.Unmarshal([]byte(monitor.RecoverTriggerTasksRaw), &monitor.RecoverTriggerTasks); err != nil {
+							log.Printf("解析监控器 %d 的 RecoverTriggerTasksRaw 失败: %v", monitor.ID, err)
+							monitor.RecoverTriggerTasks = []uint64{}
+						}
+					} else {
+						monitor.RecoverTriggerTasks = []uint64{}
+					}
+				}
+			}
+		}
+
+		return nil
 	case "user":
 		// 用户记录需要特殊处理布尔字段和Token字段
 		var users []*map[string]interface{}
@@ -600,7 +646,26 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			return err
 		}
 
-		return json.Unmarshal(profilesJSON, result)
+		// 反序列化到结果，然后手动解析特殊字段
+		if err := json.Unmarshal(profilesJSON, result); err != nil {
+			return err
+		}
+
+		// 手动解析 DDNS 配置的特殊字段（模拟 GORM 的 AfterFind 钩子）
+		if profileSlice, ok := result.(*[]*model.DDNSProfile); ok {
+			for _, profile := range *profileSlice {
+				if profile != nil {
+					// 解析 DomainsRaw 到 Domains 字段
+					if profile.DomainsRaw != "" {
+						profile.Domains = strings.Split(profile.DomainsRaw, ",")
+					} else {
+						profile.Domains = []string{}
+					}
+				}
+			}
+		}
+
+		return nil
 	case "notification":
 		// 通知配置记录需要特殊处理布尔字段
 		var notifications []*map[string]interface{}
@@ -663,7 +728,31 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			return err
 		}
 
-		return json.Unmarshal(cronsJSON, result)
+		// 反序列化到结果，然后手动解析特殊字段
+		if err := json.Unmarshal(cronsJSON, result); err != nil {
+			return err
+		}
+
+		// 手动解析计划任务的特殊字段（模拟 GORM 的 AfterFind 钩子）
+		if cronSlice, ok := result.(*[]*model.Cron); ok {
+			for _, cron := range *cronSlice {
+				if cron != nil {
+					// 解析 ServersRaw 到 Servers 字段
+					if cron.ServersRaw == "" {
+						cron.ServersRaw = "[]"
+						cron.Servers = []uint64{}
+					} else {
+						if err := utils.Json.Unmarshal([]byte(cron.ServersRaw), &cron.Servers); err != nil {
+							log.Printf("解析计划任务 %d 的 ServersRaw 失败: %v", cron.ID, err)
+							cron.Servers = []uint64{}
+							cron.ServersRaw = "[]"
+						}
+					}
+				}
+			}
+		}
+
+		return nil
 	default:
 		// 其他类型的记录，也需要进行字段类型转换
 		var others []*map[string]interface{}
