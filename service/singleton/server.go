@@ -673,6 +673,16 @@ func UpdateServer(s *model.Server) error {
 						}
 					}
 
+					// 保留内存中的 DDNS 配置，避免被数据库中的旧数据覆盖
+					if memoryServer, exists := ServerList[s.ID]; exists && memoryServer != nil {
+						if memoryServer.DDNSProfilesRaw != "" && memoryServer.DDNSProfilesRaw != "[]" {
+							dbServer.DDNSProfilesRaw = memoryServer.DDNSProfilesRaw
+							dbServer.DDNSProfiles = memoryServer.DDNSProfiles
+							dbServer.EnableDDNS = memoryServer.EnableDDNS
+							log.Printf("BadgerDB: 流量保存时保留服务器 %s 的 DDNS 配置: %s", s.Name, memoryServer.DDNSProfilesRaw)
+						}
+					}
+
 					// 保存回数据库
 					if err := serverOps.SaveServer(dbServer); err != nil {
 						log.Printf("BadgerDB: 保存服务器 %s 的数据失败: %v", s.Name, err)
