@@ -399,6 +399,22 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 							server.Secret = secretStr
 						}
 					}
+
+					// 设置 DDNSProfilesRaw 字段
+					if ddnsRaw, exists := serverData["DDNSProfilesRaw"]; exists {
+						if ddnsStr, isStr := ddnsRaw.(string); isStr {
+							server.DDNSProfilesRaw = ddnsStr
+							// 同时解析到 DDNSProfiles 字段
+							if ddnsStr != "" && ddnsStr != "[]" {
+								if err := utils.Json.Unmarshal([]byte(ddnsStr), &server.DDNSProfiles); err != nil {
+									log.Printf("解析服务器 %d 的DDNSProfiles失败: %v", server.ID, err)
+									server.DDNSProfiles = []uint64{}
+								}
+							} else {
+								server.DDNSProfiles = []uint64{}
+							}
+						}
+					}
 				}
 			}
 		}
@@ -708,6 +724,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		return json.Unmarshal(natsJSON, result)
+
 	case "cron":
 		// 定时任务记录需要特殊处理布尔字段
 		var crons []*map[string]interface{}

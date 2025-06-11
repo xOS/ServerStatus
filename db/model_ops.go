@@ -34,11 +34,11 @@ func (o *ServerOps) GetServer(id uint64) (*model.Server, error) {
 
 // SaveServer saves a server
 func (o *ServerOps) SaveServer(server *model.Server) error {
-	// 由于 Secret 字段有 json:"-" 标签，我们需要特殊处理
-	// 创建一个临时的 map 来包含所有字段，包括 Secret
+	// 由于多个字段有 json:"-" 标签，我们需要特殊处理
+	// 创建一个临时的 map 来包含所有字段
 	serverData := make(map[string]interface{})
 
-	// 首先序列化服务器对象（这会忽略 Secret 字段）
+	// 首先序列化服务器对象（这会忽略有 json:"-" 标签的字段）
 	serverJSON, err := json.Marshal(server)
 	if err != nil {
 		return fmt.Errorf("failed to marshal server: %w", err)
@@ -49,13 +49,16 @@ func (o *ServerOps) SaveServer(server *model.Server) error {
 		return fmt.Errorf("failed to unmarshal server to map: %w", err)
 	}
 
-	// 手动添加 Secret 字段
+	// 手动添加有 json:"-" 标签的重要字段
 	serverData["Secret"] = server.Secret
+	serverData["DDNSProfilesRaw"] = server.DDNSProfilesRaw
+	serverData["LastStateJSON"] = server.LastStateJSON
+	serverData["HostJSON"] = server.HostJSON
 
-	// 重新序列化包含 Secret 的数据
+	// 重新序列化包含所有字段的数据
 	finalJSON, err := json.Marshal(serverData)
 	if err != nil {
-		return fmt.Errorf("failed to marshal server with secret: %w", err)
+		return fmt.Errorf("failed to marshal server with all fields: %w", err)
 	}
 
 	// 直接保存到数据库
