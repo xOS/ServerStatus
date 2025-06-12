@@ -123,7 +123,6 @@ func loadServers() {
 			// 如果之前的Host对象有IP信息，需要保留
 			if innerS.Host != nil && innerS.Host.IP != "" {
 				host.IP = innerS.Host.IP
-				log.Printf("服务器 %s (ID:%d) 恢复Host.IP字段: %s", innerS.Name, innerS.ID, host.IP)
 			}
 
 			innerS.Host = host
