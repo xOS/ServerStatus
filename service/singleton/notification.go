@@ -10,7 +10,10 @@ import (
 	"github.com/xos/serverstatus/model"
 )
 
-const firstNotificationDelay = time.Minute * 15
+const (
+	firstNotificationDelay  = time.Minute * 15 // 首次通知延迟（保持原有逻辑）
+	repeatNotificationDelay = time.Hour * 3    // 重复通知间隔：3小时
+)
 
 // 通知方式
 var (
@@ -145,20 +148,18 @@ func SendNotification(notificationTag string, desc string, muteLabel *string, ex
 	if muteLabel != nil {
 		// 将通知方式组名称加入静音标志
 		muteLabel := *NotificationMuteLabel.AppendNotificationTag(muteLabel, notificationTag)
-		// 通知防骚扰策略
+		// 通知防骚扰策略：固定3小时间隔
 		var flag bool
 		if cacheN, has := Cache.Get(muteLabel); has {
 			nHistory := cacheN.(NotificationHistory)
-			// 每次提醒都增加一倍等待时间，最后每天最多提醒一次
+			// 检查是否已过3小时间隔
 			if time.Now().After(nHistory.Until) {
 				flag = true
-				nHistory.Duration *= 2
-				if nHistory.Duration > time.Hour*24 {
-					nHistory.Duration = time.Hour * 24
-				}
-				nHistory.Until = time.Now().Add(nHistory.Duration)
+				// 固定使用3小时间隔，不再翻倍增长
+				nHistory.Duration = repeatNotificationDelay
+				nHistory.Until = time.Now().Add(repeatNotificationDelay)
 				// 缓存有效期加 10 分钟
-				Cache.Set(muteLabel, nHistory, nHistory.Duration+time.Minute*10)
+				Cache.Set(muteLabel, nHistory, repeatNotificationDelay+time.Minute*10)
 			}
 		} else {
 			// 新提醒直接通知
@@ -171,7 +172,7 @@ func SendNotification(notificationTag string, desc string, muteLabel *string, ex
 
 		if !flag {
 			if Conf.Debug {
-				log.Println("NG>> 静音的重复通知：", desc, muteLabel)
+				log.Println("NG>> 静音的重复通知（3小时内）：", desc, muteLabel)
 			}
 			return
 		}
