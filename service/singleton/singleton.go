@@ -328,6 +328,20 @@ func LoadSingleton() {
 		log.Printf("添加监控历史记录一致性检查任务失败: %v", err)
 	}
 
+	// 添加定期goroutine清理任务，每30分钟执行一次
+	if _, err := Cron.AddFunc("0 */30 * * * *", func() {
+		totalGoroutines := runtime.NumGoroutine()
+		if totalGoroutines > 300 {
+			log.Printf("定期清理：当前goroutine数量 %d，开始清理", totalGoroutines)
+			cleanupStaleGoroutineConnections()
+			// 强制垃圾回收
+			runtime.GC()
+			log.Printf("定期清理完成：当前goroutine数量 %d", runtime.NumGoroutine())
+		}
+	}); err != nil {
+		log.Printf("添加定期goroutine清理任务失败: %v", err)
+	}
+
 	// 添加定时清理任务，每4小时执行一次
 	Cron.AddFunc("0 0 */4 * * *", func() {
 		CleanMonitorHistory()
@@ -1708,8 +1722,7 @@ func (mm *MemoryMonitor) Start() {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("MemoryMonitor panic恢复: %v", r)
-				time.Sleep(5 * time.Second)
-				mm.Start() // 重启监控
+				// 不要自动重启，避免goroutine泄漏
 			}
 		}()
 

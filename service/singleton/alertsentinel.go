@@ -74,8 +74,7 @@ func AlertSentinelStart() {
 			if Conf.Debug {
 				log.Printf("调用栈: %s", debug.Stack())
 			}
-			// 重新启动
-			go AlertSentinelStart()
+			// 不要自动重启，避免goroutine泄漏
 		}
 	}()
 
