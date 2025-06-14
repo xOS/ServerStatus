@@ -284,6 +284,9 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	ctx, cancel := context.WithTimeout(stream.Context(), 1*time.Minute) // 从2分钟缩短到1分钟
 	defer cancel()
 
+	// 使用sync.Once确保done channel只被关闭一次
+	var doneOnce sync.Once
+
 	// 监听连接状态，当连接断开时自动清理
 	go func() {
 		defer func() {
@@ -291,8 +294,10 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 			if r := recover(); r != nil {
 				log.Printf("RequestTask监控goroutine panic恢复: %v", r)
 			}
-			// 确保done channel被关闭，通知主goroutine
-			close(done)
+			// 安全地关闭done channel，只关闭一次
+			doneOnce.Do(func() {
+				close(done)
+			})
 		}()
 
 		// 使用定时器避免无限等待，增加检查间隔减少CPU占用
@@ -341,7 +346,10 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	}()
 
 	defer func() {
-		close(done) // 确保监控goroutine被通知停止
+		// 安全地关闭done channel，只关闭一次
+		doneOnce.Do(func() {
+			close(done)
+		})
 		// 额外的清理工作确保资源释放
 		singleton.ServerLock.RLock()
 		if singleton.ServerList[clientID] != nil {
