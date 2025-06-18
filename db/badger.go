@@ -86,19 +86,29 @@ func (b *BadgerDB) Close() error {
 
 // startMaintenance starts background maintenance tasks
 func (b *BadgerDB) startMaintenance() {
-	// Start value log garbage collection
+	// 根本修复：确保只启动一个维护goroutine，并且能正确退出
 	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("BadgerDB maintenance panic恢复: %v", r)
+				// 不再自动重启，避免goroutine泄漏
+			}
+		}()
+
+		// 增加GC间隔，减少资源占用
+		ticker := time.NewTicker(15 * time.Minute) // 从5分钟增加到15分钟
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ticker.C:
-				err := b.db.RunValueLogGC(0.5)
+				// 只在必要时执行GC
+				err := b.db.RunValueLogGC(0.7) // 提高阈值，减少GC频率
 				if err != nil && err != badger.ErrNoRewrite {
 					log.Printf("Value log GC failed: %v", err)
 				}
 			case <-b.ctx.Done():
+				log.Printf("BadgerDB maintenance goroutine正常退出")
 				return
 			}
 		}

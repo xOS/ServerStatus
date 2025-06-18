@@ -440,8 +440,7 @@ func (ss *ServiceSentinel) worker() {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("ServiceSentinel worker panic恢复: %v", r)
-			// 重启worker
-			go ss.worker()
+			// 不再自动重启，避免goroutine泄漏
 		}
 	}()
 
@@ -1037,6 +1036,46 @@ func (ss *ServiceSentinel) limitDataSize() {
 	ss.monthlyStatusLock.Unlock()
 
 	log.Printf("数据大小限制完成: 状态记录=%d, 监控项=%d", totalStatusRecords, len(ss.serviceCurrentStatusData))
+}
+
+// emergencyCleanup 紧急清理ServiceSentinel数据
+func (ss *ServiceSentinel) emergencyCleanup() {
+	ss.serviceResponseDataStoreLock.Lock()
+	defer ss.serviceResponseDataStoreLock.Unlock()
+
+	log.Printf("ServiceSentinel开始紧急清理...")
+
+	// 清空ping数据
+	ss.serviceResponsePing = make(map[uint64]map[uint64]*pingStore)
+
+	// 清空状态数据，只保留最新的
+	for id := range ss.serviceCurrentStatusData {
+		// 保留当前状态，清理历史
+		if len(ss.serviceCurrentStatusData[id]) > 1 {
+			latest := ss.serviceCurrentStatusData[id][len(ss.serviceCurrentStatusData[id])-1]
+			ss.serviceCurrentStatusData[id] = []*pb.TaskResult{latest}
+		}
+	}
+
+	// 清空月度统计
+	ss.monthlyStatusLock.Lock()
+	ss.monthlyStatus = make(map[uint64]*model.ServiceItemResponse)
+	ss.monthlyStatusLock.Unlock()
+
+	// 清空SSL缓存
+	ss.sslCertCache = make(map[uint64]string)
+
+	// 重置计数器
+	ss.serviceResponseDataStoreCurrentUp = make(map[uint64]uint64)
+	ss.serviceResponseDataStoreCurrentDown = make(map[uint64]uint64)
+	ss.serviceResponseDataStoreCurrentAvgDelay = make(map[uint64]float32)
+
+	// 重置今日统计
+	for id := range ss.serviceStatusToday {
+		ss.serviceStatusToday[id] = &_TodayStatsOfMonitor{}
+	}
+
+	log.Printf("ServiceSentinel紧急清理完成")
 }
 
 // getMemoryUsageEstimate 估算当前内存使用量（仅用于调试）

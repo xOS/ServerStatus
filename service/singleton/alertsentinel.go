@@ -61,6 +61,13 @@ func addCycleTransferStatsInfo(alert *model.AlertRule) {
 	}
 }
 
+// 添加大小限制常量，防止内存无限增长
+const (
+	maxAlertsStoreSize    = 1000 // 最多存储1000个alert
+	maxServerDataPerAlert = 100  // 每个alert最多存储100个server的数据
+	maxHistoryPerServer   = 10   // 每个server最多存储10条历史记录
+)
+
 // AlertSentinelStart 报警器启动
 func AlertSentinelStart() {
 	alertsStore = make(map[uint64]map[uint64][][]interface{})
@@ -289,6 +296,11 @@ func checkStatus() {
 			}
 
 			alertsStore[alert.ID][server.ID] = append(alertsStore[alert.ID][server.ID], snapshot)
+
+			// 强制执行大小限制，防止内存无限增长
+			if len(alertsStore[alert.ID][server.ID]) > maxHistoryPerServer {
+				alertsStore[alert.ID][server.ID] = alertsStore[alert.ID][server.ID][len(alertsStore[alert.ID][server.ID])-maxHistoryPerServer:]
+			}
 
 			// 发送通知，分为触发报警和恢复通知
 			max, passed := alert.Check(alertsStore[alert.ID][server.ID])

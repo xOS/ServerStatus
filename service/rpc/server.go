@@ -256,8 +256,6 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 
 	// 使用带缓冲的通道避免阻塞
 	closeCh := make(chan error, 1)
-	// 使用done channel来安全地通知监控goroutine停止
-	done := make(chan struct{})
 
 	singleton.ServerLock.RLock()
 	if singleton.ServerList[clientID] == nil {
@@ -280,77 +278,15 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	singleton.ServerList[clientID].TaskCloseLock.Unlock()
 	singleton.ServerLock.RUnlock()
 
-	// 创建一个带超时的上下文，大幅减少超时时间避免goroutine泄漏
-	ctx, cancel := context.WithTimeout(stream.Context(), 1*time.Minute) // 从2分钟缩短到1分钟
+	// 创建一个带超时的上下文，确保所有goroutine都能正确退出
+	ctx, cancel := context.WithTimeout(stream.Context(), 2*time.Minute)
 	defer cancel()
 
-	// 使用sync.Once确保done channel只被关闭一次
-	var doneOnce sync.Once
-
-	// 监听连接状态，当连接断开时自动清理
-	go func() {
-		defer func() {
-			// 确保监控goroutine退出时进行最终清理
-			if r := recover(); r != nil {
-				log.Printf("RequestTask监控goroutine panic恢复: %v", r)
-			}
-			// 安全地关闭done channel，只关闭一次
-			doneOnce.Do(func() {
-				close(done)
-			})
-		}()
-
-		// 使用定时器避免无限等待，增加检查间隔减少CPU占用
-		ticker := time.NewTicker(30 * time.Second) // 增加到30秒，减少CPU占用
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				// 连接断开时清理资源
-				singleton.ServerLock.RLock()
-				if singleton.ServerList[clientID] != nil {
-					singleton.ServerList[clientID].TaskCloseLock.Lock()
-					if singleton.ServerList[clientID].TaskClose == closeCh {
-						// 只有当前连接才清理
-						singleton.ServerList[clientID].TaskStream = nil
-						singleton.ServerList[clientID].TaskClose = nil
-					}
-					singleton.ServerList[clientID].TaskCloseLock.Unlock()
-				}
-				singleton.ServerLock.RUnlock()
-
-				// 安全地发送关闭信号，使用非阻塞发送
-				select {
-				case closeCh <- ctx.Err():
-				default:
-					// 通道可能已关闭或已满，忽略
-				}
-				return
-			case <-ticker.C:
-				// 定期检查连接状态，防止僵尸连接
-				if ctx.Err() != nil {
-					// 上下文已经取消，退出监控
-					return
-				}
-				// 检查服务器是否还存在
-				singleton.ServerLock.RLock()
-				serverExists := singleton.ServerList[clientID] != nil
-				singleton.ServerLock.RUnlock()
-				if !serverExists {
-					// 服务器已被删除，退出监控
-					return
-				}
-			}
-		}
-	}()
+	// 根本修复：不再创建额外的监控goroutine
+	// 所有逻辑都在主goroutine中处理，避免goroutine泄漏
 
 	defer func() {
-		// 安全地关闭done channel，只关闭一次
-		doneOnce.Do(func() {
-			close(done)
-		})
-		// 额外的清理工作确保资源释放
+		// 清理资源
 		singleton.ServerLock.RLock()
 		if singleton.ServerList[clientID] != nil {
 			singleton.ServerList[clientID].TaskCloseLock.Lock()
@@ -363,53 +299,17 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 		singleton.ServerLock.RUnlock()
 	}()
 
-	// 等待连接关闭或超时，使用定时器避免无限等待
-	ticker := time.NewTicker(30 * time.Second)
-	defer func() {
-		ticker.Stop()
-		// 通知监控goroutine停止
-		select {
-		case <-done:
-			// 监控goroutine已经停止
-		default:
-			// 监控goroutine还在运行，等待其停止
-			select {
-			case <-done:
-			case <-time.After(5 * time.Second):
-				// 超时后强制退出
-			}
+	// 根本修复：简化为单一的等待逻辑，避免复杂的goroutine交互
+	select {
+	case err := <-closeCh:
+		// 检查是否为网络连接错误
+		if isConnectionError(err) {
+			return nil // 将网络连接错误视为正常断开
 		}
-	}()
-
-	for {
-		select {
-		case err := <-closeCh:
-			// 检查是否为网络连接错误
-			if isConnectionError(err) {
-				return nil // 将网络连接错误视为正常断开
-			}
-			return err
-		case <-ctx.Done():
-			// 连接取消，正常退出
-			return nil
-		case <-done:
-			// 监控goroutine已退出，主goroutine也应该退出
-			return nil
-		case <-ticker.C:
-			// 定期检查连接状态和服务器存在性
-			if ctx.Err() != nil {
-				// 上下文已经取消，正常退出
-				return nil
-			}
-			// 检查服务器是否还存在
-			singleton.ServerLock.RLock()
-			serverExists := singleton.ServerList[clientID] != nil
-			singleton.ServerLock.RUnlock()
-			if !serverExists {
-				// 服务器已被删除，正常退出
-				return nil
-			}
-		}
+		return err
+	case <-ctx.Done():
+		// 连接取消或超时，正常退出
+		return nil
 	}
 }
 
@@ -1118,4 +1018,11 @@ func checkAndResetCycleTraffic(clientID uint64) {
 		// 只处理第一个匹配的规则
 		break
 	}
+}
+
+// GetConnectionStats 获取连接统计信息
+func GetConnectionStats() (int, int, error) {
+	activeConns := int(activeRequestTaskGoroutines)
+	maxConns := int(maxRequestTaskGoroutines)
+	return activeConns, maxConns, nil
 }

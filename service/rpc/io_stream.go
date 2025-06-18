@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -85,9 +84,9 @@ func (s *ServerHandler) CloseStream(streamId string) error {
 func (s *ServerHandler) CleanupStaleStreams() {
 	s.ioStreamMutex.Lock()
 	defer s.ioStreamMutex.Unlock()
-	
+
 	staleStreams := make([]string, 0)
-	
+
 	for streamId, ctx := range s.ioStreams {
 		// 检查流是否已经超时未使用
 		if ctx.userIo == nil && ctx.agentIo == nil {
@@ -102,7 +101,7 @@ func (s *ServerHandler) CleanupStaleStreams() {
 			staleStreams = append(staleStreams, streamId)
 		}
 	}
-	
+
 	// 清理过期流
 	for _, streamId := range staleStreams {
 		if ctx, ok := s.ioStreams[streamId]; ok {
@@ -115,7 +114,7 @@ func (s *ServerHandler) CleanupStaleStreams() {
 			delete(s.ioStreams, streamId)
 		}
 	}
-	
+
 	if len(staleStreams) > 0 {
 		log.Printf("清理了 %d 个过期的IO流连接", len(staleStreams))
 	}
@@ -183,97 +182,82 @@ TIMEOUT:
 	}
 
 CONNECTED:
-	isDone := new(atomic.Bool)
-	endCh := make(chan struct{})
-
-	// 添加流复制超时控制，防止长时间阻塞
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour*24) // 24小时超时
+	// 根本修复：使用短超时context，确保goroutine能正确退出
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute) // 缩短到10分钟
 	defer cancel()
 
+	// 根本修复：使用sync.WaitGroup确保所有goroutine正确退出
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2) // 缓冲channel，防止阻塞
+
+	// 根本修复：简化为2个goroutine，移除嵌套goroutine
+	wg.Add(2)
+
+	// Agent -> User 复制
 	go func() {
+		defer wg.Done()
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("IO stream copy panic恢复: %v", r)
-			}
-			if isDone.CompareAndSwap(false, true) {
-				close(endCh)
+				errCh <- fmt.Errorf("copy panic: %v", r)
 			}
 		}()
 
 		bp := bufPool.Get().(*bp)
 		defer bufPool.Put(bp)
 
-		// 使用带超时的复制和内存限制
-		done := make(chan error, 1)
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("IO copy goroutine panic恢复: %v", r)
-					done <- fmt.Errorf("copy panic: %v", r)
-				}
-			}()
-			
-			// 限制复制的数据量，防止内存泄漏
-			limitedReader := &io.LimitedReader{R: stream.agentIo, N: 100 * 1024 * 1024} // 100MB限制
-			_, innerErr := io.CopyBuffer(stream.userIo, limitedReader, bp.buf)
-			done <- innerErr
-		}()
-
-		select {
-		case innerErr := <-done:
-			if innerErr != nil {
-				err = innerErr
+		// 直接复制，不再创建子goroutine
+		_, copyErr := io.CopyBuffer(stream.userIo, stream.agentIo, bp.buf)
+		if copyErr != nil {
+			select {
+			case errCh <- copyErr:
+			default:
 			}
-		case <-ctx.Done():
-			err = ctx.Err()
-		case <-time.After(60 * time.Second): // 增加到60秒超时，减少误报
-			err = fmt.Errorf("IO stream copy timeout")
 		}
 	}()
 
+	// User -> Agent 复制
 	go func() {
+		defer wg.Done()
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("IO stream copy panic恢复: %v", r)
-			}
-			if isDone.CompareAndSwap(false, true) {
-				close(endCh)
+				errCh <- fmt.Errorf("copy panic: %v", r)
 			}
 		}()
 
 		bp := bufPool.Get().(*bp)
 		defer bufPool.Put(bp)
 
-		// 使用带超时的复制和内存限制
-		done := make(chan error, 1)
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("IO copy goroutine panic恢复: %v", r)
-					done <- fmt.Errorf("copy panic: %v", r)
-				}
-			}()
-			
-			// 限制复制的数据量，防止内存泄漏
-			limitedReader := &io.LimitedReader{R: stream.userIo, N: 100 * 1024 * 1024} // 100MB限制
-			_, innerErr := io.CopyBuffer(stream.agentIo, limitedReader, bp.buf)
-			done <- innerErr
-		}()
-
-		select {
-		case innerErr := <-done:
-			if innerErr != nil {
-				err = innerErr
+		// 直接复制，不再创建子goroutine
+		_, copyErr := io.CopyBuffer(stream.agentIo, stream.userIo, bp.buf)
+		if copyErr != nil {
+			select {
+			case errCh <- copyErr:
+			default:
 			}
-		case <-ctx.Done():
-			err = ctx.Err()
-		case <-time.After(60 * time.Second): // 增加到60秒超时，减少误报
-			err = fmt.Errorf("IO stream copy timeout")
 		}
 	}()
 
-	<-endCh
-	return err
+	// 等待所有goroutine完成或超时
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// 所有goroutine正常完成
+		return nil
+	case err := <-errCh:
+		// 有错误发生，取消context让其他goroutine退出
+		cancel()
+		return err
+	case <-ctx.Done():
+		// 超时，context会自动取消所有goroutine
+		return ctx.Err()
+	}
 }
 
 // 启动定期IO流清理任务
@@ -281,7 +265,7 @@ func (s *ServerHandler) StartIOStreamCleanup() {
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute) // 每5分钟清理一次
 		defer ticker.Stop()
-		
+
 		for range ticker.C {
 			s.CleanupStaleStreams()
 			cleanupBufferPool() // 清理缓冲池
