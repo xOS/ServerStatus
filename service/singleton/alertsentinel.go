@@ -876,8 +876,14 @@ func checkTrafficThresholds(alert *model.AlertRule, server *model.Server, rule *
 			// 发送通知
 			SafeSendNotification(alert.NotificationTag, message, &muteLabel, server)
 
-			// 设置静音缓存，避免短时间内重复发送（3小时）
-			Cache.Set(muteLabel, true, time.Hour*3)
+			// 根据阈值设置不同的静音策略
+			if threshold.percent >= 90.0 {
+				// 90%及以上：使用3小时重复发送机制
+				Cache.Set(muteLabel, true, time.Hour*3)
+			} else {
+				// 90%以下：永久静音，只发送一次
+				Cache.Set(muteLabel, true, time.Hour*24*365) // 设置1年，相当于永久静音
+			}
 
 			// 只发送最高达到的阈值通知
 			return
