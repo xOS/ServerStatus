@@ -367,15 +367,24 @@ func (cp *commonPage) network(c *gin.Context) {
 				log.Printf("network: 从BadgerDB查询监控历史记录失败: %v", err)
 				monitorHistories = []model.MonitorHistory{}
 			} else {
-				// 过滤出指定服务器的记录并转换为值数组
+				// 修复：过滤出指定服务器的ICMP/TCP监控记录
 				var filteredHistories []model.MonitorHistory
 				for _, h := range allHistories {
 					if h != nil && h.ServerID == id {
-						filteredHistories = append(filteredHistories, *h)
+						// 检查是否为ICMP或TCP监控
+						if monitors := singleton.ServiceSentinelShared.Monitors(); monitors != nil {
+							for _, monitor := range monitors {
+								if monitor.ID == h.MonitorID &&
+									(monitor.Type == model.TaskTypeICMPPing || monitor.Type == model.TaskTypeTCPPing) {
+									filteredHistories = append(filteredHistories, *h)
+									break
+								}
+							}
+						}
 					}
 				}
 				monitorHistories = filteredHistories
-				// 移除频繁的监控历史记录查询日志
+				log.Printf("network: 为服务器 %d 找到 %d 条ICMP/TCP监控历史记录", id, len(filteredHistories))
 			}
 		} else {
 			log.Printf("network: BadgerDB未初始化或无效服务器ID，使用空数组")

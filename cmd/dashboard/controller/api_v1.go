@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"log"
 	"strconv"
 	"strings"
 
@@ -149,16 +150,50 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 
 	// 根据数据库类型选择不同的查询方式
 	if singleton.Conf.DatabaseType == "badger" {
-		// BadgerDB 模式下使用 MonitorAPI
+		// BadgerDB 模式下使用 MonitorAPI，只查询ICMP/TCP监控数据
 		if singleton.MonitorAPI != nil {
-			c.JSON(200, singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": server.ID}))
+			// 获取所有监控历史记录
+			allHistories := singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": server.ID})
+
+			// 过滤出ICMP和TCP监控记录
+			var networkHistories []*model.MonitorHistory
+			for _, history := range allHistories {
+				// 检查监控类型是否为ICMP或TCP
+				if history.MonitorID > 0 {
+					// 从监控配置中获取监控类型
+					if monitors := singleton.ServiceSentinelShared.Monitors(); monitors != nil {
+						for _, monitor := range monitors {
+							if monitor.ID == history.MonitorID &&
+								(monitor.Type == model.TaskTypeICMPPing || monitor.Type == model.TaskTypeTCPPing) {
+								networkHistories = append(networkHistories, history)
+								break
+							}
+						}
+					}
+				}
+			}
+			c.JSON(200, networkHistories)
 		} else {
 			c.JSON(200, []interface{}{})
 		}
 	} else {
-		// SQLite 模式下使用 MonitorAPI
-		if singleton.MonitorAPI != nil {
-			c.JSON(200, singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": server.ID}))
+		// SQLite 模式下直接查询ICMP/TCP监控数据
+		if singleton.DB != nil {
+			var networkHistories []*model.MonitorHistory
+
+			// 查询ICMP和TCP监控历史记录
+			err := singleton.DB.Where("server_id = ? AND monitor_id IN (SELECT id FROM monitors WHERE type IN (?, ?))",
+				server.ID, model.TaskTypeICMPPing, model.TaskTypeTCPPing).
+				Order("created_at DESC").
+				Limit(1000). // 限制返回数量，避免数据过多
+				Find(&networkHistories).Error
+
+			if err != nil {
+				log.Printf("查询网络监控历史记录失败: %v", err)
+				c.JSON(200, []interface{}{})
+			} else {
+				c.JSON(200, networkHistories)
+			}
 		} else {
 			c.JSON(200, []interface{}{})
 		}

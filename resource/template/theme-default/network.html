@@ -230,7 +230,7 @@
                     return [];
                 }
 
-                // 按MonitorID分组数据
+                // 修复：按MonitorID分组数据，确保同一时间点的不同监控点数据都能显示
                 const groupedData = {};
                 const monitorNames = {};
                 const serverNames = {};
@@ -239,12 +239,16 @@
                     const monitorId = history.MonitorID || history.monitor_id || 0;
                     const serverId = history.ServerID || history.server_id || 0;
 
-                    if (!groupedData[monitorId]) {
-                        groupedData[monitorId] = {
+                    // 修复：为每个监控点创建唯一的key，避免数据覆盖
+                    const uniqueKey = `${monitorId}_${serverId}`;
+
+                    if (!groupedData[uniqueKey]) {
+                        groupedData[uniqueKey] = {
                             created_at: [],
                             avg_delay: [],
                             monitor_id: monitorId,
-                            server_id: serverId
+                            server_id: serverId,
+                            unique_key: uniqueKey
                         };
                     }
 
@@ -261,8 +265,8 @@
                     // 添加延迟数据
                     const avgDelay = history.AvgDelay || history.avg_delay || 0;
 
-                    groupedData[monitorId].created_at.push(timestamp);
-                    groupedData[monitorId].avg_delay.push(avgDelay);
+                    groupedData[uniqueKey].created_at.push(timestamp);
+                    groupedData[uniqueKey].avg_delay.push(avgDelay);
 
                     // 记录监控器和服务器名称
                     if (!monitorNames[monitorId]) {
@@ -276,22 +280,36 @@
                     }
                 });
 
-                // 转换为图表需要的格式
+                // 修复：转换为图表需要的格式，确保每个监控点都能正确显示
                 const result = [];
-                Object.keys(groupedData).forEach(monitorId => {
-                    const data = groupedData[monitorId];
+                Object.keys(groupedData).forEach(uniqueKey => {
+                    const data = groupedData[uniqueKey];
+                    const monitorId = data.monitor_id;
                     const serverId = data.server_id;
 
+                    // 将时间戳和延迟数据配对并排序
+                    const paired = data.created_at.map((time, index) => ({
+                        time: time,
+                        delay: data.avg_delay[index]
+                    })).sort((a, b) => a.time - b.time);
+
+                    // 生成清晰的显示名称
+                    const monitorName = monitorNames[monitorId] || `Monitor ${monitorId}`;
+                    const serverName = serverNames[serverId] || `Server ${serverId}`;
+
                     result.push({
-                        monitor_id: parseInt(monitorId),
+                        monitor_id: monitorId,
                         server_id: serverId,
-                        monitor_name: monitorNames[monitorId],
-                        server_name: serverNames[serverId],
-                        created_at: data.created_at,
-                        avg_delay: data.avg_delay
+                        unique_key: uniqueKey,
+                        monitor_name: monitorName,
+                        server_name: serverName,
+                        display_name: `${serverName} - ${monitorName}`,
+                        created_at: paired.map(p => p.time),
+                        avg_delay: paired.map(p => p.delay)
                     });
                 });
 
+                console.log('处理后的监控数据:', result);
                 return result;
             },
             getFontLogoClass(str) {
@@ -463,7 +481,8 @@
                     if (lossRate > 99) {
                         datal = [];
                     }
-                    legendName = processedData[i].monitor_name +" "+ lossRate + "%";
+                    // 修复：使用更清晰的图例名称，区分不同监控点
+                    legendName = (processedData[i].display_name || processedData[i].monitor_name) + " " + lossRate + "%";
                     tLegendData.push(legendName);
                     tSeries.push({
                             name: legendName,
