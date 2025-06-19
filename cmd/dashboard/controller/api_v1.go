@@ -154,9 +154,9 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 	if singleton.Conf.DatabaseType == "badger" {
 		// BadgerDB 模式下使用 MonitorAPI，只查询最近7天的ICMP/TCP监控数据
 		if singleton.MonitorAPI != nil {
-			// 性能优化：只获取最近7天的数据，减少查询量
+			// 极致性能优化：只获取最近3天的数据，进一步减少查询量
 			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -7) // 从30天减少到7天
+			startTime := endTime.AddDate(0, 0, -3) // 从7天减少到3天
 
 			if db.DB != nil {
 				monitorOps := db.NewMonitorHistoryOps(db.DB)

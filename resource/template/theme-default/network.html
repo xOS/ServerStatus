@@ -64,27 +64,25 @@
     const initData = JSON.parse('{{.Servers}}').servers;
     let MaxTCPPingValue = {{.MaxTCPPingValue}};
 
-    // 获取监控配置信息
+    // 性能优化：移除同步AJAX，改为异步加载
     let monitorConfigs = {};
-    try {
-        // 尝试从API获取监控配置
-        $.ajax({
+
+    // 异步加载监控配置，不阻塞页面渲染
+    function loadMonitorConfigs() {
+        return $.ajax({
             url: '/api/v1/monitor/configs',
             method: 'GET',
-            async: false,
-            success: function(data) {
-                if (data && Array.isArray(data)) {
-                    data.forEach(monitor => {
-                        monitorConfigs[monitor.ID] = monitor;
-                    });
-                }
-            },
-            error: function() {
-                // 无法获取监控配置，使用默认名称
+            timeout: 5000,
+            cache: true
+        }).done(function(data) {
+            if (data && Array.isArray(data)) {
+                data.forEach(monitor => {
+                    monitorConfigs[monitor.ID] = monitor;
+                });
             }
+        }).fail(function() {
+            // 无法获取监控配置，使用默认名称
         });
-    } catch (e) {
-        // 获取监控配置失败，使用默认名称
     }
     new Vue({
         el: '#app',
@@ -224,61 +222,48 @@
             window.removeEventListener('resize', this.resizeHandle, { passive: true });
         },
         methods: {
-            // 性能优化：处理监控历史数据，减少计算复杂度
+            // 极致性能优化：简化数据处理逻辑
             processMonitorHistories(histories) {
                 if (!histories || histories.length === 0) {
                     return [];
                 }
 
-                // 性能优化：预先构建名称映射，避免重复查找
-                const monitorNames = {};
+                // 性能优化：使用普通对象而非Map，减少开销
+                const groupedData = {};
                 const serverNames = {};
 
                 // 预构建服务器名称映射
                 if (this.servers) {
-                    this.servers.forEach(server => {
+                    for (let i = 0; i < this.servers.length; i++) {
+                        const server = this.servers[i];
                         serverNames[server.ID] = server.Name;
-                    });
+                    }
                 }
 
-                // 性能优化：按MonitorID分组数据，使用Map提高性能
-                const groupedData = new Map();
-
-                // 批量处理数据，减少循环次数
+                // 极致优化：单次遍历完成所有处理
                 for (let i = 0; i < histories.length; i++) {
                     const history = histories[i];
                     const monitorId = history.MonitorID || history.monitor_id || 0;
                     const serverId = history.ServerID || history.server_id || 0;
-
-                    // 为每个监控点创建唯一的key
                     const uniqueKey = `${monitorId}_${serverId}`;
 
-                    if (!groupedData.has(uniqueKey)) {
-                        groupedData.set(uniqueKey, {
+                    if (!groupedData[uniqueKey]) {
+                        groupedData[uniqueKey] = {
                             created_at: [],
                             avg_delay: [],
                             monitor_id: monitorId,
                             server_id: serverId,
                             unique_key: uniqueKey
-                        });
-
-                        // 只在第一次遇到时获取名称
-                        if (!monitorNames[monitorId]) {
-                            monitorNames[monitorId] = this.getMonitorName(monitorId);
-                        }
-                        if (!serverNames[serverId]) {
-                            serverNames[serverId] = `Server ${serverId}`;
-                        }
+                        };
                     }
 
-                    const data = groupedData.get(uniqueKey);
+                    const data = groupedData[uniqueKey];
 
-                    // 性能优化：直接使用时间戳，减少日期转换
+                    // 性能优化：减少日期转换，直接使用字符串解析
                     let timestamp;
-                    if (history.CreatedAt) {
-                        timestamp = new Date(history.CreatedAt).getTime();
-                    } else if (history.created_at) {
-                        timestamp = new Date(history.created_at).getTime();
+                    const timeStr = history.CreatedAt || history.created_at;
+                    if (timeStr) {
+                        timestamp = Date.parse(timeStr);
                     } else {
                         timestamp = Date.now();
                     }
@@ -292,7 +277,8 @@
                 // 性能优化：转换为图表需要的格式，减少数组操作
                 const result = [];
 
-                groupedData.forEach((data, uniqueKey) => {
+                for (const uniqueKey in groupedData) {
+                    const data = groupedData[uniqueKey];
                     const monitorId = data.monitor_id;
                     const serverId = data.server_id;
 
@@ -329,7 +315,8 @@
                             avg_delay: data.avg_delay
                         });
                     }
-                });
+                }
+
 
                 return result;
             },
@@ -391,13 +378,22 @@
                 return '';
             },
             redirectNetwork(id) {
+                    // 性能优化：显示加载状态，避免用户等待
+                    this.option.title.text = "Loading...";
+                    if (this.myChart) {
+                        this.myChart.setOption(this.option, true);
+                    }
+
                     this.getMonitorHistory(id)
-                    .then(function(monitorInfo) {
-                          var vm = app.__vue__;
-                          vm.parseMonitorInfo(monitorInfo);
+                    .then((monitorInfo) => {
+                          this.parseMonitorInfo(monitorInfo);
                     })
-                    .catch(function(error){
-                        window.location.href = "/404";
+                    .catch((error) => {
+                        console.error('加载监控数据失败:', error);
+                        this.option.title.text = "Failed to load data";
+                        if (this.myChart) {
+                            this.myChart.setOption(this.option, true);
+                        }
                     })
                 },
             getMonitorHistory(id) {
@@ -516,7 +512,26 @@
                     if (lossRate > 99) {
                         datal = [];
                     }
-                    legendName = processedData[i].monitor_name + " " + lossRate + "%";
+                    // 修复：为每个监控点生成唯一的图例名称，区分不同监控点
+                    const monitorName = processedData[i].monitor_name || `Monitor ${processedData[i].monitor_id}`;
+                    const serverName = processedData[i].server_name || `Server ${processedData[i].server_id}`;
+
+                    // 如果同一个服务器有多个监控点，显示"服务器名 - 监控点名"
+                    // 如果只有一个监控点，只显示监控点名
+                    let displayName;
+                    if (processedData.length > 1) {
+                        // 检查是否有多个不同的监控点
+                        const uniqueMonitors = new Set(processedData.map(d => d.monitor_id));
+                        if (uniqueMonitors.size > 1) {
+                            displayName = `${serverName} - ${monitorName}`;
+                        } else {
+                            displayName = monitorName;
+                        }
+                    } else {
+                        displayName = monitorName;
+                    }
+
+                    legendName = displayName + " " + lossRate + "%";
                     tLegendData.push(legendName);
                     // 性能优化：简化图表配置，减少渲染复杂度
                     const seriesConfig = {
