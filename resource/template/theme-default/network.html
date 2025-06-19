@@ -230,7 +230,12 @@
         methods: {
             // 极致性能优化：简化数据处理逻辑
             processMonitorHistories(histories) {
+                console.log('=== 开始处理监控历史数据 ===');
+                console.log('原始数据数量:', histories ? histories.length : 0);
+                console.log('原始数据:', histories);
+
                 if (!histories || histories.length === 0) {
+                    console.log('没有监控历史数据');
                     return [];
                 }
 
@@ -253,7 +258,10 @@
                     const serverId = history.ServerID || history.server_id || 0;
                     const uniqueKey = `${monitorId}_${serverId}`;
 
+                    console.log(`处理记录 ${i}: MonitorID=${monitorId}, ServerID=${serverId}, UniqueKey=${uniqueKey}`);
+
                     if (!groupedData[uniqueKey]) {
+                        console.log(`创建新的监控点分组: ${uniqueKey}`);
                         groupedData[uniqueKey] = {
                             created_at: [],
                             avg_delay: [],
@@ -323,6 +331,17 @@
                     }
                 }
 
+
+                console.log('=== 数据处理完成 ===');
+                console.log('最终监控点数量:', result.length);
+                console.log('监控点详情:', result.map(r => ({
+                    monitor_id: r.monitor_id,
+                    server_id: r.server_id,
+                    monitor_name: r.monitor_name,
+                    unique_key: r.unique_key,
+                    data_count: r.created_at.length
+                })));
+                console.log('===================');
 
                 return result;
             },
@@ -427,6 +446,11 @@
                 return `Monitor ${monitorId}`;
             },
             parseMonitorInfo(monitorInfo) {
+                console.log('=== parseMonitorInfo 开始 ===');
+                console.log('接收到的monitorInfo:', monitorInfo);
+                console.log('monitorInfo类型:', typeof monitorInfo);
+                console.log('是否为数组:', Array.isArray(monitorInfo));
+
                 let tSeries = [];
                 let tLegendData = [];
                 var lcolors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc'];
@@ -435,14 +459,19 @@
                 let dataArray = [];
                 if (Array.isArray(monitorInfo)) {
                     // 直接是数组格式
+                    console.log('使用直接数组格式');
                     dataArray = monitorInfo;
                 } else if (monitorInfo && monitorInfo.result && Array.isArray(monitorInfo.result)) {
                     // 包装在result字段中
+                    console.log('使用result字段格式');
                     dataArray = monitorInfo.result;
                 } else if (monitorInfo && Array.isArray(monitorInfo)) {
                     // 确保是数组
+                    console.log('确保是数组格式');
                     dataArray = monitorInfo;
                 }
+
+                console.log('最终dataArray长度:', dataArray.length);
 
                 if (!dataArray || dataArray.length === 0) {
                     this.option.title.text = "No Data Available";

@@ -154,9 +154,9 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 	if singleton.Conf.DatabaseType == "badger" {
 		// BadgerDB 模式下使用 MonitorAPI，只查询最近7天的ICMP/TCP监控数据
 		if singleton.MonitorAPI != nil {
-			// 极致性能优化：只获取最近3天的数据，进一步减少查询量
+			// 极致性能优化：只获取最近1天的数据，大幅提高性能
 			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -3) // 从7天减少到3天
+			startTime := endTime.AddDate(0, 0, -1) // 从3天减少到1天
 
 			if db.DB != nil {
 				monitorOps := db.NewMonitorHistoryOps(db.DB)
@@ -179,7 +179,9 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 				// 过滤出ICMP和TCP监控记录，限制数量
 				var networkHistories []*model.MonitorHistory
 				count := 0
-				maxRecords := 500 // 限制最大记录数
+				maxRecords := 100 // 大幅减少记录数，提高性能
+
+				log.Printf("开始过滤服务器 %d 的监控历史记录，总记录数: %d", server.ID, len(allHistories))
 
 				for _, history := range allHistories {
 					if count >= maxRecords {
@@ -188,12 +190,18 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 					if history != nil && history.ServerID == server.ID {
 						if monitorType, exists := monitorTypeMap[history.MonitorID]; exists &&
 							(monitorType == model.TaskTypeICMPPing || monitorType == model.TaskTypeTCPPing) {
+							log.Printf("找到ICMP/TCP监控记录: MonitorID=%d, ServerID=%d, Type=%d",
+								history.MonitorID, history.ServerID, monitorType)
 							networkHistories = append(networkHistories, history)
 							count++
+						} else {
+							log.Printf("跳过非ICMP/TCP监控记录: MonitorID=%d, ServerID=%d, Type=%d",
+								history.MonitorID, history.ServerID, monitorType)
 						}
 					}
 				}
 
+				log.Printf("服务器 %d 最终返回 %d 条ICMP/TCP监控记录", server.ID, len(networkHistories))
 				c.JSON(200, networkHistories)
 			} else {
 				c.JSON(200, []any{})

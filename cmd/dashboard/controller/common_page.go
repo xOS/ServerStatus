@@ -357,9 +357,9 @@ func (cp *commonPage) network(c *gin.Context) {
 
 		// BadgerDB模式，使用BadgerDB查询监控历史记录
 		if db.DB != nil && id > 0 {
-			// 极致性能优化：只获取最近3天的数据，进一步减少查询量
+			// 极致性能优化：只获取最近1天的数据，大幅提高性能
 			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -3) // 从7天减少到3天
+			startTime := endTime.AddDate(0, 0, -1) // 从3天减少到1天
 
 			monitorOps := db.NewMonitorHistoryOps(db.DB)
 			allHistories, err := monitorOps.GetAllMonitorHistoriesInRange(startTime, endTime)
@@ -379,7 +379,7 @@ func (cp *commonPage) network(c *gin.Context) {
 				// 过滤出指定服务器的ICMP/TCP监控记录，限制数量
 				var filteredHistories []model.MonitorHistory
 				count := 0
-				maxRecords := 200 // 进一步减少到200条记录
+				maxRecords := 50 // 大幅减少到50条记录，提高性能
 
 				for _, h := range allHistories {
 					if count >= maxRecords {
