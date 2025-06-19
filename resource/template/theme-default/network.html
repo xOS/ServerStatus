@@ -431,18 +431,11 @@
                   });
             },
             getMonitorName(monitorId) {
-                // 调试：输出监控配置信息
-                console.log('获取监控名称 - ID:', monitorId);
-                console.log('监控配置:', monitorConfigs);
-                console.log('配置已加载:', this.monitorConfigsLoaded);
-
-                // 从监控配置中获取名称
+                // 恢复使用后台配置的监控名称
                 if (monitorConfigs[monitorId] && monitorConfigs[monitorId].Name) {
-                    console.log('找到监控配置:', monitorConfigs[monitorId].Name);
                     return monitorConfigs[monitorId].Name;
                 }
                 // 如果没有配置，返回默认名称
-                console.log('使用默认名称: Monitor', monitorId);
                 return `Monitor ${monitorId}`;
             },
             parseMonitorInfo(monitorInfo) {

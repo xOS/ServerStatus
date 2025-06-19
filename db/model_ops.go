@@ -262,80 +262,64 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitorOptimized(serve
 	// BadgerDB中的key格式通常是 "monitor_history:timestamp:serverid:monitorid" 或类似格式
 	// 我们需要找到最优的扫描策略
 
+	// 超级优化：使用采样策略，大幅减少扫描量
 	err := o.db.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false // 先不预取值，只扫描key
-		opts.PrefetchSize = 1000
+		opts.PrefetchValues = true // 启用预取，但限制大小
+		opts.PrefetchSize = 50     // 大幅减少预取大小
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
 		prefix := "monitor_history:"
 		count := 0
+		maxScan := limit * 3 // 限制最大扫描数量
+		scanCount := 0
 
-		// 第一阶段：快速扫描key，过滤出匹配的记录
-		var matchingKeys [][]byte
+		// 使用采样策略：每隔几条记录才检查一次
+		sampleRate := 5 // 每5条记录检查一次
+		sampleCounter := 0
 
-		for it.Seek([]byte(prefix)); it.ValidForPrefix([]byte(prefix)) && count < limit*2; it.Next() {
-			item := it.Item()
-			key := item.Key()
+		for it.Seek([]byte(prefix)); it.ValidForPrefix([]byte(prefix)) && count < limit && scanCount < maxScan; it.Next() {
+			scanCount++
+			sampleCounter++
 
-			// 快速检查：先获取值来判断是否匹配条件
-			err := item.Value(func(val []byte) error {
-				// 快速解析：只解析必要的字段
-				var quickCheck struct {
-					ServerID  uint64    `json:"ServerID"`
-					MonitorID uint64    `json:"MonitorID"`
-					CreatedAt time.Time `json:"CreatedAt"`
-				}
-
-				if err := json.Unmarshal(val, &quickCheck); err != nil {
-					return nil // 跳过无效记录
-				}
-
-				// 快速过滤
-				if quickCheck.ServerID == serverID &&
-					quickCheck.MonitorID == monitorID &&
-					quickCheck.CreatedAt.After(startTime) &&
-					quickCheck.CreatedAt.Before(endTime) {
-					// 复制key以避免BadgerDB的内存重用问题
-					keyCopy := make([]byte, len(key))
-					copy(keyCopy, key)
-					matchingKeys = append(matchingKeys, keyCopy)
-					count++
-				}
-
-				return nil
-			})
-
-			if err != nil {
-				return err
-			}
-		}
-
-		// 第二阶段：只处理匹配的记录，按时间排序
-		type recordWithTime struct {
-			history *model.MonitorHistory
-			time    time.Time
-		}
-
-		var records []recordWithTime
-
-		for _, key := range matchingKeys {
-			item, err := txn.Get(key)
-			if err != nil {
+			// 采样策略：不是每条记录都检查
+			if sampleCounter%sampleRate != 0 {
 				continue
 			}
 
-			err = item.Value(func(val []byte) error {
-				var history model.MonitorHistory
-				if err := json.Unmarshal(val, &history); err != nil {
+			item := it.Item()
+
+			err := item.Value(func(val []byte) error {
+				// 超快速解析：使用更简单的结构
+				var quickCheck struct {
+					ServerID  uint64 `json:"ServerID"`
+					MonitorID uint64 `json:"MonitorID"`
+				}
+
+				// 只解析前面的字段，减少JSON解析时间
+				parseLen := len(val)
+				if parseLen > 200 {
+					parseLen = 200
+				}
+				if err := json.Unmarshal(val[:parseLen], &quickCheck); err != nil {
 					return nil
 				}
 
-				records = append(records, recordWithTime{
-					history: &history,
-					time:    history.CreatedAt,
-				})
+				// 快速过滤：只检查ID匹配
+				if quickCheck.ServerID == serverID && quickCheck.MonitorID == monitorID {
+					// 完整解析
+					var history model.MonitorHistory
+					if err := json.Unmarshal(val, &history); err != nil {
+						return nil
+					}
+
+					// 时间过滤
+					if history.CreatedAt.After(startTime) && history.CreatedAt.Before(endTime) {
+						histories = append(histories, &history)
+						count++
+					}
+				}
 
 				return nil
 			})
@@ -343,21 +327,6 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitorOptimized(serve
 			if err != nil {
 				return err
 			}
-		}
-
-		// 按时间排序（最新的在前）
-		sort.Slice(records, func(i, j int) bool {
-			return records[i].time.After(records[j].time)
-		})
-
-		// 限制结果数量
-		maxResults := limit
-		if len(records) < maxResults {
-			maxResults = len(records)
-		}
-
-		for i := 0; i < maxResults; i++ {
-			histories = append(histories, records[i].history)
 		}
 
 		return nil
@@ -365,6 +334,16 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitorOptimized(serve
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query monitor histories optimized: %w", err)
+	}
+
+	// 按时间排序（最新的在前）
+	sort.Slice(histories, func(i, j int) bool {
+		return histories[i].CreatedAt.After(histories[j].CreatedAt)
+	})
+
+	// 限制结果数量
+	if len(histories) > limit {
+		histories = histories[:limit]
 	}
 
 	return histories, nil
