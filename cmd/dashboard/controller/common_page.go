@@ -357,9 +357,9 @@ func (cp *commonPage) network(c *gin.Context) {
 
 		// BadgerDB模式，使用BadgerDB查询监控历史记录
 		if db.DB != nil && id > 0 {
-			// 获取时间范围（最近30天）
+			// 性能优化：只获取最近7天的数据，减少查询量
 			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -30)
+			startTime := endTime.AddDate(0, 0, -7) // 从30天减少到7天
 
 			monitorOps := db.NewMonitorHistoryOps(db.DB)
 			allHistories, err := monitorOps.GetAllMonitorHistoriesInRange(startTime, endTime)
@@ -367,24 +367,37 @@ func (cp *commonPage) network(c *gin.Context) {
 				log.Printf("network: 从BadgerDB查询监控历史记录失败: %v", err)
 				monitorHistories = []model.MonitorHistory{}
 			} else {
-				// 修复：过滤出指定服务器的ICMP/TCP监控记录
+				// 性能优化：预先获取监控配置，避免重复查询
+				monitors := singleton.ServiceSentinelShared.Monitors()
+				monitorTypeMap := make(map[uint64]uint8)
+				if monitors != nil {
+					for _, monitor := range monitors {
+						monitorTypeMap[monitor.ID] = monitor.Type
+					}
+				}
+
+				// 过滤出指定服务器的ICMP/TCP监控记录，限制数量
 				var filteredHistories []model.MonitorHistory
+				count := 0
+				maxRecords := 300 // 限制最大记录数
+
 				for _, h := range allHistories {
+					if count >= maxRecords {
+						break
+					}
 					if h != nil && h.ServerID == id {
-						// 检查是否为ICMP或TCP监控
-						if monitors := singleton.ServiceSentinelShared.Monitors(); monitors != nil {
-							for _, monitor := range monitors {
-								if monitor.ID == h.MonitorID &&
-									(monitor.Type == model.TaskTypeICMPPing || monitor.Type == model.TaskTypeTCPPing) {
-									filteredHistories = append(filteredHistories, *h)
-									break
-								}
-							}
+						// 性能优化：使用预构建的map查询监控类型
+						if monitorType, exists := monitorTypeMap[h.MonitorID]; exists &&
+							(monitorType == model.TaskTypeICMPPing || monitorType == model.TaskTypeTCPPing) {
+							filteredHistories = append(filteredHistories, *h)
+							count++
 						}
 					}
 				}
 				monitorHistories = filteredHistories
-				log.Printf("network: 为服务器 %d 找到 %d 条ICMP/TCP监控历史记录", id, len(filteredHistories))
+				if singleton.Conf.Debug {
+					log.Printf("network: 为服务器 %d 找到 %d 条ICMP/TCP监控历史记录", id, len(filteredHistories))
+				}
 			}
 		} else {
 			log.Printf("network: BadgerDB未初始化或无效服务器ID，使用空数组")
