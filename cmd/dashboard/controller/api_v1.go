@@ -154,9 +154,9 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 	if singleton.Conf.DatabaseType == "badger" {
 		// BadgerDB 模式下使用 MonitorAPI，只查询最近7天的ICMP/TCP监控数据
 		if singleton.MonitorAPI != nil {
-			// 恢复原始查询逻辑：查询所有监控历史记录
+			// 查询最近7天的监控历史记录
 			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -7) // 恢复原始的7天数据
+			startTime := endTime.AddDate(0, 0, -7) // 显示7天数据
 
 			if db.DB != nil {
 				// 恢复原始的查询方法
@@ -177,20 +177,14 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 					}
 				}
 
-				// 恢复原始的记录过滤
+				// 修复：正确的记录过滤，不限制总数，应该返回所有匹配的记录
 				var networkHistories []*model.MonitorHistory
-				count := 0
-				maxRecords := 1000 // 恢复原始的记录数限制
 
 				for _, history := range allHistories {
-					if count >= maxRecords {
-						break
-					}
 					if history != nil && history.ServerID == server.ID {
 						if monitorType, exists := monitorTypeMap[history.MonitorID]; exists &&
 							(monitorType == model.TaskTypeICMPPing || monitorType == model.TaskTypeTCPPing) {
 							networkHistories = append(networkHistories, history)
-							count++
 						}
 					}
 				}
@@ -208,8 +202,8 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 		if singleton.DB != nil {
 			var networkHistories []*model.MonitorHistory
 
-			// 恢复原始的30天数据查询
-			startTime := time.Now().AddDate(0, 0, -30)
+			// 查询最近7天的数据
+			startTime := time.Now().AddDate(0, 0, -7)
 
 			err := singleton.DB.Where("server_id = ? AND created_at > ? AND monitor_id IN (SELECT id FROM monitors WHERE type IN (?, ?))",
 				server.ID, startTime, model.TaskTypeICMPPing, model.TaskTypeTCPPing).
