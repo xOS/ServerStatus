@@ -154,50 +154,48 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 	if singleton.Conf.DatabaseType == "badger" {
 		// BadgerDB 模式下使用 MonitorAPI，只查询最近7天的ICMP/TCP监控数据
 		if singleton.MonitorAPI != nil {
-			// 恢复3天数据展示，通过优化查询效率解决性能问题
+			// 恢复原始查询逻辑：查询所有监控历史记录
 			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -3) // 恢复3天数据
+			startTime := endTime.AddDate(0, 0, -7) // 恢复原始的7天数据
 
 			if db.DB != nil {
-				// 性能优化：直接按服务器ID和时间范围查询，避免查询所有记录
+				// 恢复原始的查询方法
 				monitorOps := db.NewMonitorHistoryOps(db.DB)
+				allHistories, err := monitorOps.GetAllMonitorHistoriesInRange(startTime, endTime)
+				if err != nil {
+					log.Printf("查询网络监控历史记录失败: %v", err)
+					c.JSON(200, []any{})
+					return
+				}
 
-				// 预先获取监控配置
+				// 恢复原始的过滤逻辑
 				monitors := singleton.ServiceSentinelShared.Monitors()
 				monitorTypeMap := make(map[uint64]uint8)
-				icmpTcpMonitorIDs := []uint64{}
 				if monitors != nil {
 					for _, monitor := range monitors {
 						monitorTypeMap[monitor.ID] = monitor.Type
-						if monitor.Type == model.TaskTypeICMPPing || monitor.Type == model.TaskTypeTCPPing {
-							icmpTcpMonitorIDs = append(icmpTcpMonitorIDs, monitor.ID)
+					}
+				}
+
+				// 恢复原始的记录过滤
+				var networkHistories []*model.MonitorHistory
+				count := 0
+				maxRecords := 1000 // 恢复原始的记录数限制
+
+				for _, history := range allHistories {
+					if count >= maxRecords {
+						break
+					}
+					if history != nil && history.ServerID == server.ID {
+						if monitorType, exists := monitorTypeMap[history.MonitorID]; exists &&
+							(monitorType == model.TaskTypeICMPPing || monitorType == model.TaskTypeTCPPing) {
+							networkHistories = append(networkHistories, history)
+							count++
 						}
 					}
 				}
 
-				log.Printf("服务器 %d 的ICMP/TCP监控器ID列表: %v", server.ID, icmpTcpMonitorIDs)
-
-				// 根本性能优化：使用高效的数据库查询，恢复合理的数据量
-				var networkHistories []*model.MonitorHistory
-
-				for _, monitorID := range icmpTcpMonitorIDs {
-					// 使用优化的查询方法，每个监控器200条记录（3天数据）
-					histories, err := monitorOps.GetMonitorHistoriesByServerAndMonitorOptimized(server.ID, monitorID, startTime, endTime, 200)
-					if err != nil {
-						log.Printf("查询监控器 %d 的历史记录失败: %v", monitorID, err)
-						continue
-					}
-
-					log.Printf("监控器 %d 在服务器 %d 上找到 %d 条记录", monitorID, server.ID, len(histories))
-					networkHistories = append(networkHistories, histories...)
-				}
-
 				log.Printf("服务器 %d 最终返回 %d 条ICMP/TCP监控记录", server.ID, len(networkHistories))
-
-				// 确保返回空数组而不是null
-				if networkHistories == nil {
-					networkHistories = []*model.MonitorHistory{}
-				}
 				c.JSON(200, networkHistories)
 			} else {
 				c.JSON(200, []any{})
@@ -206,17 +204,16 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 			c.JSON(200, []any{})
 		}
 	} else {
-		// SQLite 模式下直接查询ICMP/TCP监控数据，限制时间范围和数量
+		// SQLite 模式下恢复原始查询逻辑
 		if singleton.DB != nil {
 			var networkHistories []*model.MonitorHistory
 
-			// 性能优化：只查询最近7天的数据
-			startTime := time.Now().AddDate(0, 0, -7)
+			// 恢复原始的30天数据查询
+			startTime := time.Now().AddDate(0, 0, -30)
 
 			err := singleton.DB.Where("server_id = ? AND created_at > ? AND monitor_id IN (SELECT id FROM monitors WHERE type IN (?, ?))",
 				server.ID, startTime, model.TaskTypeICMPPing, model.TaskTypeTCPPing).
 				Order("created_at DESC").
-				Limit(500). // 减少到500条记录
 				Find(&networkHistories).Error
 
 			if err != nil {
