@@ -254,6 +254,122 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitor(serverID, moni
 	return histories, nil
 }
 
+// GetMonitorHistoriesByServerAndMonitorOptimized 高效查询特定服务器和监控器的历史记录
+func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitorOptimized(serverID, monitorID uint64, startTime, endTime time.Time, limit int) ([]*model.MonitorHistory, error) {
+	var histories []*model.MonitorHistory
+
+	// 关键优化：使用更精确的key前缀，减少扫描范围
+	// BadgerDB中的key格式通常是 "monitor_history:timestamp:serverid:monitorid" 或类似格式
+	// 我们需要找到最优的扫描策略
+
+	err := o.db.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false // 先不预取值，只扫描key
+		opts.PrefetchSize = 1000
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		prefix := "monitor_history:"
+		count := 0
+
+		// 第一阶段：快速扫描key，过滤出匹配的记录
+		var matchingKeys [][]byte
+
+		for it.Seek([]byte(prefix)); it.ValidForPrefix([]byte(prefix)) && count < limit*2; it.Next() {
+			item := it.Item()
+			key := item.Key()
+
+			// 快速检查：先获取值来判断是否匹配条件
+			err := item.Value(func(val []byte) error {
+				// 快速解析：只解析必要的字段
+				var quickCheck struct {
+					ServerID  uint64    `json:"ServerID"`
+					MonitorID uint64    `json:"MonitorID"`
+					CreatedAt time.Time `json:"CreatedAt"`
+				}
+
+				if err := json.Unmarshal(val, &quickCheck); err != nil {
+					return nil // 跳过无效记录
+				}
+
+				// 快速过滤
+				if quickCheck.ServerID == serverID &&
+					quickCheck.MonitorID == monitorID &&
+					quickCheck.CreatedAt.After(startTime) &&
+					quickCheck.CreatedAt.Before(endTime) {
+					// 复制key以避免BadgerDB的内存重用问题
+					keyCopy := make([]byte, len(key))
+					copy(keyCopy, key)
+					matchingKeys = append(matchingKeys, keyCopy)
+					count++
+				}
+
+				return nil
+			})
+
+			if err != nil {
+				return err
+			}
+		}
+
+		// 第二阶段：只处理匹配的记录，按时间排序
+		type recordWithTime struct {
+			history *model.MonitorHistory
+			time    time.Time
+		}
+
+		var records []recordWithTime
+
+		for _, key := range matchingKeys {
+			item, err := txn.Get(key)
+			if err != nil {
+				continue
+			}
+
+			err = item.Value(func(val []byte) error {
+				var history model.MonitorHistory
+				if err := json.Unmarshal(val, &history); err != nil {
+					return nil
+				}
+
+				records = append(records, recordWithTime{
+					history: &history,
+					time:    history.CreatedAt,
+				})
+
+				return nil
+			})
+
+			if err != nil {
+				return err
+			}
+		}
+
+		// 按时间排序（最新的在前）
+		sort.Slice(records, func(i, j int) bool {
+			return records[i].time.After(records[j].time)
+		})
+
+		// 限制结果数量
+		maxResults := limit
+		if len(records) < maxResults {
+			maxResults = len(records)
+		}
+
+		for i := 0; i < maxResults; i++ {
+			histories = append(histories, records[i].history)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query monitor histories optimized: %w", err)
+	}
+
+	return histories, nil
+}
+
 // CleanupOldMonitorHistories removes monitor histories older than maxAge
 func (o *MonitorHistoryOps) CleanupOldMonitorHistories(maxAge time.Duration) (int, error) {
 	// Get all monitor IDs

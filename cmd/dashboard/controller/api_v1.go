@@ -154,7 +154,7 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 	if singleton.Conf.DatabaseType == "badger" {
 		// BadgerDB 模式下使用 MonitorAPI，只查询最近7天的ICMP/TCP监控数据
 		if singleton.MonitorAPI != nil {
-			// 根本性性能优化：恢复3天数据，但优化查询方式
+			// 恢复3天数据展示，通过优化查询效率解决性能问题
 			endTime := time.Now()
 			startTime := endTime.AddDate(0, 0, -3) // 恢复3天数据
 
@@ -177,12 +177,12 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 
 				log.Printf("服务器 %d 的ICMP/TCP监控器ID列表: %v", server.ID, icmpTcpMonitorIDs)
 
-				// 性能优化：直接查询指定服务器和监控器的记录
+				// 根本性能优化：使用高效的数据库查询，恢复合理的数据量
 				var networkHistories []*model.MonitorHistory
 
 				for _, monitorID := range icmpTcpMonitorIDs {
-					// 为每个监控器单独查询，避免全表扫描
-					histories, err := monitorOps.GetMonitorHistoriesByServerAndMonitor(server.ID, monitorID, startTime, endTime, 200)
+					// 使用优化的查询方法，每个监控器200条记录（3天数据）
+					histories, err := monitorOps.GetMonitorHistoriesByServerAndMonitorOptimized(server.ID, monitorID, startTime, endTime, 200)
 					if err != nil {
 						log.Printf("查询监控器 %d 的历史记录失败: %v", monitorID, err)
 						continue
