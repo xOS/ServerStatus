@@ -231,8 +231,15 @@ func (v *apiV1) monitorConfigs(c *gin.Context) {
 	// 获取监控配置列表
 	if singleton.ServiceSentinelShared != nil {
 		monitors := singleton.ServiceSentinelShared.Monitors()
+		log.Printf("API返回监控配置数量: %d", len(monitors))
+		if len(monitors) > 0 {
+			for _, monitor := range monitors {
+				log.Printf("监控配置: ID=%d, Name=%s, Type=%d", monitor.ID, monitor.Name, monitor.Type)
+			}
+		}
 		c.JSON(200, monitors)
 	} else {
+		log.Printf("ServiceSentinelShared为nil，返回空数组")
 		c.JSON(200, []interface{}{})
 	}
 }

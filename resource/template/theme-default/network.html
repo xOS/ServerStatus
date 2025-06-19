@@ -93,7 +93,8 @@
             templates: {{.Themes}},
             servers: initData,
             option: {},
-            resizeTimer: null
+            resizeTimer: null,
+            monitorConfigsLoaded: false
         },
         mixins: [mixinsVue],
         created() {
@@ -207,15 +208,20 @@
                 }, { passive: true });
             }
             
-            // 优化初始化序列，减少延迟
+            // 优化初始化序列，先加载监控配置
             this.$nextTick(() => {
                 // 先渲染图表
                 this.renderChart();
-                
-                // 然后加载数据，避免阻塞UI
-                setTimeout(() => {
-                    this.parseMonitorInfo(monitorInfo);
-                }, 50);
+
+                // 先加载监控配置，然后再处理数据
+                loadMonitorConfigs().always(() => {
+                    this.monitorConfigsLoaded = true;
+
+                    // 然后加载数据，避免阻塞UI
+                    setTimeout(() => {
+                        this.parseMonitorInfo(monitorInfo);
+                    }, 50);
+                });
             });
         },
         destroyed () {
@@ -298,7 +304,7 @@
                             monitor_id: monitorId,
                             server_id: serverId,
                             unique_key: uniqueKey,
-                            monitor_name: monitorNames[monitorId] || `Monitor ${monitorId}`,
+                            monitor_name: this.getMonitorName(monitorId),
                             server_name: serverNames[serverId] || `Server ${serverId}`,
                             created_at: paired.map(p => p.time),
                             avg_delay: paired.map(p => p.delay)
@@ -309,7 +315,7 @@
                             monitor_id: monitorId,
                             server_id: serverId,
                             unique_key: uniqueKey,
-                            monitor_name: monitorNames[monitorId] || `Monitor ${monitorId}`,
+                            monitor_name: this.getMonitorName(monitorId),
                             server_name: serverNames[serverId] || `Server ${serverId}`,
                             created_at: data.created_at,
                             avg_delay: data.avg_delay
@@ -406,11 +412,18 @@
                   });
             },
             getMonitorName(monitorId) {
+                // 调试：输出监控配置信息
+                console.log('获取监控名称 - ID:', monitorId);
+                console.log('监控配置:', monitorConfigs);
+                console.log('配置已加载:', this.monitorConfigsLoaded);
+
                 // 从监控配置中获取名称
                 if (monitorConfigs[monitorId] && monitorConfigs[monitorId].Name) {
+                    console.log('找到监控配置:', monitorConfigs[monitorId].Name);
                     return monitorConfigs[monitorId].Name;
                 }
                 // 如果没有配置，返回默认名称
+                console.log('使用默认名称: Monitor', monitorId);
                 return `Monitor ${monitorId}`;
             },
             parseMonitorInfo(monitorInfo) {
