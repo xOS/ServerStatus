@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"time"
 
@@ -191,6 +192,66 @@ func (o *MonitorHistoryOps) GetAllMonitorHistoriesInRange(startTime, endTime tim
 	})
 
 	return histories, err
+}
+
+// GetMonitorHistoriesByServerAndMonitor gets monitor histories for specific server and monitor within time range
+func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitor(serverID, monitorID uint64, startTime, endTime time.Time, limit int) ([]*model.MonitorHistory, error) {
+	var histories []*model.MonitorHistory
+	prefix := "monitor_history:"
+
+	err := o.db.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = true
+		opts.PrefetchSize = 100
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		count := 0
+		for it.Seek([]byte(prefix)); it.Valid() && count < limit; it.Next() {
+			item := it.Item()
+			key := item.Key()
+
+			// 检查key是否以prefix开头
+			if !bytes.HasPrefix(key, []byte(prefix)) {
+				break
+			}
+
+			err := item.Value(func(val []byte) error {
+				var history model.MonitorHistory
+				if err := json.Unmarshal(val, &history); err != nil {
+					return err
+				}
+
+				// 过滤条件：服务器ID、监控器ID、时间范围
+				if history.ServerID == serverID &&
+					history.MonitorID == monitorID &&
+					history.CreatedAt.After(startTime) &&
+					history.CreatedAt.Before(endTime) {
+					histories = append(histories, &history)
+					count++
+				}
+
+				return nil
+			})
+
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query monitor histories: %w", err)
+	}
+
+	// 按时间排序（最新的在前）
+	sort.Slice(histories, func(i, j int) bool {
+		return histories[i].CreatedAt.After(histories[j].CreatedAt)
+	})
+
+	return histories, nil
 }
 
 // CleanupOldMonitorHistories removes monitor histories older than maxAge

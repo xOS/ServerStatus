@@ -154,51 +154,42 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 	if singleton.Conf.DatabaseType == "badger" {
 		// BadgerDB 模式下使用 MonitorAPI，只查询最近7天的ICMP/TCP监控数据
 		if singleton.MonitorAPI != nil {
-			// 极致性能优化：只获取最近1天的数据，大幅提高性能
+			// 根本性性能优化：恢复3天数据，但优化查询方式
 			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -1) // 从3天减少到1天
+			startTime := endTime.AddDate(0, 0, -3) // 恢复3天数据
 
 			if db.DB != nil {
+				// 性能优化：直接按服务器ID和时间范围查询，避免查询所有记录
 				monitorOps := db.NewMonitorHistoryOps(db.DB)
-				allHistories, err := monitorOps.GetAllMonitorHistoriesInRange(startTime, endTime)
-				if err != nil {
-					log.Printf("查询网络监控历史记录失败: %v", err)
-					c.JSON(200, []any{})
-					return
-				}
 
-				// 性能优化：预先获取监控配置，避免重复查询
+				// 预先获取监控配置
 				monitors := singleton.ServiceSentinelShared.Monitors()
 				monitorTypeMap := make(map[uint64]uint8)
+				icmpTcpMonitorIDs := []uint64{}
 				if monitors != nil {
 					for _, monitor := range monitors {
 						monitorTypeMap[monitor.ID] = monitor.Type
+						if monitor.Type == model.TaskTypeICMPPing || monitor.Type == model.TaskTypeTCPPing {
+							icmpTcpMonitorIDs = append(icmpTcpMonitorIDs, monitor.ID)
+						}
 					}
 				}
 
-				// 过滤出ICMP和TCP监控记录，限制数量
+				log.Printf("服务器 %d 的ICMP/TCP监控器ID列表: %v", server.ID, icmpTcpMonitorIDs)
+
+				// 性能优化：直接查询指定服务器和监控器的记录
 				var networkHistories []*model.MonitorHistory
-				count := 0
-				maxRecords := 100 // 大幅减少记录数，提高性能
 
-				log.Printf("开始过滤服务器 %d 的监控历史记录，总记录数: %d", server.ID, len(allHistories))
+				for _, monitorID := range icmpTcpMonitorIDs {
+					// 为每个监控器单独查询，避免全表扫描
+					histories, err := monitorOps.GetMonitorHistoriesByServerAndMonitor(server.ID, monitorID, startTime, endTime, 200)
+					if err != nil {
+						log.Printf("查询监控器 %d 的历史记录失败: %v", monitorID, err)
+						continue
+					}
 
-				for _, history := range allHistories {
-					if count >= maxRecords {
-						break
-					}
-					if history != nil && history.ServerID == server.ID {
-						if monitorType, exists := monitorTypeMap[history.MonitorID]; exists &&
-							(monitorType == model.TaskTypeICMPPing || monitorType == model.TaskTypeTCPPing) {
-							log.Printf("找到ICMP/TCP监控记录: MonitorID=%d, ServerID=%d, Type=%d",
-								history.MonitorID, history.ServerID, monitorType)
-							networkHistories = append(networkHistories, history)
-							count++
-						} else {
-							log.Printf("跳过非ICMP/TCP监控记录: MonitorID=%d, ServerID=%d, Type=%d",
-								history.MonitorID, history.ServerID, monitorType)
-						}
-					}
+					log.Printf("监控器 %d 在服务器 %d 上找到 %d 条记录", monitorID, server.ID, len(histories))
+					networkHistories = append(networkHistories, histories...)
 				}
 
 				log.Printf("服务器 %d 最终返回 %d 条ICMP/TCP监控记录", server.ID, len(networkHistories))
