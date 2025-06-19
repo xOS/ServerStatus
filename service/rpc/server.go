@@ -103,7 +103,7 @@ var ServerHandlerSingleton *ServerHandler
 // goroutine 计数器，用于监控 RequestTask goroutine 数量
 var (
 	activeRequestTaskGoroutines int64
-	maxRequestTaskGoroutines    int64 = 200 // 适当提高最大允许的 RequestTask goroutine 数量
+	maxRequestTaskGoroutines    int64 = 50 // 大幅降低最大允许的 RequestTask goroutine 数量
 )
 
 type ServerHandler struct {
@@ -279,7 +279,8 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	singleton.ServerLock.RUnlock()
 
 	// 创建一个带超时的上下文，确保所有goroutine都能正确退出
-	ctx, cancel := context.WithTimeout(stream.Context(), 2*time.Minute)
+	// 紧急修复：大幅减少超时时间，防止goroutine堆积
+	ctx, cancel := context.WithTimeout(stream.Context(), 30*time.Second)
 	defer cancel()
 
 	// 根本修复：不再创建额外的监控goroutine
@@ -304,6 +305,10 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	case err := <-closeCh:
 		// 检查是否为网络连接错误
 		if isConnectionError(err) {
+			// 只在Debug模式下记录连接断开日志，减少日志噪音
+			if singleton.Conf.Debug {
+				log.Printf("服务器 %d 连接断开: %v", clientID, err)
+			}
 			return nil // 将网络连接错误视为正常断开
 		}
 		return err

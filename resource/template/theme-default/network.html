@@ -541,12 +541,12 @@
                         };
                     }
 
-                    // 性能优化：只在数据量适中时才添加markPoint
-                    if (data.length > 5 && data.length < 200) {
+                    // 修复：放宽条件，确保极值标记能够正常显示
+                    if (data.length > 2) {
                         seriesConfig.markPoint = {
                             data: [
-                                { type: 'max', symbol: 'pin', name: 'Max', itemStyle: { color: colors.marker }, symbolSize: 30, label: { fontSize: 8 } },
-                                { type: 'min', symbol: 'pin', name: 'Min', itemStyle: { color: colors.marker }, symbolSize: 30, label: { fontSize: 8, offset: [0, 7.5] }, symbolRotate: 180 }
+                                { type: 'max', symbol: 'pin', name: '极高值', itemStyle: { color: colors.marker }, symbolSize: 30, label: { fontSize: 8, show: true } },
+                                { type: 'min', symbol: 'pin', name: '极低值', itemStyle: { color: colors.marker }, symbolSize: 30, label: { fontSize: 8, offset: [0, 7.5], show: true }, symbolRotate: 180 }
                             ],
                             z: 3,
                             zlevel: 0

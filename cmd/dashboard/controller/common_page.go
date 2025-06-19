@@ -195,15 +195,9 @@ func (cp *commonPage) network(c *gin.Context) {
 		// 从监控配置中获取有监控任务的服务器ID
 		if singleton.ServiceSentinelShared != nil {
 			monitors := singleton.ServiceSentinelShared.Monitors()
-			if singleton.Conf.Debug {
-				log.Printf("network: 找到 %d 个监控配置", len(monitors))
-			}
 
 			for _, monitor := range monitors {
 				if monitor != nil {
-					if singleton.Conf.Debug {
-						log.Printf("network: 处理监控配置 %d: %s", monitor.ID, monitor.Name)
-					}
 					// 检查哪些服务器被这个监控任务覆盖
 					singleton.ServerLock.RLock()
 					for serverID, server := range singleton.ServerList {
@@ -232,9 +226,6 @@ func (cp *commonPage) network(c *gin.Context) {
 								}
 								if !found {
 									serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
-									if singleton.Conf.Debug {
-										log.Printf("network: 添加服务器 %d (%s) 到监控列表 (Cover=%d)", serverID, server.Name, monitor.Cover)
-									}
 								}
 								// 如果还没有选定ID，或者服务器在线，则将此服务器ID设为当前ID
 								if id == 0 || server.IsOnline {
@@ -247,10 +238,6 @@ func (cp *commonPage) network(c *gin.Context) {
 					singleton.ServerLock.RUnlock()
 				}
 			}
-		}
-
-		if singleton.Conf.Debug {
-			log.Printf("network: 从监控配置获取到 %d 个有监控任务的服务器", len(serverIdsWithMonitor))
 		}
 
 		// 如果仍然没有找到ID，并且有排序列表，则使用排序列表中的第一个ID
@@ -351,9 +338,6 @@ func (cp *commonPage) network(c *gin.Context) {
 	var monitorHistories interface{}
 	if singleton.Conf.DatabaseType == "badger" {
 		// BadgerDB 模式，查询监控历史记录
-		if singleton.Conf.Debug {
-			log.Printf("network: BadgerDB模式，查询监控历史记录")
-		}
 
 		// BadgerDB模式，使用BadgerDB查询监控历史记录
 		if db.DB != nil && id > 0 {
@@ -376,7 +360,7 @@ func (cp *commonPage) network(c *gin.Context) {
 					}
 				}
 
-				// 默认显示第一个服务器的ICMP/TCP监控记录
+				// 显示指定服务器的所有ICMP/TCP监控记录（来自所有监测点）
 				var filteredHistories []model.MonitorHistory
 
 				for _, h := range allHistories {

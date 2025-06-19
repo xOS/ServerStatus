@@ -534,10 +534,8 @@ func (m *MonitorAPIService) GetMonitorHistories(search map[string]any) []*model.
 				}
 			}
 
-			log.Printf("BadgerDB: 为服务器 %d 找到 %d 条监控历史记录", serverID, len(filteredHistories))
 			return filteredHistories
 		} else {
-			log.Printf("BadgerDB未初始化，返回空监控记录")
 			return make([]*model.MonitorHistory, 0)
 		}
 	} else if DB != nil {
@@ -553,7 +551,6 @@ func (m *MonitorAPIService) GetMonitorHistories(search map[string]any) []*model.
 		}
 	} else {
 		// 数据库未初始化，返回空数组
-		log.Printf("数据库未初始化，返回空监控记录")
 		return make([]*model.MonitorHistory, 0)
 	}
 

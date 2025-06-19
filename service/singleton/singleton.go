@@ -2636,12 +2636,9 @@ func StartBadgerMonitorHistoryWorker() {
 				err = monitorOps.SaveMonitorHistory(history)
 				if err != nil {
 					log.Printf("BadgerDB监控历史记录保存失败 (MonitorID: %d): %v", history.MonitorID, err)
-				} else {
-					log.Printf("BadgerDB监控历史记录保存成功 (MonitorID: %d)", history.MonitorID)
 				}
 			} else {
 				err = fmt.Errorf("BadgerDB未初始化")
-				log.Printf("BadgerDB监控历史记录保存失败: %v", err)
 			}
 
 			if req.Callback != nil {

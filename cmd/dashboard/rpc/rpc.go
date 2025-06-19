@@ -16,20 +16,20 @@ import (
 )
 
 func ServeRPC(port uint) {
-	// 配置 gRPC 服务器选项，防止 goroutine 泄漏
+	// 配置 gRPC 服务器选项，防止 goroutine 泄漏和连接问题
 	opts := []grpc.ServerOption{
-		// 设置 keepalive 参数，防止僵尸连接
+		// 优化 keepalive 参数，减少broken pipe错误
 		grpc.KeepaliveParams(keepalive.ServerParameters{
-			MaxConnectionIdle:     5 * time.Minute,  // 连接空闲5分钟后关闭
-			MaxConnectionAge:      10 * time.Minute, // 连接最大存活10分钟
-			MaxConnectionAgeGrace: 30 * time.Second, // 优雅关闭等待30秒
-			Time:                  30 * time.Second, // 每30秒发送keepalive ping
-			Timeout:               5 * time.Second,  // keepalive ping超时5秒
+			MaxConnectionIdle:     3 * time.Minute,  // 减少到3分钟，更快检测断开连接
+			MaxConnectionAge:      15 * time.Minute, // 增加到15分钟，减少频繁重连
+			MaxConnectionAgeGrace: 60 * time.Second, // 增加优雅关闭时间到60秒
+			Time:                  20 * time.Second, // 减少到20秒，更频繁的心跳检测
+			Timeout:               10 * time.Second, // 增加超时到10秒，避免网络抖动
 		}),
-		// 设置 keepalive 强制策略
+		// 优化 keepalive 强制策略
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             10 * time.Second, // 客户端最小keepalive间隔
-			PermitWithoutStream: true,             // 允许没有活跃流时发送keepalive
+			MinTime:             5 * time.Second, // 减少到5秒，允许更频繁的keepalive
+			PermitWithoutStream: true,            // 允许没有活跃流时发送keepalive
 		}),
 		// 设置最大接收消息大小
 		grpc.MaxRecvMsgSize(4 * 1024 * 1024), // 4MB
