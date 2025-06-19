@@ -376,31 +376,21 @@ func (cp *commonPage) network(c *gin.Context) {
 					}
 				}
 
-				// 过滤出指定服务器的ICMP/TCP监控记录，限制数量
+				// 修复：第一次打开页面时显示所有服务器的ICMP/TCP监控记录
 				var filteredHistories []model.MonitorHistory
-				count := 0
-				maxRecords := 50 // 大幅减少到50条记录，提高性能
 
 				for _, h := range allHistories {
-					if count >= maxRecords {
-						break
-					}
-					if h != nil && h.ServerID == id {
+					if h != nil {
 						// 性能优化：使用预构建的map查询监控类型
 						if monitorType, exists := monitorTypeMap[h.MonitorID]; exists &&
 							(monitorType == model.TaskTypeICMPPing || monitorType == model.TaskTypeTCPPing) {
 							filteredHistories = append(filteredHistories, *h)
-							count++
 						}
 					}
 				}
 				monitorHistories = filteredHistories
-				if singleton.Conf.Debug {
-					log.Printf("network: 为服务器 %d 找到 %d 条ICMP/TCP监控历史记录", id, len(filteredHistories))
-				}
 			}
 		} else {
-			log.Printf("network: BadgerDB未初始化或无效服务器ID，使用空数组")
 			monitorHistories = []model.MonitorHistory{}
 		}
 
@@ -408,7 +398,6 @@ func (cp *commonPage) network(c *gin.Context) {
 		var err error
 		monitorInfos, err = utils.Json.Marshal(monitorHistories)
 		if err != nil {
-			log.Printf("network: 监控历史记录序列化失败: %v", err)
 			monitorInfos = []byte("[]")
 		}
 	} else {
@@ -419,16 +408,12 @@ func (cp *commonPage) network(c *gin.Context) {
 			if monitorHistories != nil {
 				monitorInfos, err = utils.Json.Marshal(monitorHistories)
 				if err != nil {
-					log.Printf("network: 监控历史记录序列化失败: %v", err)
-					// 在序列化失败时使用空数组
 					monitorInfos = []byte("[]")
 				}
 			} else {
-				log.Printf("network: 监控历史记录为nil，使用空数组")
 				monitorInfos = []byte("[]")
 			}
 		} else {
-			log.Printf("network: MonitorAPI为nil，使用空数组")
 			monitorInfos = []byte("[]")
 		}
 	}

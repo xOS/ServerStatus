@@ -189,7 +189,6 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 					}
 				}
 
-				log.Printf("服务器 %d 最终返回 %d 条ICMP/TCP监控记录", server.ID, len(networkHistories))
 				c.JSON(200, networkHistories)
 			} else {
 				c.JSON(200, []any{})
@@ -211,7 +210,6 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 				Find(&networkHistories).Error
 
 			if err != nil {
-				log.Printf("查询网络监控历史记录失败: %v", err)
 				c.JSON(200, []any{})
 			} else {
 				c.JSON(200, networkHistories)
