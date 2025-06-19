@@ -193,6 +193,11 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 				}
 
 				log.Printf("服务器 %d 最终返回 %d 条ICMP/TCP监控记录", server.ID, len(networkHistories))
+
+				// 确保返回空数组而不是null
+				if networkHistories == nil {
+					networkHistories = []*model.MonitorHistory{}
+				}
 				c.JSON(200, networkHistories)
 			} else {
 				c.JSON(200, []any{})
