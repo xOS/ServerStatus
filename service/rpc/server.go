@@ -104,6 +104,10 @@ var ServerHandlerSingleton *ServerHandler
 var (
 	activeRequestTaskGoroutines int64
 	maxRequestTaskGoroutines    int64 = 50 // 大幅降低最大允许的 RequestTask goroutine 数量
+
+	// goroutine清理控制变量
+	lastGoroutineCleanupTime time.Time
+	lastCleanupMutex         sync.Mutex
 )
 
 type ServerHandler struct {
@@ -220,17 +224,33 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 		current := activeRequestTaskGoroutines
 		total := int64(runtime.NumGoroutine())
 
-		// 如果总 goroutine 数量过多，先尝试强制清理
-		if total > 400 {
-			log.Printf("警告：总 goroutine 数量过多 (%d)，尝试强制清理", total)
-			cleaned := ForceCleanupStaleConnections()
-			if cleaned > 0 {
-				log.Printf("强制清理了 %d 个连接，当前 goroutine 数量: %d", cleaned, runtime.NumGoroutine())
-			}
-			// 清理后仍然过多，拒绝新连接
-			if runtime.NumGoroutine() > 500 {
-				log.Printf("清理后 goroutine 数量仍过多 (%d)，拒绝新的 RequestTask 连接", runtime.NumGoroutine())
-				return -1
+		// 提高阈值并减少清理频率，避免频繁日志输出
+		if total > 600 { // 提高阈值从400到600
+			// 使用包级变量控制清理频率，避免每次连接都清理
+			lastCleanupMutex.Lock()
+			now := time.Now()
+			// 至少间隔30秒才进行一次清理
+			if now.Sub(lastGoroutineCleanupTime) > 30*time.Second {
+				lastGoroutineCleanupTime = now
+				lastCleanupMutex.Unlock()
+
+				log.Printf("警告：总 goroutine 数量过多 (%d)，尝试强制清理", total)
+				cleaned := ForceCleanupStaleConnections()
+				if cleaned > 0 {
+					log.Printf("强制清理了 %d 个连接，当前 goroutine 数量: %d", cleaned, runtime.NumGoroutine())
+				}
+
+				// 清理后仍然过多，拒绝新连接
+				if runtime.NumGoroutine() > 800 { // 提高拒绝阈值
+					log.Printf("清理后 goroutine 数量仍过多 (%d)，拒绝新的 RequestTask 连接", runtime.NumGoroutine())
+					return -1
+				}
+			} else {
+				lastCleanupMutex.Unlock()
+				// 如果goroutine数量极高，直接拒绝
+				if total > 800 {
+					return -1
+				}
 			}
 		}
 
