@@ -21,7 +21,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
@@ -192,50 +191,50 @@ func (cp *commonPage) network(c *gin.Context) {
 			serverIdsWithMonitor = []uint64{}
 		}
 
-		// 从监控配置中获取有监控任务的服务器ID
+		// 性能优化：使用高效算法替代三重嵌套循环
 		if singleton.ServiceSentinelShared != nil {
 			monitors := singleton.ServiceSentinelShared.Monitors()
 
+			// 使用map避免重复检查，O(1)查找
+			serverIDSet := make(map[uint64]bool)
+
+			// 一次性获取所有服务器，避免重复加锁
+			singleton.ServerLock.RLock()
+			serverListCopy := make(map[uint64]*model.Server)
+			for serverID, server := range singleton.ServerList {
+				if server != nil {
+					serverListCopy[serverID] = server
+				}
+			}
+			singleton.ServerLock.RUnlock()
+
+			// 遍历监控器，高效计算覆盖的服务器
 			for _, monitor := range monitors {
 				if monitor != nil {
-					// 检查哪些服务器被这个监控任务覆盖
-					singleton.ServerLock.RLock()
-					for serverID, server := range singleton.ServerList {
-						if server != nil {
-							var shouldInclude bool
+					for serverID, server := range serverListCopy {
+						var shouldInclude bool
 
-							// 根据Cover字段和SkipServers字段判断是否应该包含此服务器
-							if monitor.Cover == 0 {
-								// Cover=0: 覆盖所有，仅特定服务器不请求
-								// 如果服务器不在SkipServers中，则包含
-								shouldInclude = monitor.SkipServers == nil || !monitor.SkipServers[serverID]
-							} else {
-								// Cover=1: 忽略所有，仅通过特定服务器请求
-								// 如果服务器在SkipServers中，则包含
-								shouldInclude = monitor.SkipServers != nil && monitor.SkipServers[serverID]
-							}
+						// 根据Cover字段和SkipServers字段判断是否应该包含此服务器
+						if monitor.Cover == 0 {
+							// Cover=0: 覆盖所有，仅特定服务器不请求
+							shouldInclude = monitor.SkipServers == nil || !monitor.SkipServers[serverID]
+						} else {
+							// Cover=1: 忽略所有，仅通过特定服务器请求
+							shouldInclude = monitor.SkipServers != nil && monitor.SkipServers[serverID]
+						}
 
-							if shouldInclude {
-								// 检查是否已经在列表中
-								found := false
-								for _, existingID := range serverIdsWithMonitor {
-									if existingID == serverID {
-										found = true
-										break
-									}
-								}
-								if !found {
-									serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
-								}
-								// 如果还没有选定ID，或者服务器在线，则将此服务器ID设为当前ID
-								if id == 0 || server.IsOnline {
-									id = serverID
-								}
+						if shouldInclude {
+							// 使用map避免重复，O(1)操作
+							if !serverIDSet[serverID] {
+								serverIDSet[serverID] = true
+								serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
 							}
-							// 移除频繁的"服务器被监控跳过"日志输出
+							// 如果还没有选定ID，或者服务器在线，则将此服务器ID设为当前ID
+							if id == 0 || server.IsOnline {
+								id = serverID
+							}
 						}
 					}
-					singleton.ServerLock.RUnlock()
 				}
 			}
 		}
@@ -339,44 +338,9 @@ func (cp *commonPage) network(c *gin.Context) {
 	if singleton.Conf.DatabaseType == "badger" {
 		// BadgerDB 模式，查询监控历史记录
 
-		// BadgerDB模式，使用BadgerDB查询监控历史记录
-		if db.DB != nil && id > 0 {
-			// 查询最近7天的数据
-			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -7) // 显示7天数据
-
-			monitorOps := db.NewMonitorHistoryOps(db.DB)
-			allHistories, err := monitorOps.GetAllMonitorHistoriesInRange(startTime, endTime)
-			if err != nil {
-				log.Printf("network: 从BadgerDB查询监控历史记录失败: %v", err)
-				monitorHistories = []model.MonitorHistory{}
-			} else {
-				// 性能优化：预先获取监控配置，避免重复查询
-				monitors := singleton.ServiceSentinelShared.Monitors()
-				monitorTypeMap := make(map[uint64]uint8)
-				if monitors != nil {
-					for _, monitor := range monitors {
-						monitorTypeMap[monitor.ID] = monitor.Type
-					}
-				}
-
-				// 显示指定服务器的所有ICMP/TCP监控记录（来自所有监测点）
-				var filteredHistories []model.MonitorHistory
-
-				for _, h := range allHistories {
-					if h != nil && h.ServerID == id {
-						// 性能优化：使用预构建的map查询监控类型
-						if monitorType, exists := monitorTypeMap[h.MonitorID]; exists &&
-							(monitorType == model.TaskTypeICMPPing || monitorType == model.TaskTypeTCPPing) {
-							filteredHistories = append(filteredHistories, *h)
-						}
-					}
-				}
-				monitorHistories = filteredHistories
-			}
-		} else {
-			monitorHistories = []model.MonitorHistory{}
-		}
+		// 性能优化：不在network页面加载时查询历史数据，改为异步加载
+		// 这样可以让页面快速渲染，数据通过AJAX异步获取
+		monitorHistories = []model.MonitorHistory{}
 
 		// 序列化为JSON
 		var err error
