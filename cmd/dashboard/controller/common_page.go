@@ -21,6 +21,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
@@ -337,10 +338,77 @@ func (cp *commonPage) network(c *gin.Context) {
 	var monitorHistories interface{}
 	if singleton.Conf.DatabaseType == "badger" {
 		// BadgerDB 模式，查询监控历史记录
+		// 性能优化：只查询默认服务器的数据，其他服务器数据通过AJAX异步加载
+		if id > 0 {
+			// 使用高效的API查询方法，而不是全表扫描
+			endTime := time.Now()
+			startTime := endTime.AddDate(0, 0, -3) // 3天数据
 
-		// 性能优化：不在network页面加载时查询历史数据，改为异步加载
-		// 这样可以让页面快速渲染，数据通过AJAX异步获取
-		monitorHistories = []model.MonitorHistory{}
+			// 获取该服务器的监控配置，只查询ICMP/TCP类型
+			monitors := singleton.ServiceSentinelShared.Monitors()
+			var networkHistories []*model.MonitorHistory
+
+			if monitors != nil {
+				// 使用我们之前优化的并发查询方法
+				type monitorResult struct {
+					histories []*model.MonitorHistory
+					err       error
+				}
+
+				// 创建通道收集结果
+				resultChan := make(chan monitorResult, len(monitors))
+				activeQueries := 0
+
+				// 并发查询所有ICMP/TCP监控器
+				for _, monitor := range monitors {
+					if monitor.Type == model.TaskTypeICMPPing || monitor.Type == model.TaskTypeTCPPing {
+						activeQueries++
+						go func(monitorID uint64) {
+							// 使用高效的时间范围查询
+							monitorOps := db.NewMonitorHistoryOps(db.DB)
+							allHistories, err := monitorOps.GetMonitorHistoriesByMonitorID(
+								monitorID, startTime, endTime)
+
+							var serverHistories []*model.MonitorHistory
+							if err == nil {
+								// 快速过滤出该服务器的记录
+								for _, history := range allHistories {
+									if history.ServerID == id {
+										serverHistories = append(serverHistories, history)
+									}
+								}
+							}
+
+							resultChan <- monitorResult{
+								histories: serverHistories,
+								err:       err,
+							}
+						}(monitor.ID)
+					}
+				}
+
+				// 收集所有并发查询结果
+				for i := 0; i < activeQueries; i++ {
+					result := <-resultChan
+					if result.err != nil {
+						log.Printf("并发查询监控历史记录失败: %v", result.err)
+						continue
+					}
+					networkHistories = append(networkHistories, result.histories...)
+				}
+			}
+
+			// 转换为[]model.MonitorHistory格式
+			var filteredHistories []model.MonitorHistory
+			for _, h := range networkHistories {
+				if h != nil {
+					filteredHistories = append(filteredHistories, *h)
+				}
+			}
+			monitorHistories = filteredHistories
+		} else {
+			monitorHistories = []model.MonitorHistory{}
+		}
 
 		// 序列化为JSON
 		var err error
