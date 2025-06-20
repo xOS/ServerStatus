@@ -2,6 +2,7 @@ package controller
 
 import (
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -150,49 +151,47 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 		return
 	}
 
-	// 性能优化：根据数据库类型选择不同的查询方式，限制数据量
+	// 紧急性能优化：避免全表扫描，使用更高效的查询方式
 	if singleton.Conf.DatabaseType == "badger" {
-		// BadgerDB 模式下使用 MonitorAPI，只查询最近7天的ICMP/TCP监控数据
-		if singleton.MonitorAPI != nil {
-			// 查询最近7天的监控历史记录
+		if db.DB != nil {
+			// 查询最近3天的监控历史记录（减少数据量）
 			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -7) // 显示7天数据
+			startTime := endTime.AddDate(0, 0, -3) // 改为3天数据，减少查询量
 
-			if db.DB != nil {
-				// 恢复原始的查询方法
+			// 获取该服务器的监控配置，避免查询所有数据
+			monitors := singleton.ServiceSentinelShared.Monitors()
+			var networkHistories []*model.MonitorHistory
+
+			if monitors != nil {
 				monitorOps := db.NewMonitorHistoryOps(db.DB)
-				allHistories, err := monitorOps.GetAllMonitorHistoriesInRange(startTime, endTime)
-				if err != nil {
-					log.Printf("查询网络监控历史记录失败: %v", err)
-					c.JSON(200, []any{})
-					return
-				}
 
-				// 恢复原始的过滤逻辑
-				monitors := singleton.ServiceSentinelShared.Monitors()
-				monitorTypeMap := make(map[uint64]uint8)
-				if monitors != nil {
-					for _, monitor := range monitors {
-						monitorTypeMap[monitor.ID] = monitor.Type
-					}
-				}
-
-				// 修复：正确的记录过滤，不限制总数，应该返回所有匹配的记录
-				var networkHistories []*model.MonitorHistory
-
-				for _, history := range allHistories {
-					if history != nil && history.ServerID == server.ID {
-						if monitorType, exists := monitorTypeMap[history.MonitorID]; exists &&
-							(monitorType == model.TaskTypeICMPPing || monitorType == model.TaskTypeTCPPing) {
-							networkHistories = append(networkHistories, history)
+				// 针对每个ICMP/TCP监控器单独查询，避免全表扫描
+				for _, monitor := range monitors {
+					if monitor.Type == model.TaskTypeICMPPing || monitor.Type == model.TaskTypeTCPPing {
+						// 使用更高效的单监控器查询方法，限制返回数量
+						histories, err := monitorOps.GetMonitorHistoriesByServerAndMonitor(
+							server.ID, monitor.ID, startTime, endTime, 500) // 限制每个监控器最多500条记录
+						if err != nil {
+							log.Printf("查询监控器 %d 的历史记录失败: %v", monitor.ID, err)
+							continue
 						}
+						networkHistories = append(networkHistories, histories...)
 					}
 				}
-
-				c.JSON(200, networkHistories)
-			} else {
-				c.JSON(200, []any{})
 			}
+
+			// 按时间排序并限制总数量，防止内存溢出
+			sort.Slice(networkHistories, func(i, j int) bool {
+				return networkHistories[i].CreatedAt.After(networkHistories[j].CreatedAt)
+			})
+
+			// 限制最大返回数量，防止内存问题
+			maxRecords := 2000
+			if len(networkHistories) > maxRecords {
+				networkHistories = networkHistories[:maxRecords]
+			}
+
+			c.JSON(200, networkHistories)
 		} else {
 			c.JSON(200, []any{})
 		}

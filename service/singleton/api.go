@@ -457,26 +457,26 @@ func (m *MonitorAPIService) GetMonitorHistories(search map[string]any) []*model.
 				return make([]*model.MonitorHistory, 0)
 			}
 
-			// 获取时间范围（默认最近30天）
+			// 性能优化：获取时间范围（减少到最近3天）
 			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -30)
+			startTime := endTime.AddDate(0, 0, -3)
 
-			// 从BadgerDB查询监控历史记录
-			// 注意：这里需要查询所有监控历史记录，然后按server_id过滤
+			// 使用更高效的查询方法，避免全表扫描
 			monitorOps := db.NewMonitorHistoryOps(db.DB)
 
-			// 获取所有监控历史记录并过滤
-			allHistories, err := monitorOps.GetAllMonitorHistoriesInRange(startTime, endTime)
-			if err != nil {
-				log.Printf("MonitorAPIService.GetMonitorHistories: 从BadgerDB查询失败: %v", err)
-				return make([]*model.MonitorHistory, 0)
-			}
-
-			// 过滤出指定服务器的记录
+			// 获取该服务器相关的监控器ID列表，针对性查询
 			var histories []*model.MonitorHistory
-			for _, history := range allHistories {
-				if history.ServerID == serverID {
-					histories = append(histories, history)
+			if ServiceSentinelShared != nil {
+				monitors := ServiceSentinelShared.Monitors()
+				for _, monitor := range monitors {
+					// 使用针对性查询，限制每个监控器的记录数量
+					monitorHistories, err := monitorOps.GetMonitorHistoriesByServerAndMonitor(
+						serverID, monitor.ID, startTime, endTime, 500) // 限制每个监控器最多500条
+					if err != nil {
+						log.Printf("MonitorAPIService.GetMonitorHistories: 查询监控器 %d 失败: %v", monitor.ID, err)
+						continue
+					}
+					histories = append(histories, monitorHistories...)
 				}
 			}
 
@@ -495,50 +495,8 @@ func (m *MonitorAPIService) GetMonitorHistories(search map[string]any) []*model.
 		return make([]*model.MonitorHistory, 0)
 	}
 
-	// 根据数据库类型选择不同的查询方式
-	if Conf.DatabaseType == "badger" {
-		// 使用BadgerDB查询监控历史记录
-		if db.DB != nil {
-			// 获取服务器ID
-			var serverID uint64
-			if sid, ok := search["server_id"]; ok {
-				if sidVal, ok := sid.(uint64); ok {
-					serverID = sidVal
-				}
-			}
-
-			if serverID == 0 {
-				log.Printf("MonitorAPIService.GetMonitorHistories: 无效的服务器ID")
-				return make([]*model.MonitorHistory, 0)
-			}
-
-			// 获取时间范围（默认最近30天）
-			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -30)
-
-			// 从BadgerDB查询监控历史记录
-			monitorOps := db.NewMonitorHistoryOps(db.DB)
-
-			// 获取所有监控历史记录并过滤
-			allHistories, err := monitorOps.GetAllMonitorHistoriesInRange(startTime, endTime)
-			if err != nil {
-				log.Printf("MonitorAPIService.GetMonitorHistories: 从BadgerDB查询失败: %v", err)
-				return make([]*model.MonitorHistory, 0)
-			}
-
-			// 过滤出指定服务器的记录
-			var filteredHistories []*model.MonitorHistory
-			for _, h := range allHistories {
-				if h != nil && h.ServerID == serverID {
-					filteredHistories = append(filteredHistories, h)
-				}
-			}
-
-			return filteredHistories
-		} else {
-			return make([]*model.MonitorHistory, 0)
-		}
-	} else if DB != nil {
+	// SQLite模式查询
+	if DB != nil {
 		// SQLite模式
 		if err := DB.Model(&model.MonitorHistory{}).
 			Where(search).
