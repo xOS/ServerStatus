@@ -666,22 +666,36 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	singleton.ServerLock.RLock()
 	defer singleton.ServerLock.RUnlock()
 
-	// 检查并更新DDNS
+	// 检查并更新DDNS - 修复：添加锁保护
+	singleton.ServerLock.RLock()
 	server := singleton.ServerList[clientID]
-	if server.EnableDDNS {
+	if server == nil {
+		singleton.ServerLock.RUnlock()
+		return &pb.Receipt{Proced: true}, nil
+	}
+	enableDDNS := server.EnableDDNS
+	ddnsProfiles := server.DDNSProfiles
+	serverName := server.Name
+	var serverHostIP string
+	if server.Host != nil {
+		serverHostIP = server.Host.IP
+	}
+	singleton.ServerLock.RUnlock()
+
+	if enableDDNS {
 		if host.IP == "" {
-			log.Printf("服务器 %s (ID:%d) DDNS已启用但IP为空，跳过更新", server.Name, clientID)
-		} else if len(server.DDNSProfiles) == 0 {
-			log.Printf("服务器 %s (ID:%d) DDNS已启用但未配置DDNS配置文件", server.Name, clientID)
-		} else if server.Host != nil && server.Host.IP == host.IP {
+			log.Printf("服务器 %s (ID:%d) DDNS已启用但IP为空，跳过更新", serverName, clientID)
+		} else if len(ddnsProfiles) == 0 {
+			log.Printf("服务器 %s (ID:%d) DDNS已启用但未配置DDNS配置文件", serverName, clientID)
+		} else if serverHostIP == host.IP {
 			// IP 没有变化，跳过更新（但不记录日志，避免频繁输出）
 		} else {
 			// IP 发生变化或首次设置，触发 DDNS 更新
 			ipv4, ipv6, _ := utils.SplitIPAddr(host.IP)
 			providers, err := singleton.GetDDNSProvidersFromProfilesWithServer(
-				server.DDNSProfiles,
+				ddnsProfiles,
 				&ddns.IP{Ipv4Addr: ipv4, Ipv6Addr: ipv6},
-				server.Name,
+				serverName,
 				clientID,
 			)
 			if err == nil {
@@ -723,7 +737,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 				singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
 					MessageID: "IPChanged",
 				}),
-				singleton.ServerList[clientID].Name, clientID, singleton.IPDesensitize(singleton.ServerList[clientID].Host.IP),
+				serverName, clientID, singleton.IPDesensitize(serverHostIP),
 				singleton.IPDesensitize(host.IP), changeTime,
 			),
 			muteLabel)
@@ -865,8 +879,12 @@ func updateTrafficDisplay(serverID uint64, inTransfer, outTransfer uint64) {
 // checkAndResetCycleTraffic 检查并重置周期流量
 // 根据AlertRule中定义的transfer_all_cycle规则重置累计流量
 func checkAndResetCycleTraffic(clientID uint64) {
+	// 紧急修复：同时锁定AlertsLock和ServerLock，防止并发读写冲突
 	singleton.AlertsLock.RLock()
 	defer singleton.AlertsLock.RUnlock()
+
+	singleton.ServerLock.RLock()
+	defer singleton.ServerLock.RUnlock()
 
 	// 遍历所有启用的报警规则
 	for _, alert := range singleton.Alerts {

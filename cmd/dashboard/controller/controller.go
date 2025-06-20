@@ -463,17 +463,19 @@ func buildTrafficData() []map[string]interface{} {
 			stats.Max = uint64(flowRule.Max)
 			stats.Name = alert.Name
 
-			// 更新主存储（需要写锁）
-			go func(id uint64, start, end time.Time, max uint64, name string) {
+			// 安全修复：使用同步更新替代异步goroutine，防止concurrent map writes
+			// 同时确保数据不丢失
+			func() {
 				singleton.AlertsLock.Lock()
 				defer singleton.AlertsLock.Unlock()
-				if store, ok := singleton.AlertsCycleTransferStatsStore[id]; ok {
-					store.From = start
-					store.To = end
-					store.Max = max
-					store.Name = name
+				if store, ok := singleton.AlertsCycleTransferStatsStore[cycleID]; ok && store != nil {
+					// 安全地更新周期信息，确保数据一致性
+					store.From = from
+					store.To = to
+					store.Max = uint64(flowRule.Max)
+					store.Name = alert.Name
 				}
-			}(cycleID, from, to, uint64(flowRule.Max), alert.Name)
+			}()
 
 			// 生成流量数据条目
 			for serverID, transfer := range stats.Transfer {

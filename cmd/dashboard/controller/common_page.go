@@ -624,35 +624,59 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 		// 使用深拷贝确保并发安全
 		var trafficData []map[string]interface{}
 
-		// 在锁保护下进行深拷贝
+		// 紧急修复：使用更安全的深拷贝，防止concurrent map iteration and map write
 		singleton.AlertsLock.RLock()
 		var statsStore map[uint64]model.CycleTransferStats
 		if singleton.AlertsCycleTransferStatsStore != nil {
 			statsStore = make(map[uint64]model.CycleTransferStats)
-			for cycleID, stats := range singleton.AlertsCycleTransferStatsStore {
-				// 深拷贝每个CycleTransferStats
-				newStats := model.CycleTransferStats{
-					Name: stats.Name,
-					Max:  stats.Max,
-				}
 
-				// 深拷贝Transfer map
-				if stats.Transfer != nil {
-					newStats.Transfer = make(map[uint64]uint64)
-					for serverID, transfer := range stats.Transfer {
-						newStats.Transfer[serverID] = transfer
+			// 先获取所有cycleID，避免在遍历过程中map被修改
+			var cycleIDs []uint64
+			for cycleID := range singleton.AlertsCycleTransferStatsStore {
+				cycleIDs = append(cycleIDs, cycleID)
+			}
+
+			// 然后安全地复制每个条目
+			for _, cycleID := range cycleIDs {
+				if stats, exists := singleton.AlertsCycleTransferStatsStore[cycleID]; exists {
+					// 深拷贝每个CycleTransferStats
+					newStats := model.CycleTransferStats{
+						Name: stats.Name,
+						Max:  stats.Max,
 					}
-				}
 
-				// 深拷贝ServerName map
-				if stats.ServerName != nil {
-					newStats.ServerName = make(map[uint64]string)
-					for serverID, name := range stats.ServerName {
-						newStats.ServerName[serverID] = name
+					// 深拷贝Transfer map
+					if stats.Transfer != nil {
+						newStats.Transfer = make(map[uint64]uint64)
+						// 先获取所有serverID，避免在遍历过程中map被修改
+						var serverIDs []uint64
+						for serverID := range stats.Transfer {
+							serverIDs = append(serverIDs, serverID)
+						}
+						for _, serverID := range serverIDs {
+							if transfer, exists := stats.Transfer[serverID]; exists {
+								newStats.Transfer[serverID] = transfer
+							}
+						}
 					}
-				}
 
-				statsStore[cycleID] = newStats
+					// 深拷贝ServerName map
+					if stats.ServerName != nil {
+						newStats.ServerName = make(map[uint64]string)
+						// 先获取所有serverID，避免在遍历过程中map被修改
+						var serverIDs []uint64
+						for serverID := range stats.ServerName {
+							serverIDs = append(serverIDs, serverID)
+						}
+						for _, serverID := range serverIDs {
+							if name, exists := stats.ServerName[serverID]; exists {
+								newStats.ServerName[serverID] = name
+							}
+						}
+					}
+
+					statsStore[cycleID] = newStats
+				}
 			}
 		}
 		singleton.AlertsLock.RUnlock()

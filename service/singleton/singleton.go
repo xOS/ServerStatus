@@ -2155,6 +2155,11 @@ func StartDBInsertWorker() {
 // executeDBWriteRequest 执行单个数据库写入请求
 func executeDBWriteRequest(req DBWriteRequest) error {
 	return ExecuteWithRetry(func() error {
+		// 紧急修复：检查DB是否为nil，防止panic
+		if DB == nil {
+			return fmt.Errorf("数据库连接未初始化")
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 

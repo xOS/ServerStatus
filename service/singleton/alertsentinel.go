@@ -385,9 +385,9 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 	}
 	ServerLock.RUnlock()
 
-	// 使用轻量级的锁定以提高效率
-	AlertsLock.RLock()
-	defer AlertsLock.RUnlock()
+	// 紧急修复：需要写锁，因为要修改AlertsCycleTransferStatsStore中的map
+	AlertsLock.Lock()
+	defer AlertsLock.Unlock()
 
 	// 即使没有报警规则，也要确保前端显示正确，但可以跳过报警相关的更新
 	if len(Alerts) == 0 || AlertsCycleTransferStatsStore == nil {
@@ -437,9 +437,24 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 				// 更新最后更新时间
 				stats.NextUpdate[serverID] = time.Now()
 
-				// 检查多级流量阈值并发送通知
+				// 检查多级流量阈值并发送通知 - 修复：需要重新获取ServerLock
+				ServerLock.RLock()
 				if server := ServerList[serverID]; server != nil {
-					checkTrafficThresholds(alert, server, &alert.Rules[j], totalTransfer)
+					// 创建服务器副本，避免在锁外使用
+					serverCopy := &model.Server{
+						Common: server.Common,
+						Name:   server.Name,
+					}
+					if server.State != nil {
+						serverCopy.State = server.State
+					}
+					if server.Host != nil {
+						serverCopy.Host = server.Host
+					}
+					ServerLock.RUnlock()
+					checkTrafficThresholds(alert, serverCopy, &alert.Rules[j], totalTransfer)
+				} else {
+					ServerLock.RUnlock()
 				}
 
 				// 找到一个满足条件的规则即可退出循环
