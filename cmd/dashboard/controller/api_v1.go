@@ -151,46 +151,74 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 		return
 	}
 
-	// 紧急性能优化：避免全表扫描，使用更高效的查询方式
+	// 根本性能优化：使用正确的高效查询方法，利用BadgerDB的时间索引
 	if singleton.Conf.DatabaseType == "badger" {
 		if db.DB != nil {
-			// 查询最近3天的监控历史记录（减少数据量）
+			// 恢复3天数据展示，使用高效查询方法
 			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -3) // 改为3天数据，减少查询量
+			startTime := endTime.AddDate(0, 0, -3)
 
-			// 获取该服务器的监控配置，避免查询所有数据
+			// 获取该服务器的监控配置，展示所有监控器
 			monitors := singleton.ServiceSentinelShared.Monitors()
 			var networkHistories []*model.MonitorHistory
 
 			if monitors != nil {
 				monitorOps := db.NewMonitorHistoryOps(db.DB)
 
-				// 针对每个ICMP/TCP监控器单独查询，避免全表扫描
+				// 使用并发查询提升性能，同时保持数据完整性
+				type monitorResult struct {
+					histories []*model.MonitorHistory
+					err       error
+				}
+
+				// 创建通道收集结果
+				resultChan := make(chan monitorResult, len(monitors))
+				activeQueries := 0
+
+				// 并发查询所有ICMP/TCP监控器
 				for _, monitor := range monitors {
 					if monitor.Type == model.TaskTypeICMPPing || monitor.Type == model.TaskTypeTCPPing {
-						// 使用更高效的单监控器查询方法，限制返回数量
-						histories, err := monitorOps.GetMonitorHistoriesByServerAndMonitor(
-							server.ID, monitor.ID, startTime, endTime, 500) // 限制每个监控器最多500条记录
-						if err != nil {
-							log.Printf("查询监控器 %d 的历史记录失败: %v", monitor.ID, err)
-							continue
-						}
-						networkHistories = append(networkHistories, histories...)
+						activeQueries++
+						go func(monitorID uint64) {
+							// 使用高效的时间范围查询
+							allHistories, err := monitorOps.GetMonitorHistoriesByMonitorID(
+								monitorID, startTime, endTime)
+
+							var serverHistories []*model.MonitorHistory
+							if err == nil {
+								// 快速过滤出该服务器的记录
+								for _, history := range allHistories {
+									if history.ServerID == server.ID {
+										serverHistories = append(serverHistories, history)
+									}
+								}
+							}
+
+							resultChan <- monitorResult{
+								histories: serverHistories,
+								err:       err,
+							}
+						}(monitor.ID)
 					}
+				}
+
+				// 收集所有并发查询结果
+				for i := 0; i < activeQueries; i++ {
+					result := <-resultChan
+					if result.err != nil {
+						log.Printf("并发查询监控历史记录失败: %v", result.err)
+						continue
+					}
+					networkHistories = append(networkHistories, result.histories...)
 				}
 			}
 
-			// 按时间排序并限制总数量，防止内存溢出
+			// 按时间排序（数据已经基本有序，排序很快）
 			sort.Slice(networkHistories, func(i, j int) bool {
 				return networkHistories[i].CreatedAt.After(networkHistories[j].CreatedAt)
 			})
 
-			// 限制最大返回数量，防止内存问题
-			maxRecords := 2000
-			if len(networkHistories) > maxRecords {
-				networkHistories = networkHistories[:maxRecords]
-			}
-
+			log.Printf("API /monitor/%d 返回 %d 条记录（3天数据，所有监控器）", server.ID, len(networkHistories))
 			c.JSON(200, networkHistories)
 		} else {
 			c.JSON(200, []any{})

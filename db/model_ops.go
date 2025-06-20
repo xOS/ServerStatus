@@ -115,6 +115,7 @@ func (o *MonitorHistoryOps) SaveMonitorHistory(history *model.MonitorHistory) er
 }
 
 // GetMonitorHistoriesByMonitorID gets monitor histories for a specific monitor
+// 高性能优化：利用BadgerDB的key排序特性和时间索引进行精确范围查询
 func (o *MonitorHistoryOps) GetMonitorHistoriesByMonitorID(monitorID uint64, startTime, endTime time.Time) ([]*model.MonitorHistory, error) {
 	prefix := fmt.Sprintf("monitor_history:%d", monitorID)
 	startKey := fmt.Sprintf("%s:%d", prefix, startTime.UnixNano())
@@ -124,13 +125,22 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByMonitorID(monitorID uint64, sta
 	err := o.db.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = true
+		opts.PrefetchSize = 100 // 优化预取大小
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
+		// 使用精确的时间范围查询，利用BadgerDB的key排序
 		for it.Seek([]byte(startKey)); it.Valid(); it.Next() {
 			item := it.Item()
 			key := item.Key()
+
+			// 如果超出结束时间，立即停止（利用key排序特性）
 			if bytes.Compare(key, []byte(endKey)) > 0 {
+				break
+			}
+
+			// 确保key仍然属于当前监控器
+			if !bytes.HasPrefix(key, []byte(prefix+":")) {
 				break
 			}
 
@@ -195,14 +205,17 @@ func (o *MonitorHistoryOps) GetAllMonitorHistoriesInRange(startTime, endTime tim
 }
 
 // GetMonitorHistoriesByServerAndMonitor gets monitor histories for specific server and monitor within time range
+// 紧急性能优化：使用更精确的key前缀，避免全表扫描
 func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitor(serverID, monitorID uint64, startTime, endTime time.Time, limit int) ([]*model.MonitorHistory, error) {
 	var histories []*model.MonitorHistory
-	prefix := "monitor_history:"
+
+	// 使用更精确的前缀，基于monitorID
+	prefix := fmt.Sprintf("monitor_history:%d:", monitorID)
 
 	err := o.db.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = true
-		opts.PrefetchSize = 100
+		opts.PrefetchSize = 50 // 减少预取大小
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
@@ -211,7 +224,7 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitor(serverID, moni
 			item := it.Item()
 			key := item.Key()
 
-			// 检查key是否以prefix开头
+			// 检查key是否以精确前缀开头
 			if !bytes.HasPrefix(key, []byte(prefix)) {
 				break
 			}
@@ -222,9 +235,8 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitor(serverID, moni
 					return err
 				}
 
-				// 过滤条件：服务器ID、监控器ID、时间范围
+				// 只需要过滤服务器ID和时间范围（monitorID已经通过key前缀过滤）
 				if history.ServerID == serverID &&
-					history.MonitorID == monitorID &&
 					history.CreatedAt.After(startTime) &&
 					history.CreatedAt.Before(endTime) {
 					histories = append(histories, &history)
