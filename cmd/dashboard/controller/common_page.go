@@ -416,6 +416,12 @@ func (cp *commonPage) network(c *gin.Context) {
 		servers = make([]*model.Server, 0)
 	}
 
+	// 性能优化：使用map进行O(1)查找，避免双重循环
+	monitorServerMap := make(map[uint64]bool)
+	for _, serverID := range serverIdsWithMonitor {
+		monitorServerMap[serverID] = true
+	}
+
 	if authorized {
 		// 有权限的用户可以访问所有服务器
 		if singleton.SortedServerList != nil {
@@ -423,15 +429,8 @@ func (cp *commonPage) network(c *gin.Context) {
 				// 确保服务器不为nil
 				if server != nil {
 					// 如果serverIdsWithMonitor为空或包含当前服务器ID，则添加
-					if len(serverIdsWithMonitor) == 0 {
+					if len(serverIdsWithMonitor) == 0 || monitorServerMap[server.ID] {
 						servers = append(servers, server)
-					} else {
-						for _, monitorServerID := range serverIdsWithMonitor {
-							if server.ID == monitorServerID {
-								servers = append(servers, server)
-								break
-							}
-						}
 					}
 				}
 			}
@@ -445,15 +444,8 @@ func (cp *commonPage) network(c *gin.Context) {
 				// 确保服务器不为nil
 				if server != nil {
 					// 如果serverIdsWithMonitor为空或包含当前服务器ID，则添加
-					if len(serverIdsWithMonitor) == 0 {
+					if len(serverIdsWithMonitor) == 0 || monitorServerMap[server.ID] {
 						servers = append(servers, server)
-					} else {
-						for _, monitorServerID := range serverIdsWithMonitor {
-							if server.ID == monitorServerID {
-								servers = append(servers, server)
-								break
-							}
-						}
 					}
 				}
 			}

@@ -197,36 +197,49 @@ func main() {
 		// 等待所有任务完成
 		done := make(chan struct{})
 		go func() {
+			defer close(done)
 			log.Println("程序正在优雅关闭，保存所有数据...")
 
-			// 保存流量数据
+			// 1. 首先停止所有定时任务，防止新的goroutine产生
+			if singleton.Cron != nil {
+				singleton.Cron.Stop()
+				log.Println("定时任务已停止")
+			}
+
+			// 2. 关闭所有WebSocket连接，防止新的连接
+			singleton.ServerLock.Lock()
+			for _, server := range singleton.ServerList {
+				if server != nil && server.TaskCloseLock != nil {
+					server.TaskCloseLock.Lock()
+					if server.TaskClose != nil {
+						select {
+						case server.TaskClose <- fmt.Errorf("server shutting down"):
+						default:
+						}
+						// 不要在这里close，让RequestTask自己处理
+						server.TaskClose = nil
+					}
+					server.TaskStream = nil
+					server.TaskCloseLock.Unlock()
+				}
+			}
+			singleton.ServerLock.Unlock()
+			log.Println("所有服务器连接已关闭")
+
+			// 3. 清理Goroutine池，防止内存泄漏
+			singleton.CleanupGoroutinePools()
+
+			// 4. 保存流量数据
 			singleton.RecordTransferHourlyUsage()
 			singleton.SaveAllTrafficToDB()
 
-			// 保存所有数据到数据库（BadgerDB模式下特别重要）
+			// 5. 保存所有数据到数据库（BadgerDB模式下特别重要）
 			singleton.SaveAllDataToDB()
 
-			// 清理Goroutine池，防止内存泄漏
-			singleton.CleanupGoroutinePools()
-
-			// 关闭所有WebSocket连接
-			singleton.ServerLock.RLock()
-			for _, server := range singleton.ServerList {
-				if server != nil && server.TaskClose != nil {
-					select {
-					case server.TaskClose <- fmt.Errorf("server shutting down"):
-					default:
-					}
-					close(server.TaskClose)
-				}
-			}
-			singleton.ServerLock.RUnlock()
-
-			// 关闭HTTP服务器
+			// 6. 关闭HTTP服务器
 			srv.Shutdown(c)
 
 			log.Println("所有数据已保存，程序关闭完成")
-			close(done)
 		}()
 
 		// 设置超时
