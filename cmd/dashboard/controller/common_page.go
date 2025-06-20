@@ -1172,6 +1172,12 @@ func (cp *commonPage) terminal(c *gin.Context) {
 	defer cancel()
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("WebSocket PING goroutine panic恢复: %v", r)
+			}
+		}()
+
 		// PING 保活
 		ticker := time.NewTicker(time.Second * 10)
 		defer ticker.Stop()
@@ -1179,9 +1185,13 @@ func (cp *commonPage) terminal(c *gin.Context) {
 		for {
 			select {
 			case <-ctx.Done():
+				// 确保goroutine正确退出
 				return
 			case <-ticker.C:
+				// 设置写入超时，避免阻塞
+				wsConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 				if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+					// 连接错误，立即退出goroutine
 					return
 				}
 			}
@@ -1324,9 +1334,10 @@ func (cp *commonPage) fm(c *gin.Context) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("FM ping goroutine panic: %v", r)
+				log.Printf("FM ping goroutine panic恢复: %v", r)
 			}
 		}()
+
 		// PING 保活
 		ticker := time.NewTicker(time.Second * 10)
 		defer ticker.Stop()
@@ -1334,9 +1345,13 @@ func (cp *commonPage) fm(c *gin.Context) {
 		for {
 			select {
 			case <-ctx.Done():
+				// 确保goroutine正确退出
 				return
 			case <-ticker.C:
+				// 设置写入超时，避免阻塞
+				wsConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 				if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+					// 连接错误，立即退出goroutine
 					return
 				}
 			}

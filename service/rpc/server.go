@@ -224,13 +224,13 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 		current := activeRequestTaskGoroutines
 		total := int64(runtime.NumGoroutine())
 
-		// 提高阈值并减少清理频率，避免频繁日志输出
-		if total > 600 { // 提高阈值从400到600
+		// 修复根本问题后，使用更合理的阈值
+		if total > 500 { // 适中的阈值
 			// 使用包级变量控制清理频率，避免每次连接都清理
 			lastCleanupMutex.Lock()
 			now := time.Now()
-			// 至少间隔30秒才进行一次清理
-			if now.Sub(lastGoroutineCleanupTime) > 30*time.Second {
+			// 至少间隔1分钟才进行一次清理
+			if now.Sub(lastGoroutineCleanupTime) > 1*time.Minute {
 				lastGoroutineCleanupTime = now
 				lastCleanupMutex.Unlock()
 
@@ -240,15 +240,15 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 					log.Printf("强制清理了 %d 个连接，当前 goroutine 数量: %d", cleaned, runtime.NumGoroutine())
 				}
 
-				// 清理后仍然过多，拒绝新连接
-				if runtime.NumGoroutine() > 800 { // 提高拒绝阈值
-					log.Printf("清理后 goroutine 数量仍过多 (%d)，拒绝新的 RequestTask 连接", runtime.NumGoroutine())
+				// 只有在极端情况下才拒绝连接，避免数据丢失
+				if runtime.NumGoroutine() > 1000 {
+					log.Printf("清理后 goroutine 数量仍过多 (%d)，暂时拒绝新的 RequestTask 连接", runtime.NumGoroutine())
 					return -1
 				}
 			} else {
 				lastCleanupMutex.Unlock()
-				// 如果goroutine数量极高，直接拒绝
-				if total > 800 {
+				// 只有在极端情况下才拒绝连接
+				if total > 1000 {
 					return -1
 				}
 			}
@@ -299,8 +299,8 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	singleton.ServerLock.RUnlock()
 
 	// 创建一个带超时的上下文，确保所有goroutine都能正确退出
-	// 紧急修复：大幅减少超时时间，防止goroutine堆积
-	ctx, cancel := context.WithTimeout(stream.Context(), 30*time.Second)
+	// 修复：使用更合理的超时时间，避免正常连接被误杀
+	ctx, cancel := context.WithTimeout(stream.Context(), 5*time.Minute)
 	defer cancel()
 
 	// 根本修复：不再创建额外的监控goroutine
