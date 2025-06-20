@@ -26,6 +26,26 @@ import (
 	"github.com/xos/serverstatus/service/singleton"
 )
 
+// handleBrokenPipe 中间件处理broken pipe错误
+func handleBrokenPipe(c *gin.Context) {
+	defer func() {
+		if err := recover(); err != nil {
+			// 检查是否为broken pipe错误
+			if errStr := fmt.Sprintf("%v", err); strings.Contains(errStr, "broken pipe") ||
+				strings.Contains(errStr, "connection reset") ||
+				strings.Contains(errStr, "use of closed network connection") {
+				// 静默处理broken pipe错误，不记录日志
+				c.Abort()
+				return
+			}
+			// 其他错误正常处理
+			log.Printf("HTTP处理错误: %v", err)
+			c.Abort()
+		}
+	}()
+	c.Next()
+}
+
 func ServeWeb(port uint) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
@@ -34,6 +54,7 @@ func ServeWeb(port uint) *http.Server {
 		pprof.Register(r)
 	}
 	r.Use(natGateway)
+	r.Use(handleBrokenPipe) // 添加broken pipe错误处理中间件
 	tmpl := template.New("").Funcs(funcMap)
 	var err error
 	// 直接用本地模板目录
