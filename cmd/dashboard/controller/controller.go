@@ -373,6 +373,18 @@ func natGateway(c *gin.Context) {
 	c.Abort()
 }
 
+// updateCycleStatsInfo 安全地更新周期统计信息，避免死锁
+func updateCycleStatsInfo(cycleID uint64, from, to time.Time, max uint64, name string) {
+	singleton.AlertsLock.Lock()
+	defer singleton.AlertsLock.Unlock()
+	if store, ok := singleton.AlertsCycleTransferStatsStore[cycleID]; ok && store != nil {
+		store.From = from
+		store.To = to
+		store.Max = max
+		store.Name = name
+	}
+}
+
 // buildTrafficData 构建用于前端显示的流量数据
 // 返回的数据符合周期配置的cycle_start和cycle_unit
 func buildTrafficData() []map[string]interface{} {
@@ -463,19 +475,8 @@ func buildTrafficData() []map[string]interface{} {
 			stats.Max = uint64(flowRule.Max)
 			stats.Name = alert.Name
 
-			// 安全修复：使用同步更新替代异步goroutine，防止concurrent map writes
-			// 同时确保数据不丢失
-			func() {
-				singleton.AlertsLock.Lock()
-				defer singleton.AlertsLock.Unlock()
-				if store, ok := singleton.AlertsCycleTransferStatsStore[cycleID]; ok && store != nil {
-					// 安全地更新周期信息，确保数据一致性
-					store.From = from
-					store.To = to
-					store.Max = uint64(flowRule.Max)
-					store.Name = alert.Name
-				}
-			}()
+			// 在读锁外部异步更新周期信息，避免死锁
+			go updateCycleStatsInfo(cycleID, from, to, uint64(flowRule.Max), alert.Name)
 
 			// 生成流量数据条目
 			for serverID, transfer := range stats.Transfer {
