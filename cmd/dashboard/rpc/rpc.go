@@ -27,6 +27,18 @@ func isContextCanceledError(err error) bool {
 		strings.Contains(errStr, "Canceled desc = context canceled")
 }
 
+// isGRPCTransportError 检查是否为gRPC传输错误
+func isGRPCTransportError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "transport: SendHeader called multiple times") ||
+		strings.Contains(errStr, "transport: connection is closing") ||
+		strings.Contains(errStr, "transport: the stream is done") ||
+		strings.Contains(errStr, "rpc error: code = Internal desc = transport:")
+}
+
 func ServeRPC(port uint) {
 	// 配置 gRPC 服务器选项，防止 goroutine 泄漏和连接问题
 	opts := []grpc.ServerOption{
@@ -117,8 +129,8 @@ func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
 			}
 			if task.Cover == model.MonitorCoverIgnoreAll && skipServers[currentServer.ID] {
 				if err := currentServer.TaskStream.Send(task.PB()); err != nil {
-					// 只在非context canceled错误时记录日志
-					if !isContextCanceledError(err) {
+					// 只在非正常网络错误时记录日志
+					if !isContextCanceledError(err) && !isGRPCTransportError(err) {
 						log.Printf("DispatchTask: 发送任务到服务器 %d 失败: %v", currentServer.ID, err)
 					}
 				}
@@ -127,8 +139,8 @@ func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
 			}
 			if task.Cover == model.MonitorCoverAll && !skipServers[currentServer.ID] {
 				if err := currentServer.TaskStream.Send(task.PB()); err != nil {
-					// 只在非context canceled错误时记录日志
-					if !isContextCanceledError(err) {
+					// 只在非正常网络错误时记录日志
+					if !isContextCanceledError(err) && !isGRPCTransportError(err) {
 						log.Printf("DispatchTask: 发送任务到服务器 %d 失败: %v", currentServer.ID, err)
 					}
 				}
@@ -137,8 +149,8 @@ func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
 			}
 			// 找到合适机器执行任务，跳出循环
 			if err := currentServer.TaskStream.Send(task.PB()); err != nil {
-				// 只在非context canceled错误时记录日志
-				if !isContextCanceledError(err) {
+				// 只在非正常网络错误时记录日志
+				if !isContextCanceledError(err) && !isGRPCTransportError(err) {
 					log.Printf("DispatchTask: 发送任务到服务器 %d 失败: %v", currentServer.ID, err)
 				}
 			}

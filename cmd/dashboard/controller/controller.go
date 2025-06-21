@@ -46,15 +46,78 @@ func handleBrokenPipe(c *gin.Context) {
 	c.Next()
 }
 
+// corsMiddleware 处理CORS预检请求
+func corsMiddleware(c *gin.Context) {
+	// 处理OPTIONS预检请求
+	if c.Request.Method == "OPTIONS" {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+		c.Header("Access-Control-Max-Age", "86400")
+		c.AbortWithStatus(http.StatusOK)
+		return
+	}
+
+	// 为其他请求添加CORS头
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Next()
+}
+
 func ServeWeb(port uint) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
-	r := gin.Default()
+
+	// 创建自定义的Gin引擎，过滤网络连接错误
+	r := gin.New()
+
+	// 添加自定义的日志中间件，过滤broken pipe等网络错误
+	r.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
+		// 过滤broken pipe和connection reset错误
+		if param.ErrorMessage != "" {
+			errMsg := strings.ToLower(param.ErrorMessage)
+			if strings.Contains(errMsg, "broken pipe") ||
+				strings.Contains(errMsg, "connection reset") ||
+				strings.Contains(errMsg, "use of closed network connection") ||
+				strings.Contains(errMsg, "connection refused") {
+				// 不记录这些正常的网络连接错误
+				return ""
+			}
+		}
+
+		// 正常的日志格式
+		return fmt.Sprintf("[GIN] %v | %3d | %13v | %15s | %-7s %#v\n%s",
+			param.TimeStamp.Format("2006/01/02 - 15:04:05"),
+			param.StatusCode,
+			param.Latency,
+			param.ClientIP,
+			param.Method,
+			param.Path,
+			param.ErrorMessage,
+		)
+	}))
+
+	// 添加Recovery中间件，过滤网络连接错误
+	r.Use(gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
+		if err, ok := recovered.(string); ok {
+			errLower := strings.ToLower(err)
+			if strings.Contains(errLower, "broken pipe") ||
+				strings.Contains(errLower, "connection reset") ||
+				strings.Contains(errLower, "use of closed network connection") {
+				// 静默处理网络连接错误
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+		}
+		// 其他错误正常处理
+		c.AbortWithStatus(http.StatusInternalServerError)
+	}))
+
 	if singleton.Conf.Debug {
 		gin.SetMode(gin.DebugMode)
 		pprof.Register(r)
 	}
 	r.Use(natGateway)
 	r.Use(handleBrokenPipe) // 添加broken pipe错误处理中间件
+	r.Use(corsMiddleware)   // 添加CORS中间件处理OPTIONS请求
 	tmpl := template.New("").Funcs(funcMap)
 	var err error
 	// 直接用本地模板目录
