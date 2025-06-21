@@ -44,16 +44,17 @@ func OpenDB(path string) (*BadgerDB, error) {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
-	// Configure BadgerDB with optimized cache settings
+	// Configure BadgerDB with significantly optimized cache settings to solve cache warnings
 	options := badger.DefaultOptions(path).
-		WithLoggingLevel(badger.WARNING). // 减少日志级别，只显示WARNING和ERROR
+		WithLoggingLevel(badger.WARNING). // 保留WARNING级别日志
 		WithValueLogFileSize(64 << 20).   // 64MB
 		WithNumVersionsToKeep(1).
-		WithBlockCacheSize(256 << 20).   // 增加块缓存到256MB（默认是64MB）
-		WithIndexCacheSize(128 << 20).   // 增加索引缓存到128MB（默认是32MB）
-		WithNumLevelZeroTables(8).       // 增加Level 0表数量（默认是5）
-		WithNumLevelZeroTablesStall(15). // 增加Level 0表停顿阈值（默认是10）
-		WithValueThreshold(1024)         // 设置值阈值为1KB（默认是1MB）
+		WithBlockCacheSize(1024 << 20).  // 大幅增加块缓存到1GB，从根本上解决缓存不足问题
+		WithIndexCacheSize(512 << 20).   // 大幅增加索引缓存到512MB
+		WithNumLevelZeroTables(16).      // 进一步增加Level 0表数量到16
+		WithNumLevelZeroTablesStall(25). // 进一步增加Level 0表停顿阈值到25
+		WithValueThreshold(256).         // 进一步降低值阈值到256字节
+		WithMemTableSize(256 << 20)      // 大幅增加内存表大小到256MB
 
 	// Open database
 	db, err := badger.Open(options)
