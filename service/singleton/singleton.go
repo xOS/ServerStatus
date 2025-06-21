@@ -2155,16 +2155,27 @@ func StartDBInsertWorker() {
 // executeDBWriteRequest 执行单个数据库写入请求
 func executeDBWriteRequest(req DBWriteRequest) error {
 	return ExecuteWithRetry(func() error {
-		// 紧急修复：检查DB是否为nil，防止panic
-		if DB == nil {
-			return fmt.Errorf("数据库连接未初始化")
+		// 根据数据库类型选择不同的处理方式
+		if Conf.DatabaseType == "badger" {
+			// BadgerDB模式：使用BadgerDB操作
+			if db.DB == nil {
+				return fmt.Errorf("BadgerDB连接未初始化")
+			}
+
+			// 使用BadgerDB的SafeUpdateServerStatus
+			return SafeUpdateServerStatus(req.ServerID, req.Updates)
+		} else {
+			// SQLite模式：使用GORM操作
+			if DB == nil {
+				return fmt.Errorf("SQLite数据库连接未初始化")
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			// 直接更新，避免不必要的事务开销
+			return DB.WithContext(ctx).Table(req.TableName).Where("id = ?", req.ServerID).Updates(req.Updates).Error
 		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		// 直接更新，避免不必要的事务开销
-		return DB.WithContext(ctx).Table(req.TableName).Where("id = ?", req.ServerID).Updates(req.Updates).Error
 	})
 }
 

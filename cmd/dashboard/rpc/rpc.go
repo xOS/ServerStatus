@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -14,6 +15,17 @@ import (
 	rpcService "github.com/xos/serverstatus/service/rpc"
 	"github.com/xos/serverstatus/service/singleton"
 )
+
+// isContextCanceledError 检查是否为context canceled错误
+func isContextCanceledError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "context canceled") ||
+		strings.Contains(errStr, "context deadline exceeded") ||
+		strings.Contains(errStr, "Canceled desc = context canceled")
+}
 
 func ServeRPC(port uint) {
 	// 配置 gRPC 服务器选项，防止 goroutine 泄漏和连接问题
@@ -105,21 +117,30 @@ func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
 			}
 			if task.Cover == model.MonitorCoverIgnoreAll && skipServers[currentServer.ID] {
 				if err := currentServer.TaskStream.Send(task.PB()); err != nil {
-					log.Printf("DispatchTask: 发送任务到服务器 %d 失败: %v", currentServer.ID, err)
+					// 只在非context canceled错误时记录日志
+					if !isContextCanceledError(err) {
+						log.Printf("DispatchTask: 发送任务到服务器 %d 失败: %v", currentServer.ID, err)
+					}
 				}
 				workedServerIndex++
 				continue
 			}
 			if task.Cover == model.MonitorCoverAll && !skipServers[currentServer.ID] {
 				if err := currentServer.TaskStream.Send(task.PB()); err != nil {
-					log.Printf("DispatchTask: 发送任务到服务器 %d 失败: %v", currentServer.ID, err)
+					// 只在非context canceled错误时记录日志
+					if !isContextCanceledError(err) {
+						log.Printf("DispatchTask: 发送任务到服务器 %d 失败: %v", currentServer.ID, err)
+					}
 				}
 				workedServerIndex++
 				continue
 			}
 			// 找到合适机器执行任务，跳出循环
 			if err := currentServer.TaskStream.Send(task.PB()); err != nil {
-				log.Printf("DispatchTask: 发送任务到服务器 %d 失败: %v", currentServer.ID, err)
+				// 只在非context canceled错误时记录日志
+				if !isContextCanceledError(err) {
+					log.Printf("DispatchTask: 发送任务到服务器 %d 失败: %v", currentServer.ID, err)
+				}
 			}
 			workedServerIndex++
 			break

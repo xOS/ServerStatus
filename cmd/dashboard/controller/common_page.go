@@ -1038,20 +1038,22 @@ func (cp *commonPage) home(c *gin.Context) {
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  32768,
 	WriteBufferSize: 32768,
+	CheckOrigin: func(r *http.Request) bool {
+		// 允许所有来源的WebSocket连接，避免跨域问题
+		return true
+	},
+	Error: func(w http.ResponseWriter, r *http.Request, status int, reason error) {
+		// 自定义错误处理，避免写入响应头冲突
+		log.Printf("WebSocket升级错误 [%d]: %v", status, reason)
+	},
 }
 
 func (cp *commonPage) ws(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code: http.StatusInternalServerError,
-			Title: singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "NetworkError",
-			}),
-			Msg:  "Websocket协议切换失败",
-			Link: "/",
-			Btn:  "返回首页",
-		}, true)
+		// WebSocket升级失败时，不能再写入HTTP响应，因为头部已经被写入
+		// 只记录错误日志，让客户端处理重连
+		log.Printf("WebSocket升级失败: %v", err)
 		return
 	}
 	defer func() {
@@ -1153,15 +1155,8 @@ func (cp *commonPage) terminal(c *gin.Context) {
 
 	wsConn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code: http.StatusInternalServerError,
-			Title: singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "NetworkError",
-			}),
-			Msg:  "Websocket协议切换失败",
-			Link: "/",
-			Btn:  "返回首页",
-		}, true)
+		// WebSocket升级失败时，不能再写入HTTP响应
+		log.Printf("Terminal WebSocket升级失败: %v", err)
 		return
 	}
 	defer wsConn.Close()
@@ -1307,15 +1302,8 @@ func (cp *commonPage) fm(c *gin.Context) {
 
 	wsConn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code: http.StatusInternalServerError,
-			Title: singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "NetworkError",
-			}),
-			Msg:  "Websocket协议切换失败",
-			Link: "/",
-			Btn:  "返回首页",
-		}, true)
+		// WebSocket升级失败时，不能再写入HTTP响应
+		log.Printf("FM WebSocket升级失败: %v", err)
 		return
 	}
 	defer wsConn.Close()
