@@ -35,7 +35,9 @@ func isGRPCTransportError(err error) bool {
 	errStr := err.Error()
 	return strings.Contains(errStr, "transport: SendHeader called multiple times") ||
 		strings.Contains(errStr, "transport: connection is closing") ||
+		strings.Contains(errStr, "transport is closing") || // 添加这个错误类型
 		strings.Contains(errStr, "transport: the stream is done") ||
+		strings.Contains(errStr, "rpc error: code = Unavailable desc = transport is closing") || // 完整匹配
 		strings.Contains(errStr, "rpc error: code = Internal desc = transport:")
 }
 
@@ -129,6 +131,8 @@ func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
 			}
 			if task.Cover == model.MonitorCoverIgnoreAll && skipServers[currentServer.ID] {
 				if err := currentServer.TaskStream.Send(task.PB()); err != nil {
+					// 清理失效的连接
+					currentServer.TaskStream = nil
 					// 只在非正常网络错误时记录日志
 					if !isContextCanceledError(err) && !isGRPCTransportError(err) {
 						log.Printf("DispatchTask: 发送任务到服务器 %d 失败: %v", currentServer.ID, err)
@@ -139,6 +143,8 @@ func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
 			}
 			if task.Cover == model.MonitorCoverAll && !skipServers[currentServer.ID] {
 				if err := currentServer.TaskStream.Send(task.PB()); err != nil {
+					// 清理失效的连接
+					currentServer.TaskStream = nil
 					// 只在非正常网络错误时记录日志
 					if !isContextCanceledError(err) && !isGRPCTransportError(err) {
 						log.Printf("DispatchTask: 发送任务到服务器 %d 失败: %v", currentServer.ID, err)
@@ -149,6 +155,8 @@ func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
 			}
 			// 找到合适机器执行任务，跳出循环
 			if err := currentServer.TaskStream.Send(task.PB()); err != nil {
+				// 清理失效的连接
+				currentServer.TaskStream = nil
 				// 只在非正常网络错误时记录日志
 				if !isContextCanceledError(err) && !isGRPCTransportError(err) {
 					log.Printf("DispatchTask: 发送任务到服务器 %d 失败: %v", currentServer.ID, err)

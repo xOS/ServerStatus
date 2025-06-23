@@ -15,11 +15,11 @@ type DataAccessOptimizer struct {
 	// 批量操作缓冲区
 	pendingWrites map[string]interface{}
 	writeMutex    sync.RWMutex
-	
+
 	// 读缓存（应用层缓存，提高命中率）
-	readCache map[string]CacheItem
+	readCache  map[string]CacheItem
 	cacheMutex sync.RWMutex
-	
+
 	// 批量写入定时器
 	flushTicker *time.Ticker
 	stopCh      chan struct{}
@@ -27,9 +27,9 @@ type DataAccessOptimizer struct {
 
 // CacheItem 缓存项
 type CacheItem struct {
-	Data      interface{}
-	ExpireAt  time.Time
-	AccessAt  time.Time
+	Data     interface{}
+	ExpireAt time.Time
+	AccessAt time.Time
 }
 
 var (
@@ -55,13 +55,13 @@ func GetDataAccessOptimizer() *DataAccessOptimizer {
 func (dao *DataAccessOptimizer) start() {
 	go func() {
 		defer dao.flushTicker.Stop()
-		
+
 		for {
 			select {
 			case <-dao.flushTicker.C:
 				dao.flushPendingWrites()
 				dao.cleanExpiredCache()
-				
+
 			case <-dao.stopCh:
 				// 停止前最后一次写入
 				dao.flushPendingWrites()
@@ -74,11 +74,11 @@ func (dao *DataAccessOptimizer) start() {
 // OptimizedSave 优化的保存方法 - 缓冲写入请求
 func (dao *DataAccessOptimizer) OptimizedSave(modelType string, id uint64, data interface{}) {
 	key := getModelKey(modelType, id)
-	
+
 	dao.writeMutex.Lock()
 	dao.pendingWrites[key] = data
 	dao.writeMutex.Unlock()
-	
+
 	// 同时更新读缓存
 	dao.updateReadCache(key, data)
 }
@@ -86,28 +86,28 @@ func (dao *DataAccessOptimizer) OptimizedSave(modelType string, id uint64, data 
 // OptimizedGet 优化的获取方法 - 优先从应用层缓存读取
 func (dao *DataAccessOptimizer) OptimizedGet(modelType string, id uint64, result interface{}) error {
 	key := getModelKey(modelType, id)
-	
+
 	// 首先检查应用层缓存
 	dao.cacheMutex.RLock()
 	if item, exists := dao.readCache[key]; exists && item.ExpireAt.After(time.Now()) {
 		dao.cacheMutex.RUnlock()
-		
+
 		// 更新访问时间
 		dao.cacheMutex.Lock()
 		item.AccessAt = time.Now()
 		dao.readCache[key] = item
 		dao.cacheMutex.Unlock()
-		
+
 		// 复制数据到结果
 		return copyData(item.Data, result)
 	}
 	dao.cacheMutex.RUnlock()
-	
+
 	// 缓存未命中，从数据库读取
 	if err := DB.FindModel(id, modelType, result); err != nil {
 		return err
 	}
-	
+
 	// 更新缓存
 	dao.updateReadCache(key, result)
 	return nil
@@ -120,7 +120,7 @@ func (dao *DataAccessOptimizer) flushPendingWrites() {
 		dao.writeMutex.Unlock()
 		return
 	}
-	
+
 	// 复制待写入数据
 	writes := make(map[string]interface{})
 	for k, v := range dao.pendingWrites {
@@ -129,7 +129,7 @@ func (dao *DataAccessOptimizer) flushPendingWrites() {
 	// 清空缓冲区
 	dao.pendingWrites = make(map[string]interface{})
 	dao.writeMutex.Unlock()
-	
+
 	// 按模型类型分组批量写入
 	grouped := groupByModelType(writes)
 	for modelType, models := range grouped {
@@ -137,7 +137,7 @@ func (dao *DataAccessOptimizer) flushPendingWrites() {
 			log.Printf("批量写入失败 %s: %v", modelType, err)
 		}
 	}
-	
+
 	log.Printf("批量写入完成: %d条记录", len(writes))
 }
 
@@ -156,10 +156,10 @@ func (dao *DataAccessOptimizer) updateReadCache(key string, data interface{}) {
 func (dao *DataAccessOptimizer) cleanExpiredCache() {
 	dao.cacheMutex.Lock()
 	defer dao.cacheMutex.Unlock()
-	
+
 	now := time.Now()
 	cleaned := 0
-	
+
 	for key, item := range dao.readCache {
 		// 清理过期的或长时间未访问的缓存
 		if item.ExpireAt.Before(now) || item.AccessAt.Before(now.Add(-10*time.Minute)) {
@@ -167,7 +167,7 @@ func (dao *DataAccessOptimizer) cleanExpiredCache() {
 			cleaned++
 		}
 	}
-	
+
 	if cleaned > 0 {
 		log.Printf("清理过期缓存: %d项", cleaned)
 	}
@@ -185,25 +185,25 @@ func getModelKey(modelType string, id uint64) string {
 
 func groupByModelType(writes map[string]interface{}) map[string]map[uint64]interface{} {
 	grouped := make(map[string]map[uint64]interface{})
-	
+
 	for key, data := range writes {
 		parts := strings.SplitN(key, ":", 2)
 		if len(parts) != 2 {
 			continue
 		}
-		
+
 		modelType := parts[0]
 		id, err := strconv.ParseUint(parts[1], 10, 64)
 		if err != nil {
 			continue
 		}
-		
+
 		if grouped[modelType] == nil {
 			grouped[modelType] = make(map[uint64]interface{})
 		}
 		grouped[modelType][id] = data
 	}
-	
+
 	return grouped
 }
 

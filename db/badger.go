@@ -83,18 +83,18 @@ func OpenDB(path string) (*BadgerDB, error) {
 	// 不是简单增加缓存，而是优化配置平衡性能和内存使用
 	cacheConfig := getOptimalCacheConfig()
 	options := badger.DefaultOptions(path).
-		WithLoggingLevel(badger.ERROR).                                    // 减少日志噪音，只保留ERROR
-		WithValueLogFileSize(64 << 20).                                    // 64MB
-		WithNumVersionsToKeep(1).                                          // 只保留1个版本
-		WithBlockCacheSize(int64(cacheConfig.BlockCache << 20)).          // 动态块缓存大小
-		WithIndexCacheSize(int64(cacheConfig.IndexCache << 20)).          // 动态索引缓存大小
-		WithNumLevelZeroTables(8).                                         // 适中的Level 0表数量
-		WithNumLevelZeroTablesStall(12).                                   // 适中的停顿阈值
-		WithValueThreshold(1024).                                          // 适中的值阈值
-		WithMemTableSize(int64(cacheConfig.MemTable << 20)).              // 动态内存表大小
-		WithCompactL0OnClose(true).                                        // 关闭时压缩L0
-		WithDetectConflicts(false).                                        // 禁用冲突检测以提高性能
-		WithSyncWrites(false)                                              // 异步写入提高性能
+		WithLoggingLevel(badger.ERROR).                          // 减少日志噪音，只保留ERROR
+		WithValueLogFileSize(64 << 20).                          // 64MB
+		WithNumVersionsToKeep(1).                                // 只保留1个版本
+		WithBlockCacheSize(int64(cacheConfig.BlockCache << 20)). // 动态块缓存大小
+		WithIndexCacheSize(int64(cacheConfig.IndexCache << 20)). // 动态索引缓存大小
+		WithNumLevelZeroTables(8).                               // 适中的Level 0表数量
+		WithNumLevelZeroTablesStall(12).                         // 适中的停顿阈值
+		WithValueThreshold(1024).                                // 适中的值阈值
+		WithMemTableSize(int64(cacheConfig.MemTable << 20)).     // 动态内存表大小
+		WithCompactL0OnClose(true).                              // 关闭时压缩L0
+		WithDetectConflicts(false).                              // 禁用冲突检测以提高性能
+		WithSyncWrites(false)                                    // 异步写入提高性能
 
 	// Open database
 	db, err := badger.Open(options)
@@ -114,7 +114,7 @@ func OpenDB(path string) (*BadgerDB, error) {
 
 	// Start background maintenance tasks
 	badgerDB.startMaintenance()
-	
+
 	// 预取常用数据以提高缓存命中率
 	go func() {
 		// 延迟5秒启动，让系统完全初始化
@@ -153,7 +153,7 @@ func (b *BadgerDB) startMaintenance() {
 		}()
 
 		// 智能维护：结合缓存监控和内存优化
-		ticker := time.NewTicker(10 * time.Minute) // 10分钟间隔
+		ticker := time.NewTicker(10 * time.Minute)     // 10分钟间隔
 		cacheTicker := time.NewTicker(5 * time.Minute) // 5分钟缓存检查
 		defer ticker.Stop()
 		defer cacheTicker.Stop()
@@ -166,11 +166,11 @@ func (b *BadgerDB) startMaintenance() {
 				if err != nil && err != badger.ErrNoRewrite {
 					log.Printf("Value log GC failed: %v", err)
 				}
-				
+
 			case <-cacheTicker.C:
 				// 缓存性能监控和优化
 				b.monitorAndOptimizeCache()
-				
+
 			case <-b.ctx.Done():
 				log.Printf("BadgerDB maintenance goroutine正常退出")
 				return
@@ -196,17 +196,17 @@ func (b *BadgerDB) BatchSaveModels(modelType string, models map[uint64]interface
 	if len(models) == 0 {
 		return nil
 	}
-	
+
 	// 使用批量事务提高效率
 	return b.db.Update(func(txn *badger.Txn) error {
 		for id, model := range models {
 			key := fmt.Sprintf("%s:%d", modelType, id)
-			
+
 			value, err := json.Marshal(model)
 			if err != nil {
 				return fmt.Errorf("failed to marshal model %d: %w", id, err)
 			}
-			
+
 			if err := txn.Set([]byte(key), value); err != nil {
 				return fmt.Errorf("failed to set key %s: %w", key, err)
 			}
@@ -374,12 +374,12 @@ func (b *BadgerDB) BatchFindModels(modelType string, ids []uint64, results inter
 	if len(ids) == 0 {
 		return nil
 	}
-	
+
 	// 使用只读事务批量读取
 	return b.db.View(func(txn *badger.Txn) error {
 		for _, id := range ids {
 			key := fmt.Sprintf("%s:%d", modelType, id)
-			
+
 			item, err := txn.Get([]byte(key))
 			if err == badger.ErrKeyNotFound {
 				continue // 跳过不存在的记录
@@ -387,7 +387,7 @@ func (b *BadgerDB) BatchFindModels(modelType string, ids []uint64, results inter
 			if err != nil {
 				return err
 			}
-			
+
 			err = item.Value(func(val []byte) error {
 				// 这里需要根据具体的结果类型来处理
 				// 为了简化，这里只做基本的数据读取
@@ -1004,12 +1004,12 @@ func (b *BadgerDB) PrefetchCommonData() error {
 		opts.PrefetchSize = 100 // 预取100个键值对
 		it := txn.NewIterator(opts)
 		defer it.Close()
-		
+
 		count := 0
 		for it.Rewind(); it.Valid() && count < 50; it.Next() { // 只预取前50个常用数据
 			item := it.Item()
 			key := string(item.Key())
-			
+
 			// 只预取服务器相关数据
 			if strings.HasPrefix(key, "server:") {
 				_ = item.Value(func(val []byte) error {
@@ -1019,7 +1019,7 @@ func (b *BadgerDB) PrefetchCommonData() error {
 				count++
 			}
 		}
-		
+
 		return nil
 	})
 }
@@ -1373,17 +1373,17 @@ func (b *BadgerDB) monitorAndOptimizeCache() {
 	// 获取当前内存使用情况
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	
+
 	currentHeapMB := m.HeapAlloc / (1024 * 1024)
-	
+
 	// 内存使用监控和预警
 	if currentHeapMB > 500 { // 500MB预警阈值
 		log.Printf("BadgerDB缓存监控: 内存使用较高 %dMB，建议优化数据访问模式", currentHeapMB)
-		
+
 		// 可以在这里触发缓存清理或数据预处理
 		runtime.GC() // 强制垃圾回收
 	}
-	
+
 	// 定期输出缓存统计（仅在DEBUG模式下）
 	if os.Getenv("BADGER_DEBUG") == "1" {
 		log.Printf("BadgerDB缓存监控: 当前堆内存使用 %dMB", currentHeapMB)
@@ -1394,7 +1394,7 @@ func (b *BadgerDB) monitorAndOptimizeCache() {
 func (b *BadgerDB) GetCacheStats() map[string]interface{} {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	
+
 	return map[string]interface{}{
 		"heap_alloc_mb":  m.HeapAlloc / (1024 * 1024),
 		"heap_sys_mb":    m.HeapSys / (1024 * 1024),

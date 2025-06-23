@@ -935,14 +935,31 @@ func (ss *ServiceSentinel) cleanupOldData() {
 
 	// 清理ping数据，限制每个监控项的ping存储
 	for monitorID, pingMap := range ss.serviceResponsePing {
-		if len(pingMap) > 120 { // 限制每个监控项最多120个ping记录（从100增加）
-			// 删除超出限制的ping记录
-			count := 0
-			for reporterID := range pingMap {
-				if count >= 60 { // 只保留最新的60个（从50增加）
-					delete(pingMap, reporterID)
+		if len(pingMap) > 120 { // 限制每个监控项最多120个ping记录
+			// 重要修复：按服务器ID排序，只删除最旧的记录，保护活跃服务器
+			serverIDs := make([]uint64, 0, len(pingMap))
+			for serverID := range pingMap {
+				serverIDs = append(serverIDs, serverID)
+			}
+
+			// 按ID排序，删除较小ID的记录（通常是较旧的）
+			if len(serverIDs) > 60 {
+				// 按ID升序排序
+				for i := 0; i < len(serverIDs)-1; i++ {
+					for j := i + 1; j < len(serverIDs); j++ {
+						if serverIDs[i] > serverIDs[j] {
+							serverIDs[i], serverIDs[j] = serverIDs[j], serverIDs[i]
+						}
+					}
 				}
-				count++
+
+				// 只删除最旧的记录，保留最新的60个，但保护活跃服务器
+				for i := 0; i < len(serverIDs)-60; i++ {
+					// 重要：检查是否为活跃服务器，如果是则跳过删除
+					if !ss.isActiveServer(serverIDs[i]) {
+						delete(pingMap, serverIDs[i])
+					}
+				}
 			}
 		}
 		// 清理不存在的监控项
@@ -1008,15 +1025,29 @@ func (ss *ServiceSentinel) limitDataSize() {
 	// 限制ping数据大小
 	for monitorID, pingMap := range ss.serviceResponsePing {
 		if len(pingMap) > maxPingRecords {
-			// 清理超出限制的ping记录，保留最新的
+			// 重要修复：按服务器ID排序删除，避免删除活跃服务器
 			keys := make([]uint64, 0, len(pingMap))
 			for k := range pingMap {
 				keys = append(keys, k)
 			}
 
-			// 删除多余的记录
-			for i := maxPingRecords; i < len(keys); i++ {
-				delete(pingMap, keys[i])
+			// 按ID排序，保护高ID的活跃服务器
+			for i := 0; i < len(keys)-1; i++ {
+				for j := i + 1; j < len(keys); j++ {
+					if keys[i] > keys[j] {
+						keys[i], keys[j] = keys[j], keys[i]
+					}
+				}
+			}
+
+			// 只删除最旧的记录，保留最新的 maxPingRecords 个，但保护活跃服务器
+			if len(keys) > maxPingRecords {
+				for i := 0; i < len(keys)-maxPingRecords; i++ {
+					// 重要：检查是否为活跃服务器，如果是则跳过删除
+					if !ss.isActiveServer(keys[i]) {
+						delete(pingMap, keys[i])
+					}
+				}
 			}
 		}
 
@@ -1096,4 +1127,20 @@ func (ss *ServiceSentinel) getMemoryUsageEstimate() map[string]int {
 	}
 
 	return usage
+}
+
+// isActiveServer 检查服务器是否处于活跃状态
+func (ss *ServiceSentinel) isActiveServer(serverID uint64) bool {
+	// 检查全局服务器列表中是否存在此服务器
+	SortedServerLock.RLock()
+	defer SortedServerLock.RUnlock()
+
+	// 遍历SortedServerList查找活跃服务器
+	for _, server := range SortedServerList {
+		if server != nil && server.ID == serverID {
+			// 检查服务器是否有活跃连接
+			return server.TaskStream != nil
+		}
+	}
+	return false
 }
