@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
-	"strings"
 	"time"
 
 	"code.cloudfoundry.org/bytefmt"
