@@ -156,15 +156,14 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 			endTime := time.Now()
 
 			if cr.PushSuccessful && r.GetSuccessful() {
-				message := fmt.Sprintf("[%s]\n任务名称: %s\n执行设备: %s (ID:%d)\n开始时间: %s\n结束时间: %s\n执行结果: 成功\n执行详情:\n%s",
-					singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "ScheduledTaskExecutedSuccessfully",
-					}),
-					cr.Name,
-					singleton.ServerList[clientID].Name, clientID,
-					startTime.Format("2006-01-02 15:04:05"),
-					endTime.Format("2006-01-02 15:04:05"),
-					r.GetData())
+				message := fmt.Sprintf("[%s]\n任务名称: %s\n执行设备: %s (ID:%d)\n开始时间: %s\n结束时间: %s\n执行结果: 成功",
+		singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
+			MessageID: "ScheduledTaskExecutedSuccessfully",
+		}),
+		cr.Name,
+		singleton.ServerList[clientID].Name, clientID,
+		startTime.Format("2006-01-02 15:04:05"),
+		endTime.Format("2006-01-02 15:04:05"))
 
 				singleton.SafeSendNotification(cr.NotificationTag, message, nil, &curServer)
 			}
