@@ -23,3 +23,4 @@
 /resource/static/theme-custom
 server
 scripts/monitor_goroutines.sh
+FIXES_APPLIED.md

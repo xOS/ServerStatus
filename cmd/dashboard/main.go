@@ -133,6 +133,10 @@ func main() {
 	srv := controller.ServeWeb(singleton.Conf.HTTPPort)
 	log.Printf("HTTP服务器已创建，将在业务初始化完成后启动服务")
 
+	// 启动RPC服务
+	go rpc.ServeRPC(singleton.Conf.GRPCPort)
+	serviceSentinelDispatchBus := make(chan model.Monitor)
+
 	// 异步初始化系统，避免阻塞HTTP服务器
 	go func() {
 		defer func() {
@@ -142,11 +146,35 @@ func main() {
 		}()
 		initSystem()
 		log.Printf("系统初始化完成")
-	}()
 
-	// 启动RPC服务
-	go rpc.ServeRPC(singleton.Conf.GRPCPort)
-	serviceSentinelDispatchBus := make(chan model.Monitor)
+		// 系统初始化完成后，启动依赖singleton.Cron的服务
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("DispatchKeepalive goroutine panic恢复: %v", r)
+				}
+			}()
+			rpc.DispatchKeepalive()
+		}()
+
+		// 异步初始化ServiceSentinel，避免阻塞（也依赖Cron）
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("ServiceSentinel初始化goroutine panic恢复: %v", r)
+				}
+			}()
+
+			log.Printf("正在初始化ServiceSentinel...")
+			singleton.NewServiceSentinel(serviceSentinelDispatchBus)
+			log.Printf("ServiceSentinel初始化完成")
+
+			// 只在非BadgerDB模式下调用CleanMonitorHistory
+			if singleton.Conf.DatabaseType != "badger" {
+				singleton.CleanMonitorHistory()
+			}
+		}()
+	}()
 
 	// 修复goroutine泄漏：使用正确的context模式
 	go func() {
@@ -161,37 +189,10 @@ func main() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("DispatchKeepalive goroutine panic恢复: %v", r)
-			}
-		}()
-		rpc.DispatchKeepalive()
-	}()
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
 				log.Printf("AlertSentinelStart goroutine panic恢复: %v", r)
 			}
 		}()
 		singleton.AlertSentinelStart()
-	}()
-
-	// 异步初始化ServiceSentinel，避免阻塞
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("ServiceSentinel初始化goroutine panic恢复: %v", r)
-			}
-		}()
-
-		log.Printf("正在初始化ServiceSentinel...")
-		singleton.NewServiceSentinel(serviceSentinelDispatchBus)
-		log.Printf("ServiceSentinel初始化完成")
-
-		// 只在非BadgerDB模式下调用CleanMonitorHistory
-		if singleton.Conf.DatabaseType != "badger" {
-			singleton.CleanMonitorHistory()
-		}
 	}()
 
 	go func() {

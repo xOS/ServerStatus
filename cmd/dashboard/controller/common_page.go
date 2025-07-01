@@ -1085,7 +1085,7 @@ func (cp *commonPage) ws(c *gin.Context) {
 
 	// Write goroutine
 	go func() {
-		ticker := time.NewTicker(time.Second * 5)
+		ticker := time.NewTicker(time.Second * 1) // 从5秒改为1秒，提高更新频率
 		defer ticker.Stop()
 		for {
 			select {
