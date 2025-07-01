@@ -123,19 +123,28 @@ func main() {
 	// 初始化Goroutine池，防止内存泄漏
 	singleton.InitGoroutinePools()
 
-	initSystem()
-
 	// 创建用于控制所有后台任务的context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_ = ctx // 将来可能用于goroutine控制
+	_ = ctx // 用于将来的goroutine控制
 
-	// 启动所有服务
-	// 只在非BadgerDB模式下调用CleanMonitorHistory，BadgerDB模式下已经在initSystem中调用
-	if singleton.Conf.DatabaseType != "badger" {
-		singleton.CleanMonitorHistory()
-	}
+	// 【重要】提前启动HTTP服务器，避免前端502错误
+	log.Printf("正在提前启动HTTP服务器在端口 %d...", singleton.Conf.HTTPPort)
+	srv := controller.ServeWeb(singleton.Conf.HTTPPort)
+	log.Printf("HTTP服务器已创建，将在业务初始化完成后启动服务")
 
+	// 异步初始化系统，避免阻塞HTTP服务器
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("系统初始化goroutine panic恢复: %v", r)
+			}
+		}()
+		initSystem()
+		log.Printf("系统初始化完成")
+	}()
+
+	// 启动RPC服务
 	go rpc.ServeRPC(singleton.Conf.GRPCPort)
 	serviceSentinelDispatchBus := make(chan model.Monitor)
 
@@ -167,13 +176,23 @@ func main() {
 		singleton.AlertSentinelStart()
 	}()
 
-	log.Printf("正在初始化ServiceSentinel...")
-	singleton.NewServiceSentinel(serviceSentinelDispatchBus)
-	log.Printf("ServiceSentinel初始化完成")
+	// 异步初始化ServiceSentinel，避免阻塞
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("ServiceSentinel初始化goroutine panic恢复: %v", r)
+			}
+		}()
 
-	log.Printf("正在创建HTTP服务器...")
-	srv := controller.ServeWeb(singleton.Conf.HTTPPort)
-	log.Printf("HTTP服务器创建完成")
+		log.Printf("正在初始化ServiceSentinel...")
+		singleton.NewServiceSentinel(serviceSentinelDispatchBus)
+		log.Printf("ServiceSentinel初始化完成")
+
+		// 只在非BadgerDB模式下调用CleanMonitorHistory
+		if singleton.Conf.DatabaseType != "badger" {
+			singleton.CleanMonitorHistory()
+		}
+	}()
 
 	go func() {
 		defer func() {
@@ -184,7 +203,8 @@ func main() {
 		dispatchReportInfoTask()
 	}()
 
-	log.Printf("正在启动HTTP服务器在端口 %d...", singleton.Conf.HTTPPort)
+	log.Printf("所有服务已启动，HTTP服务器将运行在端口 %d", singleton.Conf.HTTPPort)
+
 	// 优雅关闭处理
 	if err := graceful.Graceful(func() error {
 		return srv.ListenAndServe()
