@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"time"
 
@@ -534,6 +535,7 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 	_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
 	authorized := isMember || isViewPasswordVerfied
 	v, err, _ := cp.requestGroup.Do(fmt.Sprintf("serverStats::%t", authorized), func() (interface{}, error) {
+		// 使用defer确保锁的正确释放
 		singleton.SortedServerLock.RLock()
 		defer singleton.SortedServerLock.RUnlock()
 
@@ -549,36 +551,57 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 			log.Printf("getServerStat: 警告 - 服务器列表为空, 授权状态: %v", authorized)
 		}
 
-		// 修复：检查服务器列表是否为空或未初始化
+		// 修复：安全地检查服务器列表
 		if serverList == nil || len(serverList) == 0 {
 			if singleton.Conf.Debug {
 				log.Printf("getServerStat: 服务器列表为空，尝试从 ServerList 提取数据")
 			}
 
-			// 从 ServerList 中提取服务器
-			singleton.ServerLock.RLock()
-			// 检查ServerList是否初始化
-			if singleton.ServerList != nil {
-				for _, server := range singleton.ServerList {
-					if server != nil {
+			// 安全地从 ServerList 中提取服务器
+			func() {
+				singleton.ServerLock.RLock()
+				defer singleton.ServerLock.RUnlock()
+
+				// 检查ServerList是否初始化
+				if singleton.ServerList != nil {
+					for _, server := range singleton.ServerList {
+						// 安全检查：确保server不为nil
+						if server == nil {
+							continue
+						}
+
 						// 为所有用户展示所有服务器，或者仅对授权用户显示
 						if authorized || !server.HideForGuest {
-							// 确保服务器对象完整
-							if server.Host == nil {
-								server.Host = &model.Host{}
-								server.Host.Initialize()
+							// 深拷贝服务器对象，避免并发修改
+							safeServer := &model.Server{}
+							*safeServer = *server // 浅拷贝基础字段
+
+							// 安全地拷贝Host字段
+							if server.Host != nil {
+								safeServer.Host = &model.Host{}
+								*safeServer.Host = *server.Host
+							} else {
+								safeServer.Host = &model.Host{}
+								safeServer.Host.Initialize()
 							}
-							if server.State == nil {
-								server.State = &model.HostState{}
+
+							// 安全地拷贝State字段
+							if server.State != nil {
+								safeServer.State = &model.HostState{}
+								*safeServer.State = *server.State
+							} else {
+								safeServer.State = &model.HostState{}
 							}
-							serverList = append(serverList, server)
+
+							serverList = append(serverList, safeServer)
 						}
 					}
+				} else {
+					if singleton.Conf.Debug {
+						log.Printf("getServerStat: ServerList未初始化")
+					}
 				}
-			} else {
-				log.Printf("getServerStat: ServerList未初始化")
-			}
-			singleton.ServerLock.RUnlock()
+			}()
 
 			if singleton.Conf.Debug {
 				log.Printf("getServerStat: 从 ServerList 提取到 %d 台服务器", len(serverList))
@@ -863,54 +886,104 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 }
 
 func (cp *commonPage) home(c *gin.Context) {
+	// 添加函数级别的panic恢复
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("🚨 home控制器发生PANIC: %v", r)
+			if gin.IsDebugging() {
+				debug.PrintStack()
+			}
+			mygin.ShowErrorPage(c, mygin.ErrInfo{
+				Code:  http.StatusInternalServerError,
+				Title: "服务器临时不可用",
+				Msg:   "页面正在维护中，请稍后重试",
+				Link:  "/",
+				Btn:   "重新加载",
+			}, true)
+		}
+	}()
+
 	stat, err := cp.getServerStat(c, true)
+	if err != nil {
+		log.Printf("获取服务器状态失败: %v", err)
+		mygin.ShowErrorPage(c, mygin.ErrInfo{
+			Code:  http.StatusInternalServerError,
+			Title: "数据获取失败",
+			Msg:   "无法获取服务器状态，请稍后重试",
+			Link:  "/",
+			Btn:   "重新加载",
+		}, true)
+		return
+	}
 
 	// 使用深拷贝确保并发安全，添加超时机制避免锁阻塞
 	var statsStore map[uint64]model.CycleTransferStats
 
 	// 使用带超时的锁获取，避免被内存清理任务阻塞
 	lockAcquired := make(chan bool, 1)
+	var lockSuccess bool
+
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("获取AlertsLock时发生panic: %v", r)
+				lockAcquired <- false
+			}
+		}()
 		singleton.AlertsLock.RLock()
 		lockAcquired <- true
 	}()
 
 	select {
-	case <-lockAcquired:
-		// 成功获取锁，继续处理
-		if singleton.AlertsCycleTransferStatsStore != nil {
-			statsStore = make(map[uint64]model.CycleTransferStats)
-			for cycleID, stats := range singleton.AlertsCycleTransferStatsStore {
-				// 深拷贝每个CycleTransferStats
-				newStats := model.CycleTransferStats{
-					Name: stats.Name,
-					Max:  stats.Max,
-				}
-
-				// 深拷贝Transfer map
-				if stats.Transfer != nil {
-					newStats.Transfer = make(map[uint64]uint64)
-					for serverID, transfer := range stats.Transfer {
-						newStats.Transfer[serverID] = transfer
+	case success := <-lockAcquired:
+		lockSuccess = success
+		if lockSuccess {
+			// 成功获取锁，继续处理
+			if singleton.AlertsCycleTransferStatsStore != nil {
+				statsStore = make(map[uint64]model.CycleTransferStats)
+				for cycleID, stats := range singleton.AlertsCycleTransferStatsStore {
+					// 安全检查stats是否为nil
+					if stats == nil {
+						continue
 					}
-				}
 
-				// 深拷贝ServerName map
-				if stats.ServerName != nil {
-					newStats.ServerName = make(map[uint64]string)
-					for serverID, name := range stats.ServerName {
-						newStats.ServerName[serverID] = name
+					// 深拷贝每个CycleTransferStats
+					newStats := model.CycleTransferStats{
+						Name: stats.Name,
+						Max:  stats.Max,
 					}
-				}
 
-				statsStore[cycleID] = newStats
+					// 深拷贝Transfer map
+					if stats.Transfer != nil {
+						newStats.Transfer = make(map[uint64]uint64)
+						for serverID, transfer := range stats.Transfer {
+							newStats.Transfer[serverID] = transfer
+						}
+					}
+
+					// 深拷贝ServerName map
+					if stats.ServerName != nil {
+						newStats.ServerName = make(map[uint64]string)
+						for serverID, name := range stats.ServerName {
+							newStats.ServerName[serverID] = name
+						}
+					}
+
+					statsStore[cycleID] = newStats
+				}
 			}
+			singleton.AlertsLock.RUnlock()
 		}
-		singleton.AlertsLock.RUnlock()
 
-	case <-time.After(2 * time.Second):
+	case <-time.After(3 * time.Second):
 		// 超时情况，使用空的统计数据继续渲染页面
 		log.Printf("警告: 获取AlertsLock超时，可能正在执行内存清理，使用空统计数据渲染页面")
+		statsStore = make(map[uint64]model.CycleTransferStats)
+		lockSuccess = false
+	}
+
+	// 如果没有成功获取锁或数据为空，使用空数据
+	if !lockSuccess || statsStore == nil {
 		statsStore = make(map[uint64]model.CycleTransferStats)
 	}
 

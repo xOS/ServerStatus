@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -115,6 +116,9 @@ func ServeWeb(port uint) *http.Server {
 		gin.SetMode(gin.DebugMode)
 		pprof.Register(r)
 	}
+
+	// 首先添加全局panic恢复中间件
+	r.Use(globalPanicRecovery())
 	r.Use(natGateway)
 	r.Use(handleBrokenPipe) // 添加broken pipe错误处理中间件
 	r.Use(corsMiddleware)   // 添加CORS中间件处理OPTIONS请求
@@ -394,6 +398,30 @@ var funcMap = template.FuncMap{
 	"statusName": func(val float32) string {
 		return singleton.StatusCodeToString(singleton.GetStatusCode(val))
 	},
+}
+
+// 全局panic恢复中间件
+func globalPanicRecovery() gin.HandlerFunc {
+	return gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
+		// 记录详细的panic信息
+		log.Printf("🚨 HTTP请求发生PANIC: %v", recovered)
+		log.Printf("🚨 请求路径: %s %s", c.Request.Method, c.Request.URL.Path)
+		log.Printf("🚨 客户端IP: %s", c.ClientIP())
+
+		// 打印堆栈信息
+		if gin.IsDebugging() {
+			debug.PrintStack()
+		}
+
+		// 确保响应头没有被写入
+		if !c.Writer.Written() {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "服务器内部错误，请稍后重试",
+				"code":  500,
+			})
+		}
+		c.Abort()
+	})
 }
 
 func natGateway(c *gin.Context) {

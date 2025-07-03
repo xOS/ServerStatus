@@ -3243,6 +3243,15 @@ func AsyncBatchMonitorHistoryInsert(data map[string]interface{}, callback func(e
 
 // VerifyMonitorHistoryConsistency 检查监控历史记录的一致性
 func VerifyMonitorHistoryConsistency() {
+	// 添加panic恢复机制
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("🚨 监控历史记录一致性检查发生PANIC: %v", r)
+			// 打印堆栈信息
+			debug.PrintStack()
+		}
+	}()
+
 	// 检查是否有其他重要操作正在进行
 	if isSystemBusy() {
 		log.Printf("系统繁忙，跳过监控历史记录一致性检查")
@@ -3293,6 +3302,11 @@ func VerifyMonitorHistoryConsistency() {
 
 		// 强制执行数据库优化，延迟执行避免冲突
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("数据库优化goroutine发生PANIC: %v", r)
+				}
+			}()
 			time.Sleep(30 * time.Second)
 			if !isSystemBusy() && Conf.DatabaseType != "badger" {
 				optimizeDatabase()
