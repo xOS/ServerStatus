@@ -865,38 +865,54 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 func (cp *commonPage) home(c *gin.Context) {
 	stat, err := cp.getServerStat(c, true)
 
-	// 使用深拷贝确保并发安全
+	// 使用深拷贝确保并发安全，添加超时机制避免锁阻塞
 	var statsStore map[uint64]model.CycleTransferStats
-	singleton.AlertsLock.RLock()
-	if singleton.AlertsCycleTransferStatsStore != nil {
-		statsStore = make(map[uint64]model.CycleTransferStats)
-		for cycleID, stats := range singleton.AlertsCycleTransferStatsStore {
-			// 深拷贝每个CycleTransferStats
-			newStats := model.CycleTransferStats{
-				Name: stats.Name,
-				Max:  stats.Max,
-			}
 
-			// 深拷贝Transfer map
-			if stats.Transfer != nil {
-				newStats.Transfer = make(map[uint64]uint64)
-				for serverID, transfer := range stats.Transfer {
-					newStats.Transfer[serverID] = transfer
+	// 使用带超时的锁获取，避免被内存清理任务阻塞
+	lockAcquired := make(chan bool, 1)
+	go func() {
+		singleton.AlertsLock.RLock()
+		lockAcquired <- true
+	}()
+
+	select {
+	case <-lockAcquired:
+		// 成功获取锁，继续处理
+		if singleton.AlertsCycleTransferStatsStore != nil {
+			statsStore = make(map[uint64]model.CycleTransferStats)
+			for cycleID, stats := range singleton.AlertsCycleTransferStatsStore {
+				// 深拷贝每个CycleTransferStats
+				newStats := model.CycleTransferStats{
+					Name: stats.Name,
+					Max:  stats.Max,
 				}
-			}
 
-			// 深拷贝ServerName map
-			if stats.ServerName != nil {
-				newStats.ServerName = make(map[uint64]string)
-				for serverID, name := range stats.ServerName {
-					newStats.ServerName[serverID] = name
+				// 深拷贝Transfer map
+				if stats.Transfer != nil {
+					newStats.Transfer = make(map[uint64]uint64)
+					for serverID, transfer := range stats.Transfer {
+						newStats.Transfer[serverID] = transfer
+					}
 				}
-			}
 
-			statsStore[cycleID] = newStats
+				// 深拷贝ServerName map
+				if stats.ServerName != nil {
+					newStats.ServerName = make(map[uint64]string)
+					for serverID, name := range stats.ServerName {
+						newStats.ServerName[serverID] = name
+					}
+				}
+
+				statsStore[cycleID] = newStats
+			}
 		}
+		singleton.AlertsLock.RUnlock()
+
+	case <-time.After(2 * time.Second):
+		// 超时情况，使用空的统计数据继续渲染页面
+		log.Printf("警告: 获取AlertsLock超时，可能正在执行内存清理，使用空统计数据渲染页面")
+		statsStore = make(map[uint64]model.CycleTransferStats)
 	}
-	singleton.AlertsLock.RUnlock()
 
 	// 预处理流量数据
 	var trafficData []map[string]interface{}

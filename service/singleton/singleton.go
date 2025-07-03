@@ -1809,8 +1809,8 @@ func (mm *MemoryMonitor) moderateCleanup() {
 		ServiceSentinelShared.cleanupOldData()
 	}
 
-	// 清理报警数据
-	cleanupAlertMemoryData()
+	// 异步清理报警数据，避免阻塞HTTP请求
+	cleanupAlertMemoryDataAsync()
 
 	// 清理僵尸 goroutine 连接
 	cleanupStaleGoroutineConnections()
@@ -1818,7 +1818,7 @@ func (mm *MemoryMonitor) moderateCleanup() {
 	// 适度的GC
 	runtime.GC()
 
-	log.Printf("适度内存清理完成")
+	log.Printf("内存清理完成，清理时间：%v", time.Now())
 }
 
 func (mm *MemoryMonitor) lightCleanup() {

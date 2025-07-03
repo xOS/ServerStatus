@@ -702,21 +702,95 @@ func cleanupAlertMemoryData() {
 	}
 	ServerLock.RUnlock()
 
-	AlertsLock.Lock()
-	defer AlertsLock.Unlock()
-
-	// 温和的清理策略，适度减少历史记录保留数量
-	const maxHistoryPerServer = 25 // 从20增加到25
-
-	cleanedAlerts := 0
-	cleanedServers := 0
+	// 分段处理，减少锁持有时间
+	const batchSize = 10 // 每批处理10个alert
 
 	// 获取当前内存使用情况
 	var memBefore runtime.MemStats
 	runtime.ReadMemStats(&memBefore)
 
+	cleanedAlerts := 0
+	cleanedServers := 0
+
+	// 分批处理alert清理，避免长时间持有锁
+	AlertsLock.Lock()
+	alertIDs := make([]uint64, 0, len(alertsStore))
+	for alertID := range alertsStore {
+		alertIDs = append(alertIDs, alertID)
+	}
+	AlertsLock.Unlock()
+
+	// 分批处理
+	for i := 0; i < len(alertIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(alertIDs) {
+			end = len(alertIDs)
+		}
+
+		batchIDs := alertIDs[i:end]
+		batchCleanedAlerts, batchCleanedServers := cleanupAlertBatch(batchIDs, activeServerIDs)
+		cleanedAlerts += batchCleanedAlerts
+		cleanedServers += batchCleanedServers
+
+		// 每处理一批后短暂让出CPU，避免阻塞其他请求
+		runtime.Gosched()
+	}
+
+	// 最后清理AlertsCycleTransferStatsStore
+	AlertsLock.Lock()
+	for alertID, stats := range AlertsCycleTransferStatsStore {
+		if stats == nil {
+			delete(AlertsCycleTransferStatsStore, alertID)
+			continue
+		}
+
+		// 清理不存在的服务器，使用复制的列表避免嵌套锁
+		for serverID := range stats.Transfer {
+			if !activeServerIDs[serverID] {
+				delete(stats.Transfer, serverID)
+				delete(stats.ServerName, serverID)
+				delete(stats.NextUpdate, serverID)
+			}
+		}
+
+		// 如果所有服务器都被清理了，删除整个统计记录
+		if len(stats.Transfer) == 0 {
+			delete(AlertsCycleTransferStatsStore, alertID)
+		}
+	}
+	AlertsLock.Unlock()
+
+	// 强制垃圾回收
+	runtime.GC()
+
+	// 获取清理后的内存使用情况
+	var memAfter runtime.MemStats
+	runtime.ReadMemStats(&memAfter)
+
+	memFreed := int64(memBefore.Alloc) - int64(memAfter.Alloc)
+
+	log.Printf("报警系统内存清理完成: 清理了 %d 个失效报警规则, %d 个服务器历史记录, 释放内存 %dMB",
+		cleanedAlerts, cleanedServers, memFreed/1024/1024)
+}
+
+// cleanupAlertBatch 分批清理alert数据
+func cleanupAlertBatch(alertIDs []uint64, activeServerIDs map[uint64]bool) (int, int) {
+	AlertsLock.Lock()
+	defer AlertsLock.Unlock()
+
+	cleanedAlerts := 0
+	cleanedServers := 0
+
+	// 温和的清理策略，适度减少历史记录保留数量
+	const maxHistoryPerServer = 25 // 从20增加到25
+
 	// 清理alertsStore中的历史数据
-	for alertID, serverMap := range alertsStore {
+	for _, alertID := range alertIDs {
+		serverMap, exists := alertsStore[alertID]
+		if !exists {
+			continue
+		}
+
 		// 检查报警规则是否还存在
 		alertExists := false
 		for _, alert := range Alerts {
@@ -758,39 +832,14 @@ func cleanupAlertMemoryData() {
 		}
 	}
 
-	// 清理AlertsCycleTransferStatsStore中无效的服务器数据
-	for alertID, stats := range AlertsCycleTransferStatsStore {
-		if stats == nil {
-			delete(AlertsCycleTransferStatsStore, alertID)
-			continue
-		}
+	return cleanedAlerts, cleanedServers
+}
 
-		// 清理不存在的服务器，使用复制的列表避免嵌套锁
-		for serverID := range stats.Transfer {
-			if !activeServerIDs[serverID] {
-				delete(stats.Transfer, serverID)
-				delete(stats.ServerName, serverID)
-				delete(stats.NextUpdate, serverID)
-			}
-		}
-
-		// 如果所有服务器都被清理了，删除整个统计记录
-		if len(stats.Transfer) == 0 {
-			delete(AlertsCycleTransferStatsStore, alertID)
-		}
-	}
-
-	// 强制垃圾回收
-	runtime.GC()
-
-	// 获取清理后的内存使用情况
-	var memAfter runtime.MemStats
-	runtime.ReadMemStats(&memAfter)
-
-	memFreed := int64(memBefore.Alloc) - int64(memAfter.Alloc)
-
-	log.Printf("报警系统内存清理完成: 清理了 %d 个失效报警规则, %d 个服务器历史记录, 释放内存 %dMB",
-		cleanedAlerts, cleanedServers, memFreed/1024/1024)
+// cleanupAlertMemoryDataAsync 异步清理报警系统的内存数据，减少锁阻塞时间
+func cleanupAlertMemoryDataAsync() {
+	go func() {
+		cleanupAlertMemoryData()
+	}()
 }
 
 // generateDetailedRecoveryMessage 生成详细的恢复通知消息
