@@ -405,7 +405,16 @@ const statusCards = new Vue({
         }
         
         this.generateUniqueTags();
-        this.updateServerLiveStatus();
+        // 初始化时设置所有服务器的初始状态
+        this.servers.forEach(server => {
+            if (server.Host) {
+                // 初始化时先假设所有服务器在线，等待WebSocket更新
+                server.live = true;
+                server._offlineConfirmCount = 0;
+            } else {
+                server.live = false;
+            }
+        });
         
         // 订阅流量数据更新
         if (window.trafficManager) {
@@ -416,10 +425,7 @@ const statusCards = new Vue({
             });
         }
         
-        // 设置定期更新，降低频率减少跳动
-        this._updateInterval = setInterval(() => {
-            this.updateServerLiveStatus({ now: Date.now() });
-        }, 3000); // 改为3秒更新一次，减少频繁跳动
+        // 不再设置定期更新，WebSocket会实时推送数据
     },
     mounted() {
         this.$nextTick(() => {
@@ -726,13 +732,14 @@ const statusCards = new Vue({
         updateServerLiveStatus(wsData) {
             if (!wsData || !this.servers) return;
             
-            // 始终使用服务器提供的时间戳，避免客户端时间不同步问题
-            if (!wsData.now) {
-                console.warn('WebSocket data missing server timestamp');
-                return;
-            }
+            // 优先使用服务器提供的时间戳，如果没有则使用本地时间
+            const nowMillisFromWS = wsData.now || Date.now();
             
-            const nowMillisFromWS = wsData.now;
+            // 如果没有服务器时间戳，记录一次警告（避免刷屏）
+            if (!wsData.now && !this._warnedAboutMissingTimestamp) {
+                console.warn('WebSocket data missing server timestamp, using local time');
+                this._warnedAboutMissingTimestamp = true;
+            }
             let hasUpdates = false;
             
             // 创建服务器ID到数据的映射，提高查找效率
@@ -770,14 +777,21 @@ const statusCards = new Vue({
                     }
                 }
                 
-                // 计算在线状态 - 使用服务器时间戳
+                // 计算在线状态
                 const lastActiveTimestampMs = new Date(serverItem.LastActive).getTime();
                 const diffMs = nowMillisFromWS - lastActiveTimestampMs;
 
                 // 调整超时阈值：使用120秒（2分钟）匹配后端设置
                 // 后端在singleton.go中设置为2分钟（line 896）
-                const offlineThreshold = 120000; // 2分钟
-                const newLiveStatus = !isNaN(lastActiveTimestampMs) && diffMs < offlineThreshold;
+                // 添加10秒容错时间，处理时间不同步问题
+                const offlineThreshold = 130000; // 2分钟 + 10秒容错
+                
+                // 添加调试日志（仅在状态变化时）
+                if (serverItem.live === true && diffMs > offlineThreshold) {
+                    console.log(`Server ${serverItem.Name} may go offline: lastActive=${serverItem.LastActive}, diffMs=${diffMs}ms`);
+                }
+                
+                const newLiveStatus = !isNaN(lastActiveTimestampMs) && diffMs < offlineThreshold && diffMs > -10000; // 也要检查未来时间
 
                 // 改进状态稳定性检查
                 if (serverItem.live !== newLiveStatus) {
@@ -785,19 +799,21 @@ const statusCards = new Vue({
                     if (serverItem.live === true && newLiveStatus === false) {
                         if (!serverItem._offlineConfirmCount) {
                             serverItem._offlineConfirmCount = 1;
-                        } else if (serverItem._offlineConfirmCount < 2) {
+                        } else if (serverItem._offlineConfirmCount < 2) { // 只需要连续2次确认
                             serverItem._offlineConfirmCount++;
                         } else {
                             // 连续3次确认离线才更新状态
                             serverItem.live = false;
                             serverItem._offlineConfirmCount = 0;
                             hasUpdates = true;
+                            console.log(`Server ${serverItem.Name} confirmed offline after 3 checks`);
                         }
                     } else if (serverItem.live === false && newLiveStatus === true) {
                         // 从离线恢复到在线，立即更新
                         serverItem.live = true;
                         serverItem._offlineConfirmCount = 0;
                         hasUpdates = true;
+                        console.log(`Server ${serverItem.Name} is back online`);
                     }
                 } else {
                     // 状态没有变化，重置确认计数
@@ -984,9 +1000,7 @@ const statusCards = new Vue({
         }
     },
     beforeDestroy() {
-        if (this._updateInterval) {
-            clearInterval(this._updateInterval);
-        }
+        // 清理防抖定时器
         if (this._updateDebounceTimer) {
             clearTimeout(this._updateDebounceTimer);
         }
