@@ -25,3 +25,4 @@ server
 scripts/monitor_goroutines.sh
 FIXES_APPLIED.md
 debug_monitor.sh
+.claude
