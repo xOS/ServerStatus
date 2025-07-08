@@ -9,20 +9,72 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/xos/serverstatus/model"
 )
 
+// MigrationConfig holds configuration for migration process
+type MigrationConfig struct {
+	BatchSize            int           // Number of records to process in each batch
+	MonitorHistoryDays   int           // Number of days of monitor history to migrate (-1 for all)
+	MonitorHistoryLimit  int           // Maximum number of monitor history records to migrate (-1 for all)
+	ProgressInterval     int           // Interval for progress reporting (every N records)
+	EnableResume         bool          // Enable resumable migration
+	MaxRetries           int           // Maximum retries for failed records
+	RetryDelay           time.Duration // Delay between retries
+	Workers              int           // Number of concurrent workers for batch processing
+	SkipLargeHistoryData bool          // Skip large data fields in monitor_histories
+}
+
+// DefaultMigrationConfig returns default migration configuration
+func DefaultMigrationConfig() *MigrationConfig {
+	return &MigrationConfig{
+		BatchSize:            100,
+		MonitorHistoryDays:   30,
+		MonitorHistoryLimit:  -1,
+		ProgressInterval:     1000,
+		EnableResume:         true,
+		MaxRetries:           3,
+		RetryDelay:           time.Second,
+		Workers:              4,
+		SkipLargeHistoryData: false,
+	}
+}
+
+// MigrationProgress tracks the progress of migration
+type MigrationProgress struct {
+	TableName     string    `json:"table_name"`
+	TotalRecords  int64     `json:"total_records"`
+	Processed     int64     `json:"processed"`
+	Success       int64     `json:"success"`
+	Failed        int64     `json:"failed"`
+	LastProcessed string    `json:"last_processed_id"`
+	StartTime     time.Time `json:"start_time"`
+	UpdateTime    time.Time `json:"update_time"`
+	Completed     bool      `json:"completed"`
+}
+
 // Migration handles data migration from SQLite to BadgerDB
 type Migration struct {
-	badgerDB *BadgerDB
-	sqliteDB *sql.DB
+	badgerDB  *BadgerDB
+	sqliteDB  *sql.DB
+	config    *MigrationConfig
+	progress  map[string]*MigrationProgress
+	progressMu sync.RWMutex
+	idMapping  map[string]map[uint64]uint64 // table -> oldID -> newID
+	idMappingMu sync.RWMutex
 }
 
 // NewMigration creates a new Migration instance
 func NewMigration(badgerDB *BadgerDB, sqlitePath string) (*Migration, error) {
+	return NewMigrationWithConfig(badgerDB, sqlitePath, DefaultMigrationConfig())
+}
+
+// NewMigrationWithConfig creates a new Migration instance with custom configuration
+func NewMigrationWithConfig(badgerDB *BadgerDB, sqlitePath string, config *MigrationConfig) (*Migration, error) {
 	// 检查SQLite数据库文件是否存在
 	if _, err := os.Stat(sqlitePath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("SQLite数据库文件不存在: %s", sqlitePath)
@@ -40,15 +92,158 @@ func NewMigration(badgerDB *BadgerDB, sqlitePath string) (*Migration, error) {
 		return nil, fmt.Errorf("failed to connect to SQLite database: %w", err)
 	}
 
-	return &Migration{
-		badgerDB: badgerDB,
-		sqliteDB: sqliteDB,
-	}, nil
+	// Set SQLite pragmas for better performance
+	if _, err := sqliteDB.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		log.Printf("Warning: Failed to set journal_mode=WAL: %v", err)
+	}
+	if _, err := sqliteDB.Exec("PRAGMA synchronous=NORMAL"); err != nil {
+		log.Printf("Warning: Failed to set synchronous=NORMAL: %v", err)
+	}
+
+	migration := &Migration{
+		badgerDB:  badgerDB,
+		sqliteDB:  sqliteDB,
+		config:    config,
+		progress:  make(map[string]*MigrationProgress),
+		idMapping: make(map[string]map[uint64]uint64),
+	}
+
+	// Load progress if resumable migration is enabled
+	if config.EnableResume {
+		if err := migration.loadProgress(); err != nil {
+			log.Printf("Warning: Failed to load migration progress: %v", err)
+		}
+	}
+
+	return migration, nil
 }
 
 // Close closes the migration instance
 func (m *Migration) Close() error {
+	// Save final progress
+	if m.config.EnableResume {
+		if err := m.saveProgress(); err != nil {
+			log.Printf("Warning: Failed to save migration progress: %v", err)
+		}
+	}
 	return m.sqliteDB.Close()
+}
+
+// loadProgress loads migration progress from BadgerDB
+func (m *Migration) loadProgress() error {
+	data, err := m.badgerDB.Get("migration:progress")
+	if err != nil {
+		return nil // No progress saved yet
+	}
+
+	var progress map[string]*MigrationProgress
+	if err := json.Unmarshal(data, &progress); err != nil {
+		return fmt.Errorf("failed to unmarshal progress: %w", err)
+	}
+
+	m.progressMu.Lock()
+	m.progress = progress
+	m.progressMu.Unlock()
+
+	// Load ID mapping
+	idMapData, err := m.badgerDB.Get("migration:id_mapping")
+	if err == nil {
+		var idMapping map[string]map[uint64]uint64
+		if err := json.Unmarshal(idMapData, &idMapping); err == nil {
+			m.idMappingMu.Lock()
+			m.idMapping = idMapping
+			m.idMappingMu.Unlock()
+		}
+	}
+
+	log.Println("已加载迁移进度")
+	return nil
+}
+
+// saveProgress saves migration progress to BadgerDB
+func (m *Migration) saveProgress() error {
+	m.progressMu.RLock()
+	progressData, err := json.Marshal(m.progress)
+	m.progressMu.RUnlock()
+	if err != nil {
+		return fmt.Errorf("failed to marshal progress: %w", err)
+	}
+
+	if err := m.badgerDB.Set("migration:progress", progressData); err != nil {
+		return fmt.Errorf("failed to save progress: %w", err)
+	}
+
+	// Save ID mapping
+	m.idMappingMu.RLock()
+	idMapData, err := json.Marshal(m.idMapping)
+	m.idMappingMu.RUnlock()
+	if err == nil {
+		m.badgerDB.Set("migration:id_mapping", idMapData)
+	}
+
+	return nil
+}
+
+// getTableProgress gets or creates progress for a table
+func (m *Migration) getTableProgress(tableName string) *MigrationProgress {
+	m.progressMu.Lock()
+	defer m.progressMu.Unlock()
+
+	if progress, exists := m.progress[tableName]; exists {
+		return progress
+	}
+
+	progress := &MigrationProgress{
+		TableName: tableName,
+		StartTime: time.Now(),
+		UpdateTime: time.Now(),
+	}
+	m.progress[tableName] = progress
+	return progress
+}
+
+// updateProgress updates migration progress
+func (m *Migration) updateProgress(tableName string, processed, success, failed int64, lastID string) {
+	m.progressMu.Lock()
+	progress := m.progress[tableName]
+	if progress != nil {
+		progress.Processed = processed
+		progress.Success = success
+		progress.Failed = failed
+		progress.LastProcessed = lastID
+		progress.UpdateTime = time.Now()
+	}
+	m.progressMu.Unlock()
+
+	// Save progress periodically
+	if m.config.EnableResume && processed%int64(m.config.ProgressInterval) == 0 {
+		if err := m.saveProgress(); err != nil {
+			log.Printf("Warning: Failed to save progress: %v", err)
+		}
+	}
+}
+
+// mapID maps old ID to new ID and saves the mapping
+func (m *Migration) mapID(tableName string, oldID, newID uint64) {
+	m.idMappingMu.Lock()
+	if m.idMapping[tableName] == nil {
+		m.idMapping[tableName] = make(map[uint64]uint64)
+	}
+	m.idMapping[tableName][oldID] = newID
+	m.idMappingMu.Unlock()
+}
+
+// getMappedID gets the new ID for an old ID
+func (m *Migration) getMappedID(tableName string, oldID uint64) (uint64, bool) {
+	m.idMappingMu.RLock()
+	defer m.idMappingMu.RUnlock()
+
+	if tableMap, exists := m.idMapping[tableName]; exists {
+		if newID, exists := tableMap[oldID]; exists {
+			return newID, true
+		}
+	}
+	return 0, false
 }
 
 // MigrateAll migrates all data from SQLite to BadgerDB
@@ -60,38 +255,122 @@ func (m *Migration) MigrateAll() error {
 		name     string
 		model    interface{}
 		migrator func() error
+		priority int // 优先级，数字越小优先级越高
 	}{
-		{"servers", &model.Server{}, m.migrateServers},
-		{"users", &model.User{}, m.migrateUsers},
-		{"monitors", &model.Monitor{}, m.migrateMonitors},
-		{"monitor_histories", &model.MonitorHistory{}, m.migrateMonitorHistories},
-		{"notifications", &model.Notification{}, m.migrateNotifications},
-		{"alert_rules", &model.AlertRule{}, m.migrateAlertRules},
-		{"crons", &model.Cron{}, m.migrateCrons},
-		{"transfers", &model.Transfer{}, m.migrateTransfers},
-		{"api_tokens", &model.ApiToken{}, m.migrateApiTokens},
-		{"nats", &model.NAT{}, m.migrateNATs},
-		{"ddns", &model.DDNSProfile{}, m.migrateDDNSProfiles},
-		{"ddns_record_states", &model.DDNSRecordState{}, m.migrateDDNSRecordStates},
+		// 先迁移基础表
+		{"users", &model.User{}, m.migrateUsers, 1},
+		{"servers", &model.Server{}, m.migrateServers, 2},
+		{"notifications", &model.Notification{}, m.migrateNotifications, 3},
+		{"alert_rules", &model.AlertRule{}, m.migrateAlertRules, 4},
+		{"monitors", &model.Monitor{}, m.migrateMonitors, 5},
+		{"crons", &model.Cron{}, m.migrateCrons, 6},
+		{"api_tokens", &model.ApiToken{}, m.migrateApiTokens, 7},
+		{"nats", &model.NAT{}, m.migrateNATs, 8},
+		{"ddns", &model.DDNSProfile{}, m.migrateDDNSProfiles, 9},
+		{"ddns_record_states", &model.DDNSRecordState{}, m.migrateDDNSRecordStates, 10},
+		// 最后迁移大表
+		{"transfers", &model.Transfer{}, m.migrateTransfers, 11},
+		{"monitor_histories", &model.MonitorHistory{}, m.migrateMonitorHistories, 12},
 	}
 
+	// 计算总记录数
+	totalRecords := int64(0)
 	for _, table := range tables {
-		log.Printf("MigrateAll: 准备迁移表 %s...", table.name)
+		progress := m.getTableProgress(table.name)
+		if progress.Completed {
+			log.Printf("表 %s 已完成迁移，跳过", table.name)
+			continue
+		}
+
+		// 获取表记录数
+		count, err := m.getTableRecordCount(table.name)
+		if err != nil {
+			if strings.Contains(err.Error(), "no such table") {
+				log.Printf("表 %s 不存在，跳过", table.name)
+				progress.Completed = true
+				continue
+			}
+			log.Printf("获取表 %s 记录数失败: %v", table.name, err)
+		}
+		progress.TotalRecords = count
+		totalRecords += count
+	}
+
+	log.Printf("总共需要迁移 %d 条记录", totalRecords)
+
+	// 按优先级迁移表
+	for _, table := range tables {
+		progress := m.getTableProgress(table.name)
+		if progress.Completed {
+			continue
+		}
+
+		log.Printf("MigrateAll: 准备迁移表 %s (总计 %d 条记录)...", table.name, progress.TotalRecords)
+		startTime := time.Now()
 		err := table.migrator()
+		duration := time.Since(startTime)
+
 		if err != nil {
 			// 检查是否是表不存在的错误
 			if strings.Contains(err.Error(), "no such table") {
 				log.Printf("MigrateAll: 表 %s 不存在，跳过迁移", table.name)
+				progress.Completed = true
 				continue
 			}
 			log.Printf("MigrateAll: 迁移表 %s 失败: %v", table.name, err)
 			return fmt.Errorf("failed to migrate %s: %w", table.name, err)
 		}
-		log.Printf("MigrateAll: 迁移表 %s 完成。", table.name)
+
+		progress.Completed = true
+		m.saveProgress()
+
+		log.Printf("MigrateAll: 迁移表 %s 完成。成功: %d, 失败: %d, 耗时: %v", 
+			table.name, progress.Success, progress.Failed, duration)
 	}
 
 	log.Println("所有数据表迁移完成！")
+	
+	// 清理迁移进度
+	if m.config.EnableResume {
+		m.badgerDB.Delete("migration:progress")
+		m.badgerDB.Delete("migration:id_mapping")
+	}
+	
 	return nil
+}
+
+// getTableRecordCount gets the total number of records in a table
+func (m *Migration) getTableRecordCount(tableName string) (int64, error) {
+	var count int64
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE deleted_at IS NULL", tableName)
+	
+	// Special handling for tables without deleted_at
+	if tableName == "transfers" || tableName == "monitor_histories" || tableName == "ddns_record_states" {
+		query = fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
+	}
+	
+	err := m.sqliteDB.QueryRow(query).Scan(&count)
+	return count, err
+}
+
+// migrateWithRetry migrates a single record with retry logic
+func (m *Migration) migrateWithRetry(saveFunc func() error) error {
+	var err error
+	for retry := 0; retry <= m.config.MaxRetries; retry++ {
+		if retry > 0 {
+			time.Sleep(m.config.RetryDelay * time.Duration(retry))
+		}
+		
+		err = saveFunc()
+		if err == nil {
+			return nil
+		}
+		
+		if retry < m.config.MaxRetries {
+			log.Printf("保存失败，重试 %d/%d: %v", retry+1, m.config.MaxRetries, err)
+		}
+	}
+	return err
 }
 
 // scanToMap scans a row into a map with proper type conversion
@@ -213,16 +492,27 @@ func parseTimeString(timeStr string) (time.Time, error) {
 
 // migrateServers migrates servers from SQLite to BadgerDB
 func (m *Migration) migrateServers() error {
-	log.Println("开始迁移服务器数据...")
-	rows, err := m.sqliteDB.Query("SELECT * FROM servers WHERE deleted_at IS NULL")
+	tableName := "servers"
+	progress := m.getTableProgress(tableName)
+	
+	log.Printf("开始迁移服务器数据... (已处理: %d/%d)", progress.Processed, progress.TotalRecords)
+	
+	// 构建查询
+	query := "SELECT * FROM servers WHERE deleted_at IS NULL"
+	if m.config.EnableResume && progress.LastProcessed != "" {
+		query += fmt.Sprintf(" AND id > %s", progress.LastProcessed)
+	}
+	query += " ORDER BY id"
+	
+	rows, err := m.sqliteDB.Query(query)
 	if err != nil {
 		return fmt.Errorf("查询服务器数据失败: %w", err)
 	}
 	defer rows.Close()
 
-	count := 0
-	errorCount := 0
-	nextNewID := uint64(1) // 从1开始分配新的递增ID
+	count := progress.Processed
+	errorCount := progress.Failed
+	successCount := progress.Success
 
 	// 获取列名
 	columns, err := rows.Columns()
@@ -275,8 +565,11 @@ func (m *Migration) migrateServers() error {
 			continue
 		}
 
+		// 保留原始ID，不重新分配
+		newID := id
+
 		// 确保正确处理布尔值字段
-		boolFields := []string{"is_disabled", "is_online", "hide_for_guest", "show_all", "tasker"}
+		boolFields := []string{"hide_for_guest", "enable_d_dns", "enable_ipv4", "enable_ipv6"}
 		for _, field := range boolFields {
 			if val, ok := data[field]; ok {
 				switch v := val.(type) {
@@ -296,7 +589,6 @@ func (m *Migration) migrateServers() error {
 		timeFieldMapping := map[string]string{
 			"created_at":  "CreatedAt",
 			"updated_at":  "UpdatedAt",
-			"last_active": "LastActive",
 			"last_online": "LastOnline",
 		}
 
@@ -305,15 +597,12 @@ func (m *Migration) migrateServers() error {
 				var timeStr string
 				switch v := val.(type) {
 				case time.Time:
-					// 如果是 time.Time，转换为 RFC3339 字符串
 					timeStr = v.Format(time.RFC3339)
 				case string:
-					// 如果是字符串，尝试解析并重新格式化
 					if parsedTime, err := parseTimeString(v); err == nil {
 						timeStr = parsedTime.Format(time.RFC3339)
 					} else {
 						log.Printf("服务器ID %d: 无法解析时间字段 %s 的值 '%s': %v", id, sqlField, v, err)
-						// 对于无法解析的时间，根据字段类型设置默认值
 						if sqlField == "created_at" || sqlField == "updated_at" {
 							timeStr = time.Now().Format(time.RFC3339)
 						} else {
@@ -321,7 +610,6 @@ func (m *Migration) migrateServers() error {
 						}
 					}
 				case nil:
-					// 对于 nil 值，根据字段类型设置默认值
 					if sqlField == "created_at" || sqlField == "updated_at" {
 						timeStr = time.Now().Format(time.RFC3339)
 					} else {
@@ -349,16 +637,26 @@ func (m *Migration) migrateServers() error {
 			}
 		}
 
-		// 处理其他字段名映射，使用正确的JSON标签或字段名
+		// 处理其他字段名映射
 		fieldMapping := map[string]string{
-			"id":              "ID",            // 没有JSON标签，使用字段名
-			"name":            "Name",          // 没有JSON标签，使用字段名
-			"tag":             "Tag",           // 没有JSON标签，使用字段名
-			"display_index":   "DisplayIndex",  // 没有JSON标签，使用字段名
-			"hide_for_guest":  "HideForGuest",  // 没有JSON标签，使用字段名
-			"enable_ddns":     "EnableDDNS",    // 没有JSON标签，使用字段名
-			"host_json":       "HostJSON",      // 有JSON标签 json:"-"，但我们保留字段名用于内部处理
-			"last_state_json": "LastStateJSON", // 有JSON标签 json:"-"，但我们保留字段名用于内部处理
+			"id":                          "ID",
+			"name":                        "Name",
+			"tag":                         "Tag",
+			"secret":                      "Secret",
+			"note":                        "Note",
+			"display_index":               "DisplayIndex",
+			"hide_for_guest":              "HideForGuest",
+			"enable_d_dns":                "EnableDDNS",
+			"d_dns_domain":                "DDNSDomain",
+			"enable_ipv4":                 "EnableIPv4",
+			"enable_ipv6":                 "EnableIPv6",
+			"d_dns_profile":               "DDNSProfile",
+			"public_note":                 "PublicNote",
+			"ddns_profiles_raw":           "DDNSProfilesRaw",
+			"cumulative_net_in_transfer":  "CumulativeNetInTransfer",
+			"cumulative_net_out_transfer": "CumulativeNetOutTransfer",
+			"host_json":                   "HostJSON",
+			"last_state_json":             "LastStateJSON",
 		}
 
 		for sqlField, goField := range fieldMapping {
@@ -368,54 +666,38 @@ func (m *Migration) migrateServers() error {
 			}
 		}
 
-		// 特殊处理数值字段，确保类型正确，使用JSON标签名
-		if val, ok := data["cumulative_net_in_transfer"]; ok {
+		// 特殊处理数值字段，确保类型正确
+		if val, ok := data["CumulativeNetInTransfer"]; ok {
 			switch v := val.(type) {
 			case int64:
-				data["cumulative_net_in_transfer"] = uint64(v)
+				data["CumulativeNetInTransfer"] = uint64(v)
 			case float64:
-				data["cumulative_net_in_transfer"] = uint64(v)
+				data["CumulativeNetInTransfer"] = uint64(v)
 			case string:
 				if parsed, err := strconv.ParseUint(v, 10, 64); err == nil {
-					data["cumulative_net_in_transfer"] = parsed
+					data["CumulativeNetInTransfer"] = parsed
 				} else {
-					data["cumulative_net_in_transfer"] = uint64(0)
+					data["CumulativeNetInTransfer"] = uint64(0)
 				}
 			default:
-				data["cumulative_net_in_transfer"] = uint64(0)
+				data["CumulativeNetInTransfer"] = uint64(0)
 			}
 		}
 
-		if val, ok := data["cumulative_net_out_transfer"]; ok {
+		if val, ok := data["CumulativeNetOutTransfer"]; ok {
 			switch v := val.(type) {
 			case int64:
-				data["cumulative_net_out_transfer"] = uint64(v)
+				data["CumulativeNetOutTransfer"] = uint64(v)
 			case float64:
-				data["cumulative_net_out_transfer"] = uint64(v)
+				data["CumulativeNetOutTransfer"] = uint64(v)
 			case string:
 				if parsed, err := strconv.ParseUint(v, 10, 64); err == nil {
-					data["cumulative_net_out_transfer"] = parsed
+					data["CumulativeNetOutTransfer"] = parsed
 				} else {
-					data["cumulative_net_out_transfer"] = uint64(0)
+					data["CumulativeNetOutTransfer"] = uint64(0)
 				}
 			default:
-				data["cumulative_net_out_transfer"] = uint64(0)
-			}
-		}
-
-		// 特殊处理布尔字段，使用JSON标签名
-		if val, ok := data["is_online"]; ok {
-			switch v := val.(type) {
-			case bool:
-				data["is_online"] = v
-			case int64:
-				data["is_online"] = v != 0
-			case float64:
-				data["is_online"] = v != 0
-			case string:
-				data["is_online"] = v == "1" || v == "true" || v == "t"
-			default:
-				data["is_online"] = false
+				data["CumulativeNetOutTransfer"] = uint64(0)
 			}
 		}
 
@@ -441,59 +723,56 @@ func (m *Migration) migrateServers() error {
 		serverJSON, err := json.Marshal(data)
 		if err != nil {
 			log.Printf("服务器ID %d: 序列化原始数据失败: %v. Data: %v", id, err, data)
-			// Fallback to trying to save raw data if model processing fails
-		} else {
-			if err := json.Unmarshal(serverJSON, &server); err != nil {
-				log.Printf("服务器ID %d: 反序列化为Server对象失败: %v. JSON Data: %s", id, err, string(serverJSON))
-				// Fallback to trying to save raw data if model processing fails
-			} else {
-				// 使用新的递增ID替代原始的长ID
-				oldID := id
-				server.ID = nextNewID
-				nextNewID++
+			errorCount++
+			continue
+		}
 
-				// 手动设置被json:"-"忽略的字段
-				server.HostJSON = hostJSON
-				server.LastStateJSON = lastStateJSON
+		if err := json.Unmarshal(serverJSON, &server); err != nil {
+			log.Printf("服务器ID %d: 反序列化为Server对象失败: %v. JSON Data: %s", id, err, string(serverJSON))
+			errorCount++
+			continue
+		}
 
-				// 如果服务器名称为空，给一个默认名称
-				if server.Name == "" {
-					server.Name = fmt.Sprintf("Server-%d", server.ID)
-					log.Printf("服务器原ID %d -> 新ID %d: 名称为空，设置为默认名称 '%s'", oldID, server.ID, server.Name)
-				}
+		// 保留原始ID
+		server.ID = newID
 
-				// 添加额外的日志
-				log.Printf("服务器原ID %d -> 新ID %d: 准备迁移的服务器对象: %+v", oldID, server.ID, server)
-				log.Printf("服务器新ID %d: HostJSON长度=%d, LastStateJSON长度=%d", server.ID, len(server.HostJSON), len(server.LastStateJSON))
+		// 手动设置被json:"-"忽略的字段
+		server.HostJSON = hostJSON
+		server.LastStateJSON = lastStateJSON
 
-				// 重新序列化为JSON以保存
-				// 注意：HostJSON和LastStateJSON字段有json:"-"标签，需要特殊处理
-				serverJSON, err = json.Marshal(server)
-				if err != nil {
-					log.Printf("服务器ID %d: 重新序列化处理后的Server对象失败: %v. Object: %+v", id, err, server)
-					// If re-serialization fails, fall back to using the original data marshalled earlier
-					originalDataJSON, _ := json.Marshal(data) // Marshal the original map again
-					serverJSON = originalDataJSON
-					log.Printf("服务器ID %d: 回退到使用原始map序列化的JSON进行保存", id)
-				} else {
-					// 由于HostJSON和LastStateJSON有json:"-"标签，需要手动添加这些字段
-					var serverMap map[string]interface{}
-					if err := json.Unmarshal(serverJSON, &serverMap); err == nil {
-						// 添加被忽略的字段
-						if server.HostJSON != "" {
-							serverMap["HostJSON"] = server.HostJSON
-						}
-						if server.LastStateJSON != "" {
-							serverMap["LastStateJSON"] = server.LastStateJSON
-						}
+		// 如果服务器名称为空，给一个默认名称
+		if server.Name == "" {
+			server.Name = fmt.Sprintf("Server-%d", server.ID)
+			log.Printf("服务器ID %d: 名称为空，设置为默认名称 '%s'", id, server.Name)
+		}
 
-						// 重新序列化
-						if modifiedJSON, err := json.Marshal(serverMap); err == nil {
-							serverJSON = modifiedJSON
-							log.Printf("服务器ID %d: 已添加HostJSON和LastStateJSON字段到序列化数据", id)
-						}
-					}
-				}
+		// 添加额外的日志
+		log.Printf("服务器ID %d: 准备迁移的服务器对象: %+v", id, server)
+		log.Printf("服务器ID %d: HostJSON长度=%d, LastStateJSON长度=%d", server.ID, len(server.HostJSON), len(server.LastStateJSON))
+
+		// 重新序列化为JSON以保存
+		serverJSON, err = json.Marshal(server)
+		if err != nil {
+			log.Printf("服务器ID %d: 重新序列化处理后的Server对象失败: %v. Object: %+v", id, err, server)
+			errorCount++
+			continue
+		}
+
+		// 由于HostJSON和LastStateJSON有json:"-"标签，需要手动添加这些字段
+		var serverMap map[string]interface{}
+		if err := json.Unmarshal(serverJSON, &serverMap); err == nil {
+			// 添加被忽略的字段
+			if server.HostJSON != "" {
+				serverMap["HostJSON"] = server.HostJSON
+			}
+			if server.LastStateJSON != "" {
+				serverMap["LastStateJSON"] = server.LastStateJSON
+			}
+
+			// 重新序列化
+			if modifiedJSON, err := json.Marshal(serverMap); err == nil {
+				serverJSON = modifiedJSON
+				log.Printf("服务器ID %d: 已添加HostJSON和LastStateJSON字段到序列化数据", id)
 			}
 		}
 
@@ -503,17 +782,30 @@ func (m *Migration) migrateServers() error {
 			continue
 		}
 
-		// Save to BadgerDB using new ID
-		key := fmt.Sprintf("server:%v", server.ID) // Use new ID for key
-		log.Printf("服务器原ID %d -> 新ID %d: 准备保存到BadgerDB. Key: '%s', Value: %s", id, server.ID, key, string(serverJSON))
-		if err := m.badgerDB.Set(key, serverJSON); err != nil {
-			log.Printf("服务器新ID %d: 保存到BadgerDB失败: %v. Key: '%s'", server.ID, err, key)
+		// Save to BadgerDB using original ID
+		key := fmt.Sprintf("server:%v", server.ID)
+		log.Printf("服务器ID %d: 准备保存到BadgerDB. Key: '%s', Value: %s", id, key, string(serverJSON))
+		
+		err = m.migrateWithRetry(func() error {
+			return m.badgerDB.Set(key, serverJSON)
+		})
+		
+		if err != nil {
+			log.Printf("服务器ID %d: 保存到BadgerDB失败: %v. Key: '%s'", server.ID, err, key)
 			errorCount++
 			continue
 		}
 
+		// 保存ID映射
+		m.mapID(tableName, id, newID)
+
 		count++
-		if count%10 == 0 {
+		successCount++
+		
+		// 更新进度
+		m.updateProgress(tableName, count, successCount, errorCount, strconv.FormatUint(id, 10))
+		
+		if count%int64(m.config.ProgressInterval) == 0 {
 			log.Printf("已迁移 %d 条服务器记录...", count)
 		}
 	}
@@ -522,7 +814,7 @@ func (m *Migration) migrateServers() error {
 		return fmt.Errorf("迭代服务器行时出错: %w", err)
 	}
 
-	log.Printf("服务器迁移完成: 成功 %d 条, 失败 %d 条", count, errorCount)
+	log.Printf("服务器迁移完成: 成功 %d 条, 失败 %d 条", successCount, errorCount)
 	return nil
 }
 
@@ -698,55 +990,193 @@ func (m *Migration) migrateMonitors() error {
 
 // migrateMonitorHistories migrates monitor histories from SQLite to BadgerDB
 func (m *Migration) migrateMonitorHistories() error {
-	// For monitor histories, we might want to limit to recent data (e.g., last 30 days)
-	cutoffDate := time.Now().AddDate(0, 0, -30)
-
-	// Use parameterized query instead of string formatting to prevent SQL injection
-	rows, err := m.sqliteDB.Query("SELECT * FROM monitor_histories WHERE deleted_at IS NULL AND created_at > ? LIMIT 1000", cutoffDate.Format("2006-01-02"))
-	if err != nil {
-		return err
+	tableName := "monitor_histories"
+	progress := m.getTableProgress(tableName)
+	
+	log.Printf("开始迁移监控历史数据... (已处理: %d/%d)", progress.Processed, progress.TotalRecords)
+	
+	// 构建查询
+	query := "SELECT * FROM monitor_histories WHERE deleted_at IS NULL"
+	
+	// 根据配置决定是否限制数据范围
+	if m.config.MonitorHistoryDays > 0 {
+		cutoffDate := time.Now().AddDate(0, 0, -m.config.MonitorHistoryDays)
+		query += fmt.Sprintf(" AND created_at > '%s'", cutoffDate.Format("2006-01-02"))
 	}
-	defer rows.Close()
-
-	count := 0
-
-	for rows.Next() {
-		data, err := scanToMap(rows)
-		if err != nil {
-			return err
-		}
-
-		// Extract ID and timestamps for key
-		id, ok := data["id"]
-		if !ok {
-			continue
-		}
-
-		monitorID, _ := data["monitor_id"]
-		createdAt, _ := data["created_at"]
-
-		// Convert to JSON
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			return err
-		}
-
-		// Save to BadgerDB with a compound key
-		key := fmt.Sprintf("monitor_history:%v:%v:%v", monitorID, createdAt, id)
-		if err := m.badgerDB.Set(key, jsonData); err != nil {
-			return err
-		}
-
-		count++
-
-		// Log progress every 100 records
-		if count%100 == 0 {
-			log.Printf("已处理 %d 条监控历史记录...", count)
-		}
+	
+	if m.config.EnableResume && progress.LastProcessed != "" {
+		query += fmt.Sprintf(" AND id > %s", progress.LastProcessed)
 	}
-
-	log.Printf("已迁移 %d 条监控历史记录", count)
-	return rows.Err()
+	
+	query += " ORDER BY id"
+	
+	// 添加批量限制
+	if m.config.MonitorHistoryLimit > 0 && progress.Processed < int64(m.config.MonitorHistoryLimit) {
+		remaining := int64(m.config.MonitorHistoryLimit) - progress.Processed
+		batchSize := int64(m.config.BatchSize)
+		if remaining < batchSize {
+			batchSize = remaining
+		}
+		query += fmt.Sprintf(" LIMIT %d", batchSize)
+	} else if m.config.BatchSize > 0 {
+		query += fmt.Sprintf(" LIMIT %d", m.config.BatchSize)
+	}
+	
+	// 分批处理
+	for {
+		rows, err := m.sqliteDB.Query(query)
+		if err != nil {
+			return fmt.Errorf("查询监控历史数据失败: %w", err)
+		}
+		
+		hasRows := false
+		batchCount := 0
+		lastID := ""
+		
+		for rows.Next() {
+			hasRows = true
+			data, err := scanToMap(rows)
+			if err != nil {
+				log.Printf("扫描监控历史行数据失败: %v，跳过", err)
+				progress.Failed++
+				continue
+			}
+			
+			// Extract ID for key
+			idVal, ok := data["id"]
+			if !ok {
+				log.Printf("监控历史数据缺少ID字段，跳过: %v", data)
+				progress.Failed++
+				continue
+			}
+			
+			// 确保ID是有效的
+			var id uint64
+			switch v := idVal.(type) {
+			case int64:
+				id = uint64(v)
+			case float64:
+				id = uint64(v)
+			case string:
+				parsed, err := strconv.ParseUint(v, 10, 64)
+				if err != nil {
+					log.Printf("解析监控历史ID '%s' 失败: %v，跳过", v, err)
+					progress.Failed++
+					continue
+				}
+				id = parsed
+			default:
+				log.Printf("监控历史ID类型无效: %T，跳过", idVal)
+				progress.Failed++
+				continue
+			}
+			
+			if id == 0 {
+				log.Printf("监控历史ID为0，跳过")
+				progress.Failed++
+				continue
+			}
+			
+			lastID = strconv.FormatUint(id, 10)
+			
+			// 获取monitor_id和created_at用于构建key
+			monitorID, _ := data["monitor_id"]
+			createdAt, _ := data["created_at"]
+			
+			// 如果配置了跳过大数据字段，移除data字段
+			if m.config.SkipLargeHistoryData {
+				delete(data, "data")
+			}
+			
+			// Convert to JSON
+			jsonData, err := json.Marshal(data)
+			if err != nil {
+				log.Printf("监控历史ID %d: 序列化数据失败: %v", id, err)
+				progress.Failed++
+				continue
+			}
+			
+			// Save to BadgerDB with a compound key
+			key := fmt.Sprintf("monitor_history:%v:%v:%v", monitorID, createdAt, id)
+			
+			err = m.migrateWithRetry(func() error {
+				return m.badgerDB.Set(key, jsonData)
+			})
+			
+			if err != nil {
+				log.Printf("监控历史ID %d: 保存到BadgerDB失败: %v. Key: '%s'", id, err, key)
+				progress.Failed++
+				continue
+			}
+			
+			progress.Processed++
+			progress.Success++
+			batchCount++
+			
+			// 定期更新进度
+			if progress.Processed%int64(m.config.ProgressInterval) == 0 {
+				m.updateProgress(tableName, progress.Processed, progress.Success, progress.Failed, lastID)
+				log.Printf("已处理 %d 条监控历史记录...", progress.Processed)
+			}
+			
+			// 检查是否达到限制
+			if m.config.MonitorHistoryLimit > 0 && progress.Processed >= int64(m.config.MonitorHistoryLimit) {
+				log.Printf("已达到监控历史记录迁移限制: %d", m.config.MonitorHistoryLimit)
+				rows.Close()
+				goto done
+			}
+		}
+		
+		rows.Close()
+		
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("迭代监控历史行时出错: %w", err)
+		}
+		
+		// 如果没有更多数据，退出循环
+		if !hasRows || batchCount == 0 {
+			break
+		}
+		
+		// 更新查询以获取下一批数据
+		if m.config.EnableResume && lastID != "" {
+			// 更新进度
+			m.updateProgress(tableName, progress.Processed, progress.Success, progress.Failed, lastID)
+			
+			// 构建下一批查询
+			query = "SELECT * FROM monitor_histories WHERE deleted_at IS NULL"
+			if m.config.MonitorHistoryDays > 0 {
+				cutoffDate := time.Now().AddDate(0, 0, -m.config.MonitorHistoryDays)
+				query += fmt.Sprintf(" AND created_at > '%s'", cutoffDate.Format("2006-01-02"))
+			}
+			query += fmt.Sprintf(" AND id > %s", lastID)
+			query += " ORDER BY id"
+			
+			if m.config.MonitorHistoryLimit > 0 && progress.Processed < int64(m.config.MonitorHistoryLimit) {
+				remaining := int64(m.config.MonitorHistoryLimit) - progress.Processed
+				batchSize := int64(m.config.BatchSize)
+				if remaining < batchSize {
+					batchSize = remaining
+				}
+				query += fmt.Sprintf(" LIMIT %d", batchSize)
+			} else if m.config.BatchSize > 0 {
+				query += fmt.Sprintf(" LIMIT %d", m.config.BatchSize)
+			}
+		} else {
+			// 如果不支持恢复，直接退出
+			break
+		}
+		
+		// 短暂休息，避免占用过多资源
+		time.Sleep(10 * time.Millisecond)
+	}
+	
+done:
+	// 最终更新进度
+	m.updateProgress(tableName, progress.Processed, progress.Success, progress.Failed, progress.LastProcessed)
+	
+	log.Printf("监控历史迁移完成: 成功 %d 条, 失败 %d 条", progress.Success, progress.Failed)
+	return nil
 }
 
 // migrateNotifications migrates notifications from SQLite to BadgerDB
@@ -999,32 +1429,118 @@ func (m *Migration) migrateCrons() error {
 
 // migrateTransfers migrates transfers from SQLite to BadgerDB
 func (m *Migration) migrateTransfers() error {
-	rows, err := m.sqliteDB.Query("SELECT * FROM transfers")
-	if err != nil {
-		return err
+	tableName := "transfers"
+	progress := m.getTableProgress(tableName)
+	
+	log.Printf("开始迁移流量数据... (已处理: %d/%d)", progress.Processed, progress.TotalRecords)
+	
+	// 构建查询
+	query := "SELECT * FROM transfers"
+	if m.config.EnableResume && progress.LastProcessed != "" {
+		query += fmt.Sprintf(" WHERE id > %s", progress.LastProcessed)
 	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return err
+	query += " ORDER BY id"
+	
+	// 添加批量限制
+	if m.config.BatchSize > 0 {
+		query += fmt.Sprintf(" LIMIT %d", m.config.BatchSize)
 	}
-
-	count := 0
-	for rows.Next() {
-		var transfer model.Transfer
-		scanValues := getScanValues(columns, &transfer)
-		if err := rows.Scan(scanValues...); err != nil {
-			return err
+	
+	// 分批处理
+	for {
+		rows, err := m.sqliteDB.Query(query)
+		if err != nil {
+			return fmt.Errorf("查询流量数据失败: %w", err)
 		}
-
-		if err := m.badgerDB.SaveModel("transfer", transfer.ID, &transfer); err != nil {
-			return err
+		
+		columns, err := rows.Columns()
+		if err != nil {
+			rows.Close()
+			return fmt.Errorf("获取列名失败: %w", err)
 		}
-		count++
+		
+		hasRows := false
+		batchCount := 0
+		lastID := ""
+		
+		for rows.Next() {
+			hasRows = true
+			var transfer model.Transfer
+			scanValues := getScanValues(columns, &transfer)
+			if err := rows.Scan(scanValues...); err != nil {
+				log.Printf("扫描流量数据失败: %v，跳过", err)
+				progress.Failed++
+				continue
+			}
+			
+			if transfer.ID == 0 {
+				log.Printf("流量ID为0，跳过")
+				progress.Failed++
+				continue
+			}
+			
+			lastID = strconv.FormatUint(transfer.ID, 10)
+			
+			// 如果有ID映射，更新server_id
+			if newServerID, ok := m.getMappedID("servers", uint64(transfer.ServerID)); ok {
+				transfer.ServerID = uint64(newServerID)
+			}
+			
+			err = m.migrateWithRetry(func() error {
+				return m.badgerDB.SaveModel("transfer", transfer.ID, &transfer)
+			})
+			
+			if err != nil {
+				log.Printf("流量ID %d: 保存到BadgerDB失败: %v", transfer.ID, err)
+				progress.Failed++
+				continue
+			}
+			
+			progress.Processed++
+			progress.Success++
+			batchCount++
+			
+			// 定期更新进度
+			if progress.Processed%int64(m.config.ProgressInterval) == 0 {
+				m.updateProgress(tableName, progress.Processed, progress.Success, progress.Failed, lastID)
+				log.Printf("已处理 %d 条流量记录...", progress.Processed)
+			}
+		}
+		
+		rows.Close()
+		
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("迭代流量行时出错: %w", err)
+		}
+		
+		// 如果没有更多数据，退出循环
+		if !hasRows || batchCount == 0 {
+			break
+		}
+		
+		// 更新查询以获取下一批数据
+		if m.config.EnableResume && lastID != "" {
+			// 更新进度
+			m.updateProgress(tableName, progress.Processed, progress.Success, progress.Failed, lastID)
+			
+			// 构建下一批查询
+			query = fmt.Sprintf("SELECT * FROM transfers WHERE id > %s ORDER BY id", lastID)
+			if m.config.BatchSize > 0 {
+				query += fmt.Sprintf(" LIMIT %d", m.config.BatchSize)
+			}
+		} else {
+			// 如果不支持恢复，直接退出
+			break
+		}
+		
+		// 短暂休息，避免占用过多资源
+		time.Sleep(10 * time.Millisecond)
 	}
-
-	log.Printf("已迁移 %d 条流量记录", count)
+	
+	// 最终更新进度
+	m.updateProgress(tableName, progress.Processed, progress.Success, progress.Failed, progress.LastProcessed)
+	
+	log.Printf("流量记录迁移完成: 成功 %d 条, 失败 %d 条", progress.Success, progress.Failed)
 	return nil
 }
 
@@ -1459,6 +1975,58 @@ func InitializeEmptyBadgerDB() error {
 
 	log.Println("已创建默认管理员用户（登录名: admin, Token: admin）")
 	return nil
+}
+
+// RunMigration runs the database migration with default configuration
+func RunMigration(badgerDB *BadgerDB, sqlitePath string) error {
+	migration, err := NewMigration(badgerDB, sqlitePath)
+	if err != nil {
+		return err
+	}
+	defer migration.Close()
+	
+	return migration.MigrateAll()
+}
+
+// RunMigrationWithConfig runs the database migration with custom configuration
+func RunMigrationWithConfig(badgerDB *BadgerDB, sqlitePath string, config *MigrationConfig) error {
+	migration, err := NewMigrationWithConfig(badgerDB, sqlitePath, config)
+	if err != nil {
+		return err
+	}
+	defer migration.Close()
+	
+	return migration.MigrateAll()
+}
+
+// QuickMigrationConfig returns a configuration for quick migration (smaller datasets)
+func QuickMigrationConfig() *MigrationConfig {
+	return &MigrationConfig{
+		BatchSize:            50,
+		MonitorHistoryDays:   7,  // Only last 7 days
+		MonitorHistoryLimit:  10000,
+		ProgressInterval:     100,
+		EnableResume:         true,
+		MaxRetries:           3,
+		RetryDelay:           time.Second,
+		Workers:              4,
+		SkipLargeHistoryData: true, // Skip large data fields
+	}
+}
+
+// FullMigrationConfig returns a configuration for full migration (all data)
+func FullMigrationConfig() *MigrationConfig {
+	return &MigrationConfig{
+		BatchSize:            200,
+		MonitorHistoryDays:   -1, // All history
+		MonitorHistoryLimit:  -1, // No limit
+		ProgressInterval:     1000,
+		EnableResume:         true,
+		MaxRetries:           5,
+		RetryDelay:           2 * time.Second,
+		Workers:              8,
+		SkipLargeHistoryData: false,
+	}
 }
 
 // 用于解析JSON字段的工具函数
