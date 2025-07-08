@@ -1,4 +1,4 @@
-package singleton
+package db
 
 import (
 	"encoding/json"
@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/utils"
 )
@@ -25,7 +24,7 @@ func InitBadgerDBFromPath(path string) error {
 	}
 
 	// 打开BadgerDB
-	_, err := db.OpenDB(path)
+	_, err := OpenDB(path)
 	if err != nil {
 		return fmt.Errorf("打开BadgerDB失败: %w", err)
 	}
@@ -35,7 +34,7 @@ func InitBadgerDBFromPath(path string) error {
 
 	// 初始化BadgerDB（不进行自动迁移）
 	log.Println("初始化BadgerDB...")
-	if err := db.InitializeEmptyBadgerDB(); err != nil {
+	if err := InitializeEmptyBadgerDB(); err != nil {
 		return fmt.Errorf("初始化BadgerDB失败: %w", err)
 	}
 
@@ -52,27 +51,65 @@ func InitBadgerDBFromPath(path string) error {
 	return nil
 }
 
+// GetBadgerDBPath 获取BadgerDB数据库目录路径
+func GetBadgerDBPath(conf interface{}) string {
+	// 默认BadgerDB路径
+	defaultPath := "data/badger"
+
+	// 由于这个函数现在在 db 包中，我们需要通过参数传入配置
+	// 或者从环境变量中获取配置
+	if confMap, ok := conf.(map[string]interface{}); ok {
+		if dbLocation, exists := confMap["DatabaseLocation"]; exists {
+			if location, ok := dbLocation.(string); ok && location != "" {
+				// 检查配置的路径是否看起来像SQLite文件路径
+				if strings.HasSuffix(location, ".db") {
+					// 如果是SQLite文件路径，转换为BadgerDB目录路径
+					// 例如：data/sqlite.db -> data/badger
+					dir := filepath.Dir(location)
+					return filepath.Join(dir, "badger")
+				} else {
+					// 如果不是.db文件，假设它是目录路径，直接使用
+					return location
+				}
+			}
+		}
+	}
+
+	return defaultPath
+}
+
 // isSQLiteFileExists 检查SQLite数据库文件是否存在
-func isSQLiteFileExists() bool {
+func isSQLiteFileExists(conf interface{}) bool {
 	// 获取SQLite数据库路径
-	sqlitePath := getSQLitePath()
+	sqlitePath := getSQLitePath(conf)
 
 	_, err := os.Stat(sqlitePath)
 	return err == nil
 }
 
 // getSQLitePath 获取SQLite数据库文件路径
-func getSQLitePath() string {
+func getSQLitePath(conf interface{}) string {
 	// 默认路径
 	defaultPath := "data/sqlite.db"
 
-	if Conf == nil {
+	if conf == nil {
 		return defaultPath
 	}
 
+	// 从配置中获取数据库信息
+	var dbType, dbLocation string
+	if confMap, ok := conf.(map[string]interface{}); ok {
+		if t, exists := confMap["DatabaseType"]; exists {
+			dbType, _ = t.(string)
+		}
+		if l, exists := confMap["DatabaseLocation"]; exists {
+			dbLocation, _ = l.(string)
+		}
+	}
+
 	// 如果当前数据库类型不是badger，直接使用配置的路径
-	if Conf.DatabaseType != "badger" && Conf.DatabaseLocation != "" {
-		return Conf.DatabaseLocation
+	if dbType != "badger" && dbLocation != "" {
+		return dbLocation
 	}
 
 	// 如果当前是badger类型，需要推断SQLite的路径
@@ -85,13 +122,13 @@ func getSQLitePath() string {
 
 	// 如果配置了DatabaseLocation，也尝试将其作为SQLite路径
 	// （可能用户之前配置的是SQLite路径，后来改为badger）
-	if Conf.DatabaseLocation != "" {
+	if dbLocation != "" {
 		// 如果配置的路径看起来像SQLite文件，也加入候选
-		if strings.HasSuffix(Conf.DatabaseLocation, ".db") {
-			possiblePaths = append([]string{Conf.DatabaseLocation}, possiblePaths...)
+		if strings.HasSuffix(dbLocation, ".db") {
+			possiblePaths = append([]string{dbLocation}, possiblePaths...)
 		} else {
 			// 如果是目录，尝试在该目录下查找sqlite.db
-			sqliteInConfigDir := filepath.Join(Conf.DatabaseLocation, "sqlite.db")
+			sqliteInConfigDir := filepath.Join(dbLocation, "sqlite.db")
 			possiblePaths = append([]string{sqliteInConfigDir}, possiblePaths...)
 		}
 	}
@@ -108,36 +145,10 @@ func getSQLitePath() string {
 	return defaultPath
 }
 
-// GetBadgerDBPath 获取BadgerDB数据库目录路径
-func GetBadgerDBPath() string {
-	// 默认BadgerDB路径
-	defaultPath := "data/badger"
-
-	if Conf == nil {
-		return defaultPath
-	}
-
-	// 如果配置了DatabaseLocation
-	if Conf.DatabaseLocation != "" {
-		// 检查配置的路径是否看起来像SQLite文件路径
-		if strings.HasSuffix(Conf.DatabaseLocation, ".db") {
-			// 如果是SQLite文件路径，转换为BadgerDB目录路径
-			// 例如：data/sqlite.db -> data/badger
-			dir := filepath.Dir(Conf.DatabaseLocation)
-			return filepath.Join(dir, "badger")
-		} else {
-			// 如果不是.db文件，假设它是目录路径，直接使用
-			return Conf.DatabaseLocation
-		}
-	}
-
-	return defaultPath
-}
-
 // renameSQLiteFileToBackup 将SQLite数据库文件重命名为备份
-func renameSQLiteFileToBackup() error {
+func renameSQLiteFileToBackup(conf interface{}) error {
 	// 获取SQLite数据库路径
-	sqlitePath := getSQLitePath()
+	sqlitePath := getSQLitePath(conf)
 
 	// 检查文件是否存在
 	if _, err := os.Stat(sqlitePath); os.IsNotExist(err) {
@@ -151,14 +162,14 @@ func renameSQLiteFileToBackup() error {
 }
 
 // migrateFromSQLiteToBadgerDB 从SQLite迁移数据到BadgerDB
-func migrateFromSQLiteToBadgerDB(badgerPath string) error {
+func migrateFromSQLiteToBadgerDB(badgerPath string, conf interface{}) error {
 	// 获取SQLite数据库文件路径
-	sqlitePath := getSQLitePath()
+	sqlitePath := getSQLitePath(conf)
 
 	log.Printf("从SQLite路径迁移: %s 到 BadgerDB路径: %s", sqlitePath, badgerPath)
 
 	// 创建迁移实例
-	migration, err := db.NewMigration(db.DB, sqlitePath)
+	migration, err := NewMigration(DB, sqlitePath)
 	if err != nil {
 		return err
 	}
@@ -175,31 +186,25 @@ func initializeBadgerDBIndexes() error {
 	return nil
 }
 
-// loadServersFromBadgerDB 从BadgerDB加载服务器列表到内存
-func loadServersFromBadgerDB() error {
+// LoadServersFromBadgerDB 从BadgerDB加载服务器列表到内存
+func LoadServersFromBadgerDB() ([]*model.Server, error) {
 	log.Println("从BadgerDB加载服务器列表...")
-	ServerLock.Lock()
-	defer ServerLock.Unlock()
-
-	// 清空现有服务器列表
-	ServerList = make(map[uint64]*model.Server)
-	SortedServerList = make([]*model.Server, 0)
-	SortedServerListForGuest = make([]*model.Server, 0)
 
 	// 使用ServerOps获取所有服务器
-	serverOps := db.NewServerOps(db.DB)
-	if serverOps == nil || db.DB == nil {
+	serverOps := NewServerOps(DB)
+	if serverOps == nil || DB == nil {
 		log.Println("警告: BadgerDB或ServerOps未初始化")
-		return errors.New("BadgerDB未初始化")
+		return nil, errors.New("BadgerDB未初始化")
 	}
 
 	servers, err := serverOps.GetAllServers()
 	if err != nil {
 		log.Printf("从BadgerDB获取服务器列表失败: %v", err)
-		return err
+		return nil, err
 	}
 
-	// 初始化服务器列表
+	// 处理服务器列表
+	var processedServers []*model.Server
 	for _, server := range servers {
 		if server == nil {
 			log.Println("警告: 跳过空的服务器记录")
@@ -277,7 +282,6 @@ func loadServersFromBadgerDB() error {
 				log.Printf("为服务器 %s (ID: %d) 生成新Secret: %s", server.Name, server.ID, newSecret)
 
 				// 保存到数据库
-				serverOps := db.NewServerOps(db.DB)
 				if err := serverOps.SaveServer(server); err != nil {
 					log.Printf("保存服务器 %s (ID: %d) 的新Secret到BadgerDB失败: %v", server.Name, server.ID, err)
 				} else {
@@ -286,41 +290,18 @@ func loadServersFromBadgerDB() error {
 			}
 		}
 
-		// 添加到服务器映射
-		ServerList[server.ID] = server
-	}
-
-	// 构建排序后的服务器列表
-	log.Println("构建排序的服务器列表...")
-	// 刷新内存中的有序服务器列表
-	SortedServerLock.Lock()
-	defer SortedServerLock.Unlock()
-	SortedServerList = []*model.Server{}
-	SortedServerListForGuest = []*model.Server{}
-
-	for _, s := range ServerList {
-		SortedServerList = append(SortedServerList, s)
-		if !s.HideForGuest {
-			SortedServerListForGuest = append(SortedServerListForGuest, s)
-		}
+		processedServers = append(processedServers, server)
 	}
 
 	// 按照服务器排序值排序
-	sort.SliceStable(SortedServerList, func(i, j int) bool {
-		if SortedServerList[i].DisplayIndex == SortedServerList[j].DisplayIndex {
-			return SortedServerList[i].ID < SortedServerList[j].ID
+	sort.SliceStable(processedServers, func(i, j int) bool {
+		if processedServers[i].DisplayIndex == processedServers[j].DisplayIndex {
+			return processedServers[i].ID < processedServers[j].ID
 		}
-		return SortedServerList[i].DisplayIndex < SortedServerList[j].DisplayIndex
+		return processedServers[i].DisplayIndex < processedServers[j].DisplayIndex
 	})
 
-	sort.SliceStable(SortedServerListForGuest, func(i, j int) bool {
-		if SortedServerListForGuest[i].DisplayIndex == SortedServerListForGuest[j].DisplayIndex {
-			return SortedServerListForGuest[i].ID < SortedServerListForGuest[j].ID
-		}
-		return SortedServerListForGuest[i].DisplayIndex < SortedServerListForGuest[j].DisplayIndex
-	})
-
-	return nil
+	return processedServers, nil
 }
 
 // startBadgerDBMaintenanceTasks 启动BadgerDB的后台维护任务
@@ -337,7 +318,7 @@ func startBadgerDBMaintenanceTasks() {
 			select {
 			case <-ticker.C:
 				// 清理30天前的监控历史记录
-				monitorHistoryOps := db.NewMonitorHistoryOps(db.DB)
+				monitorHistoryOps := NewMonitorHistoryOps(DB)
 				count, err := monitorHistoryOps.CleanupOldMonitorHistories(30 * 24 * time.Hour)
 				if err != nil {
 					log.Printf("清理过期监控历史记录失败: %v", err)
@@ -349,11 +330,9 @@ func startBadgerDBMaintenanceTasks() {
 	}()
 }
 
-// 以下是替代原有数据库操作的函数
-
 // SaveServerToBadgerDB 保存服务器信息到BadgerDB
 func SaveServerToBadgerDB(server *model.Server) error {
-	serverOps := db.NewServerOps(db.DB)
+	serverOps := NewServerOps(DB)
 	return serverOps.SaveServer(server)
 }
 
@@ -371,13 +350,13 @@ func GetBadgerDBStats() map[string]interface{} {
 
 // CleanBadgerDBMonitorHistory 清理BadgerDB中的监控历史记录
 func CleanBadgerDBMonitorHistory(days int) (int, error) {
-	monitorHistoryOps := db.NewMonitorHistoryOps(db.DB)
+	monitorHistoryOps := NewMonitorHistoryOps(DB)
 	return monitorHistoryOps.CleanupOldMonitorHistories(time.Duration(days) * 24 * time.Hour)
 }
 
 // CloseBadgerDB 关闭BadgerDB
 func CloseBadgerDB() {
-	if db.DB != nil {
-		db.DB.Close()
+	if DB != nil {
+		DB.Close()
 	}
 }

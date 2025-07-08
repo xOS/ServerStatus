@@ -192,7 +192,7 @@ func loadServers() {
 
 				// 保存到数据库
 				if Conf.DatabaseType == "badger" {
-					if err := SaveServerToBadgerDB(innerS); err != nil {
+					if err := db.SaveServerToBadgerDB(innerS); err != nil {
 						log.Printf("保存服务器 %s (ID: %d) 的新Secret到BadgerDB失败: %v", innerS.Name, innerS.ID, err)
 					}
 				} else {

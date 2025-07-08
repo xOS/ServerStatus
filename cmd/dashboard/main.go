@@ -14,6 +14,7 @@ import (
 	flag "github.com/spf13/pflag"
 	"github.com/xos/serverstatus/cmd/dashboard/controller"
 	"github.com/xos/serverstatus/cmd/dashboard/rpc"
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/proto"
 	"github.com/xos/serverstatus/service/singleton"
@@ -111,7 +112,7 @@ func main() {
 		}
 
 		log.Printf("BadgerDB将使用目录: %s", badgerPath)
-		singleton.InitBadgerDBFromPath(badgerPath)
+		db.InitBadgerDBFromPath(badgerPath)
 	} else {
 		// 默认使用SQLite
 		log.Println("使用SQLite数据库...")

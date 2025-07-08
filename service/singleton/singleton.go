@@ -82,7 +82,11 @@ func LoadSingleton() {
 		var err error
 
 		// 获取正确的BadgerDB目录路径
-		badgerPath := GetBadgerDBPath()
+		confMap := map[string]interface{}{
+			"DatabaseType":     Conf.DatabaseType,
+			"DatabaseLocation": Conf.DatabaseLocation,
+		}
+		badgerPath := db.GetBadgerDBPath(confMap)
 		log.Printf("使用BadgerDB路径: %s", badgerPath)
 
 		db.DB, err = db.OpenDB(badgerPath)

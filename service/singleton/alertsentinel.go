@@ -394,9 +394,6 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 		return
 	}
 
-	// 流量总计
-	totalTransfer := inTransfer + outTransfer
-
 	// 遍历所有报警规则，只更新包含此服务器的规则
 	for _, alert := range Alerts {
 		if !alert.Enabled() {
@@ -425,9 +422,25 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 					}
 				}
 
-				// 服务器在规则监控范围内，更新流量数据
+				// 服务器在规则监控范围内，根据规则类型更新相应的流量数据
+				var transferValue uint64
+				switch alert.Rules[j].Type {
+				case "transfer_in_cycle":
+					// 只计算入站流量
+					transferValue = inTransfer
+				case "transfer_out_cycle":
+					// 只计算出站流量
+					transferValue = outTransfer
+				case "transfer_all_cycle":
+					// 计算总流量
+					transferValue = inTransfer + outTransfer
+				default:
+					// 默认使用总流量（向后兼容）
+					transferValue = inTransfer + outTransfer
+				}
+
 				// 不论大小如何，总是更新最新值
-				stats.Transfer[serverID] = totalTransfer
+				stats.Transfer[serverID] = transferValue
 
 				// 更新服务器名称
 				if serverName != "" {
@@ -452,7 +465,7 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 						serverCopy.Host = server.Host
 					}
 					ServerLock.RUnlock()
-					checkTrafficThresholds(alert, serverCopy, &alert.Rules[j], totalTransfer)
+					checkTrafficThresholds(alert, serverCopy, &alert.Rules[j], transferValue)
 				} else {
 					ServerLock.RUnlock()
 				}
