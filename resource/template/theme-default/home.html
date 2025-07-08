@@ -385,9 +385,7 @@ const statusCards = new Vue({
             'ACPI\\ThermalZone\\THM0_0'
         ],
         activeTag: '',
-        uniqueTags: [],
-        _lastKnownUpdateTime: 0,
-        _updateInterval: null
+        uniqueTags: []
     },
     mixins: [mixinsVue],
     created() {
@@ -448,9 +446,6 @@ const statusCards = new Vue({
         }
     },
     methods: {
-        checkIsMobile() {
-            return window.innerWidth < 768;
-        },
         getServerTrafficData(serverId) {
             if (!serverId) return null;
             
@@ -616,24 +611,6 @@ const statusCards = new Vue({
             const value = parseFloat((bytes / Math.pow(1024, i)).toFixed(2));
             return `${value}${sizes[i]}`;
         },
-        getCoreAndGHz(arr) {
-            if ((arr || []).length === 0) {
-                return '';
-            }
-            let totalCores = 0;
-            arr.forEach(str => {
-                let coreMatch = str.match(/(\d+(\.\d+)?) Physical/g);
-                let coreCount = 0;
-                if (coreMatch) {
-                    coreCount = parseFloat(coreMatch[0]);
-                } else {
-                    let coreMatch = str.match(/(\d+(\.\d+)?) Virtual/g);
-                    coreCount = coreMatch ? parseFloat(coreMatch[0]) : 0;
-                }
-                totalCores += coreCount;
-            });
-            return `${totalCores} Cores`;
-        },
         getK2Gb(bs) {
             bs = bs / 1024 / 1024 / 1024;
             if (bs >= 1) {
@@ -642,13 +619,6 @@ const statusCards = new Vue({
                 bs = bs * 1024;
                 return Math.ceil(bs.toFixed(2)) + 'MB';
             }
-        },
-        listTipsMouseenter(obj, strs, tipsNum = 1) {
-            this.layerIndex = layer.tips(strs, '#' + obj, { tips: [tipsNum, 'rgb(0 0 0 / 85%)'], time: 0 });
-            $('#' + obj).attr('layerIndex', this.layerIndex);
-        },
-        listTipsMouseleave(obj) {
-            layer.close(this.layerIndex);
         },
         initializePopups() {
             const triggerSelector = '.server-primary-font.info.circle.icon';
@@ -786,9 +756,9 @@ const statusCards = new Vue({
                 // 添加10秒容错时间，处理时间不同步问题
                 const offlineThreshold = 130000; // 2分钟 + 10秒容错
                 
-                // 添加调试日志（仅在状态变化时）
+                // 状态变化检查
                 if (serverItem.live === true && diffMs > offlineThreshold) {
-                    console.log(`Server ${serverItem.Name} may go offline: lastActive=${serverItem.LastActive}, diffMs=${diffMs}ms`);
+                    // Server may go offline
                 }
                 
                 const newLiveStatus = !isNaN(lastActiveTimestampMs) && diffMs < offlineThreshold && diffMs > -10000; // 也要检查未来时间
@@ -806,14 +776,12 @@ const statusCards = new Vue({
                             serverItem.live = false;
                             serverItem._offlineConfirmCount = 0;
                             hasUpdates = true;
-                            console.log(`Server ${serverItem.Name} confirmed offline after 3 checks`);
                         }
                     } else if (serverItem.live === false && newLiveStatus === true) {
                         // 从离线恢复到在线，立即更新
                         serverItem.live = true;
                         serverItem._offlineConfirmCount = 0;
                         hasUpdates = true;
-                        console.log(`Server ${serverItem.Name} is back online`);
                     }
                 } else {
                     // 状态没有变化，重置确认计数
@@ -959,18 +927,6 @@ const statusCards = new Vue({
             }
 
             return '';
-        },
-        initTrafficDataWatcher() {
-            this.trafficWatcherInterval = setInterval(() => {
-                if (window.serverTrafficData && 
-                    Object.keys(window.serverTrafficData).length > 0 && 
-                    window.lastTrafficUpdateTime !== this._lastKnownUpdateTime) {
-                    
-                    this.trafficData = JSON.parse(JSON.stringify(window.serverTrafficData));
-                    this._lastKnownUpdateTime = window.lastTrafficUpdateTime;
-                    this.$forceUpdate();
-                }
-            }, 1000);
         }
     },
     watch: {
@@ -1000,10 +956,6 @@ const statusCards = new Vue({
         }
     },
     beforeDestroy() {
-        // 清理防抖定时器
-        if (this._updateDebounceTimer) {
-            clearTimeout(this._updateDebounceTimer);
-        }
         if (window.trafficManager) {
             window.trafficManager.unsubscribe(this.updateTrafficData);
         }
@@ -1027,7 +979,6 @@ const wsManager = {
                 // 检查上次接收消息的时间
                 const timeSinceLastMessage = Date.now() - this.lastPing;
                 if (timeSinceLastMessage > 30000) { // 30秒没有收到消息
-                    console.log('WebSocket health check failed, reconnecting...');
                     this.reconnect();
                 }
             }
@@ -1055,7 +1006,6 @@ const wsManager = {
         }
         
         const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
-        console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})...`);
         
         this.reconnectTimer = setTimeout(() => {
             initWebSocket();
@@ -1097,7 +1047,6 @@ function initWebSocket() {
     wsManager.ws = ws;
 
     ws.onopen = function() {
-        console.log('WebSocket connected');
         wsManager.reset();
         wsManager.startHealthCheck();
         
@@ -1141,7 +1090,6 @@ function initWebSocket() {
     };
 
     ws.onclose = function(event) {
-        console.log('WebSocket closed');
         wsManager.ws = null;
         wsManager.stopHealthCheck();
         
@@ -1162,7 +1110,6 @@ $(document).ready(function() {
             if (document.visibilityState === 'visible') {
                 // 页面变为可见时，检查WebSocket连接状态
                 if (!wsManager.ws || wsManager.ws.readyState !== WebSocket.OPEN) {
-                    console.log('Page visible, reconnecting WebSocket...');
                     wsManager.reconnect();
                 }
             } else {
