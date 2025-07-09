@@ -44,27 +44,33 @@ func initSystem() {
 	// 启动 singleton 包下的所有服务
 	singleton.LoadSingleton()
 
-	// 等待两秒钟确保所有服务充分初始化
-	time.Sleep(2 * time.Second)
+	// 优化：减少同步等待时间，让初始化更快完成
+	time.Sleep(1 * time.Second) // 从2秒减少到1秒
 
-	// 加载服务器流量数据并初始化 - 仅在非BadgerDB模式下执行
-	if singleton.Conf != nil && singleton.Conf.DatabaseType != "badger" {
-		singleton.SyncAllServerTrafficFromDB()
-	} else {
-		log.Println("使用BadgerDB，执行BadgerDB监控历史清理...")
-		count, err := singleton.CleanMonitorHistory()
-		if err != nil {
-			log.Printf("BadgerDB监控历史清理失败: %v", err)
+	// 延迟执行非关键操作，避免启动时内存峰值
+	go func() {
+		// 延迟5秒执行流量相关操作
+		time.Sleep(5 * time.Second)
+
+		// 加载服务器流量数据并初始化 - 仅在非BadgerDB模式下执行
+		if singleton.Conf != nil && singleton.Conf.DatabaseType != "badger" {
+			singleton.SyncAllServerTrafficFromDB()
 		} else {
-			log.Printf("BadgerDB监控历史清理完成，清理了%d条记录", count)
+			log.Println("使用BadgerDB，执行BadgerDB监控历史清理...")
+			count, err := singleton.CleanMonitorHistory()
+			if err != nil {
+				log.Printf("BadgerDB监控历史清理失败: %v", err)
+			} else {
+				log.Printf("BadgerDB监控历史清理完成，清理了%d条记录", count)
+			}
 		}
-	}
 
-	// 特别强调：面板重启时必须执行流量重新计算
-	singleton.TriggerTrafficRecalculation()
+		// 特别强调：面板重启时必须执行流量重新计算
+		singleton.TriggerTrafficRecalculation()
 
-	// 开启流量同步和持久化 - 在BadgerDB模式下使用空实现
-	singleton.AutoSyncTraffic()
+		// 开启流量同步和持久化 - 在BadgerDB模式下使用空实现
+		singleton.AutoSyncTraffic()
+	}()
 }
 
 func main() {

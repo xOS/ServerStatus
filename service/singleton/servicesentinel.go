@@ -273,9 +273,9 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 	if Conf.DatabaseType == "badger" {
 		if db.DB != nil {
 			// 使用BadgerDB加载监控历史记录
-			// 获取最近30天的监控历史记录
+			// 优化：启动时只加载最近4天的数据，减少内存消耗
 			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -30)
+			startTime := endTime.AddDate(0, 0, -4) // 从30天减少到4天
 
 			monitorHistoryOps := db.NewMonitorHistoryOps(db.DB)
 			histories, err := monitorHistoryOps.GetAllMonitorHistoriesInRange(startTime, endTime)
@@ -283,6 +283,13 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 				log.Printf("从BadgerDB加载监控历史记录失败: %v", err)
 				mhs = []model.MonitorHistory{}
 			} else {
+				// 限制加载数量，最多加载1000条记录
+				maxRecords := 1000
+				if len(histories) > maxRecords {
+					log.Printf("监控历史记录过多(%d条)，只加载最新的%d条", len(histories), maxRecords)
+					histories = histories[len(histories)-maxRecords:]
+				}
+
 				// 转换指针数组为值数组
 				mhs = make([]model.MonitorHistory, len(histories))
 				for i, h := range histories {
@@ -290,7 +297,7 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 						mhs[i] = *h
 					}
 				}
-
+				log.Printf("BadgerDB启动时加载了%d条监控历史记录", len(mhs))
 			}
 		} else {
 			log.Println("BadgerDB未初始化，跳过加载监控历史记录")
@@ -303,26 +310,26 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 
 		startTime := time.Now()
 
-		// 直接查询月度数据，系统启动时需要快速加载
-		fromDate := today.AddDate(0, 0, -29)
+		// 优化：启动时只加载最近4天数据，降低内存压力
+		fromDate := today.AddDate(0, 0, -4) // 从29天改为4天
 		toDate := today
 
 		err := DB.WithContext(ctx).
 			Where("created_at > ? AND created_at < ?", fromDate, toDate).
 			Order("created_at DESC").
+			Limit(1000). // 限制最多加载1000条记录
 			Find(&mhs).Error
 
 		if err != nil {
-			log.Printf("加载月度监控数据失败: %v", err)
+			log.Printf("加载监控数据失败: %v", err)
 			return
 		}
 
 		queryDuration := time.Since(startTime)
-
 		if queryDuration > 500*time.Millisecond {
-			log.Printf("慢SQL查询警告: 分批加载月度数据耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
+			log.Printf("慢SQL查询警告: 分批加载监控数据耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
 		} else {
-			log.Printf("月度监控数据加载完成: 耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
+			log.Printf("监控数据加载完成: 耗时 %v，返回 %d 条记录", queryDuration, len(mhs))
 		}
 	}
 

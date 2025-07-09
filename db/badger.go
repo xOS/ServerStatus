@@ -124,10 +124,10 @@ func OpenDB(path string) (*BadgerDB, error) {
 	// Start background maintenance tasks
 	badgerDB.startMaintenance()
 
-	// 预取常用数据以提高缓存命中率
+	// 优化：延迟数据预取，避免启动时内存爆高
 	go func() {
-		// 延迟5秒启动，让系统完全初始化
-		time.Sleep(5 * time.Second)
+		// 延迟30秒启动，让系统完全稳定后再预取数据
+		time.Sleep(30 * time.Second)
 		if err := badgerDB.PrefetchCommonData(); err != nil {
 			log.Printf("预取常用数据失败: %v", err)
 		} else {
@@ -1012,12 +1012,12 @@ func (b *BadgerDB) PrefetchCommonData() error {
 	// 预取最近活跃的服务器数据
 	return b.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
-		opts.PrefetchSize = 100 // 预取100个键值对
+		opts.PrefetchSize = 20 // 减少预取数量，从100减少到20
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
 		count := 0
-		for it.Rewind(); it.Valid() && count < 50; it.Next() { // 只预取前50个常用数据
+		for it.Rewind(); it.Valid() && count < 10; it.Next() { // 只预取前10个常用数据，从50减少到10
 			item := it.Item()
 			key := string(item.Key())
 

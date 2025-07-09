@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"runtime"
@@ -61,6 +62,30 @@ func InitTimezoneAndCache() {
 	}()
 }
 
+// optimizeStartupMemory 优化启动时的内存使用
+func optimizeStartupMemory() {
+	// 设置更激进的GC参数，减少启动时内存积累
+	debug.SetGCPercent(30) // 更激进的GC策略
+
+	// 预先触发一次GC，清理初始化过程中的垃圾
+	runtime.GC()
+
+	// 限制初始内存分配
+	debug.SetMemoryLimit(1000 << 20) // 限制内存为1GB，防止启动时爆高
+
+	log.Printf("启动内存优化已应用: GCPercent=30, MemoryLimit=1GB")
+}
+
+// restoreNormalMemorySettings 恢复正常的内存设置
+func restoreNormalMemorySettings() {
+	// 30秒后恢复正常的GC设置
+	time.AfterFunc(30*time.Second, func() {
+		debug.SetGCPercent(100)             // 恢复默认GC设置
+		debug.SetMemoryLimit(math.MaxInt64) // 移除内存限制
+		log.Printf("内存设置已恢复为正常值")
+	})
+}
+
 // LoadSingleton 加载子服务并执行
 func LoadSingleton() {
 	// 使用顶层的panic处理，确保程序不会因为一个模块的失败而整体崩溃
@@ -71,9 +96,16 @@ func LoadSingleton() {
 		}
 	}()
 
+	// 优化：启动时应用特殊的内存策略
+	optimizeStartupMemory()
+	defer restoreNormalMemorySettings()
+
 	// 启动内存监控
 	globalMemoryMonitor = NewMemoryMonitor()
 	globalMemoryMonitor.Start()
+
+	// 优化：设置更激进的GC参数，减少启动时内存积累
+	debug.SetGCPercent(50) // 默认是100，设置为50使GC更频繁
 
 	// 确保BadgerDB已正确初始化
 	if Conf.DatabaseType == "badger" && db.DB == nil {
@@ -2059,33 +2091,13 @@ func executeDatabaseOperation(operation func() error, operationName string, maxR
 		if isRetryableError(err) && retry < maxRetries-1 {
 			// 指数退避策略
 			backoffDelay := time.Duration(200*(1<<retry)) * time.Millisecond
-			log.Printf("数据库操作 '%s' 忙碌，%v 后重试 (%d/%d)", operationName, backoffDelay, retry+1, maxRetries)
 			time.Sleep(backoffDelay)
-			continue
+		} else {
+			break
 		}
-
-		// 非锁定错误，直接返回
-		log.Printf("数据库操作 '%s' 失败: %v", operationName, err)
-		return err
 	}
 
-	return fmt.Errorf("数据库操作 '%s' 在 %d 次重试后仍然失败: %v", operationName, maxRetries, lastErr)
-}
-
-// SafeDatabaseUpdate 安全的数据库更新操作
-func SafeDatabaseUpdate(tableName string, updateData map[string]interface{}, whereClause string, args ...interface{}) error {
-	return executeDatabaseOperation(func() error {
-		return executeWithoutLock(func() error {
-			// 使用事务确保操作的原子性
-			return DB.Transaction(func(tx *gorm.DB) error {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-
-				result := tx.WithContext(ctx).Table(tableName).Where(whereClause, args...).Updates(updateData)
-				return result.Error
-			})
-		})
-	}, fmt.Sprintf("update_%s", tableName), 3)
+	return lastErr
 }
 
 // SafeDatabaseDelete 安全的数据库删除操作
@@ -3352,7 +3364,7 @@ func VerifyMonitorHistoryConsistency() {
 		log.Printf("警告: ICMP/TCP监控记录数量异常少，可能存在数据丢失")
 
 		// 记录警告日志，不通过通知系统发送，避免依赖错误
-		log.Printf("监控历史记录一致性警告: 最近30分钟内仅有 %d 条ICMP/TCP监控记录，可能存在数据丢失", count)
+		log.Printf("监控历史记录一致性警告: 最近30分钟内仅有监控记录可能存在数据丢失")
 
 		// 强制执行数据库优化，延迟执行避免冲突
 		go func() {
