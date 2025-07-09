@@ -1041,3 +1041,112 @@ html, body {
 }
 
 .ui-alerts{position:fixed;z-index:2060;padding:23px}.ui-alerts.center{top:50%;left:50%;margin-top:-100px;margin-left:-222px}.ui-alerts.top-right{top:20px;right:20px}.ui-alerts.top-center{top:20px;margin-left:-222px;left:50%}.ui-alerts.top-left{top:20px;left:20px}.ui-alerts.bottom-right{bottom:0;right:20px}.ui-alerts.bottom-center{bottom:0;margin-left:-222px;left:50%}.ui-alerts.bottom-left{bottom:0;left:20px}.ui-alerts.ui-alerts>.message>.content>.header{padding-right:13px}@media (min-width:320px){.ui-alerts.top-center{margin-left:-163px}}
+
+/* Tippy.js 自定义样式 - 服务器信息弹窗 */
+.tippy-box[data-theme~='custom-server-popup'] {
+    background-color: rgba(255, 255, 255, 0.8) !important;
+    color: #333 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
+    backdrop-filter: blur(10px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+    padding: 10px 12px !important;
+    width: 250px !important;
+    height: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+}
+
+.tippy-box[data-theme~='custom-server-popup'] .tippy-content {
+    padding: 0 !important;
+    color: #333 !important;
+    overflow: visible !important;
+    max-width: none !important;
+    max-height: none !important;
+}
+
+/* 修复箭头样式 - 重新实现三角箭头 */
+.tippy-box[data-theme~='custom-server-popup'] .tippy-arrow {
+    width: 16px !important;
+    height: 16px !important;
+}
+
+/* 箭头容器定位 - 偏移到popup外部（修正方向） */
+.tippy-box[data-theme~='custom-server-popup'][data-placement^='top'] .tippy-arrow {
+    bottom: -9px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+}
+
+.tippy-box[data-theme~='custom-server-popup'][data-placement^='bottom'] .tippy-arrow {
+    top: -9px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+}
+
+.tippy-box[data-theme~='custom-server-popup'][data-placement^='left'] .tippy-arrow {
+    top: 49% !important;
+    right: -9px !important;
+    transform: translateY(-50%) !important;
+}
+
+.tippy-box[data-theme~='custom-server-popup'][data-placement^='right'] .tippy-arrow {
+    top: 49% !important;
+    left: -9px !important;
+    transform: translateY(-50%) !important;
+}
+
+.tippy-box[data-theme~='custom-server-popup'] .tippy-arrow::before {
+    content: '' !important;
+    position: absolute !important;
+    border: 8px solid transparent !important;
+}
+
+/* 顶部箭头 - popup在上方，箭头在popup底部指向下方 */
+.tippy-box[data-theme~='custom-server-popup'][data-placement^='top'] .tippy-arrow::before {
+    bottom: 0 !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    border-top-color: rgba(255, 255, 255, 0.8) !important;
+    border-bottom: none !important;
+}
+
+/* 底部箭头 - popup在下方，箭头在popup顶部指向上方 */
+.tippy-box[data-theme~='custom-server-popup'][data-placement^='bottom'] .tippy-arrow::before {
+    top: 0 !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    border-bottom-color: rgba(255, 255, 255, 0.8) !important;
+    border-top: none !important;
+}
+
+/* 左侧箭头 - popup在左侧，箭头在popup右侧指向右方 */
+.tippy-box[data-theme~='custom-server-popup'][data-placement^='left'] .tippy-arrow::before {
+    top: 47% !important;
+    right: 0 !important;
+    transform: translateY(-50%) !important;
+    border-left-color: rgba(255, 255, 255, 0.8) !important;
+    border-right: none !important;
+}
+
+/* 右侧箭头 - popup在右侧，箭头在popup左侧指向左方 */
+.tippy-box[data-theme~='custom-server-popup'][data-placement^='right'] .tippy-arrow::before {
+    top: 47% !important;
+    left: 0 !important;
+    transform: translateY(-50%) !important;
+    border-right-color: rgba(255, 255, 255, 0.8) !important;
+    border-left: none !important;
+}
+
+/* 兼容性：同时支持SVG箭头 */
+.tippy-box[data-theme~='custom-server-popup'] .tippy-svg-arrow {
+    fill: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* 隐藏原始内容 */
+.server-popup-content {
+    display: none !important;
+}

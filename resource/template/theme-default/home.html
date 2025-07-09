@@ -103,8 +103,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             <i v-else-if='getFontLogoClass(server.Host.Platform) == "" && server.State.Uptime > 0' class="fl-tux"></i>
                             <i v-else :class="'fl-' + getFontLogoClass(server.Host.Platform)"></i>
                             @#server.Name + (server.live?'':' [{{tr "Offline"}}]')#@
-                            <i class="server-primary-font info circle icon" style="height: 28px" ></i>
-                            <div class="ui content popup">
+                            <i class="server-primary-font info circle icon" style="height: 28px" data-server-popup></i>
+                            <div class="server-popup-content" style="display: none;">
                                 {{tr "Platform"}}：@#specialOS(server.Host.Platform)#@ <span
                                     v-if='!isWindowsPlatform(server.Host.Platform)'>@#formatPlatformVersion(server.Host.PlatformVersion)#@
                                 </span> @#specialVir(server.Host.Virtualization)#@
@@ -363,7 +363,6 @@ const statusCards = new Vue({
         templates: {{.Themes}},
         servers: [],
         cache: [],
-        chartDataList: [],
         activePopup: null,
         trafficData: {},
         _trafficVersion: 0,
@@ -427,7 +426,6 @@ const statusCards = new Vue({
     },
     mounted() {
         this.$nextTick(() => {
-            this.initializePopups();
             this.updateSliderPosition();
             $('.ui.accordion').accordion();
         });
@@ -620,29 +618,7 @@ const statusCards = new Vue({
                 return Math.ceil(bs.toFixed(2)) + 'MB';
             }
         },
-        initializePopups() {
-            const triggerSelector = '.server-primary-font.info.circle.icon';
-            $(triggerSelector).popup('destroy');
-            
-            this.$nextTick(() => {
-                $(triggerSelector).popup({
-                    popup: '.ui.content.popup',
-                    on: 'hover',
-                    hoverable: true,
-                    exclusive: true,
-                    delay: { show: 100, hide: 300 },
-                    silent: true,
-                    performance: true,
-                    onShow: function() {
-                        const $currentPopup = $(this);
-                        $('.ui.popup.visible').not($currentPopup).each(function() {
-                            $(this).removeClass('visible transition').addClass('hidden').css('display', 'none');
-                        });
-                        return true;
-                    }
-                });
-            });
-        },
+        // initializeTippyPopups 方法已迁移到 main.js
         generateUniqueTags() {
             const tags = new Set();
             if (this.servers) {
@@ -793,6 +769,13 @@ const statusCards = new Vue({
             if (hasUpdates) {
                 // 立即更新，不使用防抖（防抖可能导致状态显示延迟）
                 this.$forceUpdate();
+                
+                // 更新当前显示的popup内容
+                this.$nextTick(() => {
+                    if (window.TippyPopups && window.TippyPopups.updateContent) {
+                        window.TippyPopups.updateContent();
+                    }
+                });
             }
         },
         getTrafficProgressClass(serverId) {
@@ -889,6 +872,13 @@ const statusCards = new Vue({
 
             if (hasUpdates) {
                 this.$forceUpdate();
+                
+                // 更新当前显示的popup内容
+                this.$nextTick(() => {
+                    if (window.TippyPopups && window.TippyPopups.updateContent) {
+                        window.TippyPopups.updateContent();
+                    }
+                });
             }
         },
         hasTemperature(temperatureList, sensorList) {
@@ -934,14 +924,6 @@ const statusCards = new Vue({
             this.$nextTick(() => {
                 this.updateSliderPosition();
             });
-        },
-        filteredServers: {
-            handler() {
-                this.$nextTick(() => {
-                    this.initializePopups();
-                });
-            },
-            deep: true
         },
         uniqueTags() {
             this.$nextTick(() => {
@@ -1053,26 +1035,14 @@ const wsManager = {
         this.reconnectAttempts = 0;
         this.lastPing = Date.now();
         this.isReconnecting = false;
-    },
-    
-    showConnectionError() {
-        const existingMsg = document.querySelector('.websocket-error-msg');
-        if (!existingMsg) {
-            const msg = document.createElement('div');
-            msg.className = 'ui negative message websocket-error-msg';
-            msg.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
-            msg.innerHTML = `
-                <i class="close icon" onclick="this.parentElement.remove()"></i>
-                <div class="header">连接已断开</div>
-                <p>与服务器的连接已断开，数据可能不是最新的。<a href="javascript:window.location.reload()">点击刷新页面</a></p>
-            `;
-            document.body.appendChild(msg);
-        }
     }
+    
 };
 
 // 使Vue实例全局可用
 window.statusCards = statusCards;
+
+// Tippy.js 弹窗已迁移到 main.js
 
 // 初始化WebSocket连接
 function initWebSocket() {
@@ -1181,7 +1151,16 @@ function initWebSocket() {
     return ws;
 }
 
+
+
+
+
 $(document).ready(function() {
+    // 初始化 Tippy.js 弹窗（使用 main.js 中的函数）
+    if (window.TippyPopups && window.TippyPopups.init) {
+        window.TippyPopups.init();
+    }
+    
     // 初始化WebSocket连接（仅在首页）
     if (window.location.pathname === '/' || window.location.pathname === '/home') {
         window.ws = initWebSocket();
