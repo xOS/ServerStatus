@@ -970,6 +970,8 @@ const wsManager = {
     healthCheckTimer: null,
     reconnectAttempts: 0,
     maxReconnectAttempts: 10,
+    isReconnecting: false,
+    pingInterval: null,
     
     // 健康检查
     startHealthCheck() {
@@ -978,8 +980,16 @@ const wsManager = {
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                 // 检查上次接收消息的时间
                 const timeSinceLastMessage = Date.now() - this.lastPing;
-                if (timeSinceLastMessage > 30000) { // 30秒没有收到消息
+                if (timeSinceLastMessage > 35000) { // 35秒没有收到消息（留5秒余量）
+                    console.warn('WebSocket health check failed, reconnecting...');
                     this.reconnect();
+                } else if (timeSinceLastMessage > 20000) {
+                    // 20秒没有收到消息，发送一个ping
+                    try {
+                        this.ws.send(JSON.stringify({ type: 'ping' }));
+                    } catch (e) {
+                        console.warn('Failed to send ping:', e);
+                    }
                 }
             }
         }, 15000); // 每15秒检查一次
@@ -990,24 +1000,35 @@ const wsManager = {
             clearInterval(this.healthCheckTimer);
             this.healthCheckTimer = null;
         }
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
+        }
     },
     
     reconnect() {
+        if (this.isReconnecting) {
+            return; // 避免重复重连
+        }
+        
+        this.isReconnecting = true;
         this.close();
         this.reconnectAttempts++;
         
         if (this.reconnectAttempts > this.maxReconnectAttempts) {
             console.error('Max reconnect attempts reached');
-            // 刷新页面作为最后手段
-            if (confirm('网络连接异常，是否刷新页面？')) {
-                window.location.reload();
-            }
+            this.isReconnecting = false;
+            // 显示错误提示，但不立即刷新页面
+            this.showConnectionError();
             return;
         }
         
-        const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
+        // 使用指数退避算法，但限制最大延迟为30秒
+        const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts - 1), 30000);
+        console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
         
         this.reconnectTimer = setTimeout(() => {
+            this.isReconnecting = false;
             initWebSocket();
         }, delay);
     },
@@ -1019,7 +1040,11 @@ const wsManager = {
             this.reconnectTimer = null;
         }
         if (this.ws) {
-            this.ws.close();
+            try {
+                this.ws.close(1000, 'Normal closure');
+            } catch (e) {
+                console.warn('Error closing WebSocket:', e);
+            }
             this.ws = null;
         }
     },
@@ -1027,6 +1052,22 @@ const wsManager = {
     reset() {
         this.reconnectAttempts = 0;
         this.lastPing = Date.now();
+        this.isReconnecting = false;
+    },
+    
+    showConnectionError() {
+        const existingMsg = document.querySelector('.websocket-error-msg');
+        if (!existingMsg) {
+            const msg = document.createElement('div');
+            msg.className = 'ui negative message websocket-error-msg';
+            msg.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
+            msg.innerHTML = `
+                <i class="close icon" onclick="this.parentElement.remove()"></i>
+                <div class="header">连接已断开</div>
+                <p>与服务器的连接已断开，数据可能不是最新的。<a href="javascript:window.location.reload()">点击刷新页面</a></p>
+            `;
+            document.body.appendChild(msg);
+        }
     }
 };
 
@@ -1047,8 +1088,27 @@ function initWebSocket() {
     wsManager.ws = ws;
 
     ws.onopen = function() {
+        console.log('WebSocket connected');
         wsManager.reset();
         wsManager.startHealthCheck();
+        
+        // 显示连接成功提示（如果是重连）
+        if (wsManager.reconnectAttempts > 0) {
+            const existingError = document.querySelector('.websocket-error-msg');
+            if (existingError) {
+                existingError.remove();
+            }
+            const msg = document.createElement('div');
+            msg.className = 'ui positive message';
+            msg.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
+            msg.innerHTML = `
+                <i class="close icon" onclick="this.parentElement.remove()"></i>
+                <div class="header">连接已恢复</div>
+                <p>与服务器的连接已恢复，数据将实时更新。</p>
+            `;
+            document.body.appendChild(msg);
+            setTimeout(() => msg.remove(), 5000);
+        }
         
         try {
             ws.send(JSON.stringify({ type: 'ping' }));
@@ -1063,6 +1123,11 @@ function initWebSocket() {
         
         try {
             const data = JSON.parse(event.data);
+            
+            // 处理服务端pong响应
+            if (data.type === 'pong') {
+                return;
+            }
 
             // 处理服务器状态更新
             if (data.servers && Array.isArray(data.servers)) {
@@ -1087,14 +1152,30 @@ function initWebSocket() {
 
     ws.onerror = function(error) {
         console.warn('WebSocket error:', error);
+        // 显示错误提示
+        if (!document.querySelector('.websocket-error-msg')) {
+            const msg = document.createElement('div');
+            msg.className = 'ui warning message';
+            msg.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
+            msg.innerHTML = `
+                <i class="close icon" onclick="this.parentElement.remove()"></i>
+                <div class="header">连接出现问题</div>
+                <p>与服务器的连接出现问题，正在尝试重新连接...</p>
+            `;
+            document.body.appendChild(msg);
+            setTimeout(() => msg.remove(), 10000);
+        }
     };
 
     ws.onclose = function(event) {
+        console.log('WebSocket closed:', event.code, event.reason);
         wsManager.ws = null;
         wsManager.stopHealthCheck();
         
-        // 不要立即重连，使用reconnect方法管理重连
-        wsManager.reconnect();
+        // 只有非正常关闭才重连
+        if (event.code !== 1000 && event.code !== 1001) {
+            wsManager.reconnect();
+        }
     };
 
     return ws;
@@ -1110,12 +1191,34 @@ $(document).ready(function() {
             if (document.visibilityState === 'visible') {
                 // 页面变为可见时，检查WebSocket连接状态
                 if (!wsManager.ws || wsManager.ws.readyState !== WebSocket.OPEN) {
-                    wsManager.reconnect();
+                    console.log('Page became visible, checking WebSocket connection...');
+                    // 延迟1秒后重连，避免频繁切换标签导致的问题
+                    setTimeout(() => {
+                        if (!wsManager.ws || wsManager.ws.readyState !== WebSocket.OPEN) {
+                            wsManager.reconnect();
+                        }
+                    }, 1000);
+                } else {
+                    // 连接正常，重启健康检查
+                    wsManager.startHealthCheck();
                 }
             } else {
-                // 页面隐藏时，停止健康检查
+                // 页面隐藏时，停止健康检查但不断开连接
                 wsManager.stopHealthCheck();
             }
+        });
+        
+        // 监听网络状态变化
+        window.addEventListener('online', function() {
+            console.log('Network connection restored');
+            if (!wsManager.ws || wsManager.ws.readyState !== WebSocket.OPEN) {
+                wsManager.reconnect();
+            }
+        });
+        
+        window.addEventListener('offline', function() {
+            console.log('Network connection lost');
+            wsManager.showConnectionError();
         });
         
         // 页面卸载时清理

@@ -1141,6 +1141,9 @@ func (cp *commonPage) ws(c *gin.Context) {
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
+		// 增加缓冲区大小，提高稳定性
+		ReadBufferSize:  1024 * 8,
+		WriteBufferSize: 1024 * 8,
 	}
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -1148,26 +1151,68 @@ func (cp *commonPage) ws(c *gin.Context) {
 		return
 	}
 
+	// 使用context控制生命周期
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
+	// 设置连接参数，提高稳定性
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	
+	// 设置Pong处理函数，更新读取超时
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
 	// 使用正确的构造函数
 	safeConn := websocketx.NewConn(conn)
+	
+	// 确保连接被关闭
+	defer func() {
+		cancel() // 取消context，确保所有goroutine退出
+		safeConn.Close()
+	}()
 
 	// 使用一个channel来通知写入goroutine退出
 	done := make(chan struct{})
+	
+	// 添加心跳ticker
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
 
 	// Read goroutine
 	go func() {
 		defer func() {
 			close(done) // 发送退出信号
-			safeConn.Close()
+			cancel()    // 取消context
 		}()
 		for {
-			// 我们需要从连接中读取，以检测客户端是否已断开连接。
-			// 我们不需要处理任何传入的消息。
-			if _, _, err := safeConn.ReadMessage(); err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Printf("NG-ERROR: websocket read error: %v", err)
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				// 设置读取超时
+				conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+				
+				// 我们需要从连接中读取，以检测客户端是否已断开连接。
+				msgType, message, err := safeConn.ReadMessage()
+				if err != nil {
+					if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
+						log.Printf("NG-ERROR: websocket read error: %v", err)
+					}
+					return // 退出循环
 				}
-				break // 退出循环
+				
+				// 处理客户端发送的ping消息
+				if msgType == websocket.TextMessage && string(message) == `{"type":"ping"}` {
+					// 立即响应pong
+					conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+					if err := safeConn.WriteMessage(websocket.TextMessage, []byte(`{"type":"pong"}`)); err != nil {
+						log.Printf("Failed to send pong: %v", err)
+						return
+					}
+				}
 			}
 		}
 	}()
@@ -1178,8 +1223,17 @@ func (cp *commonPage) ws(c *gin.Context) {
 		defer ticker.Stop()
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case <-done: // 从读取goroutine接收到退出信号
 				return
+			case <-pingTicker.C:
+				// 发送WebSocket Ping帧
+				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					log.Printf("Failed to send ping: %v", err)
+					return
+				}
 			case <-ticker.C:
 				stat, err := cp.getServerStat(c, false)
 				if err != nil {
@@ -1187,6 +1241,9 @@ func (cp *commonPage) ws(c *gin.Context) {
 					// 不要退出，让 done channel 处理终止
 					continue
 				}
+				
+				// 设置写入超时
+				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if err = safeConn.WriteMessage(websocket.TextMessage, stat); err != nil {
 					// 写入失败，可能是因为连接已关闭。
 					// 读取goroutine将处理清理工作。我们可以在这里退出。
@@ -1195,6 +1252,9 @@ func (cp *commonPage) ws(c *gin.Context) {
 			}
 		}
 	}()
+	
+	// 等待context取消
+	<-ctx.Done()
 }
 
 func (cp *commonPage) terminal(c *gin.Context) {
