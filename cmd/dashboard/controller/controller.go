@@ -65,7 +65,7 @@ func corsMiddleware(c *gin.Context) {
 }
 
 // pprofAuthMiddleware pprof 认证中间件
-// 检查用户是否为管理员（需要在 mygin.Authorize 之后使用）
+// 与API接口采用相同的授权逻辑：支持Cookie和API Token认证，不要求管理员权限
 func pprofAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 从上下文获取用户信息（由 mygin.Authorize 设置）
@@ -80,21 +80,9 @@ func pprofAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// 检查是否为管理员用户
-		if u, ok := user.(*model.User); ok {
-			if u.SuperAdmin {
-				// 管理员用户，允许访问
-				c.Next()
-				return
-			}
-		}
-
-		// 非管理员用户，拒绝访问
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "需要管理员权限才能访问性能分析工具",
-			"code":  403,
-		})
-		c.Abort()
+		// 与API接口相同：只要通过认证即可访问，不要求管理员权限
+		// 这样Cookie登录用户和API Token用户都能访问
+		c.Next()
 	}
 }
 
@@ -148,13 +136,13 @@ func ServeWeb(port uint) *http.Server {
 
 	if singleton.Conf.Debug {
 		gin.SetMode(gin.DebugMode)
-		// 为 pprof 添加认证保护，只允许管理员访问
+		// 为 pprof 添加认证保护，与API接口采用相同的授权模式
 		pprofGroup := r.Group("/debug/pprof")
 		pprofGroup.Use(mygin.Authorize(mygin.AuthorizeOption{
 			MemberOnly: true,
 			AllowAPI:   true,
 			IsPage:     false,
-			Msg:        "访问性能分析工具需要管理员权限",
+			Msg:        "访问性能分析工具需要登录",
 			Btn:        "点此登录",
 			Redirect:   "/login",
 		}))

@@ -702,7 +702,7 @@ func CleanMonitorHistory() (int64, error) {
 		if db.DB != nil {
 			// 使用BadgerDB的MonitorHistoryOps清理过期数据
 			monitorOps := db.NewMonitorHistoryOps(db.DB)
-			maxAge := 60 * 24 * time.Hour // 60天
+			maxAge := 7 * 24 * time.Hour // 修改为7天，减少数据库大小
 			count, err := monitorOps.CleanupOldMonitorHistories(maxAge)
 			if err != nil {
 				log.Printf("BadgerDB监控历史清理失败: %v", err)
@@ -743,11 +743,11 @@ func CleanMonitorHistory() (int64, error) {
 	err := executeWithoutLock(func() error {
 		batchSize := 25                                // 增加批次大小到25（从20增加）
 		maxRetries := 3                                // 减少重试次数，更快失败
-		cutoffDate := time.Now().AddDate(0, 0, -60)    // 延长到60天，避免误删除有效历史数据
+		cutoffDate := time.Now().AddDate(0, 0, -7)     // 修改为7天，减少数据库大小和内存占用
 		safetyBuffer := time.Now().Add(-6 * time.Hour) // 添加6小时安全缓冲区，避免误删新数据
 
 		// 使用非事务方式分批清理，避免长时间事务锁定
-		// 清理60天前的监控记录，并确保不删除最近6小时的数据
+		// 清理7天前的监控记录，并确保不删除最近6小时的数据
 		for {
 			var count int64
 			var err error
@@ -877,6 +877,38 @@ func CleanMonitorHistory() (int64, error) {
 				}
 
 				log.Printf("清理流量记录失败: %v", err)
+				return err
+			}
+
+			totalCleaned += result.RowsAffected
+			break
+		}
+
+		// 清理7天前的流量记录
+		for retry := 0; retry < maxRetries; retry++ {
+			// 等待确保没有其他操作在进行
+			time.Sleep(time.Duration(retry*100) * time.Millisecond)
+
+			if DB == nil {
+				return fmt.Errorf("数据库未初始化")
+			}
+			result := DB.Exec("DELETE FROM transfers WHERE created_at < ?", cutoffDate)
+
+			if result.Error != nil {
+				err := result.Error
+
+				if strings.Contains(err.Error(), "database is locked") ||
+					strings.Contains(err.Error(), "SQL statements in progress") ||
+					strings.Contains(err.Error(), "cannot commit") {
+					if retry < maxRetries-1 {
+						backoffDelay := time.Duration((retry+1)*1000) * time.Millisecond
+						log.Printf("数据库忙碌，%v 后重试历史流量记录清理 (%d/%d)", backoffDelay, retry+1, maxRetries)
+						time.Sleep(backoffDelay)
+						continue
+					}
+				}
+
+				log.Printf("清理历史流量记录失败: %v", err)
 				return err
 			}
 
@@ -1208,7 +1240,10 @@ func SaveAllTrafficToDB() {
 	// 等待所有批次完成
 	wg.Wait()
 
-	log.Printf("成功保存 %d 个服务器的累计流量数据", len(serverData))
+	// 只在调试模式下输出详细的保存日志
+	if Conf.Debug {
+		log.Printf("成功保存 %d 个服务器的累计流量数据", len(serverData))
+	}
 }
 
 // SaveAllTrafficToBadgerDB 保存所有服务器的累计流量到BadgerDB
@@ -1292,7 +1327,10 @@ func SaveAllTrafficToBadgerDB() {
 	// 等待所有批次完成
 	wg.Wait()
 
-	log.Printf("BadgerDB: 成功保存 %d 个服务器的累计流量数据", successCount)
+	// 只在调试模式下输出详细的保存日志
+	if Conf.Debug {
+		log.Printf("BadgerDB: 成功保存 %d 个服务器的累计流量数据", successCount)
+	}
 }
 
 // SaveAllDataToDB 保存所有数据到数据库，确保数据永久化
@@ -1399,7 +1437,10 @@ func SaveAllServerDataToDB() {
 		}
 	}
 
-	log.Printf("BadgerDB: 成功保存 %d 个服务器的完整数据", successCount)
+	// 只在调试模式下输出详细的保存日志
+	if Conf.Debug {
+		log.Printf("BadgerDB: 成功保存 %d 个服务器的完整数据", successCount)
+	}
 }
 
 // SaveAllUserDataToDB 保存所有用户数据到BadgerDB
@@ -1428,7 +1469,10 @@ func SaveAllUserDataToDB() {
 		}
 	}
 
-	log.Printf("BadgerDB: 成功保存 %d 个用户的数据", successCount)
+	// 只在调试模式下输出详细的保存日志
+	if Conf.Debug {
+		log.Printf("BadgerDB: 成功保存 %d 个用户的数据", successCount)
+	}
 }
 
 // SaveAllDDNSStateToDB 保存所有DDNS状态到BadgerDB
@@ -1438,7 +1482,10 @@ func SaveAllDDNSStateToDB() {
 	}
 
 	// DDNS状态通常在变更时已经保存，这里只是确保一致性
-	log.Printf("BadgerDB: DDNS状态数据已在变更时保存")
+	// 只在调试模式下输出详细的保存日志
+	if Conf.Debug {
+		log.Printf("BadgerDB: DDNS状态数据已在变更时保存")
+	}
 }
 
 // SaveAllAPITokensToDB 保存所有API令牌到BadgerDB
@@ -1515,7 +1562,10 @@ func SaveAllAPITokensToDB() {
 	}
 
 	if successCount > 0 || skipCount > 0 || deleteCount > 0 {
-		log.Printf("BadgerDB: 成功保存 %d 个API令牌，跳过 %d 个已存在的令牌，删除 %d 个过期令牌", successCount, skipCount, deleteCount)
+		// 只在调试模式下输出详细的保存日志
+		if Conf.Debug {
+			log.Printf("BadgerDB: 成功保存 %d 个API令牌，跳过 %d 个已存在的令牌，删除 %d 个过期令牌", successCount, skipCount, deleteCount)
+		}
 	}
 }
 
@@ -2255,9 +2305,7 @@ func executeDBInsertRequest(req DBInsertRequest) error {
 		// 特殊处理monitor_histories表，确保不使用@id字段
 		if req.TableName == "monitor_histories" {
 			// 移除@id字段如果存在
-			if _, exists := req.Data["@id"]; exists {
-				delete(req.Data, "@id")
-			}
+			delete(req.Data, "@id")
 
 			// 避免直接使用GORM的Create方法，改用手动SQL
 			fields, values, args := prepareInsertSQL(req.Data)
@@ -2524,9 +2572,7 @@ func StartMonitorHistoryWorker() {
 	go func() {
 		for req := range monitorHistoryQueue {
 			// 确保没有使用@id字段
-			if _, exists := req.Data["@id"]; exists {
-				delete(req.Data, "@id")
-			}
+			delete(req.Data, "@id")
 
 			// 增加更多字段检查和验证
 			var monitorID uint64
@@ -2663,9 +2709,7 @@ func StartBadgerMonitorHistoryWorker() {
 	go func() {
 		for req := range monitorHistoryQueue {
 			// 确保没有使用@id字段
-			if _, exists := req.Data["@id"]; exists {
-				delete(req.Data, "@id")
-			}
+			delete(req.Data, "@id")
 
 			// 转换数据为MonitorHistory结构
 			history := &model.MonitorHistory{
@@ -3019,9 +3063,7 @@ func batchInsertMonitorHistories(requests []DBInsertRequest) error {
 	allData := make([]map[string]interface{}, len(requests))
 	for i, req := range requests {
 		// 移除@id字段
-		if _, exists := req.Data["@id"]; exists {
-			delete(req.Data, "@id")
-		}
+		delete(req.Data, "@id")
 		allData[i] = req.Data
 	}
 

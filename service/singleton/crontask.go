@@ -23,14 +23,14 @@ func InitCronTask() {
 	Crons = make(map[uint64]*model.Cron)
 
 	// 添加基础的系统定时任务 - 修复重复任务注册问题
-	// 每天凌晨3点清理30天前的数据
+	// 每天凌晨3点清理累计流量数据（已废弃，保留为空函数）
 	if _, err := Cron.AddFunc("0 0 3 * * *", func() {
-		CleanCumulativeTransferData(30)
+		CleanCumulativeTransferData(7) // 改为7天，保持与监控历史一致
 	}); err != nil {
 		panic(err)
 	}
 
-	// 每天的3:30 对 监控记录 和 流量记录 进行清理
+	// 每天的3:30 对 监控记录 和 流量记录 进行清理（7天前数据）
 	if _, err := Cron.AddFunc("0 30 3 * * *", func() {
 		count, err := CleanMonitorHistory() // 处理返回值
 		if err != nil {

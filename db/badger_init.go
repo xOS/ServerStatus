@@ -316,9 +316,9 @@ func startBadgerDBMaintenanceTasks() {
 		for {
 			select {
 			case <-ticker.C:
-				// 清理30天前的监控历史记录
+				// 清理7天前的监控历史记录，减少数据库大小
 				monitorHistoryOps := NewMonitorHistoryOps(DB)
-				count, err := monitorHistoryOps.CleanupOldMonitorHistories(30 * 24 * time.Hour)
+				count, err := monitorHistoryOps.CleanupOldMonitorHistories(7 * 24 * time.Hour)
 				if err != nil {
 					log.Printf("清理过期监控历史记录失败: %v", err)
 				} else if count > 0 {

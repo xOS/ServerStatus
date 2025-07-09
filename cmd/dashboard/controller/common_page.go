@@ -1288,7 +1288,10 @@ func (cp *commonPage) ws(c *gin.Context) {
 
 					// 其他错误表示连接问题
 					if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
-						log.Printf("WebSocket读取错误 %s: %v", connID, err)
+						// 只在调试模式下输出WebSocket读取错误，正常关闭连接不输出
+						if singleton.Conf.Debug {
+							log.Printf("WebSocket读取错误 %s: %v", connID, err)
+						}
 					}
 
 					// 通知其他goroutine退出
@@ -1372,7 +1375,10 @@ func (cp *commonPage) ws(c *gin.Context) {
 
 	select {
 	case <-done:
-		log.Printf("WebSocket所有goroutine正常退出: %s", connID)
+		// 正常退出不输出日志，减少日志噪音
+		if singleton.Conf.Debug {
+			log.Printf("WebSocket所有goroutine正常退出: %s", connID)
+		}
 	case <-ctx.Done():
 		log.Printf("WebSocket上下文取消: %s", connID)
 	case <-time.After(30 * time.Minute):
@@ -1384,7 +1390,10 @@ func (cp *commonPage) ws(c *gin.Context) {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		log.Printf("等待goroutine退出超时: %s", connID)
+		// 只在调试模式下输出goroutine超时日志
+		if singleton.Conf.Debug {
+			log.Printf("等待goroutine退出超时: %s", connID)
+		}
 	}
 }
 
