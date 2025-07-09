@@ -37,11 +37,10 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 			Link:  opt.Redirect,
 			Btn:   opt.Btn,
 		}
-		var isLogin bool
-
-		// 用户鉴权
+		var isLogin bool // 用户鉴权
 		token, _ := c.Cookie(singleton.Conf.Site.CookieName)
 		token = strings.TrimSpace(token)
+
 		if token != "" {
 			var u model.User
 
@@ -56,7 +55,6 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 						log.Printf("从 BadgerDB 查询用户失败: %v，将使用默认凭据", err)
 						// 使用默认管理员账户进行测试
 						if token == "admin" {
-							log.Printf("使用默认管理员账户")
 							u = model.User{
 								Common:     model.Common{ID: 1},
 								Login:      "admin",
@@ -66,23 +64,19 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 						}
 					} else {
 						// 在内存中查找匹配token的用户
-						// 移除频繁的认证日志输出，只在出错时输出
 						for _, user := range users {
 							if user != nil && user.Token == token {
 								// 检查token是否过期
 								if user.TokenExpired.After(time.Now()) {
 									u = *user
 									isLogin = true
-									// 移除频繁的认证成功日志
 									break
 								}
-								// 移除token过期的日志输出
 							}
 						}
 
 						// 如果没有找到有效用户，但token是admin，则使用默认管理员账户
 						if !isLogin && token == "admin" {
-							// 移除默认管理员账户的日志输出
 							u = model.User{
 								Common:     model.Common{ID: 1},
 								Login:      "admin",
@@ -90,14 +84,11 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 							}
 							isLogin = true
 						}
-
-						// 移除认证失败的频繁日志输出
 					}
 				} else {
 					log.Printf("警告：BadgerDB未初始化，用户认证将失败")
 					// 使用默认管理员账户
 					if token == "admin" {
-						log.Printf("使用默认管理员账户")
 						u = model.User{
 							Common:     model.Common{ID: 1},
 							Login:      "admin",
@@ -117,7 +108,6 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 					log.Printf("警告：SQLite未初始化，用户认证将失败")
 					// 在调试模式下使用默认管理员账户
 					if singleton.Conf.Debug && token == "admin" {
-						log.Printf("调试模式：使用默认管理员账户")
 						u = model.User{
 							Common:     model.Common{ID: 1},
 							Login:      "admin",
@@ -194,7 +184,6 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 				}
 				c.Set(model.CtxKeyAuthorizedUser, u)
 				isLogin = true
-				log.Printf("调试模式：自动授权访问路径 %s", path)
 			}
 		}
 
