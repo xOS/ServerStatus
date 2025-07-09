@@ -1712,15 +1712,15 @@ var (
 
 func NewMemoryMonitor() *MemoryMonitor {
 	return &MemoryMonitor{
-		highThreshold:    1200, // 提高到1200MB，减少误触发清理
-		warningThreshold: 600,  // 提高到600MB警告阈值
-		maxGoroutines:    600,  // 提高到600个goroutine限制
+		highThreshold:    2048, // 2GB才触发高压清理，避免误触发
+		warningThreshold: 1024, // 1GB警告阈值，更合理
+		maxGoroutines:    1000, // 1000个goroutine限制，避免正常业务被清理
 		isHighPressure:   false,
 	}
 }
 
 func (mm *MemoryMonitor) Start() {
-	mm.ticker = time.NewTicker(10 * time.Second) // 每10秒检查一次
+	mm.ticker = time.NewTicker(30 * time.Second) // 改为30秒检查一次，降低频率
 
 	go func() {
 		defer func() {

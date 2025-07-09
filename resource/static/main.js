@@ -2262,7 +2262,7 @@ function initGlobalTippyPopups() {
         }
     });
     
-    console.log(`Initialized ${window.tippyInstances.length} Tippy.js popups`);
+    // console.log(`Initialized ${window.tippyInstances.length} Tippy.js popups`);
 }
 
 // 使用MutationObserver监听DOM变化，确保新的server card能够绑定Tippy
@@ -2299,7 +2299,7 @@ function setupTippyMutationObserver() {
                 clearTimeout(window.tippyReinitTimeout);
             }
             window.tippyReinitTimeout = setTimeout(() => {
-                console.log('Reinitializing Tippy instances due to DOM changes');
+                // console.log('Reinitializing Tippy instances due to DOM changes');
                 initGlobalTippyPopups();
             }, 300);
         }
