@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"runtime"
 	"runtime/debug"
 	"strconv"
+	"sync"
 	"time"
 
 	"code.cloudfoundry.org/bytefmt"
@@ -1141,75 +1143,94 @@ func (cp *commonPage) ws(c *gin.Context) {
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
-		// 增加缓冲区大小，提高稳定性
-		ReadBufferSize:  1024 * 8,
-		WriteBufferSize: 1024 * 8,
+		ReadBufferSize:   16384, // 16KB
+		WriteBufferSize:  16384, // 16KB
+		HandshakeTimeout: 10 * time.Second,
 	}
+
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("NG-ERROR: Failed to set websocket upgrade: %+v", err)
+		log.Printf("WebSocket升级失败: %v", err)
 		return
 	}
 
-	// 使用context控制生命周期
+	// 生成连接ID用于跟踪
+	connID := fmt.Sprintf("ws_%d", time.Now().UnixNano())
+	log.Printf("WebSocket连接建立: %s", connID)
+
+	// 创建带取消的上下文
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
-	// 设置连接参数，提高稳定性
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	
-	// 设置Pong处理函数，更新读取超时
+	// 确保连接关闭
+	defer func() {
+		conn.Close()
+		log.Printf("WebSocket连接关闭: %s", connID)
+	}()
+
+	// 设置连接基本参数
+	conn.SetReadLimit(32768) // 32KB读取限制
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
 
-	// 使用正确的构造函数
+	// 创建safe连接
 	safeConn := websocketx.NewConn(conn)
-	
-	// 确保连接被关闭
-	defer func() {
-		cancel() // 取消context，确保所有goroutine退出
-		safeConn.Close()
-	}()
 
-	// 使用一个channel来通知写入goroutine退出
-	done := make(chan struct{})
-	
-	// 添加心跳ticker
-	pingTicker := time.NewTicker(30 * time.Second)
-	defer pingTicker.Stop()
+	// 使用WaitGroup确保所有goroutine正确退出
+	var wg sync.WaitGroup
+	wg.Add(2) // 2个goroutine：读取和写入
 
-	// Read goroutine
+	// 错误通道，用于goroutine间通信
+	errChan := make(chan error, 2)
+
+	// 读取goroutine - 处理客户端断开检测和心跳
 	go func() {
+		defer wg.Done()
 		defer func() {
-			close(done) // 发送退出信号
-			cancel()    // 取消context
+			if r := recover(); r != nil {
+				log.Printf("WebSocket读取goroutine panic恢复 %s: %v", connID, r)
+			}
 		}()
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				// 设置读取超时
-				conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-				
-				// 我们需要从连接中读取，以检测客户端是否已断开连接。
+				// 设置读取超时，避免无限阻塞
+				conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+
 				msgType, message, err := safeConn.ReadMessage()
 				if err != nil {
-					if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
-						log.Printf("NG-ERROR: websocket read error: %v", err)
+					// 检查是否是超时错误
+					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+						continue // 超时继续循环
 					}
-					return // 退出循环
+
+					// 其他错误表示连接问题
+					if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
+						log.Printf("WebSocket读取错误 %s: %v", connID, err)
+					}
+
+					// 通知其他goroutine退出
+					select {
+					case errChan <- err:
+					default:
+					}
+					return
 				}
-				
-				// 处理客户端发送的ping消息
+
+				// 处理心跳消息
 				if msgType == websocket.TextMessage && string(message) == `{"type":"ping"}` {
-					// 立即响应pong
-					conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+					conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 					if err := safeConn.WriteMessage(websocket.TextMessage, []byte(`{"type":"pong"}`)); err != nil {
-						log.Printf("Failed to send pong: %v", err)
+						log.Printf("发送pong失败 %s: %v", connID, err)
+						select {
+						case errChan <- err:
+						default:
+						}
 						return
 					}
 				}
@@ -1217,44 +1238,77 @@ func (cp *commonPage) ws(c *gin.Context) {
 		}
 	}()
 
-	// Write goroutine
+	// 写入goroutine - 处理数据推送和心跳
 	go func() {
-		ticker := time.NewTicker(time.Second * 1) // 从5秒改为1秒，提高更新频率
-		defer ticker.Stop()
+		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("WebSocket写入goroutine panic恢复 %s: %v", connID, r)
+			}
+		}()
+
+		// 数据推送定时器
+		dataTicker := time.NewTicker(1 * time.Second)
+		defer dataTicker.Stop()
+
+		// 心跳定时器
+		pingTicker := time.NewTicker(25 * time.Second)
+		defer pingTicker.Stop()
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-done: // 从读取goroutine接收到退出信号
+			case <-errChan:
 				return
-			case <-pingTicker.C:
-				// 发送WebSocket Ping帧
-				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-					log.Printf("Failed to send ping: %v", err)
-					return
-				}
-			case <-ticker.C:
+			case <-dataTicker.C:
+				// 获取并发送服务器状态
 				stat, err := cp.getServerStat(c, false)
 				if err != nil {
-					log.Printf("NG-ERROR: failed to get server stat for websocket: %v", err)
-					// 不要退出，让 done channel 处理终止
-					continue
+					log.Printf("获取服务器状态失败 %s: %v", connID, err)
+					continue // 继续运行，不退出
 				}
-				
-				// 设置写入超时
+
 				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if err = safeConn.WriteMessage(websocket.TextMessage, stat); err != nil {
-					// 写入失败，可能是因为连接已关闭。
-					// 读取goroutine将处理清理工作。我们可以在这里退出。
+					log.Printf("发送数据失败 %s: %v", connID, err)
+					return
+				}
+
+			case <-pingTicker.C:
+				// 发送WebSocket Ping帧
+				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					log.Printf("发送ping失败 %s: %v", connID, err)
 					return
 				}
 			}
 		}
 	}()
-	
-	// 等待context取消
-	<-ctx.Done()
+
+	// 等待任一goroutine完成或超时
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Printf("WebSocket所有goroutine正常退出: %s", connID)
+	case <-ctx.Done():
+		log.Printf("WebSocket上下文取消: %s", connID)
+	case <-time.After(30 * time.Minute):
+		log.Printf("WebSocket连接超时: %s", connID)
+		cancel()
+	}
+
+	// 等待所有goroutine退出，最多5秒
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		log.Printf("等待goroutine退出超时: %s", connID)
+	}
 }
 
 func (cp *commonPage) terminal(c *gin.Context) {
