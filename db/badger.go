@@ -19,6 +19,16 @@ import (
 	"github.com/xos/serverstatus/pkg/utils"
 )
 
+// 迭代器池，重用迭代器对象减少内存分配
+var iteratorPool = sync.Pool{
+	New: func() interface{} {
+		return make(map[string]*badger.Iterator)
+	},
+}
+
+// JSON 序列化结果缓存，减少重复序列化
+var jsonCache = sync.Map{}
+
 // CacheConfig BadgerDB缓存配置
 type CacheConfig struct {
 	BlockCache int // MB
@@ -259,21 +269,23 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 	case "server":
 		// 服务器记录需要特殊处理Secret、HostJSON、LastStateJSON和DDNSProfilesRaw字段（有json:"-"标签）
 		var serverData map[string]interface{}
-		if err := json.Unmarshal(data, &serverData); err != nil {
+		// 使用缓存的解码器，减少内存分配
+		decoder := utils.Json.NewDecoder(bytes.NewReader(data))
+		if err := decoder.Decode(&serverData); err != nil {
 			return err
 		}
 
 		// 转换字段类型，确保字段正确
 		convertDbFieldTypes(&serverData)
 
-		// 重新序列化为 JSON
-		serverJSON, err := json.Marshal(serverData)
+		// 重新序列化为 JSON，但使用更高效的 utils.Json
+		serverJSON, err := utils.Json.Marshal(serverData)
 		if err != nil {
 			return err
 		}
 
-		// 反序列化到结果
-		if err := json.Unmarshal(serverJSON, result); err != nil {
+		// 反序列化到结果，使用 utils.Json
+		if err := utils.Json.Unmarshal(serverJSON, result); err != nil {
 			return err
 		}
 

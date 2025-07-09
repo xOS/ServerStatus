@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jinzhu/copier"
-
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
@@ -181,7 +179,29 @@ func AlertSentinelStart() {
 			checkCount = 0
 			lastPrint = startedAt
 		}
-		time.Sleep(time.Until(startedAt.Add(time.Second * 3))) // 3秒钟检查一次
+
+		// 优化检查间隔：根据报警规则数量动态调整
+		var checkInterval time.Duration
+		AlertsLock.RLock()
+		alertCount := len(alertsStore)
+		AlertsLock.RUnlock()
+
+		if alertCount == 0 {
+			checkInterval = 30 * time.Second // 没有报警规则时30秒检查一次
+		} else if alertCount < 10 {
+			checkInterval = 10 * time.Second // 少量报警规则时10秒检查一次
+		} else {
+			checkInterval = 5 * time.Second // 大量报警规则时5秒检查一次
+		}
+
+		// 计算剩余时间并睡眠，避免忙等待
+		elapsed := time.Since(startedAt)
+		if elapsed < checkInterval {
+			remainingTime := checkInterval - elapsed
+			if remainingTime > 0 {
+				time.Sleep(remainingTime)
+			}
+		}
 	}
 }
 
@@ -304,9 +324,40 @@ func checkStatus() {
 
 			// 发送通知，分为触发报警和恢复通知
 			max, passed := alert.Check(alertsStore[alert.ID][server.ID])
-			// 保存当前服务器状态信息
-			curServer := model.Server{}
-			copier.Copy(&curServer, server)
+			// 保存当前服务器状态信息 - 手动拷贝避免反射内存泄漏
+			curServer := model.Server{
+				Common: model.Common{
+					ID:        server.ID,
+					CreatedAt: server.CreatedAt,
+					UpdatedAt: server.UpdatedAt,
+				},
+				Name:                     server.Name,
+				Tag:                      server.Tag,
+				Secret:                   server.Secret,
+				Note:                     server.Note,
+				PublicNote:               server.PublicNote,
+				DisplayIndex:             server.DisplayIndex,
+				HideForGuest:             server.HideForGuest,
+				EnableDDNS:               server.EnableDDNS,
+				DDNSProfiles:             server.DDNSProfiles,
+				DDNSProfilesRaw:          server.DDNSProfilesRaw,
+				Host:                     server.Host,  // 结构体指针，浅拷贝即可
+				State:                    server.State, // 结构体指针，浅拷贝即可
+				LastActive:               server.LastActive,
+				LastStateBeforeOffline:   server.LastStateBeforeOffline,
+				IsOnline:                 server.IsOnline,
+				LastStateJSON:            server.LastStateJSON,
+				LastOnline:               server.LastOnline,
+				HostJSON:                 server.HostJSON,
+				TaskClose:                nil, // 不拷贝channel，避免并发问题
+				TaskCloseLock:            nil, // 不拷贝mutex，避免并发问题
+				TaskStream:               nil, // 不拷贝stream，避免并发问题
+				PrevTransferInSnapshot:   server.PrevTransferInSnapshot,
+				PrevTransferOutSnapshot:  server.PrevTransferOutSnapshot,
+				CumulativeNetInTransfer:  server.CumulativeNetInTransfer,
+				CumulativeNetOutTransfer: server.CumulativeNetOutTransfer,
+				LastFlowSaveTime:         server.LastFlowSaveTime,
+			}
 
 			// 本次未通过检查
 			if !passed {

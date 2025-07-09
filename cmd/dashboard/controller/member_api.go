@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jinzhu/copier"
 	"golang.org/x/net/idna"
 	"gorm.io/gorm"
 
@@ -1140,7 +1139,26 @@ func (ma *memberAPI) batchUpdateServerGroup(c *gin.Context) {
 	for i := 0; i < len(req.Servers); i++ {
 		serverId := req.Servers[i]
 		var s model.Server
-		copier.Copy(&s, singleton.ServerList[serverId])
+		// 手动拷贝 Server 字段，避免使用 copier 包
+		originalServer := singleton.ServerList[serverId]
+		s.Common = originalServer.Common
+		s.Name = originalServer.Name
+		s.Tag = req.Group // 这个字段将被覆盖
+		s.Secret = originalServer.Secret
+		s.Note = originalServer.Note
+		s.PublicNote = originalServer.PublicNote
+		s.DisplayIndex = originalServer.DisplayIndex
+		s.HideForGuest = originalServer.HideForGuest
+		s.EnableDDNS = originalServer.EnableDDNS
+		s.DDNSProfiles = make([]uint64, len(originalServer.DDNSProfiles))
+		copy(s.DDNSProfiles, originalServer.DDNSProfiles)
+		s.DDNSProfilesRaw = originalServer.DDNSProfilesRaw
+		s.LastStateJSON = originalServer.LastStateJSON
+		s.LastOnline = originalServer.LastOnline
+		s.HostJSON = originalServer.HostJSON
+		s.CumulativeNetInTransfer = originalServer.CumulativeNetInTransfer
+		s.CumulativeNetOutTransfer = originalServer.CumulativeNetOutTransfer
+
 		s.Tag = req.Group
 		// 如果修改了Ta
 		oldTag := singleton.ServerList[serverId].Tag

@@ -14,7 +14,6 @@ require (
 	github.com/google/go-github/v47 v47.1.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/go-uuid v1.0.3
-	github.com/jinzhu/copier v0.4.0
 	github.com/json-iterator/go v1.1.12
 	github.com/knadh/koanf/parsers/yaml v0.1.0
 	github.com/knadh/koanf/providers/env v1.1.0

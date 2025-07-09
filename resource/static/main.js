@@ -2129,12 +2129,13 @@ function initGlobalTippyPopups() {
     // 获取所有触发元素（支持动态添加）
     const triggers = document.querySelectorAll('[data-server-popup]');
     
+    // 清除所有已初始化标记，强制重新初始化
     triggers.forEach(trigger => {
-        // 如果已经初始化过，跳过
-        if (trigger._tippyInitialized) {
-            return;
-        }
-        
+        delete trigger._tippyInitialized;
+        delete trigger._tippyInstance;
+    });
+    
+    triggers.forEach(trigger => {
         const contentDiv = trigger.nextElementSibling;
         if (contentDiv && contentDiv.classList.contains('server-popup-content')) {
             // 使用 Tippy.js 创建 tooltip，关键是设置为手动模式，不自动隐藏
@@ -2283,6 +2284,14 @@ function setupTippyMutationObserver() {
                         needsReinit = true;
                     }
                 });
+                
+                // 检查被移除的节点，如果有popup触发器被移除也需要重新初始化
+                mutation.removedNodes.forEach(function(node) {
+                    if (node.nodeType === 1 && 
+                        (node.querySelector && node.querySelector('[data-server-popup]'))) {
+                        needsReinit = true;
+                    }
+                });
             }
             
             // 检查现有元素的属性变化（Vue响应式更新）
@@ -2299,9 +2308,9 @@ function setupTippyMutationObserver() {
                 clearTimeout(window.tippyReinitTimeout);
             }
             window.tippyReinitTimeout = setTimeout(() => {
-                // console.log('Reinitializing Tippy instances due to DOM changes');
+                console.log('Reinitializing Tippy instances due to DOM changes');
                 initGlobalTippyPopups();
-            }, 300);
+            }, 50); // 减少延迟时间，从300ms减少到50ms，让响应更快
         }
     });
     
@@ -2311,7 +2320,7 @@ function setupTippyMutationObserver() {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ['data-server-popup']
+        attributeFilter: ['data-server-popup', 'style', 'class'] // 增加style和class监听
     });
 }
 

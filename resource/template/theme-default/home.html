@@ -640,6 +640,14 @@ const statusCards = new Vue({
                         tabEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
                     }
                 }
+                
+                // 分组切换后重新初始化 Tippy.js 弹窗
+                // 等待 DOM 更新完成后再初始化
+                setTimeout(() => {
+                    if (window.TippyPopups && window.TippyPopups.initGlobal) {
+                        window.TippyPopups.initGlobal();
+                    }
+                }, 100);
             });
         },
         updateSliderPosition() {

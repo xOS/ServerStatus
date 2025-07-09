@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -18,7 +19,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/go-uuid"
-	"github.com/jinzhu/copier"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/singleflight"
@@ -32,6 +32,13 @@ import (
 	"github.com/xos/serverstatus/service/rpc"
 	"github.com/xos/serverstatus/service/singleton"
 )
+
+// bytes.Buffer 池，用于减少 JSON 序列化时的内存分配
+var bytesPool = sync.Pool{
+	New: func() interface{} {
+		return &bytes.Buffer{}
+	},
+}
 
 type commonPage struct {
 	r            *gin.Engine
@@ -108,9 +115,28 @@ func (p *commonPage) service(c *gin.Context) {
 				if v != nil {
 					// 深拷贝每个ServiceItemResponse
 					statsCopy := model.ServiceItemResponse{}
-					if err := copier.Copy(&statsCopy, v); err == nil {
-						stats[k] = statsCopy
+					// 手动深拷贝字段，避免使用 copier 包
+					statsCopy.Monitor = v.Monitor // Monitor 为指针，可以共享
+					statsCopy.CurrentUp = v.CurrentUp
+					statsCopy.CurrentDown = v.CurrentDown
+					statsCopy.TotalUp = v.TotalUp
+					statsCopy.TotalDown = v.TotalDown
+
+					// 深拷贝数组
+					if v.Delay != nil {
+						delayArray := *v.Delay
+						statsCopy.Delay = &delayArray
 					}
+					if v.Up != nil {
+						upArray := *v.Up
+						statsCopy.Up = &upArray
+					}
+					if v.Down != nil {
+						downArray := *v.Down
+						statsCopy.Down = &downArray
+					}
+
+					stats[k] = statsCopy
 				}
 			}
 		}
@@ -877,7 +903,20 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 			log.Printf("getServerStat: 警告 - 返回空服务器列表")
 		}
 
-		return utils.Json.Marshal(data)
+		// 使用缓冲池减少内存分配
+		buf := bytesPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		defer bytesPool.Put(buf)
+
+		encoder := utils.Json.NewEncoder(buf)
+		if err := encoder.Encode(data); err != nil {
+			return nil, err
+		}
+
+		// 复制数据到新的 slice，因为 buffer 会被重用
+		result := make([]byte, buf.Len())
+		copy(result, buf.Bytes())
+		return result, nil
 	})
 
 	if err != nil && singleton.Conf.Debug {

@@ -19,7 +19,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/jinzhu/copier"
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/utils"
@@ -926,38 +925,55 @@ func CheckServerOnlineStatus() {
 			// 如果还没有保存离线前状态，保存当前状态
 			if server.LastStateBeforeOffline == nil && server.State != nil {
 				lastState := model.HostState{}
-				if err := copier.Copy(&lastState, server.State); err == nil {
-					server.LastStateBeforeOffline = &lastState
+				// 手动深拷贝 HostState 字段，避免使用 copier 包
+				lastState.CPU = server.State.CPU
+				lastState.MemUsed = server.State.MemUsed
+				lastState.SwapUsed = server.State.SwapUsed
+				lastState.DiskUsed = server.State.DiskUsed
+				lastState.NetInTransfer = server.State.NetInTransfer
+				lastState.NetOutTransfer = server.State.NetOutTransfer
+				lastState.NetInSpeed = server.State.NetInSpeed
+				lastState.NetOutSpeed = server.State.NetOutSpeed
+				lastState.Uptime = server.State.Uptime
+				lastState.Load1 = server.State.Load1
+				lastState.Load5 = server.State.Load5
+				lastState.Load15 = server.State.Load15
+				lastState.TcpConnCount = server.State.TcpConnCount
+				lastState.UdpConnCount = server.State.UdpConnCount
+				lastState.ProcessCount = server.State.ProcessCount
+				lastState.Temperatures = make([]model.SensorTemperature, len(server.State.Temperatures))
+				copy(lastState.Temperatures, server.State.Temperatures)
+				lastState.GPU = server.State.GPU
+				server.LastStateBeforeOffline = &lastState
 
-					// 将最后状态序列化为JSON并保存到数据库
-					lastStateJSON, err := utils.Json.Marshal(lastState)
-					if err == nil {
-						server.LastStateJSON = string(lastStateJSON)
-						server.LastOnline = server.LastActive
+				// 将最后状态序列化为JSON并保存到数据库
+				lastStateJSON, err := utils.Json.Marshal(lastState)
+				if err == nil {
+					server.LastStateJSON = string(lastStateJSON)
+					server.LastOnline = server.LastActive
 
-						// 更新数据库（仅在SQLite模式下）
-						if Conf.DatabaseType != "badger" && DB != nil {
-							DB.Model(server).Updates(map[string]interface{}{
-								"last_state_json": server.LastStateJSON,
-								"last_online":     server.LastOnline,
-							})
+					// 更新数据库（仅在SQLite模式下）
+					if Conf.DatabaseType != "badger" && DB != nil {
+						DB.Model(server).Updates(map[string]interface{}{
+							"last_state_json": server.LastStateJSON,
+							"last_online":     server.LastOnline,
+						})
 
-							// 确保Host信息也已保存
-							if server.Host != nil {
-								// 检查Host信息是否为空
-								if len(server.Host.CPU) > 0 || server.Host.MemTotal > 0 {
-									// 将Host信息保存到servers表
-									hostJSON, hostErr := utils.Json.Marshal(server.Host)
-									if hostErr == nil && len(hostJSON) > 0 {
-										DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
-											string(hostJSON), server.ID)
-									}
+						// 确保Host信息也已保存
+						if server.Host != nil {
+							// 检查Host信息是否为空
+							if len(server.Host.CPU) > 0 || server.Host.MemTotal > 0 {
+								// 将Host信息保存到servers表
+								hostJSON, hostErr := utils.Json.Marshal(server.Host)
+								if hostErr == nil && len(hostJSON) > 0 {
+									DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
+										string(hostJSON), server.ID)
 								}
 							}
 						}
-					} else {
-						log.Printf("序列化服务器 %s 的最后状态失败: %v", server.Name, err)
 					}
+				} else {
+					log.Printf("序列化服务器 %s 的最后状态失败: %v", server.Name, err)
 				}
 			}
 
@@ -1267,27 +1283,61 @@ func SaveAllServerDataToDB() {
 		return
 	}
 
+	// 检查内存使用情况，如果过高则跳过此次保存
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	if m.HeapAlloc > 200*1024*1024 { // 200MB
+		log.Printf("内存使用过高 (%d MB)，跳过本次服务器数据保存", m.HeapAlloc/(1024*1024))
+		return
+	}
+
 	ServerLock.RLock()
-	serverData := make(map[uint64]*model.Server)
-	for id, server := range ServerList {
+	// 直接使用 slice 而不是 map，减少内存分配
+	serverList := make([]*model.Server, 0, len(ServerList))
+	for _, server := range ServerList {
 		if server != nil {
-			serverData[id] = server
+			serverList = append(serverList, server)
 		}
 	}
 	ServerLock.RUnlock()
 
-	if len(serverData) == 0 {
+	if len(serverList) == 0 {
 		return
 	}
 
 	serverOps := db.NewServerOps(db.DB)
 	successCount := 0
 
-	for serverID, server := range serverData {
+	// 批量处理，每批10个减少内存压力
+	batchSize := 10
+	for i := 0; i < len(serverList); i += batchSize {
+		end := i + batchSize
+		if end > len(serverList) {
+			end = len(serverList)
+		}
+
+		for j := i; j < end; j++ {
+			server := serverList[j]
+			if err := serverOps.SaveServer(server); err != nil {
+				log.Printf("保存服务器 %s 数据失败: %v", server.Name, err)
+			} else {
+				successCount++
+			}
+		}
+
+		// 批次间休息，让GC有机会运行
+		if i+batchSize < len(serverList) {
+			time.Sleep(10 * time.Millisecond)
+			runtime.GC() // 主动触发GC
+		}
+	}
+
+	// 为每个服务器获取和更新数据库记录
+	for _, server := range serverList {
 		// 获取数据库中的服务器数据
-		dbServer, err := serverOps.GetServer(serverID)
+		dbServer, err := serverOps.GetServer(server.ID)
 		if err != nil {
-			log.Printf("获取服务器 %d 数据失败: %v", serverID, err)
+			log.Printf("获取服务器 %d 数据失败: %v", server.ID, err)
 			continue
 		}
 
@@ -1712,9 +1762,9 @@ var (
 
 func NewMemoryMonitor() *MemoryMonitor {
 	return &MemoryMonitor{
-		highThreshold:    2048, // 2GB才触发高压清理，避免误触发
-		warningThreshold: 1024, // 1GB警告阈值，更合理
-		maxGoroutines:    1000, // 1000个goroutine限制，避免正常业务被清理
+		highThreshold:    512, // 512MB触发高压清理，适合大多数VPS环境
+		warningThreshold: 256, // 256MB警告阈值，更早触发清理
+		maxGoroutines:    200, // 200个goroutine限制，更保守的并发控制
 		isHighPressure:   false,
 	}
 }
@@ -1753,18 +1803,18 @@ func (mm *MemoryMonitor) checkMemoryPressure() {
 	// 计算内存压力等级
 	newPressureLevel := int64(0)
 	if currentMemMB > mm.highThreshold {
-		newPressureLevel = 3 // 高压
+		newPressureLevel = 3 // 高压 (>512MB)
 	} else if currentMemMB > mm.warningThreshold {
-		newPressureLevel = 2 // 严重
+		newPressureLevel = 2 // 严重 (>256MB)
 	} else if currentMemMB > mm.warningThreshold/2 {
-		newPressureLevel = 1 // 警告
+		newPressureLevel = 1 // 警告 (>128MB)
 	}
 
 	atomic.StoreInt64(&memoryPressureLevel, newPressureLevel)
 
-	// 硬性内存限制 - 超过1000MB强制退出让systemd重启
-	if currentMemMB > 1000 {
-		log.Printf("内存使用超过1000MB (%dMB)，程序即将强制退出避免系统崩溃", currentMemMB)
+	// 硬性内存限制 - 超过800MB强制退出让systemd重启
+	if currentMemMB > 800 {
+		log.Printf("内存使用超过800MB (%dMB)，程序即将强制退出避免系统崩溃", currentMemMB)
 		log.Printf("Goroutine数量: %d", currentGoroutines)
 		log.Printf("堆内存: %dMB", m.HeapAlloc/1024/1024)
 		log.Printf("系统内存: %dMB", m.Sys/1024/1024)
