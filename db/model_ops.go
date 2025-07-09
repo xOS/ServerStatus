@@ -2,16 +2,27 @@ package db
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/xos/serverstatus/model"
 )
+
+// 添加JSON处理缓冲池以减少内存分配
+var jsonBufferPool = sync.Pool{
+	New: func() interface{} {
+		return &bytes.Buffer{}
+	},
+}
+
+// 使用高性能的 jsoniter 配置
+var jsonAPI = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // ServerOps provides operations for managing Server models in BadgerDB
 type ServerOps struct {
@@ -37,16 +48,20 @@ func (o *ServerOps) GetServer(id uint64) (*model.Server, error) {
 func (o *ServerOps) SaveServer(server *model.Server) error {
 	// 由于多个字段有 json:"-" 标签，我们需要特殊处理
 	// 创建一个临时的 map 来包含所有字段
-	serverData := make(map[string]interface{})
+	// 优化：使用buffer pool减少内存分配
+	buf := jsonBufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer jsonBufferPool.Put(buf)
 
-	// 首先序列化服务器对象（这会忽略有 json:"-" 标签的字段）
-	serverJSON, err := json.Marshal(server)
-	if err != nil {
+	// 首先序列化服务器对象到buffer
+	encoder := jsonAPI.NewEncoder(buf)
+	if err := encoder.Encode(server); err != nil {
 		return fmt.Errorf("failed to marshal server: %w", err)
 	}
 
 	// 反序列化到 map 中
-	if err := json.Unmarshal(serverJSON, &serverData); err != nil {
+	serverData := make(map[string]interface{})
+	if err := jsonAPI.Unmarshal(buf.Bytes(), &serverData); err != nil {
 		return fmt.Errorf("failed to unmarshal server to map: %w", err)
 	}
 
@@ -71,13 +86,16 @@ func (o *ServerOps) SaveServer(server *model.Server) error {
 		serverData["HostIP"] = ""
 	}
 
-	// 重新序列化包含所有字段的数据
-	finalJSON, err := json.Marshal(serverData)
-	if err != nil {
+	// 重新序列化包含所有字段的数据到buffer
+	buf.Reset()
+	encoder = jsonAPI.NewEncoder(buf)
+	if err := encoder.Encode(serverData); err != nil {
 		return fmt.Errorf("failed to marshal server with all fields: %w", err)
 	}
 
-	// 直接保存到数据库
+	// 直接保存到数据库（复制buffer内容避免复用问题）
+	finalJSON := make([]byte, buf.Len())
+	copy(finalJSON, buf.Bytes())
 	key := fmt.Sprintf("server:%d", server.ID)
 	return o.db.Set(key, finalJSON)
 }
@@ -107,7 +125,7 @@ func NewMonitorHistoryOps(db *BadgerDB) *MonitorHistoryOps {
 // SaveMonitorHistory saves a monitor history record
 func (o *MonitorHistoryOps) SaveMonitorHistory(history *model.MonitorHistory) error {
 	key := fmt.Sprintf("monitor_history:%d:%d", history.MonitorID, history.CreatedAt.UnixNano())
-	data, err := json.Marshal(history)
+	data, err := jsonAPI.Marshal(history)
 	if err != nil {
 		return err
 	}
@@ -146,7 +164,7 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByMonitorID(monitorID uint64, sta
 
 			err := item.Value(func(val []byte) error {
 				var history model.MonitorHistory
-				if err := json.Unmarshal(val, &history); err != nil {
+				if err := jsonAPI.Unmarshal(val, &history); err != nil {
 					return err
 				}
 				histories = append(histories, &history)
@@ -184,7 +202,7 @@ func (o *MonitorHistoryOps) GetAllMonitorHistoriesInRange(startTime, endTime tim
 
 			err := item.Value(func(val []byte) error {
 				var history model.MonitorHistory
-				if err := json.Unmarshal(val, &history); err != nil {
+				if err := jsonAPI.Unmarshal(val, &history); err != nil {
 					return err
 				}
 
@@ -231,7 +249,7 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitor(serverID, moni
 
 			err := item.Value(func(val []byte) error {
 				var history model.MonitorHistory
-				if err := json.Unmarshal(val, &history); err != nil {
+				if err := jsonAPI.Unmarshal(val, &history); err != nil {
 					return err
 				}
 
@@ -305,14 +323,14 @@ func (o *UserOps) SaveUser(user *model.User) error {
 	key := fmt.Sprintf("user:%d", user.ID)
 
 	// 先序列化用户数据
-	value, err := json.Marshal(user)
+	value, err := jsonAPI.Marshal(user)
 	if err != nil {
 		return fmt.Errorf("failed to marshal user: %w", err)
 	}
 
 	// 反序列化为 map 以便手动添加 Token 字段
 	var userData map[string]interface{}
-	if err := json.Unmarshal(value, &userData); err != nil {
+	if err := jsonAPI.Unmarshal(value, &userData); err != nil {
 		return fmt.Errorf("failed to unmarshal user data: %w", err)
 	}
 
@@ -320,7 +338,7 @@ func (o *UserOps) SaveUser(user *model.User) error {
 	userData["Token"] = user.Token
 
 	// 重新序列化包含 Token 的数据
-	finalValue, err := json.Marshal(userData)
+	finalValue, err := jsonAPI.Marshal(userData)
 	if err != nil {
 		return fmt.Errorf("failed to marshal user with token: %w", err)
 	}
@@ -377,7 +395,7 @@ func NewMonitorOps(db *BadgerDB) *MonitorOps {
 func (o *MonitorOps) SaveMonitor(monitor *model.Monitor) error {
 	key := fmt.Sprintf("monitor:%d", monitor.ID)
 
-	value, err := json.Marshal(monitor)
+	value, err := jsonAPI.Marshal(monitor)
 	if err != nil {
 		return fmt.Errorf("failed to marshal monitor: %w", err)
 	}
@@ -428,7 +446,7 @@ func NewNotificationOps(db *BadgerDB) *NotificationOps {
 func (o *NotificationOps) SaveNotification(notification *model.Notification) error {
 	key := fmt.Sprintf("notification:%d", notification.ID)
 
-	value, err := json.Marshal(notification)
+	value, err := jsonAPI.Marshal(notification)
 	if err != nil {
 		return fmt.Errorf("failed to marshal notification: %w", err)
 	}
@@ -479,7 +497,7 @@ func NewCronOps(db *BadgerDB) *CronOps {
 func (o *CronOps) SaveCron(cron *model.Cron) error {
 	key := fmt.Sprintf("cron:%d", cron.ID)
 
-	value, err := json.Marshal(cron)
+	value, err := jsonAPI.Marshal(cron)
 	if err != nil {
 		return fmt.Errorf("failed to marshal cron task: %w", err)
 	}
@@ -531,14 +549,14 @@ func (o *ApiTokenOps) SaveApiToken(token *model.ApiToken) error {
 	key := fmt.Sprintf("api_token:%d", token.ID)
 
 	// 先序列化API令牌数据
-	value, err := json.Marshal(token)
+	value, err := jsonAPI.Marshal(token)
 	if err != nil {
 		return fmt.Errorf("failed to marshal API token: %w", err)
 	}
 
 	// 反序列化为 map 以便手动添加 Token 字段
 	var tokenData map[string]interface{}
-	if err := json.Unmarshal(value, &tokenData); err != nil {
+	if err := jsonAPI.Unmarshal(value, &tokenData); err != nil {
 		return fmt.Errorf("failed to unmarshal API token data: %w", err)
 	}
 
@@ -547,7 +565,7 @@ func (o *ApiTokenOps) SaveApiToken(token *model.ApiToken) error {
 	tokenData["token"] = token.Token // 同时保存小写版本作为备用
 
 	// 重新序列化包含 Token 的数据
-	finalValue, err := json.Marshal(tokenData)
+	finalValue, err := jsonAPI.Marshal(tokenData)
 	if err != nil {
 		return fmt.Errorf("failed to marshal API token with token: %w", err)
 	}
@@ -623,7 +641,7 @@ func (o *ApiTokenOps) DeleteApiToken(id uint64) error {
 
 		// 解析JSON数据
 		var tokenData map[string]interface{}
-		if err := json.Unmarshal(data, &tokenData); err != nil {
+		if err := jsonAPI.Unmarshal(data, &tokenData); err != nil {
 			log.Printf("BadgerDB: 解析key '%s' 的JSON数据失败: %v", key, err)
 			continue
 		}
@@ -678,7 +696,7 @@ func (o *ApiTokenOps) DeleteApiToken(id uint64) error {
 
 		// 解析JSON数据
 		var tokenData map[string]interface{}
-		if err := json.Unmarshal(data, &tokenData); err != nil {
+		if err := jsonAPI.Unmarshal(data, &tokenData); err != nil {
 			continue
 		}
 
@@ -731,7 +749,7 @@ func NewNATOps(db *BadgerDB) *NATOps {
 func (o *NATOps) SaveNAT(nat *model.NAT) error {
 	key := fmt.Sprintf("nat:%d", nat.ID)
 
-	value, err := json.Marshal(nat)
+	value, err := jsonAPI.Marshal(nat)
 	if err != nil {
 		return fmt.Errorf("failed to marshal NAT: %w", err)
 	}
@@ -800,7 +818,7 @@ func NewDDNSOps(db *BadgerDB) *DDNSOps {
 func (o *DDNSOps) SaveDDNSProfile(profile *model.DDNSProfile) error {
 	key := fmt.Sprintf("ddns_profile:%d", profile.ID)
 
-	value, err := json.Marshal(profile)
+	value, err := jsonAPI.Marshal(profile)
 	if err != nil {
 		return fmt.Errorf("failed to marshal DDNS profile: %w", err)
 	}
@@ -841,7 +859,7 @@ func (o *DDNSOps) DeleteDDNSProfile(id uint64) error {
 func (o *DDNSOps) SaveDDNSRecordState(state *model.DDNSRecordState) error {
 	key := fmt.Sprintf("ddns_record_state:%d", state.ID)
 
-	value, err := json.Marshal(state)
+	value, err := jsonAPI.Marshal(state)
 	if err != nil {
 		return fmt.Errorf("failed to marshal DDNS record state: %w", err)
 	}
@@ -932,7 +950,7 @@ func NewAlertRuleOps(db *BadgerDB) *AlertRuleOps {
 func (o *AlertRuleOps) SaveAlertRule(rule *model.AlertRule) error {
 	key := fmt.Sprintf("alert_rule:%d", rule.ID)
 
-	value, err := json.Marshal(rule)
+	value, err := jsonAPI.Marshal(rule)
 	if err != nil {
 		return fmt.Errorf("failed to marshal alert rule: %w", err)
 	}

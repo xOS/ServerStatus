@@ -3,7 +3,6 @@ package db
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -193,7 +192,7 @@ func (b *BadgerDB) startMaintenance() {
 func (b *BadgerDB) SaveModel(modelType string, id uint64, model interface{}) error {
 	key := fmt.Sprintf("%s:%d", modelType, id)
 
-	value, err := json.Marshal(model)
+	value, err := utils.Json.Marshal(model)
 	if err != nil {
 		return fmt.Errorf("failed to marshal model: %w", err)
 	}
@@ -212,7 +211,7 @@ func (b *BadgerDB) BatchSaveModels(modelType string, models map[uint64]interface
 		for id, model := range models {
 			key := fmt.Sprintf("%s:%d", modelType, id)
 
-			value, err := json.Marshal(model)
+			value, err := utils.Json.Marshal(model)
 			if err != nil {
 				return fmt.Errorf("failed to marshal model %d: %w", id, err)
 			}
@@ -238,7 +237,7 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 	case "user":
 		// 用户记录需要特殊处理Token字段（有json:"-"标签）
 		var userData map[string]interface{}
-		if err := json.Unmarshal(data, &userData); err != nil {
+		if err := utils.Json.Unmarshal(data, &userData); err != nil {
 			return err
 		}
 
@@ -246,13 +245,13 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 		convertDbFieldTypes(&userData)
 
 		// 重新序列化为 JSON
-		userJSON, err := json.Marshal(userData)
+		userJSON, err := utils.Json.Marshal(userData)
 		if err != nil {
 			return err
 		}
 
 		// 反序列化到结果
-		if err := json.Unmarshal(userJSON, result); err != nil {
+		if err := utils.Json.Unmarshal(userJSON, result); err != nil {
 			return err
 		}
 
@@ -345,7 +344,7 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 	case "alert_rule":
 		// 报警规则需要特殊处理布尔字段
 		var ruleData map[string]interface{}
-		if err := json.Unmarshal(data, &ruleData); err != nil {
+		if err := utils.Json.Unmarshal(data, &ruleData); err != nil {
 			return err
 		}
 
@@ -353,17 +352,17 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 		convertDbFieldTypes(&ruleData)
 
 		// 重新序列化为 JSON
-		ruleJSON, err := json.Marshal(ruleData)
+		ruleJSON, err := utils.Json.Marshal(ruleData)
 		if err != nil {
 			return err
 		}
 
 		// 反序列化到结果
-		return json.Unmarshal(ruleJSON, result)
+		return utils.Json.Unmarshal(ruleJSON, result)
 	default:
 		// 其他类型的记录，也需要进行字段类型转换
 		var dataMap map[string]interface{}
-		if err := json.Unmarshal(data, &dataMap); err != nil {
+		if err := utils.Json.Unmarshal(data, &dataMap); err != nil {
 			return err
 		}
 
@@ -371,13 +370,13 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 		convertDbFieldTypes(&dataMap)
 
 		// 重新序列化为 JSON
-		dataJSON, err := json.Marshal(dataMap)
+		dataJSON, err := utils.Json.Marshal(dataMap)
 		if err != nil {
 			return err
 		}
 
 		// 反序列化到结果
-		return json.Unmarshal(dataJSON, result)
+		return utils.Json.Unmarshal(dataJSON, result)
 	}
 }
 
@@ -475,7 +474,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 	if b.db == nil {
 		log.Printf("FindAll: BadgerDB实例未初始化，返回空结果")
 		// 返回空数组结果而不是错误
-		return json.Unmarshal([]byte("[]"), result)
+		return utils.Json.Unmarshal([]byte("[]"), result)
 	}
 
 	// 移除频繁的查询日志输出，只在调试模式下输出
@@ -507,7 +506,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 
 	// 如果没有找到任何记录，返回空数组
 	if len(items) == 0 {
-		return json.Unmarshal([]byte("[]"), result)
+		return utils.Json.Unmarshal([]byte("[]"), result)
 	}
 
 	// 针对不同的数据类型进行特殊处理
@@ -519,7 +518,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 
 		for _, item := range items {
 			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
+			if err := utils.Json.Unmarshal(item, &data); err != nil {
 				continue
 			}
 
@@ -543,13 +542,13 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		log.Printf("FindAll: 去重后保留 %d 个服务器记录", len(servers))
 
 		// 重新序列化为 JSON
-		serversJSON, err := json.Marshal(servers)
+		serversJSON, err := utils.Json.Marshal(servers)
 		if err != nil {
 			return err
 		}
 
 		// 先反序列化到结果
-		if err := json.Unmarshal(serversJSON, result); err != nil {
+		if err := utils.Json.Unmarshal(serversJSON, result); err != nil {
 			return err
 		}
 
@@ -618,7 +617,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		var monitors []*map[string]interface{}
 		for _, item := range items {
 			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
+			if err := utils.Json.Unmarshal(item, &data); err != nil {
 				continue
 			}
 
@@ -628,13 +627,13 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		// 重新序列化为 JSON
-		monitorsJSON, err := json.Marshal(monitors)
+		monitorsJSON, err := utils.Json.Marshal(monitors)
 		if err != nil {
 			return err
 		}
 
 		// 反序列化到结果，然后手动解析特殊字段
-		if err := json.Unmarshal(monitorsJSON, result); err != nil {
+		if err := utils.Json.Unmarshal(monitorsJSON, result); err != nil {
 			return err
 		}
 
@@ -684,7 +683,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		var users []*map[string]interface{}
 		for _, item := range items {
 			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
+			if err := utils.Json.Unmarshal(item, &data); err != nil {
 				continue
 			}
 
@@ -694,13 +693,13 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		// 重新序列化为 JSON
-		usersJSON, err := json.Marshal(users)
+		usersJSON, err := utils.Json.Marshal(users)
 		if err != nil {
 			return err
 		}
 
 		// 反序列化到结果，然后手动设置Token字段
-		if err := json.Unmarshal(usersJSON, result); err != nil {
+		if err := utils.Json.Unmarshal(usersJSON, result); err != nil {
 			return err
 		}
 
@@ -724,7 +723,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		var rules []*map[string]interface{}
 		for _, item := range items {
 			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
+			if err := utils.Json.Unmarshal(item, &data); err != nil {
 				continue
 			}
 
@@ -734,13 +733,13 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		// 重新序列化为 JSON
-		rulesJSON, err := json.Marshal(rules)
+		rulesJSON, err := utils.Json.Marshal(rules)
 		if err != nil {
 			return err
 		}
 
 		// 反序列化到结果
-		if err := json.Unmarshal(rulesJSON, result); err != nil {
+		if err := utils.Json.Unmarshal(rulesJSON, result); err != nil {
 			return err
 		}
 
@@ -783,7 +782,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		var tokens []*map[string]interface{}
 		for _, item := range items {
 			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
+			if err := utils.Json.Unmarshal(item, &data); err != nil {
 				continue
 			}
 
@@ -802,13 +801,13 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		// 重新序列化为 JSON
-		tokensJSON, err := json.Marshal(tokens)
+		tokensJSON, err := utils.Json.Marshal(tokens)
 		if err != nil {
 			return err
 		}
 
 		// 反序列化到结果，然后手动设置Token字段
-		if err := json.Unmarshal(tokensJSON, result); err != nil {
+		if err := utils.Json.Unmarshal(tokensJSON, result); err != nil {
 			return err
 		}
 
@@ -840,7 +839,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		var profiles []*map[string]interface{}
 		for _, item := range items {
 			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
+			if err := utils.Json.Unmarshal(item, &data); err != nil {
 				continue
 			}
 
@@ -850,13 +849,13 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		// 重新序列化为 JSON
-		profilesJSON, err := json.Marshal(profiles)
+		profilesJSON, err := utils.Json.Marshal(profiles)
 		if err != nil {
 			return err
 		}
 
 		// 反序列化到结果，然后手动解析特殊字段
-		if err := json.Unmarshal(profilesJSON, result); err != nil {
+		if err := utils.Json.Unmarshal(profilesJSON, result); err != nil {
 			return err
 		}
 
@@ -880,7 +879,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		var notifications []*map[string]interface{}
 		for _, item := range items {
 			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
+			if err := utils.Json.Unmarshal(item, &data); err != nil {
 				continue
 			}
 
@@ -890,18 +889,18 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		// 重新序列化为 JSON
-		notificationsJSON, err := json.Marshal(notifications)
+		notificationsJSON, err := utils.Json.Marshal(notifications)
 		if err != nil {
 			return err
 		}
 
-		return json.Unmarshal(notificationsJSON, result)
+		return utils.Json.Unmarshal(notificationsJSON, result)
 	case "nat":
 		// NAT配置记录需要特殊处理布尔字段
 		var nats []*map[string]interface{}
 		for _, item := range items {
 			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
+			if err := utils.Json.Unmarshal(item, &data); err != nil {
 				continue
 			}
 
@@ -911,19 +910,19 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		// 重新序列化为 JSON
-		natsJSON, err := json.Marshal(nats)
+		natsJSON, err := utils.Json.Marshal(nats)
 		if err != nil {
 			return err
 		}
 
-		return json.Unmarshal(natsJSON, result)
+		return utils.Json.Unmarshal(natsJSON, result)
 
 	case "cron":
 		// 定时任务记录需要特殊处理布尔字段
 		var crons []*map[string]interface{}
 		for _, item := range items {
 			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
+			if err := utils.Json.Unmarshal(item, &data); err != nil {
 				continue
 			}
 
@@ -933,13 +932,13 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		// 重新序列化为 JSON
-		cronsJSON, err := json.Marshal(crons)
+		cronsJSON, err := utils.Json.Marshal(crons)
 		if err != nil {
 			return err
 		}
 
 		// 反序列化到结果，然后手动解析特殊字段
-		if err := json.Unmarshal(cronsJSON, result); err != nil {
+		if err := utils.Json.Unmarshal(cronsJSON, result); err != nil {
 			return err
 		}
 
@@ -968,7 +967,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		var states []*map[string]interface{}
 		for _, item := range items {
 			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
+			if err := utils.Json.Unmarshal(item, &data); err != nil {
 				continue
 			}
 
@@ -978,18 +977,18 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		// 重新序列化为 JSON
-		statesJSON, err := json.Marshal(states)
+		statesJSON, err := utils.Json.Marshal(states)
 		if err != nil {
 			return err
 		}
 
-		return json.Unmarshal(statesJSON, result)
+		return utils.Json.Unmarshal(statesJSON, result)
 	default:
 		// 其他类型的记录，也需要进行字段类型转换
 		var others []*map[string]interface{}
 		for _, item := range items {
 			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
+			if err := utils.Json.Unmarshal(item, &data); err != nil {
 				continue
 			}
 
@@ -999,12 +998,12 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 		}
 
 		// 重新序列化为 JSON
-		othersJSON, err := json.Marshal(others)
+		othersJSON, err := utils.Json.Marshal(others)
 		if err != nil {
 			return err
 		}
 
-		return json.Unmarshal(othersJSON, result)
+		return utils.Json.Unmarshal(othersJSON, result)
 	}
 }
 
@@ -1160,7 +1159,7 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 		if val, ok := d[field]; ok {
 			if strVal, isStr := val.(string); isStr && strVal != "" {
 				var jsonData interface{}
-				if err := json.Unmarshal([]byte(strVal), &jsonData); err == nil {
+				if err := utils.Json.Unmarshal([]byte(strVal), &jsonData); err == nil {
 					// 如果能成功解析为 JSON，保持原样，否则视为普通字符串
 					// 这里不做替换，因为 model 会自己处理这些 JSON 字段
 				}

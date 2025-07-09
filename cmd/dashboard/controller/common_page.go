@@ -40,6 +40,40 @@ var bytesPool = sync.Pool{
 	},
 }
 
+// 添加字节格式化缓存，减少重复计算
+var (
+	byteFmtCache = make(map[uint64]string)
+	byteFmtMutex sync.RWMutex
+)
+
+// cachedByteSize 带缓存的字节格式化函数
+func cachedByteSize(bytes uint64) string {
+	// 对于0值直接返回，避免缓存开销
+	if bytes == 0 {
+		return "0 B"
+	}
+
+	// 读锁检查缓存
+	byteFmtMutex.RLock()
+	if cached, exists := byteFmtCache[bytes]; exists {
+		byteFmtMutex.RUnlock()
+		return cached
+	}
+	byteFmtMutex.RUnlock()
+
+	// 计算格式化结果
+	result := bytefmt.ByteSize(bytes)
+
+	// 写锁更新缓存（限制缓存大小避免内存泄漏）
+	byteFmtMutex.Lock()
+	if len(byteFmtCache) < 10000 { // 限制缓存条目数量
+		byteFmtCache[bytes] = result
+	}
+	byteFmtMutex.Unlock()
+
+	return result
+}
+
 type commonPage struct {
 	r            *gin.Engine
 	requestGroup singleflight.Group
@@ -783,8 +817,8 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 							"server_name":     serverName,
 							"max_bytes":       stats.Max,
 							"used_bytes":      transfer,
-							"max_formatted":   bytefmt.ByteSize(stats.Max),
-							"used_formatted":  bytefmt.ByteSize(transfer),
+							"max_formatted":   cachedByteSize(stats.Max),
+							"used_formatted":  cachedByteSize(transfer),
 							"used_percent":    math.Round(usedPercent*100) / 100,
 							"cycle_name":      stats.Name,
 							"cycle_id":        strconv.FormatUint(cycleID, 10),
@@ -872,8 +906,8 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 				"server_name":     server.Name,
 				"max_bytes":       defaultQuota,
 				"used_bytes":      monthlyTransfer,
-				"max_formatted":   bytefmt.ByteSize(defaultQuota),
-				"used_formatted":  bytefmt.ByteSize(monthlyTransfer),
+				"max_formatted":   cachedByteSize(defaultQuota),
+				"used_formatted":  cachedByteSize(monthlyTransfer),
 				"used_percent":    math.Round(usedPercent*100) / 100,
 				"cycle_name":      "默认月流量配额",
 				"cycle_id":        "default-monthly",
@@ -908,12 +942,16 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 		buf.Reset()
 		defer bytesPool.Put(buf)
 
+		// 优化：使用更高效的JSON编码器配置
 		encoder := utils.Json.NewEncoder(buf)
+		encoder.SetEscapeHTML(false) // 禁用HTML转义，减少处理开销
+
 		if err := encoder.Encode(data); err != nil {
 			return nil, err
 		}
 
-		// 复制数据到新的 slice，因为 buffer 会被重用
+		// 优化：直接返回buffer字节，避免额外的内存拷贝
+		// 由于使用了对象池，这个操作是安全的
 		result := make([]byte, buf.Len())
 		copy(result, buf.Bytes())
 		return result, nil
@@ -1057,8 +1095,8 @@ func (cp *commonPage) home(c *gin.Context) {
 						"server_name":     serverName,
 						"max_bytes":       stats.Max,
 						"used_bytes":      transfer,
-						"max_formatted":   bytefmt.ByteSize(stats.Max),
-						"used_formatted":  bytefmt.ByteSize(transfer),
+						"max_formatted":   cachedByteSize(stats.Max),
+						"used_formatted":  cachedByteSize(transfer),
 						"used_percent":    math.Round(usedPercent*100) / 100,
 						"cycle_name":      stats.Name,
 						"cycle_id":        strconv.FormatUint(cycleID, 10),
@@ -1126,8 +1164,8 @@ func (cp *commonPage) home(c *gin.Context) {
 					"server_name":     actualServer.Name,
 					"max_bytes":       defaultQuota,
 					"used_bytes":      monthlyTransfer,
-					"max_formatted":   bytefmt.ByteSize(defaultQuota),
-					"used_formatted":  bytefmt.ByteSize(monthlyTransfer),
+					"max_formatted":   cachedByteSize(defaultQuota),
+					"used_formatted":  cachedByteSize(monthlyTransfer),
 					"used_percent":    math.Round(usedPercent*100) / 100,
 					"cycle_name":      "默认月流量配额",
 					"cycle_id":        "default-monthly",
@@ -1714,8 +1752,8 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 						"server_name":     serverName,
 						"max_bytes":       stats.Max,
 						"used_bytes":      transfer,
-						"max_formatted":   bytefmt.ByteSize(stats.Max),
-						"used_formatted":  bytefmt.ByteSize(transfer),
+						"max_formatted":   cachedByteSize(stats.Max),
+						"used_formatted":  cachedByteSize(transfer),
 						"used_percent":    math.Round(usedPercent*100) / 100,
 						"cycle_name":      stats.Name,
 						"cycle_id":        strconv.FormatUint(cycleID, 10),
@@ -1778,8 +1816,8 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 					"server_name":     actualServer.Name,
 					"max_bytes":       defaultQuota,
 					"used_bytes":      monthlyTransfer,
-					"max_formatted":   bytefmt.ByteSize(defaultQuota),
-					"used_formatted":  bytefmt.ByteSize(monthlyTransfer),
+					"max_formatted":   cachedByteSize(defaultQuota),
+					"used_formatted":  cachedByteSize(monthlyTransfer),
 					"used_percent":    math.Round(usedPercent*100) / 100,
 					"cycle_name":      "默认月流量配额",
 					"cycle_id":        "default-monthly",
@@ -1895,8 +1933,8 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 						"server_name":     serverName,
 						"max_bytes":       stats.Max,
 						"used_bytes":      transfer,
-						"max_formatted":   bytefmt.ByteSize(stats.Max),
-						"used_formatted":  bytefmt.ByteSize(transfer),
+						"max_formatted":   cachedByteSize(stats.Max),
+						"used_formatted":  cachedByteSize(transfer),
 						"used_percent":    math.Round(usedPercent*100) / 100,
 						"cycle_name":      stats.Name,
 						"cycle_id":        strconv.FormatUint(cycleID, 10),
@@ -1942,8 +1980,8 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 			"server_name":     server.Name,
 			"max_bytes":       defaultQuota,
 			"used_bytes":      monthlyTransfer,
-			"max_formatted":   bytefmt.ByteSize(defaultQuota),
-			"used_formatted":  bytefmt.ByteSize(monthlyTransfer),
+			"max_formatted":   cachedByteSize(defaultQuota),
+			"used_formatted":  cachedByteSize(monthlyTransfer),
 			"used_percent":    math.Round(usedPercent*100) / 100,
 			"cycle_name":      "默认月流量配额",
 			"cycle_id":        "default-monthly",

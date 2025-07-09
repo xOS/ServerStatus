@@ -1,13 +1,14 @@
 package db
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/xos/serverstatus/pkg/utils"
 )
 
 // DataAccessOptimizer 数据访问优化器 - 减少数据库访问，提高缓存效率
@@ -209,20 +210,20 @@ func groupByModelType(writes map[string]interface{}) map[string]map[uint64]inter
 
 func copyData(src, dst interface{}) error {
 	// 简化实现，实际应该根据类型进行深拷贝
-	jsonData, err := json.Marshal(src)
+	jsonData, err := utils.Json.Marshal(src)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(jsonData, dst)
+	return utils.Json.Unmarshal(jsonData, dst)
 }
 
 func copyDataValue(data interface{}) interface{} {
 	// 简化实现，返回数据的深拷贝
-	jsonData, err := json.Marshal(data)
+	jsonData, err := utils.Json.Marshal(data)
 	if err != nil {
 		return data // 失败时返回原数据
 	}
 	var result interface{}
-	json.Unmarshal(jsonData, &result)
+	utils.Json.Unmarshal(jsonData, &result)
 	return result
 }

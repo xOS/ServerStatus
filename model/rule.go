@@ -1,7 +1,6 @@
 package model
 
 import (
-	"encoding/json"
 	"slices"
 	"strconv"
 	"strings"
@@ -59,7 +58,7 @@ func (r Rule) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	return json.Marshal(aux)
+	return utils.Json.Marshal(aux)
 }
 
 // UnmarshalJSON 自定义 JSON 反序列化，确保 Ignore 字段正确反序列化
@@ -73,7 +72,7 @@ func (r *Rule) UnmarshalJSON(data []byte) error {
 		Alias: (*Alias)(r),
 	}
 
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := utils.Json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 

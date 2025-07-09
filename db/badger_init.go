@@ -1,7 +1,6 @@
 package db
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -233,7 +232,7 @@ func LoadServersFromBadgerDB() ([]*model.Server, error) {
 
 		// 解析持久化的主机信息
 		if server.HostJSON != "" {
-			err := json.Unmarshal([]byte(server.HostJSON), server.Host)
+			err := utils.Json.Unmarshal([]byte(server.HostJSON), server.Host)
 			if err != nil {
 				log.Printf("解析服务器主机信息失败，服务器ID：%d：%v", server.ID, err)
 				// 创建新的Host对象作为回退
@@ -252,7 +251,7 @@ func LoadServersFromBadgerDB() ([]*model.Server, error) {
 
 		// 解析持久化的状态信息
 		if server.LastStateJSON != "" {
-			err := json.Unmarshal([]byte(server.LastStateJSON), server.State)
+			err := utils.Json.Unmarshal([]byte(server.LastStateJSON), server.State)
 			if err != nil {
 				log.Printf("解析服务器状态信息失败，服务器ID：%d：%v", server.ID, err)
 				server.State = &model.HostState{}

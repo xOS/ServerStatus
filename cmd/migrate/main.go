@@ -37,7 +37,7 @@ func main() {
 
 	// 打开BadgerDB
 	log.Printf("正在打开BadgerDB: %s", badgerPath)
-	badgerDB, err := db.NewBadgerDB(badgerPath)
+	badgerDB, err := db.OpenDB(badgerPath)
 	if err != nil {
 		log.Fatalf("无法打开BadgerDB: %v", err)
 	}
@@ -91,7 +91,7 @@ func main() {
 	// 显示迁移统计
 	fmt.Println("\n迁移统计:")
 	tables := []string{"server", "user", "monitor", "notification", "alert_rule", "cron", "transfer", "api_token", "nat", "ddns_profile", "ddns_record_state", "monitor_history"}
-	
+
 	for _, table := range tables {
 		keys, err := badgerDB.GetKeysWithPrefix(table + ":")
 		if err == nil {

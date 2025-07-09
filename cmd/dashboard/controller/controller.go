@@ -64,6 +64,29 @@ func corsMiddleware(c *gin.Context) {
 	c.Next()
 }
 
+// pprofAuthMiddleware pprof 认证中间件
+// 检查用户是否已登录且为管理员
+func pprofAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 检查用户是否已登录
+		if user, exists := c.Get(model.CtxKeyAuthorizedUser); exists && user != nil {
+			// 检查是否为管理员用户
+			if u, ok := user.(*model.User); ok && u.SuperAdmin {
+				// 管理员用户，允许访问
+				c.Next()
+				return
+			}
+		}
+
+		// 用户未登录或非管理员，返回403
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "需要管理员权限才能访问性能分析工具",
+			"code":  403,
+		})
+		c.Abort()
+	}
+}
+
 func ServeWeb(port uint) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
 
@@ -114,7 +137,16 @@ func ServeWeb(port uint) *http.Server {
 
 	if singleton.Conf.Debug {
 		gin.SetMode(gin.DebugMode)
-		pprof.Register(r)
+		// 为 pprof 添加完整的认证流程保护
+		pprofGroup := r.Group("/debug/pprof")
+		// 首先使用标准认证中间件设置用户信息
+		pprofGroup.Use(mygin.Authorize(mygin.AuthorizeOption{
+			MemberOnly: true,
+			AllowAPI:   true, // 允许API Token访问
+		}))
+		// 然后使用 pprof 专用中间件检查管理员权限
+		pprofGroup.Use(pprofAuthMiddleware())
+		pprof.RouteRegister(pprofGroup, "")
 	}
 
 	// 首先添加全局panic恢复中间件
