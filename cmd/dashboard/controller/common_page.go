@@ -1286,6 +1286,7 @@ func (cp *commonPage) ws(c *gin.Context) {
 
 			// 处理客户端自定义的ping消息
 			if msgType == websocket.TextMessage && string(message) == `{"type":"ping"}` {
+				conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if err := safeConn.WriteMessage(websocket.TextMessage, []byte(`{"type":"pong"}`)); err != nil {
 					log.Printf("发送pong失败 %s: %v", connID, err)

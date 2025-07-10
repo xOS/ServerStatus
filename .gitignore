@@ -29,3 +29,4 @@ debug_monitor.sh
 sqlite.db
 config
 heap.txt
+gp.txt
