@@ -27,3 +27,5 @@ FIXES_APPLIED.md
 debug_monitor.sh
 .claude
 sqlite.db
+config
+heap.txt
