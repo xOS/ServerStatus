@@ -956,37 +956,52 @@ func IPDesensitize(ip string) string {
 
 // CheckServerOnlineStatus 检查服务器在线状态，将超时未上报的服务器标记为离线
 func CheckServerOnlineStatus() {
-	ServerLock.Lock()
-	defer ServerLock.Unlock()
-
 	now := time.Now()
 	offlineTimeout := time.Minute * 2 // 调整为2分钟无心跳视为离线，平衡稳定性和响应速度
 
-	// 检查是否需要重置累计流量数据
-	shouldResetTransferStats := checkShouldResetTransferStats()
-
+	// 数据收集阶段（持锁）
+	type serverUpdate struct {
+		ID                      uint64
+		Name                    string
+		LastActive              time.Time
+		LastStateJSON           string
+		LastOnline              time.Time
+		CumulativeNetInTransfer uint64
+		CumulativeNetOutTransfer uint64
+		NeedResetTransfer       bool
+		TaskClose               chan error
+		Host                    *model.Host
+		HostJSON                string
+	}
+	
+	var updates []serverUpdate
+	var shouldResetTransferStats bool
+	
+	// 第一阶段：快速收集数据（持锁时间最短）
+	ServerLock.Lock()
+	shouldResetTransferStats = checkShouldResetTransferStats()
+	
 	for _, server := range ServerList {
-		// 已经标记为在线且长时间未活动，标记为离线
+		update := serverUpdate{
+			ID:         server.ID,
+			Name:       server.Name,
+			LastActive: server.LastActive,
+		}
+		
+		// 检查是否需要标记为离线
 		if server.IsOnline && now.Sub(server.LastActive) > offlineTimeout {
 			server.IsOnline = false
-
-			// 清理任务连接资源，防止内存泄漏
+			
+			// 处理任务关闭
 			server.TaskCloseLock.Lock()
 			if server.TaskClose != nil {
-				// 安全发送关闭信号，避免向已关闭的通道发送
-				select {
-				case server.TaskClose <- fmt.Errorf("server offline"):
-				default:
-					// 通道可能已关闭或已满，忽略
-				}
-				// 标记通道为nil，但不在这里关闭
-				// 让RequestTask方法的goroutine负责关闭
+				update.TaskClose = server.TaskClose
 				server.TaskClose = nil
 			}
 			server.TaskStream = nil
 			server.TaskCloseLock.Unlock()
-
-			// 如果还没有保存离线前状态，保存当前状态
+			
+			// 保存离线前状态
 			if server.LastStateBeforeOffline == nil && server.State != nil {
 				lastState := model.HostState{}
 				// 手动深拷贝 HostState 字段，避免使用 copier 包
@@ -1009,65 +1024,91 @@ func CheckServerOnlineStatus() {
 				copy(lastState.Temperatures, server.State.Temperatures)
 				lastState.GPU = server.State.GPU
 				server.LastStateBeforeOffline = &lastState
-
-				// 将最后状态序列化为JSON并保存到数据库
-				lastStateJSON, err := utils.Json.Marshal(lastState)
-				if err == nil {
-					server.LastStateJSON = string(lastStateJSON)
-					server.LastOnline = server.LastActive
-
-					// 更新数据库（仅在SQLite模式下）
-					if Conf.DatabaseType != "badger" && DB != nil {
-						DB.Model(server).Updates(map[string]interface{}{
-							"last_state_json": server.LastStateJSON,
-							"last_online":     server.LastOnline,
-						})
-
-						// 确保Host信息也已保存
-						if server.Host != nil {
-							// 检查Host信息是否为空
-							if len(server.Host.CPU) > 0 || server.Host.MemTotal > 0 {
-								// 将Host信息保存到servers表
-								hostJSON, hostErr := utils.Json.Marshal(server.Host)
-								if hostErr == nil && len(hostJSON) > 0 {
-									DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
-										string(hostJSON), server.ID)
-								}
-							}
-						}
-					}
-				} else {
-					log.Printf("序列化服务器 %s 的最后状态失败: %v", server.Name, err)
+				
+				// 序列化状态
+				if lastStateJSON, err := utils.Json.Marshal(lastState); err == nil {
+					update.LastStateJSON = string(lastStateJSON)
+					update.LastOnline = server.LastActive
+					server.LastStateJSON = update.LastStateJSON
+					server.LastOnline = update.LastOnline
 				}
 			}
-
-			// 离线前保存累计流量数据到数据库
+			
+			// 保存累计流量
 			if server.State != nil {
-				// 使用安全更新函数替代事务
-				AsyncSafeUpdateServerStatus(server.ID, map[string]interface{}{
-					"cumulative_net_in_transfer":  server.State.NetInTransfer,
-					"cumulative_net_out_transfer": server.State.NetOutTransfer,
-					"last_online":                 server.LastActive,
-					"last_state_json":             server.LastStateJSON,
-				}, func(err error) {
-					if err != nil {
-						log.Printf("保存服务器 %s 的累计流量数据失败: %v", server.Name, err)
-					}
-				})
+				update.CumulativeNetInTransfer = server.State.NetInTransfer
+				update.CumulativeNetOutTransfer = server.State.NetOutTransfer
 			}
+			
+			// 保存Host信息
+			if server.Host != nil && (len(server.Host.CPU) > 0 || server.Host.MemTotal > 0) {
+				if hostJSON, err := utils.Json.Marshal(server.Host); err == nil && len(hostJSON) > 0 {
+					update.HostJSON = string(hostJSON)
+				}
+				update.Host = server.Host
+			}
+			
+			updates = append(updates, update)
 		}
-
-		// 如果需要重置累计流量，则重置服务器的累计流量
+		
+		// 处理流量重置
 		if shouldResetTransferStats {
 			server.CumulativeNetInTransfer = 0
 			server.CumulativeNetOutTransfer = 0
-
-			// 更新数据库 - 使用安全更新函数
-			AsyncSafeUpdateServerStatus(server.ID, map[string]interface{}{
-				"cumulative_net_in_transfer":  0,
-				"cumulative_net_out_transfer": 0,
-			}, nil)
+			update.NeedResetTransfer = true
+			update.ID = server.ID
+			updates = append(updates, update)
 		}
+	}
+	ServerLock.Unlock()
+	
+	// 第二阶段：异步执行数据库操作（不持锁）
+	if len(updates) > 0 {
+		go func() {
+			for _, update := range updates {
+				// 关闭任务通道
+				if update.TaskClose != nil {
+					select {
+					case update.TaskClose <- fmt.Errorf("server offline"):
+					default:
+					}
+				}
+				
+				// 准备数据库更新
+				dbUpdates := make(map[string]interface{})
+				
+				if update.LastStateJSON != "" {
+					dbUpdates["last_state_json"] = update.LastStateJSON
+					dbUpdates["last_online"] = update.LastOnline
+				}
+				
+				if update.CumulativeNetInTransfer > 0 || update.CumulativeNetOutTransfer > 0 {
+					dbUpdates["cumulative_net_in_transfer"] = update.CumulativeNetInTransfer
+					dbUpdates["cumulative_net_out_transfer"] = update.CumulativeNetOutTransfer
+				}
+				
+				if update.NeedResetTransfer {
+					dbUpdates["cumulative_net_in_transfer"] = 0
+					dbUpdates["cumulative_net_out_transfer"] = 0
+				}
+				
+				// 异步更新数据库
+				if len(dbUpdates) > 0 {
+					AsyncSafeUpdateServerStatus(update.ID, dbUpdates, func(err error) {
+						if err != nil {
+							log.Printf("更新服务器 %s 状态失败: %v", update.Name, err)
+						}
+					})
+				}
+				
+				// 保存Host信息（如果是SQLite且有更新）
+				if update.HostJSON != "" && Conf.DatabaseType != "badger" && DB != nil {
+					go func(id uint64, hostData string) {
+						DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?", hostData, id)
+					}(update.ID, update.HostJSON)
+				}
+			}
+		}()
 	}
 }
 

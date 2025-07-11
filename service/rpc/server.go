@@ -459,8 +459,27 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 
 	// 准备数据库更新数据
 	dbUpdates := make(map[string]interface{})
+	
+	// 第一阶段：读取必要数据（短暂持读锁）
+	var needDBQuery bool
+	var dbCumulativeIn, dbCumulativeOut uint64
+	
+	singleton.ServerLock.RLock()
+	if server, exists := singleton.ServerList[clientID]; exists {
+		needDBQuery = isFirstReport && (server.CumulativeNetInTransfer == 0 && server.CumulativeNetOutTransfer == 0)
+	}
+	singleton.ServerLock.RUnlock()
+	
+	// 第二阶段：数据库查询（在锁外执行）
+	if needDBQuery && singleton.DB != nil {
+		var dbServer model.Server
+		if err := singleton.DB.First(&dbServer, clientID).Error; err == nil {
+			dbCumulativeIn = dbServer.CumulativeNetInTransfer
+			dbCumulativeOut = dbServer.CumulativeNetOutTransfer
+		}
+	}
 
-	// 获取锁快速更新内存状态
+	// 第三阶段：获取写锁快速更新内存状态
 	singleton.ServerLock.Lock()
 	server := singleton.ServerList[clientID]
 
@@ -470,13 +489,10 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 
 	// 处理流量计算
 	if isFirstReport || isRestart {
-		// 首次上线或重启，从数据库读取累计流量
-		if isFirstReport {
-			var dbServer model.Server
-			if err := singleton.DB.First(&dbServer, clientID).Error; err == nil {
-				server.CumulativeNetInTransfer = dbServer.CumulativeNetInTransfer
-				server.CumulativeNetOutTransfer = dbServer.CumulativeNetOutTransfer
-			}
+		// 首次上线或重启，使用之前查询的累计流量
+		if isFirstReport && needDBQuery {
+			server.CumulativeNetInTransfer = dbCumulativeIn
+			server.CumulativeNetOutTransfer = dbCumulativeOut
 		}
 
 		server.PrevTransferInSnapshot = int64(originalNetInTransfer)

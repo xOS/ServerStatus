@@ -557,28 +557,41 @@ func cleanupSingleServerState(server *model.Server) bool {
 
 // UpdateServer 更新服务器信息
 func UpdateServer(s *model.Server) error {
-	defer ServerLock.Unlock()
+	now := time.Now()
+	
+	// 准备需要的数据结构
+	type updateData struct {
+		cumulativeIn  uint64
+		cumulativeOut uint64
+		shouldSaveDB  bool
+		hostData      *model.Host
+		stateData     *model.HostState
+	}
+	
+	var update updateData
+	
+	// 第一阶段：快速更新内存状态（持锁）
 	ServerLock.Lock()
-
-	s.LastActive = time.Now()
+	
+	s.LastActive = now
 	s.IsOnline = true
-
+	
 	if s.State != nil {
 		// 获取当前上报的原始流量数据
 		currentInTransfer := s.State.NetInTransfer
 		currentOutTransfer := s.State.NetOutTransfer
-
+		
 		// 保存原始流量数据用于计算增量
 		originalIn := currentInTransfer
 		originalOut := currentOutTransfer
-
+		
 		// 获取之前存储的快照值
 		var prevIn, prevOut uint64
 		if server, ok := ServerList[s.ID]; ok && server != nil {
 			prevIn = uint64(server.PrevTransferInSnapshot)
 			prevOut = uint64(server.PrevTransferOutSnapshot)
 		}
-
+		
 		// 计算增量并更新累计流量
 		if originalIn < prevIn {
 			// 流量回退，更新基准点但不增加累计流量
@@ -596,7 +609,7 @@ func UpdateServer(s *model.Server) error {
 			}
 			s.PrevTransferInSnapshot = int64(originalIn)
 		}
-
+		
 		if originalOut < prevOut {
 			// 流量回退，更新基准点但不增加累计流量
 			s.PrevTransferOutSnapshot = int64(originalOut)
@@ -613,11 +626,11 @@ func UpdateServer(s *model.Server) error {
 			}
 			s.PrevTransferOutSnapshot = int64(originalOut)
 		}
-
+		
 		// 更新显示的流量值（只显示累计流量，不加原始流量）
 		s.State.NetInTransfer = s.CumulativeNetInTransfer
 		s.State.NetOutTransfer = s.CumulativeNetOutTransfer
-
+		
 		// 在ServerList中同步更新
 		if server, ok := ServerList[s.ID]; ok && server != nil {
 			server.CumulativeNetInTransfer = s.CumulativeNetInTransfer
@@ -625,82 +638,100 @@ func UpdateServer(s *model.Server) error {
 			server.PrevTransferInSnapshot = s.PrevTransferInSnapshot
 			server.PrevTransferOutSnapshot = s.PrevTransferOutSnapshot
 		}
-
-		// 定期保存到数据库（改为10分钟间隔）
+		
+		// 检查是否需要保存到数据库
 		shouldSave := false
 		if server, ok := ServerList[s.ID]; ok && server != nil {
 			shouldSave = time.Since(server.LastFlowSaveTime).Minutes() > 10
+			if shouldSave {
+				server.LastFlowSaveTime = now
+			}
 		} else {
 			shouldSave = true // 首次保存
 		}
-
-		if shouldSave && Conf.DatabaseType != "badger" && DB != nil {
-			updateSQL := `UPDATE servers SET
-							cumulative_net_in_transfer = ?,
-							cumulative_net_out_transfer = ?,
-							last_active = ?
-							WHERE id = ?`
-
-			result := DB.Exec(updateSQL,
-				s.CumulativeNetInTransfer,
-				s.CumulativeNetOutTransfer,
-				s.LastActive,
-				s.ID)
-
-			if result.Error != nil {
-				log.Printf("更新服务器 %s 的流量数据失败: %v", s.Name, result.Error)
-				return result.Error
-			}
-
-			// 更新最后保存时间
-			if server, ok := ServerList[s.ID]; ok && server != nil {
-				server.LastFlowSaveTime = time.Now()
-			}
-		} else if shouldSave && Conf.DatabaseType == "badger" && db.DB != nil {
-			// BadgerDB模式下，保存流量数据到BadgerDB
-			serverOps := db.NewServerOps(db.DB)
-			if serverOps != nil {
-				// 获取当前数据库中的服务器数据
-				dbServer, err := serverOps.GetServer(s.ID)
-				if err == nil && dbServer != nil {
-					// 更新累计流量数据
-					dbServer.CumulativeNetInTransfer = s.CumulativeNetInTransfer
-					dbServer.CumulativeNetOutTransfer = s.CumulativeNetOutTransfer
-
-					// 更新服务器状态信息
-					dbServer.LastActive = s.LastActive
-					dbServer.IsOnline = s.IsOnline
-
-					// 保存Host信息
-					if s.Host != nil {
-						dbServer.Host = s.Host
-					}
-
-					// 保存最后状态
-					if s.State != nil {
-						if lastStateJSON, err := utils.Json.Marshal(s.State); err == nil {
-							dbServer.LastStateJSON = string(lastStateJSON)
+		
+		// 准备更新数据（但不在锁内执行数据库操作）
+		update.cumulativeIn = s.CumulativeNetInTransfer
+		update.cumulativeOut = s.CumulativeNetOutTransfer
+		update.shouldSaveDB = shouldSave
+		
+		// 复制需要保存的数据
+		if s.Host != nil {
+			update.hostData = &model.Host{}
+			*update.hostData = *s.Host
+		}
+		if s.State != nil {
+			update.stateData = &model.HostState{}
+			*update.stateData = *s.State
+		}
+	}
+	
+	// 更新内存中的服务器信息
+	ServerList[s.ID] = s
+	
+	// 更新前端显示的流量统计（可以在锁内快速执行）
+	UpdateTrafficStats(s.ID, s.CumulativeNetInTransfer, s.CumulativeNetOutTransfer)
+	
+	ServerLock.Unlock()
+	
+	// 第二阶段：异步执行数据库操作（不持锁）
+	if update.shouldSaveDB {
+		go func(serverID uint64, serverName string, updateInfo updateData) {
+			// 错开不同服务器的更新时间
+			delay := time.Duration(serverID%10) * 50 * time.Millisecond
+			time.Sleep(delay)
+			
+			if Conf.DatabaseType != "badger" && DB != nil {
+				// SQLite模式
+				updateSQL := `UPDATE servers SET
+								cumulative_net_in_transfer = ?,
+								cumulative_net_out_transfer = ?,
+								last_active = ?
+								WHERE id = ?`
+				
+				result := DB.Exec(updateSQL,
+					updateInfo.cumulativeIn,
+					updateInfo.cumulativeOut,
+					now,
+					serverID)
+				
+				if result.Error != nil {
+					log.Printf("异步更新服务器 %s 的流量数据失败: %v", serverName, result.Error)
+				}
+			} else if Conf.DatabaseType == "badger" && db.DB != nil {
+				// BadgerDB模式
+				serverOps := db.NewServerOps(db.DB)
+				if serverOps != nil {
+					// 获取当前数据库中的服务器数据
+					dbServer, err := serverOps.GetServer(serverID)
+					if err == nil && dbServer != nil {
+						// 更新累计流量数据
+						dbServer.CumulativeNetInTransfer = updateInfo.cumulativeIn
+						dbServer.CumulativeNetOutTransfer = updateInfo.cumulativeOut
+						dbServer.LastActive = now
+						dbServer.IsOnline = true
+						
+						// 保存Host信息
+						if updateInfo.hostData != nil {
+							dbServer.Host = updateInfo.hostData
 						}
-					}
-
-					// 保存回数据库
-					if err := serverOps.SaveServer(dbServer); err != nil {
-						log.Printf("BadgerDB: 保存服务器 %s 的数据失败: %v", s.Name, err)
-					} else {
-						// 更新最后保存时间
-						if server, ok := ServerList[s.ID]; ok && server != nil {
-							server.LastFlowSaveTime = time.Now()
+						
+						// 保存最后状态
+						if updateInfo.stateData != nil {
+							if lastStateJSON, err := utils.Json.Marshal(updateInfo.stateData); err == nil {
+								dbServer.LastStateJSON = string(lastStateJSON)
+							}
+						}
+						
+						// 保存回数据库
+						if err := serverOps.SaveServer(dbServer); err != nil {
+							log.Printf("BadgerDB: 异步保存服务器 %s 的数据失败: %v", serverName, err)
 						}
 					}
 				}
 			}
-		}
-
-		// 更新前端显示的流量统计
-		UpdateTrafficStats(s.ID, s.CumulativeNetInTransfer, s.CumulativeNetOutTransfer)
+		}(s.ID, s.Name, update)
 	}
-
-	// 更新内存中的服务器信息
-	ServerList[s.ID] = s
+	
 	return nil
 }

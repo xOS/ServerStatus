@@ -30,3 +30,5 @@ sqlite.db
 config
 heap.txt
 gp.txt
+fullgoroutinestackdump.txt
+tp.txt

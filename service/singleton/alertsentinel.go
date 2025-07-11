@@ -243,37 +243,107 @@ func OnDeleteAlert(id uint64) {
 // 用于控制空规则警告的输出频率
 var (
 	emptyRulesWarningTime  = make(map[uint64]time.Time)
-	emptyRulesWarningMutex sync.RWMutex
+	emptyRulesWarningMutex sync.Mutex
 )
 
 // checkStatus 检查报警规则并发送报警
 func checkStatus() {
+	// 优化：先复制需要的数据，避免长时间持锁
+	var alertsCopy []*model.AlertRule
+	var serversCopy map[uint64]*model.Server
+	var alertsStoreCopy map[uint64]map[uint64][][]interface{}
+	var alertsPrevStateCopy map[uint64]map[uint64]uint
+	var cycleTransferStatsCopy map[uint64]*model.CycleTransferStats
+
+	// 第一步：快速复制alerts数据
 	AlertsLock.RLock()
-	defer AlertsLock.RUnlock()
-	ServerLock.RLock()
-	defer ServerLock.RUnlock()
-
+	alertsCopy = make([]*model.AlertRule, 0, len(Alerts))
 	for _, alert := range Alerts {
-		// 安全检查：确保alert不为nil
-		if alert == nil {
-			if Conf != nil && Conf.Debug {
-				log.Printf("警告：发现nil报警规则，跳过检查")
+		if alert != nil && alert.Enabled() {
+			if alert.Rules != nil && len(alert.Rules) > 0 {
+				// 深拷贝alert避免并发修改
+				alertCopy := &model.AlertRule{}
+				*alertCopy = *alert
+				alertsCopy = append(alertsCopy, alertCopy)
+			} else {
+				// 处理已启用但无规则的报警
+				emptyRulesWarningMutex.Lock()
+				if lastWarning, ok := emptyRulesWarningTime[alert.ID]; !ok || time.Since(lastWarning) > time.Hour {
+					log.Printf("警告: 报警规则 '%s' (ID: %d) 已启用但没有任何规则。", alert.Name, alert.ID)
+					emptyRulesWarningTime[alert.ID] = time.Now()
+				}
+				emptyRulesWarningMutex.Unlock()
 			}
-			continue
 		}
+	}
 
-		// 跳过未启用
-		if !alert.Enabled() {
-			continue
+	// 复制必要的存储数据
+	alertsStoreCopy = make(map[uint64]map[uint64][][]interface{})
+	for alertID, serverMap := range alertsStore {
+		alertsStoreCopy[alertID] = make(map[uint64][][]interface{})
+		for serverID, data := range serverMap {
+			alertsStoreCopy[alertID][serverID] = append([][]interface{}{}, data...)
 		}
+	}
 
-		// 确保Rules属性已初始化
-		if alert.Rules == nil || len(alert.Rules) == 0 {
-			// 完全禁用空规则的警告输出，避免日志刷屏
-			// 这些报警规则的Rules为空是正常状态，不需要每次都警告
-			continue
+	alertsPrevStateCopy = make(map[uint64]map[uint64]uint)
+	for alertID, serverMap := range alertsPrevState {
+		alertsPrevStateCopy[alertID] = make(map[uint64]uint)
+		for serverID, state := range serverMap {
+			alertsPrevStateCopy[alertID][serverID] = state
 		}
+	}
 
+	cycleTransferStatsCopy = make(map[uint64]*model.CycleTransferStats)
+	for alertID, stats := range AlertsCycleTransferStatsStore {
+		if stats != nil {
+			statsCopy := &model.CycleTransferStats{
+				Name:       stats.Name,
+				From:       stats.From,
+				To:         stats.To,
+				Max:        stats.Max,
+				Min:        stats.Min,
+				ServerName: make(map[uint64]string),
+				Transfer:   make(map[uint64]uint64),
+				NextUpdate: make(map[uint64]time.Time),
+			}
+			for k, v := range stats.ServerName {
+				statsCopy.ServerName[k] = v
+			}
+			for k, v := range stats.Transfer {
+				statsCopy.Transfer[k] = v
+			}
+			for k, v := range stats.NextUpdate {
+				statsCopy.NextUpdate[k] = v
+			}
+			cycleTransferStatsCopy[alertID] = statsCopy
+		}
+	}
+	AlertsLock.RUnlock()
+
+	// 第二步：快速复制servers数据
+	ServerLock.RLock()
+	serversCopy = make(map[uint64]*model.Server, len(ServerList))
+	for id, server := range ServerList {
+		if server != nil {
+			serversCopy[id] = server
+		}
+	}
+	ServerLock.RUnlock()
+
+	// 第三步：不持锁进行检查计算
+	// 存储需要更新的数据
+	type updateData struct {
+		alertID  uint64
+		serverID uint64
+		snapshot [][]interface{}
+		passed   bool
+		max      int
+	}
+	var updates []updateData
+
+	// 初始化alerts的字段
+	for _, alert := range alertsCopy {
 		// 初始化每个Rule的字段，避免nil指针
 		for i := range alert.Rules {
 			if alert.Rules[i].NextTransferAt == nil {
@@ -287,7 +357,7 @@ func checkStatus() {
 			}
 		}
 
-		for _, server := range ServerList {
+		for _, server := range serversCopy {
 			// 安全检查：确保server不为nil
 			if server == nil {
 				if Conf.Debug {
@@ -297,33 +367,45 @@ func checkStatus() {
 			}
 
 			// 确保alertsStore对应的键存在
-			if alertsStore[alert.ID] == nil {
-				alertsStore[alert.ID] = make(map[uint64][][]interface{})
+			if alertsStoreCopy[alert.ID] == nil {
+				alertsStoreCopy[alert.ID] = make(map[uint64][][]interface{})
 			}
-			if alertsStore[alert.ID][server.ID] == nil {
-				alertsStore[alert.ID][server.ID] = make([][]interface{}, 0)
+			if alertsStoreCopy[alert.ID][server.ID] == nil {
+				alertsStoreCopy[alert.ID][server.ID] = make([][]interface{}, 0)
 			}
 
 			// 监测点
 			// 根据数据库类型决定是否传入DB参数
 			var snapshot []interface{}
+			cycleStats := cycleTransferStatsCopy[alert.ID]
+
 			if Conf.DatabaseType == "badger" {
 				// BadgerDB模式下，传入nil作为DB参数
-				snapshot = alert.Snapshot(AlertsCycleTransferStatsStore[alert.ID], server, nil)
+				snapshot = alert.Snapshot(cycleStats, server, nil)
 			} else {
 				// SQLite模式下，传入DB参数
-				snapshot = alert.Snapshot(AlertsCycleTransferStatsStore[alert.ID], server, DB)
+				snapshot = alert.Snapshot(cycleStats, server, DB)
 			}
 
-			alertsStore[alert.ID][server.ID] = append(alertsStore[alert.ID][server.ID], snapshot)
+			alertsStoreCopy[alert.ID][server.ID] = append(alertsStoreCopy[alert.ID][server.ID], snapshot)
 
 			// 强制执行大小限制，防止内存无限增长
-			if len(alertsStore[alert.ID][server.ID]) > maxHistoryPerServer {
-				alertsStore[alert.ID][server.ID] = alertsStore[alert.ID][server.ID][len(alertsStore[alert.ID][server.ID])-maxHistoryPerServer:]
+			if len(alertsStoreCopy[alert.ID][server.ID]) > maxHistoryPerServer {
+				alertsStoreCopy[alert.ID][server.ID] = alertsStoreCopy[alert.ID][server.ID][len(alertsStoreCopy[alert.ID][server.ID])-maxHistoryPerServer:]
 			}
 
 			// 发送通知，分为触发报警和恢复通知
-			max, passed := alert.Check(alertsStore[alert.ID][server.ID])
+			max, passed := alert.Check(alertsStoreCopy[alert.ID][server.ID])
+
+			// 记录更新数据
+			updates = append(updates, updateData{
+				alertID:  alert.ID,
+				serverID: server.ID,
+				snapshot: alertsStoreCopy[alert.ID][server.ID],
+				passed:   passed,
+				max:      max,
+			})
+
 			// 保存当前服务器状态信息 - 手动拷贝避免反射内存泄漏
 			curServer := model.Server{
 				Common: model.Common{
@@ -362,8 +444,8 @@ func checkStatus() {
 			// 本次未通过检查
 			if !passed {
 				// 确保alertsPrevState正确初始化
-				if alertsPrevState[alert.ID] == nil {
-					alertsPrevState[alert.ID] = make(map[uint64]uint)
+				if alertsPrevStateCopy[alert.ID] == nil {
+					alertsPrevStateCopy[alert.ID] = make(map[uint64]uint)
 				}
 
 				// 检查是否为离线告警且服务器从未上线过
@@ -378,15 +460,15 @@ func checkStatus() {
 				// 如果是离线告警且服务器从未上线过，不触发告警
 				if isOfflineAlert && server.LastActive.IsZero() {
 					// 从未上线的服务器，设置为通过状态，避免误报
-					alertsPrevState[alert.ID][server.ID] = _RuleCheckPass
+					alertsPrevStateCopy[alert.ID][server.ID] = _RuleCheckPass
 				} else {
 					// 始终触发模式或上次检查不为失败时触发报警（跳过单次触发+上次失败的情况）
-					if alert.TriggerMode == model.ModeAlwaysTrigger || alertsPrevState[alert.ID][server.ID] != _RuleCheckFail {
-						alertsPrevState[alert.ID][server.ID] = _RuleCheckFail
+					if alert.TriggerMode == model.ModeAlwaysTrigger || alertsPrevStateCopy[alert.ID][server.ID] != _RuleCheckFail {
+						alertsPrevStateCopy[alert.ID][server.ID] = _RuleCheckFail
 						log.Printf("[事件]\n%s\n规则：%s %s", server.Name, alert.Name, *NotificationMuteLabel.ServerIncident(alert.ID, server.ID))
 
 						// 生成详细的报警消息
-						message := generateDetailedAlertMessage(alert, server, alertsStore[alert.ID][server.ID])
+						message := generateDetailedAlertMessage(alert, server, alertsStoreCopy[alert.ID][server.ID])
 
 						SafeSendTriggerTasks(alert.FailTriggerTasks, curServer.ID)
 						SafeSendNotification(alert.NotificationTag, message, NotificationMuteLabel.ServerIncident(alert.ID, server.ID), &curServer)
@@ -396,12 +478,12 @@ func checkStatus() {
 				}
 			} else {
 				// 确保alertsPrevState正确初始化
-				if alertsPrevState[alert.ID] == nil {
-					alertsPrevState[alert.ID] = make(map[uint64]uint)
+				if alertsPrevStateCopy[alert.ID] == nil {
+					alertsPrevStateCopy[alert.ID] = make(map[uint64]uint)
 				}
 
 				// 本次通过检查但上一次的状态为失败，则发送恢复通知
-				if alertsPrevState[alert.ID][server.ID] == _RuleCheckFail {
+				if alertsPrevStateCopy[alert.ID][server.ID] == _RuleCheckFail {
 					// 生成详细的恢复消息
 					message := generateDetailedRecoveryMessage(alert, server)
 
@@ -410,14 +492,36 @@ func checkStatus() {
 					// 清除失败通知的静音缓存
 					UnMuteNotification(alert.NotificationTag, NotificationMuteLabel.ServerIncident(alert.ID, server.ID))
 				}
-				alertsPrevState[alert.ID][server.ID] = _RuleCheckPass
-			}
-			// 清理旧数据
-			if max > 0 && max < len(alertsStore[alert.ID][server.ID]) {
-				alertsStore[alert.ID][server.ID] = alertsStore[alert.ID][server.ID][len(alertsStore[alert.ID][server.ID])-max:]
+				alertsPrevStateCopy[alert.ID][server.ID] = _RuleCheckPass
 			}
 		}
 	}
+
+	// 第四步：批量更新全局状态（持锁时间短）
+	AlertsLock.Lock()
+	// 更新alertsStore
+	for _, update := range updates {
+		if alertsStore[update.alertID] == nil {
+			alertsStore[update.alertID] = make(map[uint64][][]interface{})
+		}
+		alertsStore[update.alertID][update.serverID] = update.snapshot
+
+		// 清理旧数据
+		if update.max > 0 && update.max < len(alertsStore[update.alertID][update.serverID]) {
+			alertsStore[update.alertID][update.serverID] = alertsStore[update.alertID][update.serverID][len(alertsStore[update.alertID][update.serverID])-update.max:]
+		}
+	}
+
+	// 更新alertsPrevState
+	for alertID, serverMap := range alertsPrevStateCopy {
+		if alertsPrevState[alertID] == nil {
+			alertsPrevState[alertID] = make(map[uint64]uint)
+		}
+		for serverID, state := range serverMap {
+			alertsPrevState[alertID][serverID] = state
+		}
+	}
+	AlertsLock.Unlock()
 }
 
 // UpdateTrafficStats 更新服务器流量统计到AlertsCycleTransferStatsStore

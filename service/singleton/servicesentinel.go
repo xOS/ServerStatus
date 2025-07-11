@@ -581,7 +581,28 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 		}
 		monitorTcpMap[r.Reporter] = ts
 	}
+	
+	// 优化：先收集需要的数据，减少锁持有时间
+	type updateData struct {
+		todayStats      *_TodayStatsOfMonitor
+		currentStatus   []*pb.TaskResult
+		currentIndex    int
+		shouldSave      bool
+		avgDelay        float32
+		upCount         uint64
+		downCount       uint64
+		lastSaveTime    time.Time
+		stateCode       uint
+		monitorInfo     *model.Monitor
+		lastStatusCode  uint
+	}
+	
+	var update updateData
+	currentTime := time.Now()
+	
+	// 第一阶段：快速更新内存状态（持锁）
 	ss.serviceResponseDataStoreLock.Lock()
+	
 	// 写入当天状态
 	if ss.serviceStatusToday[mh.GetId()] == nil {
 		ss.serviceStatusToday[mh.GetId()] = &_TodayStatsOfMonitor{
@@ -600,7 +621,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 		ss.serviceStatusToday[mh.GetId()].Down++
 	}
 
-	currentTime := time.Now()
+	// 初始化索引存储
 	if ss.serviceCurrentStatusIndex[mh.GetId()] == nil {
 		ss.serviceCurrentStatusIndex[mh.GetId()] = &indexStore{
 			t:            currentTime,
@@ -608,6 +629,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 			lastSaveTime: time.Time{}, // 初始化为零值
 		}
 	}
+	
 	// 写入当前数据
 	if ss.serviceCurrentStatusIndex[mh.GetId()].t.Before(currentTime) {
 		ss.serviceCurrentStatusIndex[mh.GetId()].t = currentTime.Add(30 * time.Second)
@@ -637,12 +659,11 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 	ss.serviceResponseDataStoreCurrentDown[mh.GetId()] = 0
 	ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()] = 0
 
-	// 永远是最新的 30 个数据的状态 [01:00, 02:00, 03:00] -> [04:00, 02:00, 03: 00]
+	// 计算最新的 30 个数据的状态
 	for i := 0; i < len(ss.serviceCurrentStatusData[mh.GetId()]); i++ {
 		if ss.serviceCurrentStatusData[mh.GetId()][i] != nil && ss.serviceCurrentStatusData[mh.GetId()][i].GetId() > 0 {
 			if ss.serviceCurrentStatusData[mh.GetId()][i].Successful {
 				ss.serviceResponseDataStoreCurrentUp[mh.GetId()]++
-				// 修复算术表达式错误：应该是 (当前计数-1) 而不是 (ID-1)
 				if ss.serviceResponseDataStoreCurrentUp[mh.GetId()] > 1 {
 					ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()] = (ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()]*float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()]-1) + ss.serviceCurrentStatusData[mh.GetId()][i].Delay) / float32(ss.serviceResponseDataStoreCurrentUp[mh.GetId()])
 				} else {
@@ -654,42 +675,46 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 		}
 	}
 
-	// 计算在线率，
-	var upPercent uint64 = 0
-	if ss.serviceResponseDataStoreCurrentDown[mh.GetId()]+ss.serviceResponseDataStoreCurrentUp[mh.GetId()] > 0 {
-		upPercent = ss.serviceResponseDataStoreCurrentUp[mh.GetId()] * 100 / (ss.serviceResponseDataStoreCurrentDown[mh.GetId()] + ss.serviceResponseDataStoreCurrentUp[mh.GetId()])
-	}
-	stateCode := GetStatusCode(upPercent)
-
-	// 数据持久化 - 修复保存逻辑，确保数据不丢失
-	// 改为基于时间间隔的保存策略，而不是依赖不可靠的计数器
+	// 收集需要的数据
+	update.avgDelay = ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()]
+	update.upCount = ss.serviceResponseDataStoreCurrentUp[mh.GetId()]
+	update.downCount = ss.serviceResponseDataStoreCurrentDown[mh.GetId()]
+	update.lastSaveTime = ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime
+	
+	// 检查是否需要保存数据
 	now := time.Now()
 	shouldSave := false
-
-	// 检查是否需要保存数据
-	if ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime.IsZero() {
-		// 首次保存
+	if update.lastSaveTime.IsZero() {
 		shouldSave = true
-	} else if now.Sub(ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime) >= 15*time.Minute {
-		// 超过15分钟未保存
+	} else if now.Sub(update.lastSaveTime) >= 15*time.Minute {
 		shouldSave = true
 	} else if ss.serviceCurrentStatusIndex[mh.GetId()].index%_CurrentStatusSize == 0 &&
 		ss.serviceCurrentStatusIndex[mh.GetId()].index > 0 {
-		// 当计数器完成一个周期时也保存
 		shouldSave = true
 	}
-
-	if shouldSave {
+	update.shouldSave = shouldSave
+	
+	// 计算在线率
+	var upPercent uint64 = 0
+	if update.downCount+update.upCount > 0 {
+		upPercent = update.upCount * 100 / (update.downCount + update.upCount)
+	}
+	update.stateCode = uint(GetStatusCode(upPercent))
+	
+	ss.serviceResponseDataStoreLock.Unlock()
+	
+	// 第二阶段：异步保存数据（不持锁）
+	if update.shouldSave {
 		// 确保有数据才保存
-		totalChecks := ss.serviceResponseDataStoreCurrentUp[mh.GetId()] + ss.serviceResponseDataStoreCurrentDown[mh.GetId()]
+		totalChecks := update.upCount + update.downCount
 		if totalChecks > 0 {
 			// 使用异步数据库插入队列来保存监控数据，避免并发冲突
 			monitorData := map[string]interface{}{
 				"monitor_id": mh.GetId(),
-				"avg_delay":  ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()],
+				"avg_delay":  update.avgDelay,
 				"data":       mh.Data,
-				"up":         ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
-				"down":       ss.serviceResponseDataStoreCurrentDown[mh.GetId()],
+				"up":         update.upCount,
+				"down":       update.downCount,
 			}
 
 			// 根据数据库类型选择不同的保存方式
@@ -698,34 +723,43 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 				history := &model.MonitorHistory{
 					MonitorID: mh.GetId(),
 					ServerID:  0, // 服务监控不关联特定服务器
-					AvgDelay:  ss.serviceResponseDataStoreCurrentAvgDelay[mh.GetId()],
+					AvgDelay:  update.avgDelay,
 					Data:      mh.Data,
-					Up:        ss.serviceResponseDataStoreCurrentUp[mh.GetId()],
-					Down:      ss.serviceResponseDataStoreCurrentDown[mh.GetId()],
+					Up:        update.upCount,
+					Down:      update.downCount,
 					CreatedAt: now,
 					UpdatedAt: now,
 				}
 
 				// 异步保存到BadgerDB
-				go func(h *model.MonitorHistory) {
+				go func(h *model.MonitorHistory, monitorID uint64) {
 					if db.DB != nil {
 						monitorOps := db.NewMonitorHistoryOps(db.DB)
 						err := monitorOps.SaveMonitorHistory(h)
 						if err != nil {
 							log.Printf("NG>> BadgerDB服务监控数据保存失败 (MonitorID: %d): %v", h.MonitorID, err)
 						} else {
-							ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime = now
+							// 更新lastSaveTime
+							ss.serviceResponseDataStoreLock.Lock()
+							if ss.serviceCurrentStatusIndex[monitorID] != nil {
+								ss.serviceCurrentStatusIndex[monitorID].lastSaveTime = now
+							}
+							ss.serviceResponseDataStoreLock.Unlock()
 						}
 					}
-				}(history)
+				}(history, mh.GetId())
 			} else {
 				// SQLite模式：使用原有的异步队列
 				AsyncMonitorHistoryInsert(monitorData, func(err error) {
 					if err != nil {
 						log.Printf("NG>> 服务监控数据持久化失败 (MonitorID: %d): %v", mh.GetId(), err)
 					} else {
-						ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime = now
-						// 移除冗余的监控数据保存日志
+						// 更新lastSaveTime
+						ss.serviceResponseDataStoreLock.Lock()
+						if ss.serviceCurrentStatusIndex[mh.GetId()] != nil {
+							ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime = now
+						}
+						ss.serviceResponseDataStoreLock.Unlock()
 					}
 				})
 			}
@@ -763,24 +797,24 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 	}
 
 	// 状态变更报警+触发任务执行
-	if stateCode == StatusDown || stateCode != ss.lastStatus[mh.GetId()] {
+	if update.stateCode == StatusDown || update.stateCode != uint(ss.lastStatus[mh.GetId()]) {
 		ss.monitorsLock.Lock()
 		lastStatus := ss.lastStatus[mh.GetId()]
 		// 存储新的状态值
-		ss.lastStatus[mh.GetId()] = stateCode
+		ss.lastStatus[mh.GetId()] = int(update.stateCode)
 
 		// 判断是否需要发送通知
-		isNeedSendNotification := ss.monitors[mh.GetId()].Notify && (lastStatus != 0 || stateCode == StatusDown)
+		isNeedSendNotification := ss.monitors[mh.GetId()].Notify && (lastStatus != 0 || update.stateCode == StatusDown)
 		if isNeedSendNotification {
 			ServerLock.RLock()
 
 			reporterServer := ServerList[r.Reporter]
 			notificationTag := ss.monitors[mh.GetId()].NotificationTag
-			notificationMsg := fmt.Sprintf("[%s] %s Reporter: %s, Error: %s", StatusCodeToString(stateCode), ss.monitors[mh.GetId()].Name, reporterServer.Name, mh.Data)
+			notificationMsg := fmt.Sprintf("[%s] %s Reporter: %s, Error: %s", StatusCodeToString(int(update.stateCode)), ss.monitors[mh.GetId()].Name, reporterServer.Name, mh.Data)
 			muteLabel := NotificationMuteLabel.ServiceStateChanged(mh.GetId())
 
 			// 状态变更时，清除静音缓存
-			if stateCode != lastStatus {
+			if int(update.stateCode) != lastStatus {
 				UnMuteNotification(notificationTag, muteLabel)
 			}
 
@@ -796,10 +830,10 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 			reporterServer := ServerList[r.Reporter]
 			ServerLock.RUnlock()
 
-			if stateCode == StatusGood && lastStatus != stateCode {
+			if update.stateCode == StatusGood && lastStatus != int(update.stateCode) {
 				// 当前状态正常 前序状态非正常时 触发恢复任务
 				SafeSendTriggerTasks(ss.monitors[mh.GetId()].RecoverTriggerTasks, reporterServer.ID)
-			} else if lastStatus == StatusGood && lastStatus != stateCode {
+			} else if lastStatus == StatusGood && lastStatus != int(update.stateCode) {
 				// 前序状态正常 当前状态非正常时 触发失败任务
 				SafeSendTriggerTasks(ss.monitors[mh.GetId()].FailTriggerTasks, reporterServer.ID)
 			}
@@ -807,7 +841,6 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 
 		ss.monitorsLock.Unlock()
 	}
-	ss.serviceResponseDataStoreLock.Unlock()
 
 	// SSL 证书报警
 	var errMsg string
