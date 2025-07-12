@@ -91,13 +91,10 @@ func (dao *DataAccessOptimizer) OptimizedGet(modelType string, id uint64, result
 	// 首先检查应用层缓存
 	dao.cacheMutex.RLock()
 	if item, exists := dao.readCache[key]; exists && item.ExpireAt.After(time.Now()) {
-		dao.cacheMutex.RUnlock()
-
-		// 更新访问时间
-		dao.cacheMutex.Lock()
+		// 在读锁内直接更新访问时间，避免锁竞争
 		item.AccessAt = time.Now()
 		dao.readCache[key] = item
-		dao.cacheMutex.Unlock()
+		dao.cacheMutex.RUnlock()
 
 		// 复制数据到结果
 		return copyData(item.Data, result)

@@ -961,107 +961,190 @@ func CheckServerOnlineStatus() {
 
 	// 数据收集阶段（持锁）
 	type serverUpdate struct {
-		ID                      uint64
-		Name                    string
-		LastActive              time.Time
-		LastStateJSON           string
-		LastOnline              time.Time
-		CumulativeNetInTransfer uint64
+		ID                       uint64
+		Name                     string
+		LastActive               time.Time
+		LastStateJSON            string
+		LastOnline               time.Time
+		CumulativeNetInTransfer  uint64
 		CumulativeNetOutTransfer uint64
-		NeedResetTransfer       bool
-		TaskClose               chan error
-		Host                    *model.Host
-		HostJSON                string
+		NeedResetTransfer        bool
+		TaskClose                chan error
+		Host                     *model.Host
+		HostJSON                 string
 	}
-	
+
 	var updates []serverUpdate
 	var shouldResetTransferStats bool
-	
-	// 第一阶段：快速收集数据（持锁时间最短）
-	ServerLock.Lock()
+
+	// 优化：使用读锁进行初步数据收集，减少写锁持有时间
+	var serverSnapshots []*model.Server
+
+	// 第一阶段：使用读锁收集服务器快照
+	ServerLock.RLock()
 	shouldResetTransferStats = checkShouldResetTransferStats()
-	
+
+	// 创建服务器快照，避免在写锁期间进行复杂操作
+	serverSnapshots = make([]*model.Server, 0, len(ServerList))
 	for _, server := range ServerList {
-		update := serverUpdate{
-			ID:         server.ID,
-			Name:       server.Name,
-			LastActive: server.LastActive,
-		}
-		
-		// 检查是否需要标记为离线
-		if server.IsOnline && now.Sub(server.LastActive) > offlineTimeout {
-			server.IsOnline = false
-			
-			// 处理任务关闭
-			server.TaskCloseLock.Lock()
-			if server.TaskClose != nil {
-				update.TaskClose = server.TaskClose
-				server.TaskClose = nil
+		if server != nil && server.IsOnline && now.Sub(server.LastActive) > offlineTimeout {
+			// 创建轻量级快照，只包含必要信息
+			snapshot := &model.Server{
+				Common:     server.Common,
+				Name:       server.Name,
+				IsOnline:   server.IsOnline,
+				LastActive: server.LastActive,
 			}
-			server.TaskStream = nil
-			server.TaskCloseLock.Unlock()
-			
-			// 保存离线前状态
-			if server.LastStateBeforeOffline == nil && server.State != nil {
-				lastState := model.HostState{}
-				// 手动深拷贝 HostState 字段，避免使用 copier 包
-				lastState.CPU = server.State.CPU
-				lastState.MemUsed = server.State.MemUsed
-				lastState.SwapUsed = server.State.SwapUsed
-				lastState.DiskUsed = server.State.DiskUsed
-				lastState.NetInTransfer = server.State.NetInTransfer
-				lastState.NetOutTransfer = server.State.NetOutTransfer
-				lastState.NetInSpeed = server.State.NetInSpeed
-				lastState.NetOutSpeed = server.State.NetOutSpeed
-				lastState.Uptime = server.State.Uptime
-				lastState.Load1 = server.State.Load1
-				lastState.Load5 = server.State.Load5
-				lastState.Load15 = server.State.Load15
-				lastState.TcpConnCount = server.State.TcpConnCount
-				lastState.UdpConnCount = server.State.UdpConnCount
-				lastState.ProcessCount = server.State.ProcessCount
-				lastState.Temperatures = make([]model.SensorTemperature, len(server.State.Temperatures))
-				copy(lastState.Temperatures, server.State.Temperatures)
-				lastState.GPU = server.State.GPU
-				server.LastStateBeforeOffline = &lastState
-				
-				// 序列化状态
-				if lastStateJSON, err := utils.Json.Marshal(lastState); err == nil {
-					update.LastStateJSON = string(lastStateJSON)
-					update.LastOnline = server.LastActive
-					server.LastStateJSON = update.LastStateJSON
-					server.LastOnline = update.LastOnline
-				}
-			}
-			
-			// 保存累计流量
+			// 安全地复制指针字段
 			if server.State != nil {
-				update.CumulativeNetInTransfer = server.State.NetInTransfer
-				update.CumulativeNetOutTransfer = server.State.NetOutTransfer
+				snapshot.State = server.State
 			}
-			
-			// 保存Host信息
-			if server.Host != nil && (len(server.Host.CPU) > 0 || server.Host.MemTotal > 0) {
-				if hostJSON, err := utils.Json.Marshal(server.Host); err == nil && len(hostJSON) > 0 {
-					update.HostJSON = string(hostJSON)
-				}
-				update.Host = server.Host
+			if server.Host != nil {
+				snapshot.Host = server.Host
 			}
-			
-			updates = append(updates, update)
-		}
-		
-		// 处理流量重置
-		if shouldResetTransferStats {
-			server.CumulativeNetInTransfer = 0
-			server.CumulativeNetOutTransfer = 0
-			update.NeedResetTransfer = true
-			update.ID = server.ID
-			updates = append(updates, update)
+			if server.LastStateBeforeOffline != nil {
+				snapshot.LastStateBeforeOffline = server.LastStateBeforeOffline
+			}
+			serverSnapshots = append(serverSnapshots, snapshot)
 		}
 	}
-	ServerLock.Unlock()
-	
+	ServerLock.RUnlock()
+
+	// 第二阶段：批量处理需要离线的服务器（最小化写锁时间）
+	if len(serverSnapshots) > 0 {
+		// 为每个需要离线的服务器准备更新数据
+		for _, snapshot := range serverSnapshots {
+			update := serverUpdate{
+				ID:         snapshot.ID,
+				Name:       snapshot.Name,
+				LastActive: snapshot.LastActive,
+			}
+
+			// 在锁外准备复杂的序列化操作
+			if snapshot.LastStateBeforeOffline == nil && snapshot.State != nil {
+				lastState := model.HostState{}
+				// 手动深拷贝 HostState 字段，避免使用 copier 包
+				lastState.CPU = snapshot.State.CPU
+				lastState.MemUsed = snapshot.State.MemUsed
+				lastState.SwapUsed = snapshot.State.SwapUsed
+				lastState.DiskUsed = snapshot.State.DiskUsed
+				lastState.NetInTransfer = snapshot.State.NetInTransfer
+				lastState.NetOutTransfer = snapshot.State.NetOutTransfer
+				lastState.NetInSpeed = snapshot.State.NetInSpeed
+				lastState.NetOutSpeed = snapshot.State.NetOutSpeed
+				lastState.Uptime = snapshot.State.Uptime
+				lastState.Load1 = snapshot.State.Load1
+				lastState.Load5 = snapshot.State.Load5
+				lastState.Load15 = snapshot.State.Load15
+				lastState.TcpConnCount = snapshot.State.TcpConnCount
+				lastState.UdpConnCount = snapshot.State.UdpConnCount
+				lastState.ProcessCount = snapshot.State.ProcessCount
+				lastState.Temperatures = make([]model.SensorTemperature, len(snapshot.State.Temperatures))
+				copy(lastState.Temperatures, snapshot.State.Temperatures)
+				lastState.GPU = snapshot.State.GPU
+
+				// 序列化状态（在锁外执行）
+				if lastStateJSON, err := utils.Json.Marshal(lastState); err == nil {
+					update.LastStateJSON = string(lastStateJSON)
+					update.LastOnline = snapshot.LastActive
+				}
+			}
+
+			// 保存累计流量
+			if snapshot.State != nil {
+				update.CumulativeNetInTransfer = snapshot.State.NetInTransfer
+				update.CumulativeNetOutTransfer = snapshot.State.NetOutTransfer
+			}
+
+			// 保存Host信息
+			if snapshot.Host != nil && (len(snapshot.Host.CPU) > 0 || snapshot.Host.MemTotal > 0) {
+				if hostJSON, err := utils.Json.Marshal(snapshot.Host); err == nil && len(hostJSON) > 0 {
+					update.HostJSON = string(hostJSON)
+				}
+				update.Host = snapshot.Host
+			}
+
+			updates = append(updates, update)
+		}
+
+		// 第三阶段：快速写锁批量更新内存状态
+		ServerLock.Lock()
+		for i, snapshot := range serverSnapshots {
+			if server := ServerList[snapshot.ID]; server != nil && server.IsOnline {
+				// 快速更新关键状态
+				server.IsOnline = false
+
+				// 快速处理任务关闭（如果需要）
+				if server.TaskCloseLock != nil {
+					// 使用非阻塞方式获取TaskCloseLock，设置更短的超时
+					done := make(chan bool, 1)
+					go func() {
+						defer func() {
+							// 确保channel总是会被写入，避免goroutine泄漏
+							select {
+							case done <- true:
+							default:
+							}
+						}()
+
+						server.TaskCloseLock.Lock()
+						if server.TaskClose != nil {
+							// 将TaskClose保存到对应的update记录
+							if i < len(updates) {
+								updates[i].TaskClose = server.TaskClose
+							}
+							server.TaskClose = nil
+						}
+						server.TaskStream = nil
+						server.TaskCloseLock.Unlock()
+					}()
+
+					// 如果无法快速获取锁，跳过任务清理（避免阻塞）
+					select {
+					case <-done:
+					case <-time.After(10 * time.Millisecond):
+						// 超时跳过，避免长时间持有ServerLock
+					}
+				}
+
+				// 更新LastStateBeforeOffline（如果还没有）
+				if server.LastStateBeforeOffline == nil && i < len(updates) && updates[i].LastStateJSON != "" {
+					server.LastStateJSON = updates[i].LastStateJSON
+					server.LastOnline = updates[i].LastOnline
+				}
+			}
+		}
+
+		// 处理流量重置
+		if shouldResetTransferStats {
+			for _, server := range ServerList {
+				if server != nil {
+					server.CumulativeNetInTransfer = 0
+					server.CumulativeNetOutTransfer = 0
+					updates = append(updates, serverUpdate{
+						ID:                server.ID,
+						NeedResetTransfer: true,
+					})
+				}
+			}
+		}
+		ServerLock.Unlock()
+	} else if shouldResetTransferStats {
+		// 即使没有服务器需要离线，也要处理流量重置
+		ServerLock.Lock()
+		for _, server := range ServerList {
+			if server != nil {
+				server.CumulativeNetInTransfer = 0
+				server.CumulativeNetOutTransfer = 0
+				updates = append(updates, serverUpdate{
+					ID:                server.ID,
+					NeedResetTransfer: true,
+				})
+			}
+		}
+		ServerLock.Unlock()
+	}
+
 	// 第二阶段：异步执行数据库操作（不持锁）
 	if len(updates) > 0 {
 		go func() {
@@ -1073,25 +1156,25 @@ func CheckServerOnlineStatus() {
 					default:
 					}
 				}
-				
+
 				// 准备数据库更新
 				dbUpdates := make(map[string]interface{})
-				
+
 				if update.LastStateJSON != "" {
 					dbUpdates["last_state_json"] = update.LastStateJSON
 					dbUpdates["last_online"] = update.LastOnline
 				}
-				
+
 				if update.CumulativeNetInTransfer > 0 || update.CumulativeNetOutTransfer > 0 {
 					dbUpdates["cumulative_net_in_transfer"] = update.CumulativeNetInTransfer
 					dbUpdates["cumulative_net_out_transfer"] = update.CumulativeNetOutTransfer
 				}
-				
+
 				if update.NeedResetTransfer {
 					dbUpdates["cumulative_net_in_transfer"] = 0
 					dbUpdates["cumulative_net_out_transfer"] = 0
 				}
-				
+
 				// 异步更新数据库
 				if len(dbUpdates) > 0 {
 					AsyncSafeUpdateServerStatus(update.ID, dbUpdates, func(err error) {
@@ -1100,7 +1183,7 @@ func CheckServerOnlineStatus() {
 						}
 					})
 				}
-				
+
 				// 保存Host信息（如果是SQLite且有更新）
 				if update.HostJSON != "" && Conf.DatabaseType != "badger" && DB != nil {
 					go func(id uint64, hostData string) {

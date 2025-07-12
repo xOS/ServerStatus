@@ -183,7 +183,7 @@ func AlertSentinelStart() {
 		// 优化检查间隔：根据报警规则数量动态调整
 		var checkInterval time.Duration
 		AlertsLock.RLock()
-		alertCount := len(alertsStore)
+		alertCount := len(Alerts) // 使用Alerts而不是alertsStore，更准确
 		AlertsLock.RUnlock()
 
 		if alertCount == 0 {
@@ -260,11 +260,10 @@ func checkStatus() {
 	alertsCopy = make([]*model.AlertRule, 0, len(Alerts))
 	for _, alert := range Alerts {
 		if alert != nil && alert.Enabled() {
-			if alert.Rules != nil && len(alert.Rules) > 0 {
-				// 深拷贝alert避免并发修改
-				alertCopy := &model.AlertRule{}
-				*alertCopy = *alert
-				alertsCopy = append(alertsCopy, alertCopy)
+			if len(alert.Rules) > 0 {
+				// 浅拷贝alert，避免深拷贝带来的性能开销
+				// 由于我们只读取数据，浅拷贝是安全的
+				alertsCopy = append(alertsCopy, alert)
 			} else {
 				// 处理已启用但无规则的报警
 				emptyRulesWarningMutex.Lock()
@@ -527,9 +526,12 @@ func checkStatus() {
 // UpdateTrafficStats 更新服务器流量统计到AlertsCycleTransferStatsStore
 // 这个函数直接更新流量数据，确保前端显示正确
 func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
-	// 修复死锁问题：先获取ServerLock，再获取AlertsLock，确保锁顺序一致
-	ServerLock.RLock()
+	// 优化：先批量收集需要的数据，避免嵌套锁
 	var serverName string
+	var alertsToUpdate []*model.AlertRule
+
+	// 第一步：快速获取服务器信息
+	ServerLock.RLock()
 	if server := ServerList[serverID]; server != nil {
 		serverName = server.Name
 		// 确保服务器状态中的流量数据是最新的，不依赖报警规则
@@ -540,16 +542,14 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 	}
 	ServerLock.RUnlock()
 
-	// 紧急修复：需要写锁，因为要修改AlertsCycleTransferStatsStore中的map
-	AlertsLock.Lock()
-	defer AlertsLock.Unlock()
-
-	// 即使没有报警规则，也要确保前端显示正确，但可以跳过报警相关的更新
+	// 第二步：收集需要更新的报警规则和统计数据
+	AlertsLock.RLock()
 	if len(Alerts) == 0 || AlertsCycleTransferStatsStore == nil {
+		AlertsLock.RUnlock()
 		return
 	}
 
-	// 遍历所有报警规则，只更新包含此服务器的规则
+	// 遍历所有报警规则，收集需要更新的数据
 	for _, alert := range Alerts {
 		if !alert.Enabled() {
 			continue
@@ -562,6 +562,7 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 		}
 
 		// 检查是否包含流量监控规则
+		hasTrafficRule := false
 		for j := 0; j < len(alert.Rules); j++ {
 			if alert.Rules[j].IsTransferDurationRule() {
 				// 检查此规则是否监控该服务器
@@ -576,36 +577,48 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 						continue
 					}
 				}
+				hasTrafficRule = true
+				break
+			}
+		}
 
+		if hasTrafficRule {
+			alertsToUpdate = append(alertsToUpdate, alert)
+		}
+	}
+	AlertsLock.RUnlock()
+
+	// 第三步：无锁更新流量数据并检查阈值
+	for _, alert := range alertsToUpdate {
+		// 找到对应的流量规则
+		for j := 0; j < len(alert.Rules); j++ {
+			if alert.Rules[j].IsTransferDurationRule() {
 				// 服务器在规则监控范围内，根据规则类型更新相应的流量数据
 				var transferValue uint64
 				switch alert.Rules[j].Type {
 				case "transfer_in_cycle":
-					// 只计算入站流量
 					transferValue = inTransfer
 				case "transfer_out_cycle":
-					// 只计算出站流量
 					transferValue = outTransfer
 				case "transfer_all_cycle":
-					// 计算总流量
 					transferValue = inTransfer + outTransfer
 				default:
-					// 默认使用总流量（向后兼容）
 					transferValue = inTransfer + outTransfer
 				}
 
-				// 不论大小如何，总是更新最新值
-				stats.Transfer[serverID] = transferValue
-
-				// 更新服务器名称
-				if serverName != "" {
-					stats.ServerName[serverID] = serverName
+				// 第四步：持写锁更新统计数据
+				AlertsLock.Lock()
+				// 再次检查stats是否仍然有效
+				if currentStats := AlertsCycleTransferStatsStore[alert.ID]; currentStats != nil {
+					currentStats.Transfer[serverID] = transferValue
+					if serverName != "" {
+						currentStats.ServerName[serverID] = serverName
+					}
+					currentStats.NextUpdate[serverID] = time.Now()
 				}
+				AlertsLock.Unlock()
 
-				// 更新最后更新时间
-				stats.NextUpdate[serverID] = time.Now()
-
-				// 检查多级流量阈值并发送通知 - 修复：需要重新获取ServerLock
+				// 第五步：检查阈值（无锁操作）
 				ServerLock.RLock()
 				if server := ServerList[serverID]; server != nil {
 					// 创建服务器副本，避免在锁外使用
@@ -870,8 +883,8 @@ func cleanupAlertMemoryData() {
 	}
 	ServerLock.RUnlock()
 
-	// 分段处理，减少锁持有时间
-	const batchSize = 10 // 每批处理10个alert
+	// 优化：使用更大的批处理大小，减少锁获取次数
+	const batchSize = 50 // 增加批处理大小从10到50
 
 	// 获取当前内存使用情况
 	var memBefore runtime.MemStats
@@ -880,15 +893,16 @@ func cleanupAlertMemoryData() {
 	cleanedAlerts := 0
 	cleanedServers := 0
 
-	// 分批处理alert清理，避免长时间持有锁
-	AlertsLock.Lock()
-	alertIDs := make([]uint64, 0, len(alertsStore))
+	// 第一步：快速获取需要处理的alert列表
+	var alertIDs []uint64
+	AlertsLock.RLock()
+	alertIDs = make([]uint64, 0, len(alertsStore))
 	for alertID := range alertsStore {
 		alertIDs = append(alertIDs, alertID)
 	}
-	AlertsLock.Unlock()
+	AlertsLock.RUnlock()
 
-	// 分批处理
+	// 第二步：分批处理
 	for i := 0; i < len(alertIDs); i += batchSize {
 		end := i + batchSize
 		if end > len(alertIDs) {
@@ -904,7 +918,7 @@ func cleanupAlertMemoryData() {
 		runtime.Gosched()
 	}
 
-	// 最后清理AlertsCycleTransferStatsStore
+	// 第三步：清理AlertsCycleTransferStatsStore（单独处理，避免与其他清理混合）
 	AlertsLock.Lock()
 	for alertID, stats := range AlertsCycleTransferStatsStore {
 		if stats == nil {

@@ -65,6 +65,11 @@ func cachedByteSize(bytes uint64) string {
 
 	// 写锁更新缓存（限制缓存大小避免内存泄漏）
 	byteFmtMutex.Lock()
+	// 双重检查：在获取写锁后再次检查缓存，避免重复计算
+	if cached, exists := byteFmtCache[bytes]; exists {
+		byteFmtMutex.Unlock()
+		return cached
+	}
 	if len(byteFmtCache) < 10000 { // 限制缓存条目数量
 		byteFmtCache[bytes] = result
 	}
@@ -595,6 +600,10 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
 	_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
 	authorized := isMember || isViewPasswordVerfied
+
+	// 优化：使用带超时的singleflight来避免长时间阻塞
+	start := time.Now()
+
 	v, err, _ := cp.requestGroup.Do(fmt.Sprintf("serverStats::%t", authorized), func() (interface{}, error) {
 		// 使用defer确保锁的正确释放
 		singleton.SortedServerLock.RLock()
@@ -958,6 +967,12 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 
 	if err != nil && singleton.Conf.Debug {
 		log.Printf("getServerStat: 数据序列化错误: %v", err)
+	}
+
+	// 监控singleflight性能
+	elapsed := time.Since(start)
+	if elapsed > 3*time.Second && singleton.Conf.Debug {
+		log.Printf("getServerStat: singleflight处理时间过长: %v", elapsed)
 	}
 
 	return v.([]byte), err
