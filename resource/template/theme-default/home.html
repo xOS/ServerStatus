@@ -98,7 +98,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div v-for="server in filteredServers" :key="server.ID" :id="server.ID" class="ui card">
                     <div class="content" v-if="server.Host" style="padding-bottom: 5px">
                         <div class="header">
-                            <i :class="'flag-icon flag-icon-'+server.Host.CountryCode"></i>
+                            <i :class="'fi fi-'+server.Host.CountryCode"></i>
                             <i v-if='isWindowsPlatform(server.Host.Platform)' class="windows icon"></i>
                             <i v-else-if='getFontLogoClass(server.Host.Platform) == "" && server.State.Uptime > 0' class="fl-tux"></i>
                             <i v-else :class="'fl-' + getFontLogoClass(server.Host.Platform)"></i>

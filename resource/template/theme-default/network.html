@@ -14,7 +14,7 @@
                         :key="server.ID"
                         style="margin-top: 3px;font-size: 100%;"
                         @click="redirectNetwork(server.ID)">
-                         <i :class="'flag-icon flag-icon-'+server.Host.CountryCode"></i>&nbsp;<i
+                         <i :class="'fi fi-'+server.Host.CountryCode"></i>&nbsp;<i
                     v-if='server.Host.Platform == "darwin"' class="apple icon"></i><i
                     v-else-if='isWindowsPlatform(server.Host.Platform)' class="windows icon"></i><i
                     v-else :class="'fl-' + getFontLogoClass(server.Host.Platform)"></i>
@@ -24,7 +24,7 @@
         </div>
     </div>
     <div class="ui container">
-        <div ref="chartDom" style="margin-top: 10px;height: auto;overflow: hidden;border-radius: 5px;"></div>
+        <div ref="chartDom" style="margin-top: 10px;height: auto;overflow: hidden;border-radius: 10px;"></div>
     </div>
 </div>
 
@@ -105,16 +105,40 @@
                         return [pt[0], '10%'];
                     },
                     formatter: function(params){
+                        if (!params || params.length === 0) {
+                            return '';
+                        }
+                        
                         let result = params[0].axisValueLabel + "<br />";
-                        params.forEach(function(item){
-                            result += item.marker + item.seriesName + ": " + item.value[1].toFixed(2) + " ms<br />";
-                         })
+                        
+                        // 优化：显示所有监控点在该时间的数据
+                        // 按监控点名称排序，确保显示顺序一致
+                        const sortedParams = params.sort((a, b) => {
+                            return a.seriesName.localeCompare(b.seriesName);
+                        });
+                        
+                        sortedParams.forEach(function(item){
+                            if (item.value && item.value[1] !== undefined) {
+                                const delay = parseFloat(item.value[1]);
+                                const displayDelay = isNaN(delay) ? '超时' : delay.toFixed(2) + ' ms';
+                                result += item.marker + item.seriesName + ": " + displayDelay + "<br />";
+                            }
+                        });
+                        
                         return result;
                     },
                     confine: true,
                     transitionDuration: 0,
                     z: 10,
-                    zlevel: 1
+                    zlevel: 1,
+                    // 优化：确保显示所有数据系列
+                    showContent: true,
+                    axisPointer: {
+                        type: 'cross',
+                        crossStyle: {
+                            color: '#999'
+                        }
+                    }
                 },
                 title: {
                     left: 'center',
