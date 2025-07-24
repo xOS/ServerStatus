@@ -941,6 +941,22 @@ func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 			cr.ServersRaw = "[]"
 			err = nil
 		}
+
+		// 验证和修复cron表达式
+		if cr.TaskType == model.CronTypeCronTask && cr.Scheduler != "" {
+			// 检查是否包含不支持的 ? 符号
+			if strings.Contains(cr.Scheduler, "?") {
+				log.Printf("检测到不支持的cron表达式格式: %s，尝试修复", cr.Scheduler)
+				// 将 ? 替换为 *
+				cr.Scheduler = strings.ReplaceAll(cr.Scheduler, "?", "*")
+				log.Printf("修复后的cron表达式: %s", cr.Scheduler)
+			}
+			
+			// 验证表达式是否有效
+			if _, testErr := singleton.Cron.AddFunc(cr.Scheduler, func() {}); testErr != nil {
+				err = fmt.Errorf("无效的cron表达式 '%s': %v", cr.Scheduler, testErr)
+			}
+		}
 	}
 
 	// 计划任务类型不得使用触发服务器执行方式
@@ -1498,7 +1514,7 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 		cleanedRulesRaw = fixIgnoreFieldFormat(cleanedRulesRaw)
 		err = utils.Json.Unmarshal([]byte(cleanedRulesRaw), &r.Rules)
 		if err != nil {
-			log.Printf("报警规则JSON解析失败: %v", err)
+			log.Printf("通知规则JSON解析失败: %v", err)
 		}
 	}
 	if err == nil {
@@ -1553,11 +1569,11 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 		if r.ID == 0 {
 			// BadgerDB 模式下使用 BadgerDB 操作
 			if singleton.Conf.DatabaseType == "badger" {
-				// 为新报警规则生成ID
+				// 为新通知规则生成ID
 				if r.ID == 0 {
 					nextID, err := db.GenerateNextID("alert_rule")
 					if err != nil {
-						log.Printf("生成告警规则ID失败: %v", err)
+						log.Printf("生成通知规则ID失败: %v", err)
 						r.ID = 1 // 使用默认ID
 					} else {
 						r.ID = nextID
@@ -1618,7 +1634,7 @@ func (ma *memberAPI) getAlertRule(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusOK, model.Response{
 			Code:    http.StatusNotFound,
-			Message: fmt.Sprintf("告警规则不存在：%s", err),
+			Message: fmt.Sprintf("通知规则不存在：%s", err),
 		})
 		return
 	}

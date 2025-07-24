@@ -6,7 +6,6 @@ import (
 	"log"
 	"runtime"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -48,7 +47,7 @@ func NewServiceSentinel(serviceSentinelDispatchBus chan<- model.Monitor) {
 		serviceResponseDataStoreCurrentAvgDelay: make(map[uint64]float32),
 		serviceResponsePing:                     make(map[uint64]map[uint64]*pingStore),
 		monitors:                                make(map[uint64]*model.Monitor),
-		sslCertCache:                            make(map[uint64]string),
+
 		// 30天数据缓存
 		monthlyStatus: make(map[uint64]*model.ServiceItemResponse),
 		dispatchBus:   serviceSentinelDispatchBus,
@@ -67,7 +66,7 @@ func NewServiceSentinel(serviceSentinelDispatchBus chan<- model.Monitor) {
 }
 
 /*
-使用缓存 channel，处理上报的 Service 请求结果，然后判断是否需要报警
+使用缓存 channel，处理上报的 Service 请求结果，然后判断是否需要事件通知
 需要记录上一次的状态信息
 
 加锁顺序：serviceResponseDataStoreLock > monthlyStatusLock > monitorsLock
@@ -89,7 +88,6 @@ type ServiceSentinel struct {
 	serviceResponseDataStoreCurrentAvgDelay map[uint64]float32               // [monitor_id] -> 当前服务离线计数
 	serviceResponsePing                     map[uint64]map[uint64]*pingStore // [monitor_id] -> ClientID -> delay
 	lastStatus                              map[uint64]int
-	sslCertCache                            map[uint64]string
 
 	monitorsLock sync.RWMutex
 	monitors     map[uint64]*model.Monitor // [monitor_id] -> model.Monitor
@@ -397,7 +395,7 @@ func (ss *ServiceSentinel) OnMonitorDelete(id uint64) {
 	delete(ss.serviceResponseDataStoreCurrentUp, id)
 	delete(ss.serviceResponseDataStoreCurrentDown, id)
 	delete(ss.serviceResponseDataStoreCurrentAvgDelay, id)
-	delete(ss.sslCertCache, id)
+
 	delete(ss.serviceStatusToday, id)
 
 	// 停掉定时任务
@@ -766,7 +764,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 		}
 	}
 
-	// 延迟报警
+	// 延迟事件通知
 	if mh.Delay > 0 {
 		ss.monitorsLock.RLock()
 		if ss.monitors[mh.GetId()].LatencyNotify {
@@ -796,7 +794,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 		ss.monitorsLock.RUnlock()
 	}
 
-	// 状态变更报警+触发任务执行
+	// 状态变更事件通知+触发任务执行
 	if update.stateCode == StatusDown || update.stateCode != uint(ss.lastStatus[mh.GetId()]) {
 		ss.monitorsLock.Lock()
 		lastStatus := ss.lastStatus[mh.GetId()]
@@ -842,79 +840,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 		ss.monitorsLock.Unlock()
 	}
 
-	// SSL 证书报警
-	var errMsg string
-	if strings.HasPrefix(mh.Data, "SSL证书错误：") {
-		// i/o timeout、connection timeout、EOF 错误
-		if !strings.HasSuffix(mh.Data, "timeout") &&
-			!strings.HasSuffix(mh.Data, "EOF") &&
-			!strings.HasSuffix(mh.Data, "timed out") {
-			errMsg = mh.Data
-			ss.monitorsLock.RLock()
-			if ss.monitors[mh.GetId()].Notify {
-				muteLabel := NotificationMuteLabel.ServiceSSL(mh.GetId(), "network")
-				SafeSendNotification(ss.monitors[mh.GetId()].NotificationTag, fmt.Sprintf("[SSL] Fetch cert info failed, %s %s", ss.monitors[mh.GetId()].Name, errMsg), muteLabel)
-			}
-			ss.monitorsLock.RUnlock()
 
-		}
-	} else {
-		// 清除网络错误静音缓存
-		UnMuteNotification(ss.monitors[mh.GetId()].NotificationTag, NotificationMuteLabel.ServiceSSL(mh.GetId(), "network"))
-
-		var newCert = strings.Split(mh.Data, "|")
-		if len(newCert) > 1 {
-			ss.monitorsLock.Lock()
-			enableNotify := ss.monitors[mh.GetId()].Notify
-
-			// 首次获取证书信息时，缓存证书信息
-			if ss.sslCertCache[mh.GetId()] == "" {
-				ss.sslCertCache[mh.GetId()] = mh.Data
-			}
-
-			oldCert := strings.Split(ss.sslCertCache[mh.GetId()], "|")
-			isCertChanged := false
-			expiresOld, _ := time.Parse("2006-01-02 15:04:05 -0700 MST", oldCert[1])
-			expiresNew, _ := time.Parse("2006-01-02 15:04:05 -0700 MST", newCert[1])
-
-			// 证书变更时，更新缓存
-			if oldCert[0] != newCert[0] && !expiresNew.Equal(expiresOld) {
-				isCertChanged = true
-				ss.sslCertCache[mh.GetId()] = mh.Data
-			}
-
-			notificationTag := ss.monitors[mh.GetId()].NotificationTag
-			serviceName := ss.monitors[mh.GetId()].Name
-			ss.monitorsLock.Unlock()
-
-			// 需要发送提醒
-			if enableNotify {
-				// 证书过期提醒
-				if expiresNew.Before(time.Now().AddDate(0, 0, 7)) {
-					expiresTimeStr := expiresNew.Format("2006-01-02 15:04:05")
-					errMsg = fmt.Sprintf(
-						"The SSL certificate will expire within seven days. Expiration time: %s",
-						expiresTimeStr,
-					)
-
-					// 静音规则： 服务id+证书过期时间
-					// 用于避免多个监测点对相同证书同时报警
-					muteLabel := NotificationMuteLabel.ServiceSSL(mh.GetId(), fmt.Sprintf("expire_%s", expiresTimeStr))
-					SafeSendNotification(notificationTag, fmt.Sprintf("[SSL] %s %s", serviceName, errMsg), muteLabel)
-				}
-
-				// 证书变更提醒
-				if isCertChanged {
-					errMsg = fmt.Sprintf(
-						"SSL certificate changed, old: %s, %s expired; new: %s, %s expired.",
-						oldCert[0], expiresOld.Format("2006-01-02 15:04:05"), newCert[0], expiresNew.Format("2006-01-02 15:04:05"))
-
-					// 证书变更后会自动更新缓存，所以不需要静音
-					SafeSendNotification(notificationTag, fmt.Sprintf("[SSL] %s %s", serviceName, errMsg), nil)
-				}
-			}
-		}
-	}
 }
 
 const (
@@ -966,12 +892,7 @@ func (ss *ServiceSentinel) cleanupOldData() {
 	}
 	ss.lastCleanupTime = now
 
-	// 清理SSL证书缓存，只保留最近活跃的监控项
-	for monitorID := range ss.sslCertCache {
-		if _, exists := ss.monitors[monitorID]; !exists {
-			delete(ss.sslCertCache, monitorID)
-		}
-	}
+
 
 	// 清理ping数据，限制每个监控项的ping存储
 	for monitorID, pingMap := range ss.serviceResponsePing {
@@ -1056,7 +977,6 @@ func (ss *ServiceSentinel) limitDataSize() {
 				delete(ss.serviceResponseDataStoreCurrentAvgDelay, monitorID)
 				delete(ss.serviceResponsePing, monitorID)
 				delete(ss.lastStatus, monitorID)
-				delete(ss.sslCertCache, monitorID)
 				count++
 			}
 		}
@@ -1133,9 +1053,6 @@ func (ss *ServiceSentinel) emergencyCleanup() {
 	ss.monthlyStatus = make(map[uint64]*model.ServiceItemResponse)
 	ss.monthlyStatusLock.Unlock()
 
-	// 清空SSL缓存
-	ss.sslCertCache = make(map[uint64]string)
-
 	// 重置计数器
 	ss.serviceResponseDataStoreCurrentUp = make(map[uint64]uint64)
 	ss.serviceResponseDataStoreCurrentDown = make(map[uint64]uint64)
@@ -1159,7 +1076,6 @@ func (ss *ServiceSentinel) getMemoryUsageEstimate() map[string]int {
 		"ping_records":    0,
 		"monthly_records": len(ss.monthlyStatus),
 		"monitors":        len(ss.monitors),
-		"ssl_cache":       len(ss.sslCertCache),
 	}
 
 	for _, pingMap := range ss.serviceResponsePing {

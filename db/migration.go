@@ -1307,10 +1307,10 @@ func (m *Migration) migrateNotifications() error {
 
 // migrateAlertRules migrates alert rules from SQLite to BadgerDB
 func (m *Migration) migrateAlertRules() error {
-	log.Println("开始迁移报警规则数据...")
+	log.Println("开始迁移通知规则数据...")
 	rows, err := m.sqliteDB.Query("SELECT * FROM alert_rules WHERE deleted_at IS NULL")
 	if err != nil {
-		return fmt.Errorf("查询报警规则数据失败: %w", err)
+		return fmt.Errorf("查询通知规则数据失败: %w", err)
 	}
 	defer rows.Close()
 
@@ -1320,7 +1320,7 @@ func (m *Migration) migrateAlertRules() error {
 	for rows.Next() {
 		data, err := scanToMap(rows)
 		if err != nil {
-			log.Printf("扫描报警规则行数据失败: %v，跳过", err)
+			log.Printf("扫描通知规则行数据失败: %v，跳过", err)
 			errorCount++
 			continue
 		}
@@ -1328,7 +1328,7 @@ func (m *Migration) migrateAlertRules() error {
 		// Extract ID for key
 		idVal, ok := data["id"]
 		if !ok {
-			log.Printf("报警规则数据缺少ID字段，跳过: %v", data)
+			log.Printf("通知规则数据缺少ID字段，跳过: %v", data)
 			errorCount++
 			continue
 		}
@@ -1343,19 +1343,19 @@ func (m *Migration) migrateAlertRules() error {
 		case string:
 			parsed, err := strconv.ParseUint(v, 10, 64)
 			if err != nil {
-				log.Printf("解析报警规则ID '%s' 失败: %v，跳过. Data: %v", v, err, data)
+				log.Printf("解析通知规则ID '%s' 失败: %v，跳过. Data: %v", v, err, data)
 				errorCount++
 				continue
 			}
 			id = parsed
 		default:
-			log.Printf("报警规则ID类型无效: %T，跳过. Data: %v", idVal, data)
+			log.Printf("通知规则ID类型无效: %T，跳过. Data: %v", idVal, data)
 			errorCount++
 			continue
 		}
 
 		if id == 0 {
-			log.Printf("报警规则ID为0，跳过. Data: %v", data)
+			log.Printf("通知规则ID为0，跳过. Data: %v", data)
 			errorCount++
 			continue
 		}
@@ -1363,7 +1363,7 @@ func (m *Migration) migrateAlertRules() error {
 		// Convert to JSON
 		jsonData, err := utils.Json.Marshal(data)
 		if err != nil {
-			log.Printf("报警规则ID %d: 序列化数据失败: %v. Data: %v", id, err, data)
+			log.Printf("通知规则ID %d: 序列化数据失败: %v. Data: %v", id, err, data)
 			errorCount++
 			continue
 		}
@@ -1371,7 +1371,7 @@ func (m *Migration) migrateAlertRules() error {
 		// Save to BadgerDB
 		key := fmt.Sprintf("alert_rule:%v", id)
 		if err := m.badgerDB.Set(key, jsonData); err != nil {
-			log.Printf("报警规则ID %d: 保存到BadgerDB失败: %v. Key: '%s'", id, err, key)
+			log.Printf("通知规则ID %d: 保存到BadgerDB失败: %v. Key: '%s'", id, err, key)
 			errorCount++
 			continue
 		}
@@ -1380,10 +1380,10 @@ func (m *Migration) migrateAlertRules() error {
 	}
 
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("迭代报警规则行时出错: %w", err)
+		return fmt.Errorf("迭代通知规则行时出错: %w", err)
 	}
 
-	log.Printf("报警规则迁移完成: 成功 %d 条, 失败 %d 条", count, errorCount)
+	log.Printf("通知规则迁移完成: 成功 %d 条, 失败 %d 条", count, errorCount)
 	return nil
 }
 

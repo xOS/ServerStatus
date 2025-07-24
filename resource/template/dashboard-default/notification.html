@@ -100,20 +100,20 @@
 <script>
     $('.checkbox').checkbox();
 
-    // 为编辑报警规则按钮添加事件监听器
+    // 为编辑事件规则按钮添加事件监听器
     $(document).on('click', '.edit-alert-rule-btn', function() {
         const btn = $(this);
         const ruleId = btn.data('id');
 
         if (!ruleId) {
-            console.error('告警规则ID不存在');
+            console.error('事件规则ID不存在');
             return;
         }
 
         // 显示加载状态
         btn.addClass('loading');
 
-        // 通过AJAX获取告警规则详细数据
+        // 通过AJAX获取事件规则详细数据
         $.ajax({
             url: '/api/alert-rule/' + ruleId,
             type: 'GET',
@@ -122,16 +122,16 @@
         .done(function(response) {
             if (response && response.code === 200 && response.result) {
                 const rule = response.result;
-                console.log('获取到告警规则数据:', rule);
+                console.log('获取到事件规则数据:', rule);
                 addOrEditAlertRule(rule);
             } else {
-                console.error('获取告警规则数据失败:', response);
-                alert('获取告警规则数据失败: ' + (response.message || '未知错误'));
+                console.error('获取事件规则数据失败:', response);
+                alert('获取事件规则数据失败: ' + (response.message || '未知错误'));
             }
         })
         .fail(function(xhr, status, error) {
-            console.error('获取告警规则数据网络错误:', error);
-            alert('获取告警规则数据失败: ' + error);
+            console.error('获取事件规则数据网络错误:', error);
+            alert('获取事件规则数据失败: ' + error);
         })
         .always(function() {
             btn.removeClass('loading');

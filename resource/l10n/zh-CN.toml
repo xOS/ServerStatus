@@ -35,7 +35,7 @@ other = "服务"
 other = "任务"
 
 [Notification]
-other = "告警"
+other = "事件通知"
 
 [Settings]
 other = "设置"
@@ -193,7 +193,7 @@ other = "请求类型"
 other = "验证SSL"
 
 [AddNotificationRule]
-other = "添加报警规则"
+other = "添加事件通知规则"
 
 [Rules]
 other = "规则"
@@ -303,8 +303,7 @@ other = "注册"
 [DontHaveAnAccount]
 other = "没有账号？"
 
-[SSLCertificate]
-other = "HTTP(S)/SSL证书"
+
 
 [TCPPort]
 other = "TCP 端口"
@@ -322,10 +321,10 @@ other = "删除通知方式"
 other = "确认删除此通知方式？"
 
 [DeleteNotificationRule]
-other = "删除报警规则"
+other = "删除事件通知规则"
 
 [ConfirmToDeleteThisNotificationRule]
-other = "确认删除此报警规则？"
+other = "确认删除此事件通知规则？"
 
 [ForceUpdate]
 other = "强制更新"
@@ -616,7 +615,7 @@ other = "添加"
 other = "修改"
 
 [AlarmRule]
-other = "告警规则"
+other = "事件规则"
 
 [NotificationMethod]
 other = "通知方式"
@@ -839,10 +838,10 @@ other = "自定义DDNS使用的公共DNS服务器（逗号分隔）"
 other = "套餐"
 
 [TrafficAlert]
-other = "流量告警"
+other = "流量事件"
 
 [SetupTrafficAlert]
-other = "设置流量告警"
+other = "设置流量事件"
 
 [MonthlyTrafficLimit]
 other = "月流量限制"
@@ -851,28 +850,28 @@ other = "月流量限制"
 other = "通知组"
 
 [AlertThresholds]
-other = "告警阈值"
+other = "事件阈值"
 
 [Alert50Percent]
-other = "50% 流量告警"
+other = "50% 流量事件"
 
 [Alert90Percent]
-other = "90% 流量告警"
+other = "90% 流量事件"
 
 [Alert100Percent]
-other = "100% 流量告警"
+other = "100% 流量事件"
 
 [CreateAlert]
-other = "创建告警"
+other = "创建事件"
 
 [TrafficAlertInfo]
-other = "流量告警说明"
+other = "流量事件说明"
 
 [TrafficAlertInfo1]
 other = "流量统计周期为自然月（每月1号重置）"
 
 [TrafficAlertInfo2]
-other = "可同时启用多个阈值告警"
+other = "可同时启用多个阈值事件"
 
 [TrafficAlertInfo3]
-other = "告警将发送到指定的通知组"
+other = "事件通知将发送到指定的通知组"

@@ -342,7 +342,7 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 
 		return nil
 	case "alert_rule":
-		// 报警规则需要特殊处理布尔字段
+		// 通知规则需要特殊处理布尔字段
 		var ruleData map[string]interface{}
 		if err := utils.Json.Unmarshal(data, &ruleData); err != nil {
 			return err
@@ -719,7 +719,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 
 		return nil
 	case "alert_rule":
-		// 报警规则需要特殊处理布尔字段和JSON字段
+		// 通知规则需要特殊处理布尔字段和JSON字段
 		var rules []*map[string]interface{}
 		for _, item := range items {
 			var data map[string]interface{}
@@ -750,14 +750,14 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 					if rule.RulesRaw != "" {
 						// 解析 RulesRaw 到 Rules 字段
 						if err := utils.Json.Unmarshal([]byte(rule.RulesRaw), &rule.Rules); err != nil {
-							log.Printf("解析报警规则 %d 的 RulesRaw 失败: %v, RulesRaw内容: %s", rule.ID, err, rule.RulesRaw)
+							log.Printf("解析通知规则 %d 的 RulesRaw 失败: %v, RulesRaw内容: %s", rule.ID, err, rule.RulesRaw)
 							rule.Rules = []model.Rule{} // 设置为空数组
 						}
 
 						// 解析 FailTriggerTasksRaw 到 FailTriggerTasks 字段
 						if rule.FailTriggerTasksRaw != "" {
 							if err := utils.Json.Unmarshal([]byte(rule.FailTriggerTasksRaw), &rule.FailTriggerTasks); err != nil {
-								log.Printf("解析报警规则 %d 的 FailTriggerTasksRaw 失败: %v", rule.ID, err)
+								log.Printf("解析通知规则 %d 的 FailTriggerTasksRaw 失败: %v", rule.ID, err)
 								rule.FailTriggerTasks = []uint64{}
 							}
 						}
@@ -765,12 +765,12 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 						// 解析 RecoverTriggerTasksRaw 到 RecoverTriggerTasks 字段
 						if rule.RecoverTriggerTasksRaw != "" {
 							if err := utils.Json.Unmarshal([]byte(rule.RecoverTriggerTasksRaw), &rule.RecoverTriggerTasks); err != nil {
-								log.Printf("解析报警规则 %d 的 RecoverTriggerTasksRaw 失败: %v", rule.ID, err)
+								log.Printf("解析通知规则 %d 的 RecoverTriggerTasksRaw 失败: %v", rule.ID, err)
 								rule.RecoverTriggerTasks = []uint64{}
 							}
 						}
 					} else {
-						log.Printf("报警规则 %d 的 RulesRaw 为空", rule.ID)
+						log.Printf("通知规则 %d 的 RulesRaw 为空", rule.ID)
 					}
 				}
 			}
@@ -1196,7 +1196,7 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 		d["token"] = ""
 	}
 
-	// 处理报警规则的字段映射（小写到大写）
+	// 处理通知规则的字段映射（小写到大写）
 	if rulesRaw, ok := d["rules_raw"]; ok {
 		d["RulesRaw"] = rulesRaw
 	}

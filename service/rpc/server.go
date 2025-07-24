@@ -921,7 +921,7 @@ func checkAndResetCycleTraffic(clientID uint64) {
 	singleton.ServerLock.RLock()
 	defer singleton.ServerLock.RUnlock()
 
-	// 遍历所有启用的报警规则
+	// 遍历所有启用的事件规则
 	for _, alert := range singleton.Alerts {
 		if !alert.Enabled() {
 			continue
@@ -1056,7 +1056,7 @@ func checkAndResetCycleTraffic(clientID uint64) {
 			// 计算上个周期累计流量
 			totalOldTraffic := oldInTransfer + oldOutTransfer
 
-			resetMessage := fmt.Sprintf("流量重置通知\n服务器 %s [%s] 的周期流量已重置\n上个周期累计流量: %s (入站=%s, 出站=%s)\n新周期: %s 到 %s\n报警规则: %s",
+			resetMessage := fmt.Sprintf("流量重置通知\n服务器 %s [%s] 的周期流量已重置\n上个周期累计流量: %s (入站=%s, 出站=%s)\n新周期: %s 到 %s\n事件规则: %s",
 				server.Name,
 				singleton.IPDesensitize(server.Host.IP),
 				formatTraffic(totalOldTraffic),

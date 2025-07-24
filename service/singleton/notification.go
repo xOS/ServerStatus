@@ -248,10 +248,7 @@ func (_NotificationMuteLabel) ServiceStateChanged(serviceId uint64) *string {
 	return &label
 }
 
-func (_NotificationMuteLabel) ServiceSSL(serviceId uint64, extraInfo string) *string {
-	label := fmt.Sprintf("bf::sssl-%d-%s", serviceId, extraInfo)
-	return &label
-}
+
 
 func (_NotificationMuteLabel) DDNSChanged(serverId uint64, domain string) *string {
 	label := fmt.Sprintf("bf::ddns-%d-%s", serverId, domain)

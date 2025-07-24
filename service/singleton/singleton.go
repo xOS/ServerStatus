@@ -279,14 +279,12 @@ func LoadSingleton() {
 			}
 		}()
 
-		// 处理BadgerDB特殊情况
+		// 加载定时任务
+		loadCronTasks()
+		
+		// BadgerDB模式下需要手动初始化Cron任务的Servers字段
 		if Conf.DatabaseType == "badger" {
-			log.Println("BadgerDB模式：使用空的定时任务列表")
-			// 已在之前调用了InitCronTask，无需其他操作
-			// BadgerDB模式下需要手动初始化Cron任务的Servers字段
 			initCronServersForBadgerDB()
-		} else {
-			loadCronTasks()
 		}
 	}()
 
@@ -1200,8 +1198,8 @@ func checkShouldResetTransferStats() bool {
 	// 获取当前时间
 	now := time.Now()
 
-	// 首先检查是否存在有效的流量周期报警规则
-	// 如果存在报警规则，优先使用报警规则中的周期
+	// 首先检查是否存在有效的流量周期通知规则
+	// 如果存在通知规则，优先使用通知规则中的周期
 	AlertsLock.RLock()
 	defer AlertsLock.RUnlock()
 
@@ -1211,7 +1209,7 @@ func checkShouldResetTransferStats() bool {
 			continue
 		}
 
-		// 检查每个报警规则的Rules字段
+		// 检查每个通知规则的Rules字段
 		for _, rule := range alert.Rules {
 			// 检查是否是周期流量规则
 			if rule.IsTransferDurationRule() {
@@ -1225,12 +1223,12 @@ func checkShouldResetTransferStats() bool {
 		}
 	}
 
-	// 如果没有找到流量周期报警规则，则使用默认的月度重置（每月1日凌晨）
+	// 如果没有找到流量周期通知规则，则使用默认的月度重置（每月1日凌晨）
 	if !hasActiveRules {
 		return now.Day() == 1 && now.Hour() == 0 && now.Minute() < 5
 	}
 
-	// 存在流量周期报警规则，由报警规则自行处理重置，这里不额外重置
+	// 存在流量周期通知规则，由通知规则自行处理重置，这里不额外重置
 	return false
 }
 
@@ -1801,7 +1799,7 @@ func validateAndFixDataIntegrity() {
 	// 验证监控配置数据
 	validateMonitorData()
 
-	// 验证报警规则数据
+	// 验证通知规则数据
 	validateAlertRuleData()
 
 	// 验证用户数据
@@ -1849,10 +1847,10 @@ func validateMonitorData() {
 	log.Println("监控配置数据已在ServiceSentinel初始化时验证")
 }
 
-// validateAlertRuleData 验证报警规则数据完整性
+// validateAlertRuleData 验证通知规则数据完整性
 func validateAlertRuleData() {
 	// 这个函数在BadgerDB.FindAll中已经处理了
-	log.Println("报警规则数据已在BadgerDB.FindAll中验证")
+	log.Println("通知规则数据已在BadgerDB.FindAll中验证")
 }
 
 // validateUserData 验证用户数据完整性
@@ -2069,7 +2067,7 @@ func (mm *MemoryMonitor) moderateCleanup() {
 		ServiceSentinelShared.cleanupOldData()
 	}
 
-	// 异步清理报警数据，避免阻塞HTTP请求
+	// 异步清理通知数据，避免阻塞HTTP请求
 	cleanupAlertMemoryDataAsync()
 
 	// 清理僵尸 goroutine 连接
@@ -3525,7 +3523,7 @@ func VerifyMonitorHistoryConsistency() {
 
 	log.Printf("最近30分钟内ICMP/TCP监控记录数: %d", count)
 
-	// 如果数量异常少，触发报警
+	// 如果数量异常少，触发通知
 	if count < 10 { // 根据实际情况调整阈值
 		log.Printf("警告: ICMP/TCP监控记录数量异常少，可能存在数据丢失")
 

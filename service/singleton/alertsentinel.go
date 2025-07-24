@@ -24,16 +24,16 @@ type NotificationHistory struct {
 	Until    time.Time
 }
 
-// 报警规则
+// 事件规则
 var (
 	AlertsLock                    sync.RWMutex
 	Alerts                        []*model.AlertRule
-	alertsStore                   map[uint64]map[uint64][][]interface{} // [alert_id][server_id] -> 对应报警规则的检查结果
-	alertsPrevState               map[uint64]map[uint64]uint            // [alert_id][server_id] -> 对应报警规则的上一次报警状态
-	AlertsCycleTransferStatsStore map[uint64]*model.CycleTransferStats  // [alert_id] -> 对应报警规则的周期流量统计
+	alertsStore                   map[uint64]map[uint64][][]interface{} // [alert_id][server_id] -> 对应事件规则的检查结果
+	alertsPrevState               map[uint64]map[uint64]uint            // [alert_id][server_id] -> 对应事件规则的上一次事件状态
+	AlertsCycleTransferStatsStore map[uint64]*model.CycleTransferStats  // [alert_id] -> 对应事件规则的周期流量统计
 )
 
-// addCycleTransferStatsInfo 向AlertsCycleTransferStatsStore中添加周期流量报警统计信息
+// addCycleTransferStatsInfo 向AlertsCycleTransferStatsStore中添加周期流量事件统计信息
 func addCycleTransferStatsInfo(alert *model.AlertRule) {
 	if !alert.Enabled() {
 		return
@@ -66,7 +66,7 @@ const (
 	maxHistoryPerServer   = 10   // 每个server最多存储10条历史记录
 )
 
-// AlertSentinelStart 报警器启动
+// AlertSentinelStart 事件监控器启动
 func AlertSentinelStart() {
 	alertsStore = make(map[uint64]map[uint64][][]interface{})
 	alertsPrevState = make(map[uint64]map[uint64]uint)
@@ -85,29 +85,29 @@ func AlertSentinelStart() {
 
 	// 根据数据库类型选择不同的加载方式
 	if Conf.DatabaseType == "badger" {
-		// 使用BadgerDB加载报警规则
+		// 使用BadgerDB加载事件规则
 		if db.DB != nil {
 			// BadgerDB模式，使用AlertRuleOps查询AlertRule
 			alertOps := db.NewAlertRuleOps(db.DB)
 			alerts, err := alertOps.GetAllAlertRules()
 			if err != nil {
-				log.Printf("从BadgerDB加载报警规则失败: %v", err)
+				log.Printf("从BadgerDB加载事件规则失败: %v", err)
 				AlertsLock.Unlock()
 				return
 			}
 			Alerts = alerts
 		} else {
-			log.Println("BadgerDB未初始化，跳过加载报警规则")
+			log.Println("BadgerDB未初始化，跳过加载事件规则")
 			AlertsLock.Unlock()
 			return
 		}
 	} else {
-		// 使用SQLite加载报警规则
+		// 使用SQLite加载事件规则
 		err := executeWithRetry(func() error {
 			return DB.Find(&Alerts).Error
 		})
 		if err != nil {
-			log.Printf("从SQLite加载报警规则失败: %v", err)
+			log.Printf("从SQLite加载事件规则失败: %v", err)
 			AlertsLock.Unlock()
 			return // 不要panic，而是返回并稍后重试
 		}
@@ -174,24 +174,24 @@ func AlertSentinelStart() {
 
 		if lastPrint.Before(startedAt.Add(-1 * time.Hour)) {
 			if Conf.Debug {
-				log.Println("NG>> 报警规则检测每小时", checkCount, "次", startedAt, time.Now())
+				log.Println("NG>> 事件规则检测每小时", checkCount, "次", startedAt, time.Now())
 			}
 			checkCount = 0
 			lastPrint = startedAt
 		}
 
-		// 优化检查间隔：根据报警规则数量动态调整
+		// 优化检查间隔：根据事件规则数量动态调整
 		var checkInterval time.Duration
 		AlertsLock.RLock()
 		alertCount := len(Alerts) // 使用Alerts而不是alertsStore，更准确
 		AlertsLock.RUnlock()
 
 		if alertCount == 0 {
-			checkInterval = 30 * time.Second // 没有报警规则时30秒检查一次
+			checkInterval = 30 * time.Second // 没有事件规则时30秒检查一次
 		} else if alertCount < 10 {
-			checkInterval = 10 * time.Second // 少量报警规则时10秒检查一次
+			checkInterval = 10 * time.Second // 少量事件规则时10秒检查一次
 		} else {
-			checkInterval = 5 * time.Second // 大量报警规则时5秒检查一次
+			checkInterval = 5 * time.Second // 大量事件规则时5秒检查一次
 		}
 
 		// 计算剩余时间并睡眠，避免忙等待
@@ -246,7 +246,7 @@ var (
 	emptyRulesWarningMutex sync.Mutex
 )
 
-// checkStatus 检查报警规则并发送报警
+// checkStatus 检查通知规则并发送通知
 func checkStatus() {
 	// 优化：先复制需要的数据，避免长时间持锁
 	var alertsCopy []*model.AlertRule
@@ -265,10 +265,10 @@ func checkStatus() {
 				// 由于我们只读取数据，浅拷贝是安全的
 				alertsCopy = append(alertsCopy, alert)
 			} else {
-				// 处理已启用但无规则的报警
+				// 处理已启用但无规则的通知
 				emptyRulesWarningMutex.Lock()
 				if lastWarning, ok := emptyRulesWarningTime[alert.ID]; !ok || time.Since(lastWarning) > time.Hour {
-					log.Printf("警告: 报警规则 '%s' (ID: %d) 已启用但没有任何规则。", alert.Name, alert.ID)
+					log.Printf("警告: 通知规则 '%s' (ID: %d) 已启用但没有任何规则。", alert.Name, alert.ID)
 					emptyRulesWarningTime[alert.ID] = time.Now()
 				}
 				emptyRulesWarningMutex.Unlock()
@@ -393,7 +393,7 @@ func checkStatus() {
 				alertsStoreCopy[alert.ID][server.ID] = alertsStoreCopy[alert.ID][server.ID][len(alertsStoreCopy[alert.ID][server.ID])-maxHistoryPerServer:]
 			}
 
-			// 发送通知，分为触发报警和恢复通知
+			// 发送通知，分为触发通知和恢复通知
 			max, passed := alert.Check(alertsStoreCopy[alert.ID][server.ID])
 
 			// 记录更新数据
@@ -447,7 +447,7 @@ func checkStatus() {
 					alertsPrevStateCopy[alert.ID] = make(map[uint64]uint)
 				}
 
-				// 检查是否为离线告警且服务器从未上线过
+				// 检查是否为离线通知且服务器从未上线过
 				isOfflineAlert := false
 				for _, rule := range alert.Rules {
 					if rule.Type == "offline" {
@@ -456,17 +456,17 @@ func checkStatus() {
 					}
 				}
 
-				// 如果是离线告警且服务器从未上线过，不触发告警
+				// 如果是离线通知且服务器从未上线过，不触发通知
 				if isOfflineAlert && server.LastActive.IsZero() {
 					// 从未上线的服务器，设置为通过状态，避免误报
 					alertsPrevStateCopy[alert.ID][server.ID] = _RuleCheckPass
 				} else {
-					// 始终触发模式或上次检查不为失败时触发报警（跳过单次触发+上次失败的情况）
+					// 始终触发模式或上次检查不为失败时触发通知（跳过单次触发+上次失败的情况）
 					if alert.TriggerMode == model.ModeAlwaysTrigger || alertsPrevStateCopy[alert.ID][server.ID] != _RuleCheckFail {
 						alertsPrevStateCopy[alert.ID][server.ID] = _RuleCheckFail
 						log.Printf("[事件]\n%s\n规则：%s %s", server.Name, alert.Name, *NotificationMuteLabel.ServerIncident(alert.ID, server.ID))
 
-						// 生成详细的报警消息
+						// 生成详细的通知消息
 						message := generateDetailedAlertMessage(alert, server, alertsStoreCopy[alert.ID][server.ID])
 
 						SafeSendTriggerTasks(alert.FailTriggerTasks, curServer.ID)
@@ -534,7 +534,7 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 	ServerLock.RLock()
 	if server := ServerList[serverID]; server != nil {
 		serverName = server.Name
-		// 确保服务器状态中的流量数据是最新的，不依赖报警规则
+		// 确保服务器状态中的流量数据是最新的，不依赖通知规则
 		if server.State != nil {
 			server.State.NetInTransfer = inTransfer
 			server.State.NetOutTransfer = outTransfer
@@ -542,20 +542,20 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 	}
 	ServerLock.RUnlock()
 
-	// 第二步：收集需要更新的报警规则和统计数据
+	// 第二步：收集需要更新的通知规则和统计数据
 	AlertsLock.RLock()
 	if len(Alerts) == 0 || AlertsCycleTransferStatsStore == nil {
 		AlertsLock.RUnlock()
 		return
 	}
 
-	// 遍历所有报警规则，收集需要更新的数据
+	// 遍历所有通知规则，收集需要更新的数据
 	for _, alert := range Alerts {
 		if !alert.Enabled() {
 			continue
 		}
 
-		// 获取此报警规则的流量统计数据
+		// 获取此通知规则的流量统计数据
 		stats := AlertsCycleTransferStatsStore[alert.ID]
 		if stats == nil {
 			continue
@@ -659,12 +659,12 @@ func formatBytes(bytes uint64) string {
 	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
-// generateDetailedAlertMessage 生成详细的报警消息
+// generateDetailedAlertMessage 生成详细的通知消息
 func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, checkResultsHistory [][]interface{}) string {
 	now := time.Now()
 
-	// 基础报警信息
-	message := fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s[%s]"+"\n"+"服务器ID: %d"+"\n"+"报警时间: %s"+"\n",
+	// 基础通知信息
+	message := fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s[%s]"+"\n"+"服务器ID: %d"+"\n"+"通知时间: %s"+"\n",
 		Localizer.MustLocalize(&i18n.LocalizeConfig{
 			MessageID: "Notify",
 		}),
@@ -676,7 +676,7 @@ func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, 
 		now.Format("2006-01-02 15:04:05"))
 
 	// 添加规则基本信息
-	message += fmt.Sprintf("报警规则: %s\n", alert.Name)
+	message += fmt.Sprintf("通知规则: %s\n", alert.Name)
 
 	// 获取最新的检查结果（最后一组）
 	var latestResults []interface{}
@@ -811,16 +811,16 @@ func generateTrafficAlertDetails(rule *model.Rule, server *model.Server, alertID
 		stats.From.Format("2006-01-02 15:04:05"),
 		stats.To.Format("2006-01-02 15:04:05"))
 
-	// 根据使用率生成不同级别的告警信息
+	// 根据使用率生成不同级别的通知信息
 	var alertLevel string
 	var alertIcon string
 
 	switch {
 	case usagePercent >= 100:
-		alertLevel = "🚨 流量超限告警"
+		alertLevel = "🚨 流量超限通知"
 		alertIcon = "🚨"
 	case usagePercent >= 90:
-		alertLevel = "⚠️ 流量高使用率告警 (90%)"
+		alertLevel = "⚠️ 流量高使用率通知 (90%)"
 		alertIcon = "⚠️"
 	case usagePercent >= 50:
 		alertLevel = "📊 流量使用率提醒 (50%)"
@@ -951,7 +951,7 @@ func cleanupAlertMemoryData() {
 
 	memFreed := int64(memBefore.Alloc) - int64(memAfter.Alloc)
 
-	log.Printf("报警系统内存清理完成: 清理了 %d 个失效报警规则, %d 个服务器历史记录, 释放内存 %dMB",
+	log.Printf("通知系统内存清理完成: 清理了 %d 个失效通知规则, %d 个服务器历史记录, 释放内存 %dMB",
 		cleanedAlerts, cleanedServers, memFreed/1024/1024)
 }
 
@@ -973,7 +973,7 @@ func cleanupAlertBatch(alertIDs []uint64, activeServerIDs map[uint64]bool) (int,
 			continue
 		}
 
-		// 检查报警规则是否还存在
+		// 检查通知规则是否还存在
 		alertExists := false
 		for _, alert := range Alerts {
 			if alert.ID == alertID {
@@ -1041,7 +1041,7 @@ func generateDetailedRecoveryMessage(alert *model.AlertRule, server *model.Serve
 		now.Format("2006-01-02 15:04:05"))
 
 	// 添加规则基本信息
-	message += fmt.Sprintf("报警规则: %s\n", alert.Name)
+	message += fmt.Sprintf("通知规则: %s\n", alert.Name)
 
 	// 检查是否包含离线规则，如果是则计算离线时长
 	hasOfflineRule := false
@@ -1112,8 +1112,8 @@ func checkTrafficThresholds(alert *model.AlertRule, server *model.Server, rule *
 		icon    string
 	}{
 		{50.0, "50%流量使用提醒", "📊"},
-		{90.0, "90%流量高使用率告警", "⚠️"},
-		{100.0, "流量超限告警", "🚨"},
+		{90.0, "90%流量高使用率通知", "⚠️"},
+		{100.0, "流量超限通知", "🚨"},
 	}
 
 	// 检查每个阈值（从高到低）
@@ -1149,7 +1149,7 @@ func checkTrafficThresholds(alert *model.AlertRule, server *model.Server, rule *
 	}
 }
 
-// generateThresholdAlertMessage 生成阈值告警消息
+// generateThresholdAlertMessage 生成阈值通知消息
 func generateThresholdAlertMessage(alert *model.AlertRule, server *model.Server, rule *model.Rule, currentUsage uint64, thresholdPercent float64, thresholdName, icon string) string {
 	now := time.Now()
 
@@ -1170,7 +1170,7 @@ func generateThresholdAlertMessage(alert *model.AlertRule, server *model.Server,
 	message := fmt.Sprintf("%s %s\n", icon, thresholdName)
 	message += fmt.Sprintf("时间: %s\n", now.Format("2006-01-02 15:04:05"))
 	message += fmt.Sprintf("服务器: %s\n", server.Name)
-	message += fmt.Sprintf("报警规则: %s\n\n", alert.Name)
+	message += fmt.Sprintf("通知规则: %s\n\n", alert.Name)
 
 	usagePercent := float64(currentUsage) / rule.Max * 100
 	message += fmt.Sprintf("• %s使用情况:\n", trafficType)

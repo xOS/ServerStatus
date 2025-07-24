@@ -1,7 +1,7 @@
 let LANG = {
   Add: "添加",
   Edit: "修改",
-  AlarmRule: "报警规则",
+  AlarmRule: "事件规则",
   Notification: "通知方式",
   Server: "服务器",
   Monitor: "监控",
@@ -1818,10 +1818,10 @@ function updateTaskNameMapping() {
 // 转换表格中的JSON数据为可读名称
 function convertTableJsonToNames() {
 
-  // 只在监控配置页面和Cron任务页面运行，跳过报警规则页面
+  // 只在监控配置页面和Cron任务页面运行，跳过事件规则页面
   if (window.location.pathname.includes('/notification')) {
 
-    return; // 跳过报警规则页面，保持原始显示
+    return; // 跳过事件规则页面，保持原始显示
   }
 
   // 转换监控配置表格中的服务器ID

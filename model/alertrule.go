@@ -29,7 +29,7 @@ type AlertRule struct {
 	RulesRaw               string
 	Enable                 *bool
 	TriggerMode            int      `gorm:"default:0"` // 触发模式: 0-始终触发(默认) 1-单次触发
-	NotificationTag        string   // 该报警规则所在的通知组
+	NotificationTag        string   // 该通知规则所在的通知组
 	FailTriggerTasksRaw    string   `gorm:"default:'[]'"`
 	RecoverTriggerTasksRaw string   `gorm:"default:'[]'"`
 	Rules                  []Rule   `gorm:"-" json:"-"`
@@ -77,7 +77,7 @@ func (r *AlertRule) Enabled() bool {
 	return r.Enable != nil && *r.Enable
 }
 
-// Snapshot 对传入的Server进行该报警规则下所有type的检查 返回包含每项检查结果的空接口
+// Snapshot 对传入的Server进行该通知规则下所有type的检查 返回包含每项检查结果的空接口
 func (r *AlertRule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, db *gorm.DB) []interface{} {
 	var point []interface{}
 	for i := 0; i < len(r.Rules); i++ {
@@ -86,7 +86,7 @@ func (r *AlertRule) Snapshot(cycleTransferStats *CycleTransferStats, server *Ser
 	return point
 }
 
-// Check 传入包含当前报警规则下所有type检查结果的空接口 返回报警持续时间与是否通过报警检查(通过则返回true)
+// Check 传入包含当前通知规则下所有type检查结果的空接口 返回通知持续时间与是否通过通知检查(通过则返回true)
 func (r *AlertRule) Check(points [][]interface{}) (int, bool) {
 	var maxNum int           // 报警持续时间
 	var count int            // 检查未通过的个数

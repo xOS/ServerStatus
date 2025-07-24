@@ -128,11 +128,11 @@ func (mp *memberPage) notification(c *gin.Context) {
 				}
 			}
 
-			// 查询报警规则
+			// 查询通知规则
 			alertOps := db.NewAlertRuleOps(db.DB)
 			arPtrs, err := alertOps.GetAllAlertRules()
 			if err != nil {
-				log.Printf("从BadgerDB查询报警规则失败: %v", err)
+				log.Printf("从BadgerDB查询通知规则失败: %v", err)
 				ar = []model.AlertRule{}
 			} else {
 				// 转换指针数组为值数组
