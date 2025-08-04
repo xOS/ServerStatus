@@ -1167,12 +1167,22 @@ func generateThresholdAlertMessage(alert *model.AlertRule, server *model.Server,
 		trafficType = "总流量"
 	}
 
-	message := fmt.Sprintf("%s %s\n", icon, thresholdName)
+	usagePercent := float64(currentUsage) / rule.Max * 100
+	
+	// 根据实际使用百分比生成动态标题
+	var dynamicTitle string
+	if usagePercent >= 100 {
+		dynamicTitle = fmt.Sprintf("%.1f%%流量超限通知", usagePercent)
+	} else if usagePercent >= 90 {
+		dynamicTitle = fmt.Sprintf("%.1f%%流量高使用率通知", usagePercent)
+	} else {
+		dynamicTitle = fmt.Sprintf("%.1f%%流量使用提醒", usagePercent)
+	}
+	
+	message := fmt.Sprintf("%s %s\n", icon, dynamicTitle)
 	message += fmt.Sprintf("时间: %s\n", now.Format("2006-01-02 15:04:05"))
 	message += fmt.Sprintf("服务器: %s\n", server.Name)
 	message += fmt.Sprintf("通知规则: %s\n\n", alert.Name)
-
-	usagePercent := float64(currentUsage) / rule.Max * 100
 	message += fmt.Sprintf("• %s使用情况:\n", trafficType)
 	message += fmt.Sprintf("  - 当前使用: %s (%.2f%%)\n", formatBytes(currentUsage), usagePercent)
 	message += fmt.Sprintf("  - 额定流量: %s\n", formatBytes(uint64(rule.Max)))
