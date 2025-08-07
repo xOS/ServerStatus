@@ -168,7 +168,7 @@ func loadCronTasksFromBadgerDB() {
 		// 注册计划任务到cron调度器
 		crons[i].CronJobID, taskErr = Cron.AddFunc(crons[i].Scheduler, CronTrigger(*crons[i]))
 		if taskErr == nil {
-			Crons[crons[i].ID] = crons[i]
+			Crons[crons[i].ID] = crons[i]  // 注意：crons[i] 已经是指针类型
 			log.Printf("成功注册定时任务: %s (ID: %d, 调度: %s, 推送成功通知: %t)",
 				crons[i].Name, crons[i].ID, crons[i].Scheduler, crons[i].PushSuccessful)
 		} else {
@@ -226,11 +226,25 @@ func SendTriggerTasks(taskIDs []uint64, triggerServer uint64) {
 }
 
 func CronTrigger(cr model.Cron, triggerServer ...uint64) func() {
-	crIgnoreMap := make(map[uint64]bool)
-	for j := 0; j < len(cr.Servers); j++ {
-		crIgnoreMap[cr.Servers[j]] = true
-	}
+	taskID := cr.ID  // 只保存任务ID，不保存整个任务对象
 	return func() {
+		// 动态获取最新的任务对象，而不是使用闭包捕获的旧对象
+		CronLock.RLock()
+		currentCr := Crons[taskID]
+		CronLock.RUnlock()
+		
+		if currentCr == nil {
+			log.Printf("警告：找不到任务ID=%d的配置，跳过执行", taskID)
+			return
+		}
+		
+		// 使用最新的任务对象
+		cr = *currentCr
+		
+		crIgnoreMap := make(map[uint64]bool)
+		for j := 0; j < len(cr.Servers); j++ {
+			crIgnoreMap[cr.Servers[j]] = true
+		}
 		if cr.Cover == model.CronCoverAlertTrigger {
 			if len(triggerServer) == 0 {
 				return
