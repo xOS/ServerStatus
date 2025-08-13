@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: serverstatus-dashboard
+  labels:
+    app: serverstatus
+    component: dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: serverstatus
+      component: dashboard
+  template:
+    metadata:
+      labels:
+        app: serverstatus
+        component: dashboard
+    spec:
+      containers:
+      - name: dashboard
+        image: ghcr.io/xos/server-dash:latest
+        ports:
+        - containerPort: 80
+          name: http
+        - containerPort: 2222
+          name: grpc
+        env:
+        - name: TZ
+          value: "Asia/Shanghai"
+        - name: GIN_MODE
+          value: "release"
+        volumeMounts:
+        - name: data
+          mountPath: /dashboard/data
+        - name: config
+          mountPath: /dashboard/data/config.yaml
+          subPath: config.yaml
+          readOnly: true
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - /dashboard/app
+            - --health-check
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /dashboard/app
+            - --health-check
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: serverstatus-data
+      - name: config
+        configMap:
+          name: serverstatus-config
+      securityContext:
+        fsGroup: 65534
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: serverstatus-dashboard
+  labels:
+    app: serverstatus
+    component: dashboard
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  - port: 2222
+    targetPort: 2222
+    protocol: TCP
+    name: grpc
+  selector:
+    app: serverstatus
+    component: dashboard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: serverstatus-data
+  labels:
+    app: serverstatus
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: serverstatus-config
+  labels:
+    app: serverstatus
+data:
+  config.yaml: |
+    debug: false
+    httpport: 80
+    grpcport: 2222
+    database:
+      type: sqlite
+      dsn: data/sqlite.db
+    jwt_secret: "your-secret-key-here"
+    admin:
+      username: admin
+      password: admin123

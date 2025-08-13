@@ -1,0 +1,72 @@
+# Git 相关
+.git
+.gitignore
+.gitattributes
+.github
+
+# 开发工具
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+tmp/
+temp/
+.tmp
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 文档
+*.md
+docs/
+
+# 测试文件
+*_test.go
+test/
+tests/
+
+# 构建缓存
+.cache/
+
+# Node.js (如果有前端构建)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Go 相关
+vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# 数据文件
+data/
+*.db
+*.db-*
+
+# 保留静态资源文件（重要：应用运行时需要）
+# resource/ 目录不应该被排除
+
+# 配置文件（敏感信息）
+config/config.yaml
+.env
+.env.local
+
+# Docker 相关
+docker-compose*.yml
+Dockerfile*
+
+# 其他
+*.tar.gz
+*.zip

@@ -150,18 +150,33 @@ jobs:
           echo "ALI_IMAGE_NAME=$ALI_IMAGE_NAME" >> $GITHUB_OUTPUT
         id: image-name
 
-      - name: Build dasbboard image And Push
+      - name: Build dashboard image And Push
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64,linux/s390x
           push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            TARGETOS=linux
+            TARGETARCH=${{ matrix.goarch }}
+            TZ=Asia/Shanghai
           tags: |
             ${{ steps.image-name.outputs.GHCR_IMAGE_NAME }}:latest
             ${{ steps.image-name.outputs.GHCR_IMAGE_NAME }}:${{ steps.extract_branch.outputs.tag }}
             ${{ steps.image-name.outputs.ALI_IMAGE_NAME }}:latest
             ${{ steps.image-name.outputs.ALI_IMAGE_NAME }}:${{ steps.extract_branch.outputs.tag }}
+          labels: |
+            org.opencontainers.image.title=ServerStatus Dashboard
+            org.opencontainers.image.description=A lightweight server monitoring dashboard
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.extract_branch.outputs.tag }}
+            org.opencontainers.image.created=${{ steps.date.outputs.date }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
       - name: Trigger sync
         env:
           GH_REPO: ${{ github.repository }}
