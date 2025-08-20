@@ -4,6 +4,24 @@ other = "服务器"
 [All]
 other = "全部"
 
+[OnlineServers]
+other = "在线"
+
+[OfflineServers]
+other = "离线"
+
+[NoOnlineServers]
+other = "没有在线服务器"
+
+[NoOnlineServersDesc]
+other = "当前没有在线的服务器"
+
+[NoOfflineServers]
+other = "没有离线服务器"
+
+[NoOfflineServersDesc]
+other = "当前没有离线的服务器"
+
 [ID]
 other = "标识号"
 

@@ -2,68 +2,68 @@
 {{template "theme-default/header" .}}
 
 <script>
-// 性能优化 - 覆盖默认事件监听器为被动模式
-(function() {
-    // 保存原始的 addEventListener
-    const originalAddEventListener = EventTarget.prototype.addEventListener;
-    
-    // 需要设置为被动的事件类型
-    const passiveEvents = ['touchstart', 'touchmove', 'wheel', 'mousewheel'];
-    
-    // 重写 addEventListener
-    EventTarget.prototype.addEventListener = function(type, listener, options) {
-        if (passiveEvents.includes(type) && typeof options !== 'object') {
-            options = { passive: true };
-        } else if (passiveEvents.includes(type) && typeof options === 'object' && options.passive === undefined) {
-            options.passive = true;
-        }
-        
-        return originalAddEventListener.call(this, type, listener, options);
-    };
-})();
-// jQuery 事件优化 - 延迟到jQuery加载完成后执行
-document.addEventListener('DOMContentLoaded', function() {
-    // 等待jQuery加载完成
-    function waitForJQuery() {
-        if (typeof $ !== 'undefined' && $.fn && $.fn.on) {
-            const originalOn = $.fn.on;
-            $.fn.on = function(events, selector, data, handler) {
-                if (typeof events === 'string' &&
-                    (events.includes('touchstart') || events.includes('touchmove') ||
-                     events.includes('wheel') || events.includes('mousewheel'))) {
+    // 性能优化 - 覆盖默认事件监听器为被动模式
+    (function () {
+        // 保存原始的 addEventListener
+        const originalAddEventListener = EventTarget.prototype.addEventListener;
 
-                    const passiveHandler = function(e) {
-                        if (typeof handler === 'function') {
-                            return handler.call(this, e);
-                        } else if (typeof data === 'function') {
-                            return data.call(this, e);
+        // 需要设置为被动的事件类型
+        const passiveEvents = ['touchstart', 'touchmove', 'wheel', 'mousewheel'];
+
+        // 重写 addEventListener
+        EventTarget.prototype.addEventListener = function (type, listener, options) {
+            if (passiveEvents.includes(type) && typeof options !== 'object') {
+                options = { passive: true };
+            } else if (passiveEvents.includes(type) && typeof options === 'object' && options.passive === undefined) {
+                options.passive = true;
+            }
+
+            return originalAddEventListener.call(this, type, listener, options);
+        };
+    })();
+    // jQuery 事件优化 - 延迟到jQuery加载完成后执行
+    document.addEventListener('DOMContentLoaded', function () {
+        // 等待jQuery加载完成
+        function waitForJQuery() {
+            if (typeof $ !== 'undefined' && $.fn && $.fn.on) {
+                const originalOn = $.fn.on;
+                $.fn.on = function (events, selector, data, handler) {
+                    if (typeof events === 'string' &&
+                        (events.includes('touchstart') || events.includes('touchmove') ||
+                            events.includes('wheel') || events.includes('mousewheel'))) {
+
+                        const passiveHandler = function (e) {
+                            if (typeof handler === 'function') {
+                                return handler.call(this, e);
+                            } else if (typeof data === 'function') {
+                                return data.call(this, e);
+                            }
+                        };
+
+                        if (typeof data === 'function') {
+                            handler = data;
+                            data = undefined;
                         }
-                    };
 
-                    if (typeof data === 'function') {
-                        handler = data;
-                        data = undefined;
+                        this.each(function () {
+                            if (this.addEventListener) {
+                                this.addEventListener(events, passiveHandler, { passive: true });
+                            }
+                        });
+
+                        return this;
                     }
 
-                    this.each(function() {
-                        if (this.addEventListener) {
-                            this.addEventListener(events, passiveHandler, { passive: true });
-                        }
-                    });
-
-                    return this;
-                }
-
-                return originalOn.apply(this, arguments);
-            };
-        } else {
-            // jQuery还没加载完成，100ms后重试
-            setTimeout(waitForJQuery, 100);
+                    return originalOn.apply(this, arguments);
+                };
+            } else {
+                // jQuery还没加载完成，100ms后重试
+                setTimeout(waitForJQuery, 100);
+            }
         }
-    }
 
-    waitForJQuery();
-});
+        waitForJQuery();
+    });
 </script>
 
 {{if ts .CustomCode}} {{.CustomCode|safe}} {{end}}
@@ -72,20 +72,19 @@ document.addEventListener('DOMContentLoaded', function() {
 <div class="nb-container">
     <div class="ui container" style="padding-bottom: 30px;">
         <div class="tabs-wrapper">
-            <div v-if="servers && servers.length > 0" 
-                 class="custom-tabs-container" 
-                 ref="tabsContainer">
+            <div v-if="servers && servers.length > 0" class="custom-tabs-container" ref="tabsContainer">
                 <div class="tabs-content-area">
-                    <div class="custom-tab"
-                        :class="{ active: activeTag === '' }"
-                        @click="handleTabClick('', $event)"
+                    <div class="custom-tab" :class="{ active: activeTag === '' }" @click="handleTabClick('', $event)"
                         ref="allTab"> {{tr "All"}}
                     </div>
-                    <div v-for="(tag, index) in uniqueTags.slice().reverse()"
-                        :key="tag"
-                        class="custom-tab"
-                        :class="{ active: activeTag === tag }"
-                        @click="handleTabClick(tag, $event)"
+                    <div class="custom-tab" :class="{ active: activeTag === 'online' }"
+                        @click="handleTabClick('online', $event)" ref="onlineTab"> {{tr "OnlineServers"}}
+                    </div>
+                    <div class="custom-tab" :class="{ active: activeTag === 'offline' }"
+                        @click="handleTabClick('offline', $event)" ref="offlineTab"> {{tr "OfflineServers"}}
+                    </div>
+                    <div v-for="(tag, index) in uniqueTags.slice().reverse()" :key="tag" class="custom-tab"
+                        :class="{ active: activeTag === tag }" @click="handleTabClick(tag, $event)"
                         :ref="'tagTab' + index"> @#tag#@
                     </div>
                 </div>
@@ -100,7 +99,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         <div class="header">
                             <i :class="'fi fi-'+server.Host.CountryCode"></i>
                             <i v-if='isWindowsPlatform(server.Host.Platform)' class="windows icon"></i>
-                            <i v-else-if='getFontLogoClass(server.Host.Platform) == "" && server.State.Uptime > 0' class="fl-tux"></i>
+                            <i v-else-if='getFontLogoClass(server.Host.Platform) == "" && server.State.Uptime > 0'
+                                class="fl-tux"></i>
                             <i v-else :class="'fl-' + getFontLogoClass(server.Host.Platform)"></i>
                             @#server.Name + (server.live?'':' [{{tr "Offline"}}]')#@
                             <i class="server-primary-font info circle icon" style="height: 28px" data-server-popup></i>
@@ -112,40 +112,47 @@ document.addEventListener('DOMContentLoaded', function() {
                                 {{tr "MemUsed"}}：@#formatByteSize(server.State.MemUsed)#@ /
                                 @#formatByteSize(server.Host.MemTotal)#@<br />
                                 <template v-if="server.Host.SwapTotal">
-                                {{tr "SwapUsed"}}：@#formatByteSize(server.State.SwapUsed)#@ /
-                                        @#formatByteSize(server.Host.SwapTotal)#@<br />
+                                    {{tr "SwapUsed"}}：@#formatByteSize(server.State.SwapUsed)#@ /
+                                    @#formatByteSize(server.Host.SwapTotal)#@<br />
                                 </template>
                                 {{tr "DiskUsed"}}：@#formatByteSize(server.State.DiskUsed)#@ /
                                 @#formatByteSize(server.Host.DiskTotal)#@<br />
                                 <template v-if="getTrafficTooltip(server.ID)">
-                                {{tr "TrafficTotal"}}：@#getTrafficTooltip(server.ID)#@<br />
+                                    {{tr "TrafficTotal"}}：@#getTrafficTooltip(server.ID)#@<br />
                                 </template>
-                                <template v-if="server.Host.GPU && server.Host.GPU.length > 0 && server.Host.GPU.some(gpu => gpu !== 'unknown')">
+                                <template
+                                    v-if="server.Host.GPU && server.Host.GPU.length > 0 && server.Host.GPU.some(gpu => gpu !== 'unknown')">
                                     {{tr "GPU"}}：@#server.Host.GPU.filter(gpu => gpu !== 'unknown').join(', ')#@<br />
                                 </template>
                                 <template v-if="hasTemperature(server.State.Temperatures, sensorList)">
-                                    {{tr "Temperature"}}：@#getTemperature(server.State.Temperatures, sensorList)#@°C<br />
+                                    {{tr "Temperature"}}：@#getTemperature(server.State.Temperatures,
+                                    sensorList)#@°C<br />
                                 </template>
 
-                                {{tr "Load"}}：@#toFixed2(server.State.Load1)#@ | @#toFixed2(server.State.Load5)#@ | @#toFixed2(server.State.Load15)#@<br />
-                                {{tr "ConnCount"}}：TCP @#server.State.TcpConnCount#@ {{tr "Count"}} | UDP @#server.State.UdpConnCount#@ {{tr "Count"}}
+                                {{tr "Load"}}：@#toFixed2(server.State.Load1)#@ | @#toFixed2(server.State.Load5)#@ |
+                                @#toFixed2(server.State.Load15)#@<br />
+                                {{tr "ConnCount"}}：TCP @#server.State.TcpConnCount#@ {{tr "Count"}} | UDP
+                                @#server.State.UdpConnCount#@ {{tr "Count"}}
                                 <br />
                                 {{tr "BootTime"}}：@#timeStamp(server.Host.BootTime * 1000)#@<br />
                                 {{tr "LastActive"}}：@#timeStamp(server.LastActive)#@<br />
                                 {{tr "Version"}}：@#server.Host.Version#@<br />
                             </div>
                             <div class="ui divider"
-                                style="margin: .5rem 0 !important; border-bottom: 1px solid rgba(34,36,38,.15) !important;"></div>
+                                style="margin: .5rem 0 !important; border-bottom: 1px solid rgba(34,36,38,.15) !important;">
+                            </div>
                         </div>
-                        
+
                         <div class="header header_info">
                             <i class="fa-solid fa-microchip"></i>
                             <div class="cpuroll" style="white-space: nowrap;overflow: hidden;">
                                 <div class="cpucontent rollanimation">
-                                    @#clearString(server.Host.CPU).join(" ")#@ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                                    @#clearString(server.Host.CPU).join(" ")#@
+                                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                                 </div>
                                 <div class="cpucontent rollanimation">
-                                    @#clearString(server.Host.CPU).join(" ")#@ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                                    @#clearString(server.Host.CPU).join(" ")#@
+                                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                                 </div>
                             </div>
                             <div style="display: flex; align-items: center;">
@@ -156,7 +163,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 @#getK2Gb(server.Host.DiskTotal)#@
                             </div>
                         </div>
-                        
+
                         <div class="description">
                             <div class="ui grid">
                                 <div class="three wide column">CPU</div>
@@ -188,7 +195,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <div class="three wide column">{{tr "TrafficTotal"}}</div>
                                 <div class="thirteen wide column">
                                     <div :class="getTrafficProgressClass(server.ID)">
@@ -212,9 +219,9 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <i class="fa-solid fa-up"></i>
                                     @#formatByteSize(server.State.NetOutTransfer)#@
                                 </div>
-                                 <div class="three wide column">{{tr "ProcessCount"}}</div>
+                                <div class="three wide column">{{tr "ProcessCount"}}</div>
                                 <div class="thirteen wide column">
-                                    <i class="fa-regular fa-bars-progress"></i> 
+                                    <i class="fa-regular fa-bars-progress"></i>
                                     @# server.State.ProcessCount #@ {{tr "Count"}}
                                 </div>
                                 <div class="three wide column">{{tr "Uptime"}}</div>
@@ -224,18 +231,25 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                         </div>
                     </div>
-                    <div class="content" v-else> <p>@#server.Name#@</p>
+                    <div class="content" v-else>
+                        <p>@#server.Name#@</p>
                         <p><i class="fas fa-circle-notch fa-spin"></i> {{tr "Connecting"}}...</p>
                     </div>
                 </div>
             </div>
         </template>
         <template v-else-if="servers && servers.length > 0 && filteredServers.length === 0 && activeTag !== ''">
-             <div class="ui message info">
+            <div class="ui message info">
                 <div class="header">
-                    {{tr "NoServersForTagH"}} "@#activeTag#@"
+                    <span v-if="activeTag === 'online'">{{tr "NoOnlineServers"}}</span>
+                    <span v-else-if="activeTag === 'offline'">{{tr "NoOfflineServers"}}</span>
+                    <span v-else>{{tr "NoServersForTagH"}} "@#activeTag#@"</span>
                 </div>
-                <p>{{tr "NoServersForTagP"}}</p>
+                <p>
+                    <span v-if="activeTag === 'online'">{{tr "NoOnlineServersDesc"}}</span>
+                    <span v-else-if="activeTag === 'offline'">{{tr "NoOfflineServersDesc"}}</span>
+                    <span v-else>{{tr "NoServersForTagP"}}</span>
+                </p>
             </div>
         </template>
         <template v-else>
@@ -255,117 +269,117 @@ document.addEventListener('DOMContentLoaded', function() {
 {{template "common/footer" .}}
 
 <script>
-// 确保流量提取函数可用
-window.trafficFunctionsReady = true;
-window.serverTrafficData = window.serverTrafficData || {};
-window.lastTrafficUpdateTime = window.lastTrafficUpdateTime || 0;
+    // 确保流量提取函数可用
+    window.trafficFunctionsReady = true;
+    window.serverTrafficData = window.serverTrafficData || {};
+    window.lastTrafficUpdateTime = window.lastTrafficUpdateTime || 0;
 
-// 提取流量数据的函数
-window.extractTrafficData = function() {
-    try {
-        const trafficDataElement = document.getElementById('traffic-data');
-        let trafficItems = [];
-        if (trafficDataElement && trafficDataElement.textContent) {
-            try {
-                trafficItems = JSON.parse(trafficDataElement.textContent);
-            } catch (e) {
-                console.warn('DOM数据解析失败:', e);
-            }
-        }
-        if (!trafficItems || trafficItems.length === 0) {
-            trafficItems = window.serverTrafficRawData || [];
-        }
-        if (!trafficItems || trafficItems.length === 0) return;
-        
-        const newTrafficData = {};
-        trafficItems.forEach(item => {
-            if (item && item.server_id) {
-                const serverId = String(item.server_id);
-                const serverName = item.server_name || "Unknown Server";
-                
-                // 优先使用字节数据作为源数据
-                let maxBytes, usedBytes, percent;
-                
-                if (item.is_bytes_source && typeof item.used_bytes === 'number' && typeof item.max_bytes === 'number') {
-                    // 后端提供了字节数据源，直接使用
-                    maxBytes = item.max_bytes;
-                    usedBytes = item.used_bytes;
-                    
-                    // 从字节数据计算百分比
-                    if (maxBytes > 0) {
-                        percent = (usedBytes / maxBytes) * 100;
-                        percent = Math.max(0, Math.min(100, percent)); // 限制在0-100范围
-                    } else {
-                        percent = 0;
-                    }
-                } else {
-                    // 回退到解析格式化字符串
-                    const maxTraffic = item.max_formatted || "0B";
-                    const usedTraffic = item.used_formatted || "0B";
-                    
-                    maxBytes = (typeof window.parseTrafficToBytes === 'function') ? window.parseTrafficToBytes(maxTraffic) : 0;
-                    usedBytes = (typeof window.parseTrafficToBytes === 'function') ? window.parseTrafficToBytes(usedTraffic) : 0;
-                    
-                    // 如果有后端计算的百分比，作为备选
-                    if (typeof item.used_percent === 'number') {
-                        percent = item.used_percent;
-                    } else if (maxBytes > 0) {
-                        percent = (usedBytes / maxBytes) * 100;
-                        percent = Math.max(0, Math.min(100, percent));
-                    } else {
-                        percent = 0;
-                    }
+    // 提取流量数据的函数
+    window.extractTrafficData = function () {
+        try {
+            const trafficDataElement = document.getElementById('traffic-data');
+            let trafficItems = [];
+            if (trafficDataElement && trafficDataElement.textContent) {
+                try {
+                    trafficItems = JSON.parse(trafficDataElement.textContent);
+                } catch (e) {
+                    console.warn('DOM数据解析失败:', e);
                 }
-                
-                // 格式化显示字符串，使用readableBytes函数
-                const standardMax = (typeof window.formatTrafficUnit === 'function') ? 
-                    window.formatTrafficUnit(readableBytes(maxBytes)) : readableBytes(maxBytes);
-                const standardUsed = (typeof window.formatTrafficUnit === 'function') ? 
-                    window.formatTrafficUnit(readableBytes(usedBytes)) : readableBytes(usedBytes);
-                
-                newTrafficData[serverId] = {
-                    max: standardMax,
-                    used: standardUsed,
-                    percent: Math.round(percent * 100) / 100,
-                    maxBytes: maxBytes,
-                    usedBytes: usedBytes,
-                    serverName: serverName,
-                    cycleName: item.cycle_name || "Unknown",
-                    isBytesSource: item.is_bytes_source || false
-                };
             }
-        });
-        
-        window.serverTrafficData = newTrafficData;
-        window.lastTrafficUpdateTime = Date.now();
-        
-        if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
-            window.statusCards.updateTrafficData();
+            if (!trafficItems || trafficItems.length === 0) {
+                trafficItems = window.serverTrafficRawData || [];
+            }
+            if (!trafficItems || trafficItems.length === 0) return;
+
+            const newTrafficData = {};
+            trafficItems.forEach(item => {
+                if (item && item.server_id) {
+                    const serverId = String(item.server_id);
+                    const serverName = item.server_name || "Unknown Server";
+
+                    // 优先使用字节数据作为源数据
+                    let maxBytes, usedBytes, percent;
+
+                    if (item.is_bytes_source && typeof item.used_bytes === 'number' && typeof item.max_bytes === 'number') {
+                        // 后端提供了字节数据源，直接使用
+                        maxBytes = item.max_bytes;
+                        usedBytes = item.used_bytes;
+
+                        // 从字节数据计算百分比
+                        if (maxBytes > 0) {
+                            percent = (usedBytes / maxBytes) * 100;
+                            percent = Math.max(0, Math.min(100, percent)); // 限制在0-100范围
+                        } else {
+                            percent = 0;
+                        }
+                    } else {
+                        // 回退到解析格式化字符串
+                        const maxTraffic = item.max_formatted || "0B";
+                        const usedTraffic = item.used_formatted || "0B";
+
+                        maxBytes = (typeof window.parseTrafficToBytes === 'function') ? window.parseTrafficToBytes(maxTraffic) : 0;
+                        usedBytes = (typeof window.parseTrafficToBytes === 'function') ? window.parseTrafficToBytes(usedTraffic) : 0;
+
+                        // 如果有后端计算的百分比，作为备选
+                        if (typeof item.used_percent === 'number') {
+                            percent = item.used_percent;
+                        } else if (maxBytes > 0) {
+                            percent = (usedBytes / maxBytes) * 100;
+                            percent = Math.max(0, Math.min(100, percent));
+                        } else {
+                            percent = 0;
+                        }
+                    }
+
+                    // 格式化显示字符串，使用readableBytes函数
+                    const standardMax = (typeof window.formatTrafficUnit === 'function') ?
+                        window.formatTrafficUnit(readableBytes(maxBytes)) : readableBytes(maxBytes);
+                    const standardUsed = (typeof window.formatTrafficUnit === 'function') ?
+                        window.formatTrafficUnit(readableBytes(usedBytes)) : readableBytes(usedBytes);
+
+                    newTrafficData[serverId] = {
+                        max: standardMax,
+                        used: standardUsed,
+                        percent: Math.round(percent * 100) / 100,
+                        maxBytes: maxBytes,
+                        usedBytes: usedBytes,
+                        serverName: serverName,
+                        cycleName: item.cycle_name || "Unknown",
+                        isBytesSource: item.is_bytes_source || false
+                    };
+                }
+            });
+
+            window.serverTrafficData = newTrafficData;
+            window.lastTrafficUpdateTime = Date.now();
+
+            if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
+                window.statusCards.updateTrafficData();
+            }
+        } catch (e) {
+            console.error('提取流量数据时出错:', e);
         }
-    } catch (e) {
-        console.error('提取流量数据时出错:', e);
-    }
-};
+    };
 
-// 立即提取数据
-setTimeout(window.extractTrafficData, 1000);
+    // 立即提取数据
+    setTimeout(window.extractTrafficData, 1000);
 
-// 定期更新
-setInterval(window.extractTrafficData, 30000);
+    // 定期更新
+    setInterval(window.extractTrafficData, 30000);
 
-// Vue实例配置
-const statusCards = new Vue({
-    el: '#app',
-    delimiters: ['@#', '#@'],
-    data: {
-        page: 'index',
-        defaultTemplate: '{{.Conf.Site.Theme}}',
-        templates: {{.Themes}},
-        servers: [],
+    // Vue实例配置
+    const statusCards = new Vue({
+        el: '#app',
+        delimiters: ['@#', '#@'],
+        data: {
+            page: 'index',
+            defaultTemplate: '{{.Conf.Site.Theme}}',
+            templates: {{.Themes }},
+    servers: [],
         cache: [],
-        activePopup: null,
-        trafficData: {},
-        _trafficVersion: 0,
+            activePopup: null,
+                trafficData: { },
+    _trafficVersion: 0,
         sensorList: [
             'TC0D',
             'TC0H',
@@ -383,11 +397,11 @@ const statusCards = new Vue({
             'ACPI\\ThermalZone\\TZ001_0',
             'ACPI\\ThermalZone\\THM0_0'
         ],
-        activeTag: '',
-        uniqueTags: []
+            activeTag: '',
+                uniqueTags: []
     },
     mixins: [mixinsVue],
-    created() {
+        created() {
         try {
             const serverData = JSON.parse('{{.Servers}}');
             if (serverData && serverData.servers && Array.isArray(serverData.servers)) {
@@ -400,7 +414,7 @@ const statusCards = new Vue({
             console.error('解析服务器数据失败:', e);
             this.servers = [];
         }
-        
+
         this.generateUniqueTags();
         // 初始化时设置所有服务器的初始状态
         this.servers.forEach(server => {
@@ -412,7 +426,7 @@ const statusCards = new Vue({
                 server.live = false;
             }
         });
-        
+
         // 订阅流量数据更新
         if (window.trafficManager) {
             window.trafficManager.subscribe((data, version) => {
@@ -421,7 +435,7 @@ const statusCards = new Vue({
                 this.updateTrafficData();
             });
         }
-        
+
         // 不再设置定期更新，WebSocket会实时推送数据
     },
     mounted() {
@@ -435,18 +449,24 @@ const statusCards = new Vue({
             if (!this.servers || !Array.isArray(this.servers)) {
                 return [];
             }
-            
+
             const displayableServers = this.servers.filter(server => server.Host);
+
             if (this.activeTag === '') {
                 return displayableServers;
+            } else if (this.activeTag === 'online') {
+                return displayableServers.filter(server => server.live === true);
+            } else if (this.activeTag === 'offline') {
+                return displayableServers.filter(server => server.live === false);
             }
+
             return displayableServers.filter(server => server.Tag === this.activeTag);
         }
     },
     methods: {
         getServerTrafficData(serverId) {
             if (!serverId) return null;
-            
+
             // 首先尝试从 trafficManager 获取数据
             if (window.trafficManager) {
                 const trafficData = window.trafficManager.getServerTrafficData(serverId);
@@ -454,14 +474,14 @@ const statusCards = new Vue({
                     return trafficData;
                 }
             }
-            
+
             // 如果 trafficManager 没有数据，尝试从全局数据获取
             if (window.serverTrafficData) {
                 const serverIdStr = String(serverId).trim();
                 if (window.serverTrafficData[serverIdStr]) {
                     return window.serverTrafficData[serverIdStr];
                 }
-                
+
                 // 尝试数字匹配
                 const numericId = parseInt(serverIdStr);
                 if (!isNaN(numericId)) {
@@ -473,7 +493,7 @@ const statusCards = new Vue({
                     }
                 }
             }
-            
+
             return null;
         },
         formatPlatformVersion(version) {
@@ -506,7 +526,7 @@ const statusCards = new Vue({
                 "rocky-linux", "sabayon", "slackware", "snappy", "solus",
                 "tux", "ubuntu", "void", "zorin"
             ];
-            
+
             if (validPlatforms.includes(str)) {
                 return str;
             }
@@ -640,7 +660,7 @@ const statusCards = new Vue({
                         tabEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
                     }
                 }
-                
+
                 // 分组切换后重新初始化 Tippy.js 弹窗
                 // 等待 DOM 更新完成后再初始化
                 setTimeout(() => {
@@ -657,6 +677,10 @@ const statusCards = new Vue({
             let activeTabElement = null;
             if (this.activeTag === '') {
                 activeTabElement = this.$refs.allTab;
+            } else if (this.activeTag === 'online') {
+                activeTabElement = this.$refs.onlineTab;
+            } else if (this.activeTag === 'offline') {
+                activeTabElement = this.$refs.offlineTab;
             } else {
                 const reversedTags = this.uniqueTags.slice().reverse();
                 const activeIndexInReversed = reversedTags.indexOf(this.activeTag);
@@ -685,17 +709,17 @@ const statusCards = new Vue({
         },
         updateServerLiveStatus(wsData) {
             if (!wsData || !this.servers) return;
-            
+
             // 优先使用服务器提供的时间戳，如果没有则使用本地时间
             const nowMillisFromWS = wsData.now || Date.now();
-            
+
             // 如果没有服务器时间戳，记录一次警告（避免刷屏）
             if (!wsData.now && !this._warnedAboutMissingTimestamp) {
                 console.warn('WebSocket data missing server timestamp, using local time');
                 this._warnedAboutMissingTimestamp = true;
             }
             let hasUpdates = false;
-            
+
             // 创建服务器ID到数据的映射，提高查找效率
             const serverMap = new Map();
             if (wsData.servers) {
@@ -703,7 +727,7 @@ const statusCards = new Vue({
                     serverMap.set(server.ID, server);
                 });
             }
-            
+
             this.servers.forEach(serverItem => {
                 if (!serverItem.Host) {
                     if (serverItem.live !== false) {
@@ -712,7 +736,7 @@ const statusCards = new Vue({
                     }
                     return;
                 }
-                
+
                 const wsServer = serverMap.get(serverItem.ID);
                 if (wsServer) {
                     // 更新服务器状态
@@ -724,13 +748,13 @@ const statusCards = new Vue({
                         };
                         hasUpdates = true;
                     }
-                    
+
                     // 更新最后活动时间
                     if (wsServer.LastActive) {
                         serverItem.LastActive = wsServer.LastActive;
                     }
                 }
-                
+
                 // 计算在线状态
                 const lastActiveTimestampMs = new Date(serverItem.LastActive).getTime();
                 const diffMs = nowMillisFromWS - lastActiveTimestampMs;
@@ -739,12 +763,12 @@ const statusCards = new Vue({
                 // 后端在singleton.go中设置为2分钟（line 896）
                 // 添加10秒容错时间，处理时间不同步问题
                 const offlineThreshold = 130000; // 2分钟 + 10秒容错
-                
+
                 // 状态变化检查
                 if (serverItem.live === true && diffMs > offlineThreshold) {
                     // Server may go offline
                 }
-                
+
                 const newLiveStatus = !isNaN(lastActiveTimestampMs) && diffMs < offlineThreshold && diffMs > -10000; // 也要检查未来时间
 
                 // 改进状态稳定性检查
@@ -772,12 +796,12 @@ const statusCards = new Vue({
                     serverItem._offlineConfirmCount = 0;
                 }
             });
-            
+
             // 只有在有实际更新时才强制更新视图
             if (hasUpdates) {
                 // 立即更新，不使用防抖（防抖可能导致状态显示延迟）
                 this.$forceUpdate();
-                
+
                 // 更新当前显示的popup内容
                 this.$nextTick(() => {
                     if (window.TippyPopups && window.TippyPopups.updateContent) {
@@ -791,10 +815,10 @@ const statusCards = new Vue({
             if (!trafficData) {
                 return 'ui progress offline';
             }
-            
+
             const percent = trafficData.percent || 0;
             let classObject = { ui: true, progress: true };
-            
+
             if (percent < 60) {
                 classObject.fine = true;
             } else if (percent < 90) {
@@ -802,7 +826,7 @@ const statusCards = new Vue({
             } else {
                 classObject.error = true;
             }
-            
+
             return Object.keys(classObject).join(' ');
         },
         getTrafficProgressStyle(serverId) {
@@ -813,16 +837,16 @@ const statusCards = new Vue({
                     'width': '0%'
                 };
             }
-            
+
             const percent = trafficData.percent || 0;
             let bgColor = 'rgb(76,175,80)';
-            
+
             if (percent >= 90) {
                 bgColor = '#f44336';
             } else if (percent >= 60) {
                 bgColor = '#ff9800';
             }
-            
+
             return {
                 'transition-duration': '300ms',
                 'width': percent + '%',
@@ -834,7 +858,7 @@ const statusCards = new Vue({
             if (!trafficData) {
                 return '0%';
             }
-            
+
             const percent = trafficData.percent || 0;
             return percent.toFixed(2) + '%';
         },
@@ -843,7 +867,7 @@ const statusCards = new Vue({
             if (!trafficData) {
                 return '无数据';
             }
-            
+
             const used = trafficData.used || '0B';
             const max = trafficData.max || '0B';
             return `${used} / ${max}`;
@@ -880,7 +904,7 @@ const statusCards = new Vue({
 
             if (hasUpdates) {
                 this.$forceUpdate();
-                
+
                 // 更新当前显示的popup内容
                 this.$nextTick(() => {
                     if (window.TippyPopups && window.TippyPopups.updateContent) {
@@ -899,17 +923,17 @@ const statusCards = new Vue({
             if (!temperatureList || !Array.isArray(temperatureList) || temperatureList.length === 0) {
                 return '';
             }
-            
+
             const lowerCaseSensorList = sensorList.map(sensor => sensor.toLowerCase());
-            const filtered = temperatureList.filter(item => 
-                item.Temperature !== 0 && 
-                item.Name && 
+            const filtered = temperatureList.filter(item =>
+                item.Temperature !== 0 &&
+                item.Name &&
                 lowerCaseSensorList.includes(item.Name.toLowerCase())
             );
-            
+
             if (filtered.length > 0) {
-                const maxTemp = filtered.reduce((max, current) => 
-                    current.Temperature > max ? current.Temperature : max, 
+                const maxTemp = filtered.reduce((max, current) =>
+                    current.Temperature > max ? current.Temperature : max,
                     filtered[0].Temperature
                 );
                 return maxTemp.toFixed(1);
@@ -917,8 +941,8 @@ const statusCards = new Vue({
 
             const nonZeroTemps = temperatureList.filter(item => item.Temperature !== 0);
             if (nonZeroTemps.length > 0) {
-                const maxTemp = nonZeroTemps.reduce((max, current) => 
-                    current.Temperature > max ? current.Temperature : max, 
+                const maxTemp = nonZeroTemps.reduce((max, current) =>
+                    current.Temperature > max ? current.Temperature : max,
                     nonZeroTemps[0].Temperature
                 );
                 return maxTemp.toFixed(1);
@@ -952,283 +976,283 @@ const statusCards = new Vue({
     }
 });
 
-// 全局WebSocket状态管理
-const wsManager = {
-    ws: null,
-    lastPing: Date.now(),
-    reconnectTimer: null,
-    healthCheckTimer: null,
-    reconnectAttempts: 0,
-    maxReconnectAttempts: 10,
-    isReconnecting: false,
-    pingInterval: null,
-    
-    // 健康检查
-    startHealthCheck() {
-        this.stopHealthCheck();
-        this.healthCheckTimer = setInterval(() => {
-            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                // 检查上次接收消息的时间
-                const timeSinceLastMessage = Date.now() - this.lastPing;
-                if (timeSinceLastMessage > 35000) { // 35秒没有收到消息（留5秒余量）
-                    console.warn('WebSocket health check failed, reconnecting...');
-                    this.reconnect();
-                } else if (timeSinceLastMessage > 20000) {
-                    // 20秒没有收到消息，发送一个ping
-                    try {
-                        this.ws.send(JSON.stringify({ type: 'ping' }));
-                    } catch (e) {
-                        console.warn('Failed to send ping:', e);
+    // 全局WebSocket状态管理
+    const wsManager = {
+        ws: null,
+        lastPing: Date.now(),
+        reconnectTimer: null,
+        healthCheckTimer: null,
+        reconnectAttempts: 0,
+        maxReconnectAttempts: 10,
+        isReconnecting: false,
+        pingInterval: null,
+
+        // 健康检查
+        startHealthCheck() {
+            this.stopHealthCheck();
+            this.healthCheckTimer = setInterval(() => {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    // 检查上次接收消息的时间
+                    const timeSinceLastMessage = Date.now() - this.lastPing;
+                    if (timeSinceLastMessage > 35000) { // 35秒没有收到消息（留5秒余量）
+                        console.warn('WebSocket health check failed, reconnecting...');
+                        this.reconnect();
+                    } else if (timeSinceLastMessage > 20000) {
+                        // 20秒没有收到消息，发送一个ping
+                        try {
+                            this.ws.send(JSON.stringify({ type: 'ping' }));
+                        } catch (e) {
+                            console.warn('Failed to send ping:', e);
+                        }
                     }
                 }
+            }, 15000); // 每15秒检查一次
+        },
+
+        stopHealthCheck() {
+            if (this.healthCheckTimer) {
+                clearInterval(this.healthCheckTimer);
+                this.healthCheckTimer = null;
             }
-        }, 15000); // 每15秒检查一次
-    },
-    
-    stopHealthCheck() {
-        if (this.healthCheckTimer) {
-            clearInterval(this.healthCheckTimer);
-            this.healthCheckTimer = null;
-        }
-        if (this.pingInterval) {
-            clearInterval(this.pingInterval);
-            this.pingInterval = null;
-        }
-    },
-    
-    reconnect() {
-        if (this.isReconnecting) {
-            return; // 避免重复重连
-        }
-        
-        this.isReconnecting = true;
-        this.close();
-        this.reconnectAttempts++;
-        
-        if (this.reconnectAttempts > this.maxReconnectAttempts) {
-            console.error('Max reconnect attempts reached');
+            if (this.pingInterval) {
+                clearInterval(this.pingInterval);
+                this.pingInterval = null;
+            }
+        },
+
+        reconnect() {
+            if (this.isReconnecting) {
+                return; // 避免重复重连
+            }
+
+            this.isReconnecting = true;
+            this.close();
+            this.reconnectAttempts++;
+
+            if (this.reconnectAttempts > this.maxReconnectAttempts) {
+                console.error('Max reconnect attempts reached');
+                this.isReconnecting = false;
+                // 显示错误提示，但不立即刷新页面
+                this.showConnectionError();
+                return;
+            }
+
+            // 使用指数退避算法，但限制最大延迟为30秒
+            const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts - 1), 30000);
+            console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+
+            this.reconnectTimer = setTimeout(() => {
+                this.isReconnecting = false;
+                initWebSocket();
+            }, delay);
+        },
+
+        close() {
+            this.stopHealthCheck();
+            if (this.reconnectTimer) {
+                clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = null;
+            }
+            if (this.ws) {
+                try {
+                    this.ws.close(1000, 'Normal closure');
+                } catch (e) {
+                    console.warn('Error closing WebSocket:', e);
+                }
+                this.ws = null;
+            }
+        },
+
+        reset() {
+            this.reconnectAttempts = 0;
+            this.lastPing = Date.now();
             this.isReconnecting = false;
-            // 显示错误提示，但不立即刷新页面
-            this.showConnectionError();
-            return;
         }
-        
-        // 使用指数退避算法，但限制最大延迟为30秒
-        const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts - 1), 30000);
-        console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-        
-        this.reconnectTimer = setTimeout(() => {
-            this.isReconnecting = false;
-            initWebSocket();
-        }, delay);
-    },
-    
-    close() {
-        this.stopHealthCheck();
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
+
+    };
+
+    // 使Vue实例全局可用
+    window.statusCards = statusCards;
+
+    // Tippy.js 弹窗已迁移到 main.js
+
+    // 初始化WebSocket连接
+    function initWebSocket() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+        // 关闭旧连接
+        if (wsManager.ws) {
+            wsManager.close();
         }
-        if (this.ws) {
-            try {
-                this.ws.close(1000, 'Normal closure');
-            } catch (e) {
-                console.warn('Error closing WebSocket:', e);
-            }
-            this.ws = null;
-        }
-    },
-    
-    reset() {
-        this.reconnectAttempts = 0;
-        this.lastPing = Date.now();
-        this.isReconnecting = false;
-    }
-    
-};
 
-// 使Vue实例全局可用
-window.statusCards = statusCards;
+        const ws = new WebSocket(wsUrl);
+        wsManager.ws = ws;
 
-// Tippy.js 弹窗已迁移到 main.js
+        ws.onopen = function () {
+            console.log('WebSocket connected');
+            wsManager.reset();
+            wsManager.startHealthCheck();
 
-// 初始化WebSocket连接
-function initWebSocket() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-
-    // 关闭旧连接
-    if (wsManager.ws) {
-        wsManager.close();
-    }
-
-    const ws = new WebSocket(wsUrl);
-    wsManager.ws = ws;
-
-    ws.onopen = function() {
-        console.log('WebSocket connected');
-        wsManager.reset();
-        wsManager.startHealthCheck();
-        
-        // 显示连接成功提示（如果是重连）
-        if (wsManager.reconnectAttempts > 0) {
-            const existingError = document.querySelector('.websocket-error-msg');
-            if (existingError) {
-                existingError.remove();
-            }
-            const msg = document.createElement('div');
-            msg.className = 'ui positive message';
-            msg.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
-            msg.innerHTML = `
+            // 显示连接成功提示（如果是重连）
+            if (wsManager.reconnectAttempts > 0) {
+                const existingError = document.querySelector('.websocket-error-msg');
+                if (existingError) {
+                    existingError.remove();
+                }
+                const msg = document.createElement('div');
+                msg.className = 'ui positive message';
+                msg.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
+                msg.innerHTML = `
                 <i class="close icon" onclick="this.parentElement.remove()"></i>
                 <div class="header">连接已恢复</div>
                 <p>与服务器的连接已恢复，数据将实时更新。</p>
             `;
-            document.body.appendChild(msg);
-            setTimeout(() => msg.remove(), 5000);
-        }
-        
-        try {
-            ws.send(JSON.stringify({ type: 'ping' }));
-        } catch (e) {
-            console.warn('WebSocket ping failed:', e);
-        }
-    };
-
-    ws.onmessage = function(event) {
-        wsManager.lastPing = Date.now();
-        wsManager.reconnectAttempts = 0; // 重置重连次数
-        
-        try {
-            const data = JSON.parse(event.data);
-            
-            // 处理服务端pong响应
-            if (data.type === 'pong') {
-                return;
+                document.body.appendChild(msg);
+                setTimeout(() => msg.remove(), 5000);
             }
 
-            // 处理服务器状态更新
-            if (data.servers && Array.isArray(data.servers)) {
-                if (window.statusCards) {
-                    window.statusCards.updateServerLiveStatus(data);
+            try {
+                ws.send(JSON.stringify({ type: 'ping' }));
+            } catch (e) {
+                console.warn('WebSocket ping failed:', e);
+            }
+        };
+
+        ws.onmessage = function (event) {
+            wsManager.lastPing = Date.now();
+            wsManager.reconnectAttempts = 0; // 重置重连次数
+
+            try {
+                const data = JSON.parse(event.data);
+
+                // 处理服务端pong响应
+                if (data.type === 'pong') {
+                    return;
                 }
-            }
 
-            // 处理流量数据更新 - 流量数据可能单独发送或与服务器状态一起发送
-            if (data.trafficData && Array.isArray(data.trafficData)) {
-                window.serverTrafficRawData = data.trafficData;
-                if (window.trafficManager) {
-                    window.trafficManager.processTrafficData(data.trafficData);
-                } else {
-                    window.extractTrafficData();
+                // 处理服务器状态更新
+                if (data.servers && Array.isArray(data.servers)) {
+                    if (window.statusCards) {
+                        window.statusCards.updateServerLiveStatus(data);
+                    }
                 }
-            }
-        } catch (e) {
-            console.warn('WebSocket message parsing failed:', e);
-        }
-    };
 
-    ws.onerror = function(error) {
-        console.warn('WebSocket error:', error);
-        // 显示错误提示
-        if (!document.querySelector('.websocket-error-msg')) {
-            const msg = document.createElement('div');
-            msg.className = 'ui warning message';
-            msg.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
-            msg.innerHTML = `
+                // 处理流量数据更新 - 流量数据可能单独发送或与服务器状态一起发送
+                if (data.trafficData && Array.isArray(data.trafficData)) {
+                    window.serverTrafficRawData = data.trafficData;
+                    if (window.trafficManager) {
+                        window.trafficManager.processTrafficData(data.trafficData);
+                    } else {
+                        window.extractTrafficData();
+                    }
+                }
+            } catch (e) {
+                console.warn('WebSocket message parsing failed:', e);
+            }
+        };
+
+        ws.onerror = function (error) {
+            console.warn('WebSocket error:', error);
+            // 显示错误提示
+            if (!document.querySelector('.websocket-error-msg')) {
+                const msg = document.createElement('div');
+                msg.className = 'ui warning message';
+                msg.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
+                msg.innerHTML = `
                 <i class="close icon" onclick="this.parentElement.remove()"></i>
                 <div class="header">连接出现问题</div>
                 <p>与服务器的连接出现问题，正在尝试重新连接...</p>
             `;
-            document.body.appendChild(msg);
-            setTimeout(() => msg.remove(), 10000);
-        }
-    };
-
-    ws.onclose = function(event) {
-        console.log('WebSocket closed:', event.code, event.reason);
-        wsManager.ws = null;
-        wsManager.stopHealthCheck();
-        
-        // 只有非正常关闭才重连
-        if (event.code !== 1000 && event.code !== 1001) {
-            wsManager.reconnect();
-        }
-    };
-
-    return ws;
-}
-
-
-
-
-
-$(document).ready(function() {
-    // 初始化 Tippy.js 弹窗（使用 main.js 中的函数）
-    if (window.TippyPopups && window.TippyPopups.init) {
-        window.TippyPopups.init();
-    }
-    
-    // 初始化WebSocket连接（仅在首页）
-    if (window.location.pathname === '/' || window.location.pathname === '/home') {
-        window.ws = initWebSocket();
-
-        // 添加页面可见性变化监听
-        document.addEventListener('visibilitychange', function() {
-            if (document.visibilityState === 'visible') {
-                // 页面变为可见时，检查WebSocket连接状态
-                if (!wsManager.ws || wsManager.ws.readyState !== WebSocket.OPEN) {
-                    console.log('Page became visible, checking WebSocket connection...');
-                    // 延迟1秒后重连，避免频繁切换标签导致的问题
-                    setTimeout(() => {
-                        if (!wsManager.ws || wsManager.ws.readyState !== WebSocket.OPEN) {
-                            wsManager.reconnect();
-                        }
-                    }, 1000);
-                } else {
-                    // 连接正常，重启健康检查
-                    wsManager.startHealthCheck();
-                }
-            } else {
-                // 页面隐藏时，停止健康检查但不断开连接
-                wsManager.stopHealthCheck();
+                document.body.appendChild(msg);
+                setTimeout(() => msg.remove(), 10000);
             }
-        });
-        
-        // 监听网络状态变化
-        window.addEventListener('online', function() {
-            console.log('Network connection restored');
-            if (!wsManager.ws || wsManager.ws.readyState !== WebSocket.OPEN) {
+        };
+
+        ws.onclose = function (event) {
+            console.log('WebSocket closed:', event.code, event.reason);
+            wsManager.ws = null;
+            wsManager.stopHealthCheck();
+
+            // 只有非正常关闭才重连
+            if (event.code !== 1000 && event.code !== 1001) {
                 wsManager.reconnect();
             }
-        });
-        
-        window.addEventListener('offline', function() {
-            console.log('Network connection lost');
-            wsManager.showConnectionError();
-        });
-        
-        // 页面卸载时清理
-        window.addEventListener('beforeunload', function() {
-            wsManager.close();
-        });
+        };
+
+        return ws;
     }
 
-    $('.ui.accordion').accordion({
-        exclusive: false,
-        silent: true,
-        performance: true,
-        selector: {
-            trigger: '.title'
-        },
-        duration: 200,
-        easing: 'easeOutQuad'
-    });
 
-    $(document).off('touchstart.accordion touchmove.accordion');
-    $(document).on('touchstart.accordion', '.ui.accordion .title', function(e) {
-        // 被动处理，不阻止默认行为
+
+
+
+    $(document).ready(function () {
+        // 初始化 Tippy.js 弹窗（使用 main.js 中的函数）
+        if (window.TippyPopups && window.TippyPopups.init) {
+            window.TippyPopups.init();
+        }
+
+        // 初始化WebSocket连接（仅在首页）
+        if (window.location.pathname === '/' || window.location.pathname === '/home') {
+            window.ws = initWebSocket();
+
+            // 添加页面可见性变化监听
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') {
+                    // 页面变为可见时，检查WebSocket连接状态
+                    if (!wsManager.ws || wsManager.ws.readyState !== WebSocket.OPEN) {
+                        console.log('Page became visible, checking WebSocket connection...');
+                        // 延迟1秒后重连，避免频繁切换标签导致的问题
+                        setTimeout(() => {
+                            if (!wsManager.ws || wsManager.ws.readyState !== WebSocket.OPEN) {
+                                wsManager.reconnect();
+                            }
+                        }, 1000);
+                    } else {
+                        // 连接正常，重启健康检查
+                        wsManager.startHealthCheck();
+                    }
+                } else {
+                    // 页面隐藏时，停止健康检查但不断开连接
+                    wsManager.stopHealthCheck();
+                }
+            });
+
+            // 监听网络状态变化
+            window.addEventListener('online', function () {
+                console.log('Network connection restored');
+                if (!wsManager.ws || wsManager.ws.readyState !== WebSocket.OPEN) {
+                    wsManager.reconnect();
+                }
+            });
+
+            window.addEventListener('offline', function () {
+                console.log('Network connection lost');
+                wsManager.showConnectionError();
+            });
+
+            // 页面卸载时清理
+            window.addEventListener('beforeunload', function () {
+                wsManager.close();
+            });
+        }
+
+        $('.ui.accordion').accordion({
+            exclusive: false,
+            silent: true,
+            performance: true,
+            selector: {
+                trigger: '.title'
+            },
+            duration: 200,
+            easing: 'easeOutQuad'
+        });
+
+        $(document).off('touchstart.accordion touchmove.accordion');
+        $(document).on('touchstart.accordion', '.ui.accordion .title', function (e) {
+            // 被动处理，不阻止默认行为
+        });
     });
-});
 </script>
 {{end}}
