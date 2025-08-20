@@ -2,6 +2,51 @@
 {{template "theme-default/header" .}}
 
 <script>
+    // 添加服务器数量徽章样式
+    const style = document.createElement('style');
+    style.textContent = `
+        .custom-tab {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .server-count-badge {
+            position: absolute;
+            top: 5px;
+            right: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #03a9f4;
+            color: white;
+            border-radius: 50%;
+            width: 14px;
+            height: 14px;
+            font-size: 8px;
+            font-weight: bold;
+            line-height: 1;
+            min-width: 14px;
+            z-index: 1;
+        }
+        
+        .custom-tab[data-tag="online"] .server-count-badge {
+            background-color: #4caf50;
+        }
+        
+        .custom-tab[data-tag="offline"] .server-count-badge {
+            background-color: #f44336;
+        }
+        
+        .custom-tab.active .server-count-badge {
+            opacity: 0.9;
+        }
+        
+        .custom-tab:hover .server-count-badge {
+            opacity: 0.8;
+        }
+    `;
+    document.head.appendChild(style);
+
     // 性能优化 - 覆盖默认事件监听器为被动模式
     (function () {
         // 保存原始的 addEventListener
@@ -75,17 +120,25 @@
             <div v-if="servers && servers.length > 0" class="custom-tabs-container" ref="tabsContainer">
                 <div class="tabs-content-area">
                     <div class="custom-tab" :class="{ active: activeTag === '' }" @click="handleTabClick('', $event)"
-                        ref="allTab"> {{tr "All"}}
+                        ref="allTab" data-tag="all">
+                        {{tr "All"}}
+                        <span class="server-count-badge">@#getServerCountForTag('')#@</span>
                     </div>
                     <div class="custom-tab" :class="{ active: activeTag === 'online' }"
-                        @click="handleTabClick('online', $event)" ref="onlineTab"> {{tr "OnlineServers"}}
+                        @click="handleTabClick('online', $event)" ref="onlineTab" data-tag="online">
+                        {{tr "OnlineServers"}}
+                        <span class="server-count-badge">@#getServerCountForTag('online')#@</span>
                     </div>
                     <div class="custom-tab" :class="{ active: activeTag === 'offline' }"
-                        @click="handleTabClick('offline', $event)" ref="offlineTab"> {{tr "OfflineServers"}}
+                        @click="handleTabClick('offline', $event)" ref="offlineTab" data-tag="offline">
+                        {{tr "OfflineServers"}}
+                        <span class="server-count-badge">@#getServerCountForTag('offline')#@</span>
                     </div>
                     <div v-for="(tag, index) in uniqueTags.slice().reverse()" :key="tag" class="custom-tab"
                         :class="{ active: activeTag === tag }" @click="handleTabClick(tag, $event)"
-                        :ref="'tagTab' + index"> @#tag#@
+                        :ref="'tagTab' + index" data-tag="custom">
+                        @#tag#@
+                        <span class="server-count-badge">@#getServerCountForTag(tag)#@</span>
                     </div>
                 </div>
                 <div class="tab-slider" ref="tabSlider"></div>
@@ -949,6 +1002,23 @@
             }
 
             return '';
+        },
+        getServerCountForTag(tag) {
+            if (!this.servers || !Array.isArray(this.servers)) {
+                return 0;
+            }
+
+            const displayableServers = this.servers.filter(server => server.Host);
+
+            if (tag === '') {
+                return displayableServers.length;
+            } else if (tag === 'online') {
+                return displayableServers.filter(server => server.live === true).length;
+            } else if (tag === 'offline') {
+                return displayableServers.filter(server => server.live === false).length;
+            }
+
+            return displayableServers.filter(server => server.Tag === tag).length;
         }
     },
     watch: {
