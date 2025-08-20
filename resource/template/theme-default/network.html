@@ -91,29 +91,49 @@
         templates: {{.Themes }},
         servers: initData,
         option: {},
-        resizeTimer: null,
+    resizeTimer: null,
+    tooltipTimer: null,
         monitorConfigsLoaded: false,
         timeRange: '24h', // 默认显示24小时
-        currentServerId: null // 当前选中的服务器ID
+    currentServerId: null, // 当前选中的服务器ID
+    hoverTipLabel: '' // 悬停在自定义按钮时的临时 tooltip 文本
         },
         mixins: [mixinsVue],
         created() {
-        this.option = {
+    const vm = this;
+    this.option = {
             tooltip: {
                 trigger: 'axis',
                 position: function (pt) {
                     return [pt[0], '10%'];
                 },
+                // 使用 HTML 渲染以显示彩色 marker
+                renderMode: 'html',
                 formatter: function (params) {
-                    if (!params || params.length === 0) {
+                    if (vm && vm.hoverTipLabel) {
+                        return vm.hoverTipLabel;
+                    }
+                    if (!params) return '';
+
+                    // 非数组：可能是 graphic 按钮等
+                    if (!Array.isArray(params)) {
+                        var p = params;
+                        if (p && p.componentType === 'graphic') {
+                            var key = (p.id || p.name || '').toString();
+                            if (key.indexOf('btn24h') !== -1) return '24 小时';
+                            if (key.indexOf('btn72h') !== -1) return '72 小时';
+                        }
                         return '';
                     }
 
-                    let result = params[0].axisValueLabel + "<br />";
+                    if (params.length === 0) return '';
 
-                    // 优化：显示所有监控点在该时间的数据
-                    // 按监控点名称排序，确保显示顺序一致
-                    const sortedParams = params.sort((a, b) => {
+                    // 构造 HTML 字符串，首行时间，随后每行：彩色 marker + 名称 + 数值
+                    const lines = [];
+                    lines.push(params[0].axisValueLabel);
+
+                    // 按监控点名称排序，确保显示顺序一致（拷贝一份避免原数组被修改）
+                    const sortedParams = params.slice().sort((a, b) => {
                         return a.seriesName.localeCompare(b.seriesName);
                     });
 
@@ -121,18 +141,22 @@
                         if (item.value && item.value[1] !== undefined) {
                             const delay = parseFloat(item.value[1]);
                             const displayDelay = isNaN(delay) ? '超时' : delay.toFixed(2) + ' ms';
-                            result += item.marker + item.seriesName + ": " + displayDelay + "<br />";
+                            lines.push(item.marker + item.seriesName + ": " + displayDelay);
                         }
                     });
 
-                    return result;
+                    return lines.join('<br/>');
                 },
+                padding: [8, 10],
+                textStyle: { fontSize: 12, lineHeight: 16 },
+                appendToBody: false,
                 confine: true,
                 transitionDuration: 0,
                 z: 10,
                 zlevel: 1,
                 // 优化：确保显示所有数据系列
                 showContent: true,
+                triggerOn: 'mousemove',
                 axisPointer: {
                     type: 'cross',
                     crossStyle: {
@@ -141,16 +165,18 @@
                 }
             },
             title: {
+                show: true,
                 left: 'center',
                 text: "",
                 textStyle: {},
+                top: 8,
                 z: 5,
                 zlevel: 0
             },
             legend: {
-                top: '5%',
-                right: '160px', // 为按钮留出空间，避免重叠
+                right: this.isMobile ? '150px' : '160px', // 为按钮留出空间，避免重叠，移动端整体左移
                 data: [],
+                top: 44,
                 textStyle: {
                     fontSize: this.isMobile ? 11 : 14 // 移动端使用更小字体
                 },
@@ -215,96 +241,92 @@
             animation: false,
             animationDuration: 0,
             graphic: [
-                // 24小时按钮背景
+                // 24小时按钮（分组）
                 {
-                    type: 'rect',
-                    id: 'btn24hBg',
-                    name: 'btn24hBg',
-                    right: 80,
+                    type: 'group',
+                    id: 'btn24hGroup',
+                    right: 75,
                     top: 15,
-                    shape: {
-                        width: 60,
-                        height: 24,
-                        r: [4, 0, 0, 4] // 左侧圆角
-                    },
-                    style: {
-                        fill: this.timeRange === '24h' ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.4)',
-                        stroke: 'transparent', // 移除边框
-                        lineWidth: 0, // 边框设为0
-                        shadowColor: 'rgba(0,0,0,0.08)',
-                        shadowBlur: 2,
-                        shadowOffsetY: 1
-                    },
-                    z: 100,
-                    cursor: 'pointer'
+            silent: false,
+            tooltip: { show: false },
+                    cursor: 'pointer',
+                    onclick: function(){ try{ vm.switchTimeRange('24h'); }catch(e){} },
+                    children: [
+                        {
+                            type: 'rect',
+                            id: 'btn24hRect',
+                silent: false,
+                tooltip: { show: false },
+                            onclick: function(){ try{ vm.switchTimeRange('24h'); }catch(e){} },
+                            shape: { width: 60, height: 24, r: [4, 0, 0, 4] },
+                            style: {
+                                fill: this.timeRange === '24h' ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.4)',
+                                stroke: 'transparent', lineWidth: 0,
+                                shadowColor: 'rgba(0,0,0,0.08)', shadowBlur: 2, shadowOffsetY: 1
+                            },
+                            z: 100
+                        },
+                        {
+                            type: 'text',
+                            id: 'btn24hText',
+                            tooltip: { show: false },
+                            silent: true,
+                            style: {
+                                text: '24 小时',
+                                fontSize: this.isMobile ? 11 : 12,
+                                fontWeight: this.timeRange === '24h' ? 'bold' : 'normal',
+                                fill: this.timeRange === '24h' ? '#333' : '#666',
+                                x: 30, y: 12,
+                                align: 'center', verticalAlign: 'middle'
+                            },
+                            z: 101
+                        }
+                    ]
                 },
-                // 24小时按钮文字
+                // 72小时按钮（分组）
                 {
-                    type: 'text',
-                    id: 'btn24hText',
-                    name: 'btn24hText',
-                    right: 80,
+                    type: 'group',
+                    id: 'btn72hGroup',
+                    right: 15,
                     top: 15,
-                    style: {
-                        text: '24 小时',
-                        fontSize: this.isMobile ? 11 : 12,
-                        fontWeight: this.timeRange === '24h' ? 'bold' : 'normal',
-                        fill: this.timeRange === '24h' ? '#333' : '#666',
-                        // 使用局部坐标定位到矩形中心，确保文字真正居中
-                        x: 30,
-                        y: 12,
-                        textAlign: 'center',
-                        textVerticalAlign: 'middle'
-                    },
-                    z: 101,
-                    cursor: 'pointer'
-                },
-                // 72小时按钮背景
-                {
-                    type: 'rect',
-                    id: 'btn72hBg',
-                    name: 'btn72hBg',
-                    right: 20,
-                    top: 15,
-                    shape: {
-                        width: 60,
-                        height: 24,
-                        r: [0, 4, 4, 0] // 右侧圆角
-                    },
-                    style: {
-                        fill: this.timeRange === '72h' ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.4)',
-                        stroke: 'transparent', // 移除边框
-                        lineWidth: 0, // 边框设为0
-                        shadowColor: 'rgba(0,0,0,0.08)',
-                        shadowBlur: 2,
-                        shadowOffsetY: 1
-                    },
-                    z: 100,
-                    cursor: 'pointer'
-                },
-                // 72小时按钮文字
-                {
-                    type: 'text',
-                    id: 'btn72hText',
-                    name: 'btn72hText',
-                    right: 20,
-                    top: 15,
-                    style: {
-                        text: '72 小时',
-                        fontSize: this.isMobile ? 11 : 12,
-                        fontWeight: this.timeRange === '72h' ? 'bold' : 'normal',
-                        fill: this.timeRange === '72h' ? '#333' : '#666',
-                        // 使用局部坐标定位到矩形中心，确保文字真正居中
-                        x: 30,
-                        y: 12,
-                        textAlign: 'center',
-                        textVerticalAlign: 'middle'
-                    },
-                    z: 101,
-                    cursor: 'pointer'
+            silent: false,
+            tooltip: { show: false },
+                    cursor: 'pointer',
+                    onclick: function(){ try{ vm.switchTimeRange('72h'); }catch(e){} },
+                    children: [
+                        {
+                            type: 'rect',
+                            id: 'btn72hRect',
+                silent: false,
+                tooltip: { show: false },
+                            onclick: function(){ try{ vm.switchTimeRange('72h'); }catch(e){} },
+                            shape: { width: 60, height: 24, r: [0, 4, 4, 0] },
+                            style: {
+                                fill: this.timeRange === '72h' ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.4)',
+                                stroke: 'transparent', lineWidth: 0,
+                                shadowColor: 'rgba(0,0,0,0.08)', shadowBlur: 2, shadowOffsetY: 1
+                            },
+                            z: 100
+                        },
+                        {
+                            type: 'text',
+                            id: 'btn72hText',
+                            tooltip: { show: false },
+                            silent: true,
+                            style: {
+                                text: '72 小时',
+                                fontSize: this.isMobile ? 11 : 12,
+                                fontWeight: this.timeRange === '72h' ? 'bold' : 'normal',
+                                fill: this.timeRange === '72h' ? '#333' : '#666',
+                                x: 30, y: 12,
+                                align: 'center', verticalAlign: 'middle'
+                            },
+                            z: 101
+                        }
+                    ]
                 }
             ]
-        }
+        };
     },
         mounted() {
         // 使用passive事件监听器优化滚轮性能
@@ -503,6 +525,8 @@
             this.currentServerId = id;
 
             // 性能优化：显示加载状态，避免用户等待
+            // 临时关闭 tooltip，避免渲染过程中 HTML tooltip 触发 innerHTML 报错
+            this.disableTooltip();
             this.option.title.text = "Loading...";
             if (this.myChart) {
                 this.myChart.setOption(this.option, true);
@@ -517,6 +541,8 @@
                     if (this.myChart) {
                         this.myChart.setOption(this.option, true);
                     }
+                    // 出错也要恢复 tooltip
+                    this.enableTooltip();
                 })
         },
         getMonitorHistory(id, timeRange = '24h') {
@@ -558,12 +584,12 @@
                 this.option.title.text = "No Data Available";
                 // 使用requestAnimationFrame避免强制重排
                 requestAnimationFrame(() => {
-                    if (this.myChart && typeof this.myChart.clear === 'function') {
-                        this.myChart.clear();
-                    }
                     if (this.myChart && typeof this.myChart.setOption === 'function') {
                         this.myChart.setOption(this.option, true);
                     }
+                    // 无数据时恢复 tooltip
+                    if (this.tooltipTimer) { clearTimeout(this.tooltipTimer); }
+                    this.tooltipTimer = setTimeout(() => { this.enableTooltip(); }, 0);
                 });
                 return;
             }
@@ -573,15 +599,22 @@
             if (!processedData || processedData.length === 0) {
                 this.option.title.text = "No Valid Data";
                 requestAnimationFrame(() => {
-                    if (this.myChart && typeof this.myChart.clear === 'function') {
-                        this.myChart.clear();
-                    }
                     if (this.myChart && typeof this.myChart.setOption === 'function') {
                         this.myChart.setOption(this.option, true);
                     }
+                    // 无有效数据时也恢复 tooltip
+                    if (this.tooltipTimer) { clearTimeout(this.tooltipTimer); }
+                    this.tooltipTimer = setTimeout(() => { this.enableTooltip(); }, 0);
                 });
                 return;
             }
+
+            // 固定图例顺序：按监测点名称（升序）排序，PC/移动端一致
+            const displayData = processedData.slice().sort((a, b) => {
+                const an = (a.monitor_name || '').toString();
+                const bn = (b.monitor_name || '').toString();
+                return an.localeCompare(bn);
+            });
 
             // 性能优化：预计算颜色，避免重复计算
             const precomputedColors = lcolors.map(lcolor => ({
@@ -589,15 +622,15 @@
                 bar: 'rgba(' + parseInt(lcolor.slice(1, 3), 16) + ',' + parseInt(lcolor.slice(3, 5), 16) + ',' + parseInt(lcolor.slice(5, 7), 16) + ',0.35)'
             }));
 
-            for (let i = 0; i < processedData.length; i++) {
+            for (let i = 0; i < displayData.length; i++) {
                 const colors = precomputedColors[i % precomputedColors.length];
                 let loss = 0;
                 let data = [];
                 let datal = [];
 
                 // 性能优化：批量处理数据，减少数组访问
-                const timestamps = processedData[i].created_at;
-                const delays = processedData[i].avg_delay;
+                const timestamps = displayData[i].created_at;
+                const delays = displayData[i].avg_delay;
                 const dataLength = timestamps.length;
 
                 // 性能优化：预分配数组大小
@@ -631,14 +664,17 @@
 
                 // 性能优化：调整数组大小
                 data.length = dataIndex;
-                lossRate = ((loss / timestamps.length) * 100).toFixed(1);
+                let lossRate = ((loss / timestamps.length) * 100).toFixed(1);
                 if (lossRate > 99) {
                     datal = [];
                 }
                 // 直接使用后台配置的监控点名称，不添加任何前缀
-                const monitorName = processedData[i].monitor_name || `Monitor ${processedData[i].monitor_id}`;
+                const monitorName = displayData[i].monitor_name || `Monitor ${displayData[i].monitor_id}`;
 
-                legendName = monitorName + " " + lossRate + "%";
+                let legendName = monitorName + " " + lossRate + "%";
+                if (this.isMobile) {
+                    legendName = this.fitLegendLabelToWidth(legendName);
+                }
                 tLegendData.push(legendName);
                 // 性能优化：简化图表配置，减少渲染复杂度
                 const seriesConfig = {
@@ -679,8 +715,8 @@
 
             // 设置标题，优先使用第一个有效的服务器名称
             let titleText = "Network Monitor";
-            if (processedData.length > 0 && processedData[0].server_name) {
-                titleText = processedData[0].server_name;
+            if (displayData.length > 0 && displayData[0].server_name) {
+                titleText = displayData[0].server_name;
             }
 
             // 批量更新配置，减少重排
@@ -694,7 +730,8 @@
             this.option.title.text = titleText;
             this.option.series = tSeries;
             this.option.legend.data = tLegendData;
-            this.option.legend.right = '160px'; // 确保图例不与按钮重叠
+            // 移动端减少右侧预留，减小留白；PC 端保持原值
+            this.option.legend.right = this.isMobile ? '150px' : '160px';
             this.option.grid = {
                 left: this.isMobile ? '12%' : '7%', // 进一步增加左边距
                 right: this.isMobile ? '12%' : '7%', // 进一步增加右边距
@@ -712,13 +749,57 @@
                         height: height
                     });
                 }
-                if (this.myChart && typeof this.myChart.clear === 'function') {
-                    this.myChart.clear();
-                }
+                // 不要调用 clear()，避免清除 tooltip 容器导致 innerHTML 报错
                 if (this.myChart && typeof this.myChart.setOption === 'function') {
+                    // 移动端也固定展示全部图例（不滚动），按钮位置微调以免遮挡
+                    if (this.isMobile) {
+                        try {
+                            var g = this.option.graphic || [];
+                            var container = this.$refs.chartDom;
+                            var cw = (container && container.clientWidth) ? container.clientWidth : window.innerWidth;
+                            var title = (this.option && this.option.title && this.option.title.text) ? this.option.title.text : '';
+                            // 估算标题宽度
+                            if (!this._measureCtx) {
+                                var canvas = document.createElement('canvas');
+                                this._measureCtx = canvas.getContext('2d');
+                            }
+                            var ctx = this._measureCtx;
+                            ctx.font = '16px sans-serif';
+                            var titleW = title ? ctx.measureText(title).width : 0;
+                            var titleHalf = titleW / 2;
+                            var titleLeft = cw / 2 - titleHalf;
+                            var titleRight = cw / 2 + titleHalf;
+
+                            var btnWidth = 60;
+                            var baseTop = 12;      // 更靠近顶部
+                            // 按钮向左回移一点，并使 right 与 top 一致
+                            var baseRight72 = baseTop;   // 12px
+                            var baseRight24 = baseRight72 + btnWidth; // 紧贴
+                            // 计算 24h 按钮左边界，检测与标题水平是否重叠
+                            var btn24Left = cw - baseRight24 - btnWidth;
+                            var horizontalOverlap = btn24Left < (titleRight + 8);
+                            var finalTop = horizontalOverlap ? 40 : baseTop;
+
+                            g.forEach(function(it){
+                                if(!it) return;
+                                if(it.id==='btn72hGroup') { it.top = finalTop; it.right = baseRight72; }
+                                if(it.id==='btn24hGroup') { it.top = finalTop; it.right = baseRight24; }
+                            });
+                        } catch(e){}
+                    }
                     this.myChart.setOption(this.option, true);
+                    // 重新应用时间范围按钮的选中样式，避免被整体 setOption 覆盖
+                    this.updateTimeRangeButtons();
+                    // 渲染完成后异步恢复 tooltip
+                    if (this.tooltipTimer) { clearTimeout(this.tooltipTimer); }
+                    this.tooltipTimer = setTimeout(() => { this.enableTooltip(); }, 0);
                 }
             });
+        },
+        // 移动端：根据可用像素宽度对图例文本进行省略，尽量保持单行
+        fitLegendLabelToWidth(name) {
+            // 按需保留完整文本，不做省略，配合 legend.right 的左移与自适应换行
+            return name;
         },
         isWindowsPlatform(str) {
             return str && typeof str === 'string' && str.includes('Windows')
@@ -751,14 +832,52 @@
 
                 // 添加点击事件监听
                 this.myChart.on('click', (params) => {
-                    if (params.componentType === 'graphic') {
-                        if (params.name === 'btn24hBg' || params.name === 'btn24hText') {
-                            this.switchTimeRange('24h');
-                        } else if (params.name === 'btn72hBg' || params.name === 'btn72hText') {
-                            this.switchTimeRange('72h');
+                                    if (params.componentType === 'graphic') {
+                                        const idOrName = params.id || params.name || '';
+                                        const ev = params.event || {};
+                                        const t = (ev.target && ev.target.id) || (ev.topTarget && ev.topTarget.id) || '';
+                                        const key = idOrName || t;
+                                        if (key.indexOf('btn24h') !== -1) {
+                                            this.switchTimeRange('24h');
+                                        } else if (key.indexOf('btn72h') !== -1) {
+                                            this.switchTimeRange('72h');
+                                        }
+                                    }
+                });
+
+                // 悬停在 graphic 按钮上时隐藏 tooltip，避免显示元素 name（例如 btn24hText）
+                this.myChart.on('mouseover', (params) => {
+                    if (params && params.componentType === 'graphic') {
+                        const idOrName = params.id || params.name || '';
+                        if (idOrName.indexOf('btn24h') !== -1) {
+                            this.hoverTipLabel = '24 小时';
+                        } else if (idOrName.indexOf('btn72h') !== -1) {
+                            this.hoverTipLabel = '72 小时';
                         }
+                        // 可选：也可以隐藏原轴向 tooltip
+                        try { this.myChart.dispatchAction({ type: 'hideTip' }); } catch (e) {}
                     }
                 });
+
+                // 移出图形元素时清空自定义提示
+                this.myChart.on('mouseout', (params) => {
+                    if (params && params.componentType === 'graphic') {
+                        this.hoverTipLabel = '';
+                    }
+                });
+
+                // 鼠标离开图表区域时强制隐藏 tooltip，避免浮窗残留或叠加
+                if (this.myChart && this.myChart.getZr) {
+                    const zr = this.myChart.getZr();
+                    if (zr && zr.on) {
+                        zr.on('globalout', () => {
+                            try {
+                                this.myChart.dispatchAction({ type: 'hideTip' });
+                            } catch (e) { /* ignore */ }
+                            this.hoverTipLabel = '';
+                        });
+                    }
+                }
             });
         },
         resizeHandle() {
@@ -788,6 +907,8 @@
 
             // 如果有选中的服务器，重新加载数据
             if (this.currentServerId) {
+                // 临时关闭 tooltip，避免渲染过程中 HTML tooltip 触发 innerHTML 报错
+                this.disableTooltip();
                 this.option.title.text = "Loading...";
                 if (this.myChart) {
                     this.myChart.setOption(this.option, true);
@@ -802,84 +923,64 @@
                         if (this.myChart) {
                             this.myChart.setOption(this.option, true);
                         }
+                        // 出错也要恢复 tooltip
+                        if (this.tooltipTimer) { clearTimeout(this.tooltipTimer); }
+                        this.tooltipTimer = setTimeout(() => { this.enableTooltip(); }, 0);
                     });
             } else {
                 // 如果没有选中服务器，使用初始数据但根据时间范围过滤
+                this.disableTooltip();
                 this.filterInitialDataByTimeRange(range);
             }
+        },
+        // 规避 HTML tooltip 在 DOM 不稳定时的 innerHTML 报错
+        disableTooltip() {
+            if (!this.myChart) return;
+            try { this.myChart.dispatchAction({ type: 'hideTip' }); } catch (e) {}
+            if (this.tooltipTimer) { clearTimeout(this.tooltipTimer); this.tooltipTimer = null; }
+            try { this.myChart.setOption({ tooltip: { show: false, showContent: false, triggerOn: 'none', appendToBody: false } }, false); } catch (e) {}
+        },
+        enableTooltip() {
+            if (!this.myChart) return;
+            try { this.myChart.setOption({ tooltip: { show: true, showContent: true, triggerOn: 'mousemove', appendToBody: false } }, false); } catch (e) {}
         },
         updateTimeRangeButtons() {
             if (!this.myChart) return;
 
             // 更新按钮样式，简洁透明风格
-            this.myChart.setOption({
-                graphic: [
-                    // 24小时按钮背景
-                    {
-                        type: 'rect',
-                        id: 'btn24hBg',
-                        right: 80,
-                        top: 15,
-                        style: {
-                            fill: this.timeRange === '24h' ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.4)',
-                            stroke: 'transparent',
-                            lineWidth: 0,
-                            shadowColor: 'rgba(0,0,0,0.08)',
-                            shadowBlur: 2,
-                            shadowOffsetY: 1
+            // 1) 同步到 this.option.graphic，防止后续整体 setOption 覆盖
+            if (Array.isArray(this.option.graphic)) {
+                const applyToGroup = (groupId, rectId, textId, active) => {
+                    const group = this.option.graphic.find(g => g && g.id === groupId);
+                    if (group && Array.isArray(group.children)) {
+                        const rect = group.children.find(c => c && c.id === rectId);
+                        const text = group.children.find(c => c && c.id === textId);
+                        if (rect) {
+                            rect.style = rect.style || {};
+                            rect.style.fill = active ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.4)';
                         }
-                    },
-                    // 24小时按钮文字
-                    {
-                        type: 'text',
-                        id: 'btn24hText',
-                        right: 80,
-                        top: 15,
-                        style: {
-                            text: '24 小时',
-                            fontSize: this.isMobile ? 11 : 12,
-                            fontWeight: this.timeRange === '24h' ? 'bold' : 'normal',
-                            fill: this.timeRange === '24h' ? '#333' : '#666',
-                            // 将文字定位到背景矩形中心
-                            x: 30,
-                            y: 12,
-                            textAlign: 'center',
-                            textVerticalAlign: 'middle'
-                        }
-                    },
-                    // 72小时按钮背景
-                    {
-                        type: 'rect',
-                        id: 'btn72hBg',
-                        right: 20,
-                        top: 15,
-                        style: {
-                            fill: this.timeRange === '72h' ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.4)',
-                            stroke: 'transparent',
-                            lineWidth: 0,
-                            shadowColor: 'rgba(0,0,0,0.08)',
-                            shadowBlur: 2,
-                            shadowOffsetY: 1
-                        }
-                    },
-                    // 72小时按钮文字
-                    {
-                        type: 'text',
-                        id: 'btn72hText',
-                        right: 20,
-                        top: 15,
-                        style: {
-                            text: '72 小时',
-                            fontSize: this.isMobile ? 11 : 12,
-                            fontWeight: this.timeRange === '72h' ? 'bold' : 'normal',
-                            fill: this.timeRange === '72h' ? '#333' : '#666',
-                            // 将文字定位到背景矩形中心
-                            x: 30,
-                            y: 12,
-                            textAlign: 'center',
-                            textVerticalAlign: 'middle'
+                        if (text) {
+                            text.style = text.style || {};
+                            text.style.fontWeight = active ? 'bold' : 'normal';
+                            text.style.fill = active ? '#333' : '#666';
                         }
                     }
+                };
+                applyToGroup('btn24hGroup', 'btn24hRect', 'btn24hText', this.timeRange === '24h');
+                applyToGroup('btn72hGroup', 'btn72hRect', 'btn72hText', this.timeRange === '72h');
+            }
+
+            // 2) 立即更新图表上的样式
+            this.myChart.setOption({
+                graphic: [
+                    // 24h 背景
+                    { id: 'btn24hRect', style: { fill: this.timeRange === '24h' ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.4)' } },
+                    // 24h 文字
+                    { id: 'btn24hText', style: { fontWeight: this.timeRange === '24h' ? 'bold' : 'normal', fill: this.timeRange === '24h' ? '#333' : '#666' } },
+                    // 72h 背景
+                    { id: 'btn72hRect', style: { fill: this.timeRange === '72h' ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.4)' } },
+                    // 72h 文字
+                    { id: 'btn72hText', style: { fontWeight: this.timeRange === '72h' ? 'bold' : 'normal', fill: this.timeRange === '72h' ? '#333' : '#666' } }
                 ]
             });
         },
