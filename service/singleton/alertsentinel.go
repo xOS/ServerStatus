@@ -343,6 +343,14 @@ func checkStatus() {
 
 	// 初始化alerts的字段
 	for _, alert := range alertsCopy {
+		// 安全检查：确保alert和Rules不为nil
+		if alert == nil || alert.Rules == nil {
+			if Conf.Debug {
+				log.Printf("警告：发现nil通知规则或规则列表，跳过初始化")
+			}
+			continue
+		}
+		
 		// 初始化每个Rule的字段，避免nil指针
 		for i := range alert.Rules {
 			if alert.Rules[i].NextTransferAt == nil {
@@ -364,6 +372,14 @@ func checkStatus() {
 				}
 				continue
 			}
+			
+			// 安全检查：确保alert不为nil
+			if alert == nil {
+				if Conf.Debug {
+					log.Printf("警告：发现nil通知规则，跳过检查")
+				}
+				continue
+			}
 
 			// 确保alertsStore对应的键存在
 			if alertsStoreCopy[alert.ID] == nil {
@@ -378,12 +394,25 @@ func checkStatus() {
 			var snapshot []interface{}
 			cycleStats := cycleTransferStatsCopy[alert.ID]
 
+			// 安全检查：确保alert不为nil再调用Snapshot
+			if alert == nil {
+				if Conf.Debug {
+					log.Printf("警告：alert为nil，跳过Snapshot调用")
+				}
+				continue
+			}
+
 			if Conf.DatabaseType == "badger" {
 				// BadgerDB模式下，传入nil作为DB参数
 				snapshot = alert.Snapshot(cycleStats, server, nil)
 			} else {
 				// SQLite模式下，传入DB参数
 				snapshot = alert.Snapshot(cycleStats, server, DB)
+			}
+			
+			// 安全检查：确保snapshot不为nil
+			if snapshot == nil {
+				snapshot = make([]interface{}, 0)
 			}
 
 			alertsStoreCopy[alert.ID][server.ID] = append(alertsStoreCopy[alert.ID][server.ID], snapshot)

@@ -98,12 +98,27 @@ func percentage(used, total uint64) float64 {
 
 // Snapshot 未通过规则返回 struct{}{}, 通过返回 nil
 func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, db *gorm.DB) interface{} {
+	// 安全检查：确保server不为nil
+	if server == nil {
+		return nil
+	}
+
 	// 监控全部但是排除了此服务器
 	if u.Cover == RuleCoverAll && u.Ignore[server.ID] {
 		return nil
 	}
 	// 忽略全部但是指定监控了此服务器
 	if u.Cover == RuleCoverIgnoreAll && !u.Ignore[server.ID] {
+		return nil
+	}
+
+	// 安全检查：确保server.State不为nil（除了offline类型的规则）
+	if server.State == nil && u.Type != "offline" {
+		return nil
+	}
+
+	// 安全检查：确保server.Host不为nil（对于需要Host信息的规则）
+	if server.Host == nil && (u.Type == "memory" || u.Type == "swap" || u.Type == "disk") {
 		return nil
 	}
 
@@ -193,7 +208,12 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 					temp = append(temp, tempStat.Temperature)
 				}
 			}
-			src = slices.Max(temp)
+			// 防御：空切片调用 slices.Max 会 panic
+			if len(temp) > 0 {
+				src = slices.Max(temp)
+			} else {
+				src = 0
+			}
 		}
 	}
 
@@ -252,14 +272,27 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 		} else {
 			u.LastCycleStatus[server.ID] = nil
 		}
-		if cycleTransferStats.ServerName[server.ID] != server.Name {
-			cycleTransferStats.ServerName[server.ID] = server.Name
+		// 安全检查：确保cycleTransferStats不为nil
+		if cycleTransferStats != nil {
+			// 防御：确保内部map已初始化
+			if cycleTransferStats.ServerName == nil {
+				cycleTransferStats.ServerName = make(map[uint64]string)
+			}
+			if cycleTransferStats.Transfer == nil {
+				cycleTransferStats.Transfer = make(map[uint64]uint64)
+			}
+			if cycleTransferStats.NextUpdate == nil {
+				cycleTransferStats.NextUpdate = make(map[uint64]time.Time)
+			}
+			if cycleTransferStats.ServerName[server.ID] != server.Name {
+				cycleTransferStats.ServerName[server.ID] = server.Name
+			}
+			cycleTransferStats.Transfer[server.ID] = uint64(src)
+			cycleTransferStats.NextUpdate[server.ID] = u.NextTransferAt[server.ID]
+			// 自动更新周期流量展示起止时间
+			cycleTransferStats.From = u.GetTransferDurationStart()
+			cycleTransferStats.To = u.GetTransferDurationEnd()
 		}
-		cycleTransferStats.Transfer[server.ID] = uint64(src)
-		cycleTransferStats.NextUpdate[server.ID] = u.NextTransferAt[server.ID]
-		// 自动更新周期流量展示起止时间
-		cycleTransferStats.From = u.GetTransferDurationStart()
-		cycleTransferStats.To = u.GetTransferDurationEnd()
 	}
 
 	if u.Type == "offline" {
@@ -283,6 +316,10 @@ func (rule Rule) IsTransferDurationRule() bool {
 
 // GetTransferDurationStart 获取周期流量的起始时间
 func (rule Rule) GetTransferDurationStart() time.Time {
+	// 防御：CycleStart 可能为 nil
+	if rule.CycleStart == nil {
+		return time.Now().Add(-1 * time.Hour)
+	}
 	// Accept uppercase and lowercase
 	unit := strings.ToLower(rule.CycleUnit)
 	startTime := *rule.CycleStart
@@ -323,6 +360,10 @@ func (rule Rule) GetTransferDurationStart() time.Time {
 
 // GetTransferDurationEnd 获取周期流量结束时间
 func (rule Rule) GetTransferDurationEnd() time.Time {
+	// 防御：CycleStart 可能为 nil
+	if rule.CycleStart == nil {
+		return time.Now()
+	}
 	// Accept uppercase and lowercase
 	unit := strings.ToLower(rule.CycleUnit)
 	startTime := *rule.CycleStart

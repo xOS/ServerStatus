@@ -79,8 +79,14 @@ func (r *AlertRule) Enabled() bool {
 
 // Snapshot 对传入的Server进行该通知规则下所有type的检查 返回包含每项检查结果的空接口
 func (r *AlertRule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, db *gorm.DB) []interface{} {
+	// 安全检查：确保AlertRule和Rules不为nil
+	if r == nil || r.Rules == nil {
+		return nil
+	}
+
 	var point []interface{}
 	for i := 0; i < len(r.Rules); i++ {
+		// Rule 是值类型（非指针），无需判空
 		point = append(point, r.Rules[i].Snapshot(cycleTransferStats, server, db))
 	}
 	return point

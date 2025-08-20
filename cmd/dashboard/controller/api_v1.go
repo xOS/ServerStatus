@@ -151,12 +151,23 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 		return
 	}
 
+	// 解析时间范围参数，默认72小时=3天（向后兼容原逻辑）
+	rangeParam := strings.ToLower(strings.TrimSpace(c.Query("range")))
+	// 默认3天
+	duration := 72 * time.Hour
+	switch rangeParam {
+	case "24h", "24", "1d":
+		duration = 24 * time.Hour
+	case "72h", "72", "3d", "":
+		duration = 72 * time.Hour
+	}
+
 	// 根本性能优化：使用正确的高效查询方法，利用BadgerDB的时间索引
 	if singleton.Conf.DatabaseType == "badger" {
 		if db.DB != nil {
-			// 恢复3天数据展示，使用高效查询方法
+			// 使用range参数决定时间范围
 			endTime := time.Now()
-			startTime := endTime.AddDate(0, 0, -3)
+			startTime := endTime.Add(-duration)
 
 			// 获取该服务器的监控配置，展示所有监控器
 			monitors := singleton.ServiceSentinelShared.Monitors()
@@ -218,7 +229,7 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 				return networkHistories[i].CreatedAt.After(networkHistories[j].CreatedAt)
 			})
 
-			log.Printf("API /monitor/%d 返回 %d 条记录（3天数据，所有监控器）", server.ID, len(networkHistories))
+			log.Printf("API /monitor/%d 返回 %d 条记录（范围: %v，所有监控器）", server.ID, len(networkHistories), duration)
 			c.JSON(200, networkHistories)
 		} else {
 			c.JSON(200, []any{})
@@ -228,8 +239,8 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 		if singleton.DB != nil {
 			var networkHistories []*model.MonitorHistory
 
-			// 查询最近7天的数据
-			startTime := time.Now().AddDate(0, 0, -7)
+			// 使用range参数决定时间范围（与Badger保持一致）
+			startTime := time.Now().Add(-duration)
 
 			err := singleton.DB.Where("server_id = ? AND created_at > ? AND monitor_id IN (SELECT id FROM monitors WHERE type IN (?, ?))",
 				server.ID, startTime, model.TaskTypeICMPPing, model.TaskTypeTCPPing).
