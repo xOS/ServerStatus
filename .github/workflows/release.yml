@@ -112,6 +112,20 @@ jobs:
           chmod -R +x ./assets/*
           mkdir dist
           mv ./assets/*/*/* ./dist
+          
+      - name: Verify build context
+        run: |
+          echo "=== Build context verification ==="
+          echo "Current directory contents:"
+          ls -la
+          echo "Script directory contents:"
+          ls -la script/
+          echo "Dist directory contents:"
+          ls -la dist/
+          echo "Entrypoint script:"
+          ls -la script/entrypoint.sh
+          echo "Dockerfile:"
+          head -20 Dockerfile
 
       - name: Extract branch name
         run: |

@@ -1,0 +1,95 @@
+# 调试版本的 Dockerfile
+# 用于诊断 entrypoint.sh 文件问题
+
+# 多阶段构建 - 证书和工具阶段
+FROM alpine:3.19 AS certs
+RUN apk update && apk add --no-cache ca-certificates tzdata busybox-static
+
+# 二进制文件准备阶段
+FROM alpine:3.19 AS binary-prep
+ARG TARGETARCH
+WORKDIR /prep
+
+# 复制所有构建产物和脚本
+COPY dist/ ./dist/
+COPY script/entrypoint.sh ./entrypoint.sh
+
+# 调试：列出复制的文件
+RUN echo "=== 调试信息 ===" && \
+    echo "当前目录内容:" && \
+    ls -la && \
+    echo "dist目录内容:" && \
+    ls -la ./dist/ && \
+    echo "entrypoint.sh文件信息:" && \
+    ls -la ./entrypoint.sh && \
+    echo "entrypoint.sh内容:" && \
+    cat ./entrypoint.sh
+
+# 查找并复制正确的二进制文件
+RUN find ./dist -name "*linux*${TARGETARCH}*" -type f -executable | head -1 | xargs -I {} cp {} /prep/app || \
+    find ./dist -name "*${TARGETARCH}*" -type f -executable | head -1 | xargs -I {} cp {} /prep/app || \
+    find ./dist -name "server-dash*" -type f -executable | head -1 | xargs -I {} cp {} /prep/app
+
+# 设置执行权限
+RUN test -f /prep/app && chmod +x /prep/app
+RUN chmod +x /prep/entrypoint.sh
+
+# 调试：验证文件
+RUN echo "=== 准备阶段完成 ===" && \
+    echo "准备的文件:" && \
+    ls -la /prep/ && \
+    echo "app文件信息:" && \
+    file /prep/app && \
+    echo "entrypoint.sh权限:" && \
+    ls -la /prep/entrypoint.sh
+
+# 最终运行阶段 - 使用 Alpine 而不是 scratch 进行调试
+FROM alpine:3.19
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG TZ=Asia/Shanghai
+
+# 安装基本工具用于调试
+RUN apk add --no-cache ca-certificates tzdata busybox
+
+# 从证书阶段复制必要文件
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=certs /usr/share/zoneinfo /usr/share/zoneinfo
+
+# 复制入口脚本和应用
+COPY --from=binary-prep /prep/entrypoint.sh /entrypoint.sh
+COPY --from=binary-prep /prep/app /dashboard/app
+
+# 复制静态资源文件
+COPY resource/ /dashboard/resource/
+
+# 调试：验证最终镜像中的文件
+RUN echo "=== 最终镜像调试信息 ===" && \
+    echo "根目录内容:" && \
+    ls -la / && \
+    echo "entrypoint.sh文件信息:" && \
+    ls -la /entrypoint.sh && \
+    echo "dashboard目录内容:" && \
+    ls -la /dashboard/ && \
+    echo "app文件信息:" && \
+    ls -la /dashboard/app && \
+    file /dashboard/app
+
+# 设置工作目录和环境变量
+WORKDIR /dashboard
+ENV TZ=$TZ
+ENV GIN_MODE=release
+
+# 创建数据目录
+RUN mkdir -p /dashboard/data
+
+# 暴露端口
+EXPOSE 80 2222
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD ["/dashboard/app", "--health-check"] || exit 1
+
+# 使用入口脚本启动
+ENTRYPOINT ["/entrypoint.sh"]

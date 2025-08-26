@@ -1,0 +1,50 @@
+# 最小化 Dockerfile - 使用 distroless 而不是 scratch
+# 这样可以避免 entrypoint.sh 找不到的问题
+
+# 多阶段构建 - 证书和工具阶段
+FROM alpine:3.19 AS certs
+RUN apk update && apk add --no-cache ca-certificates tzdata
+
+# 二进制文件准备阶段
+FROM alpine:3.19 AS binary-prep
+ARG TARGETARCH
+WORKDIR /prep
+
+# 复制构建产物
+COPY dist/ ./dist/
+
+# 查找并复制正确的二进制文件
+RUN find ./dist -name "*linux*${TARGETARCH}*" -type f -executable | head -1 | xargs -I {} cp {} /prep/app || \
+    find ./dist -name "*${TARGETARCH}*" -type f -executable | head -1 | xargs -I {} cp {} /prep/app || \
+    find ./dist -name "server-dash*" -type f -executable | head -1 | xargs -I {} cp {} /prep/app
+
+# 设置执行权限
+RUN chmod +x /prep/app
+
+# 最终运行阶段 - 使用 distroless 基础镜像
+FROM gcr.io/distroless/static-debian12:latest
+
+ARG TZ=Asia/Shanghai
+
+# 从证书阶段复制必要文件
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=certs /usr/share/zoneinfo /usr/share/zoneinfo
+
+# 复制应用和静态资源
+COPY --from=binary-prep /prep/app /dashboard/app
+COPY resource/ /dashboard/resource/
+
+# 设置工作目录和环境变量
+WORKDIR /dashboard
+ENV TZ=$TZ
+ENV GIN_MODE=release
+
+# 暴露端口
+EXPOSE 80 2222
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD ["/dashboard/app", "--health-check"] || exit 1
+
+# 直接启动应用，不使用 entrypoint.sh
+ENTRYPOINT ["/dashboard/app"]

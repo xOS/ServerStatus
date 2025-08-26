@@ -1,39 +1,24 @@
 #!/bin/sh
 
-# 设置错误处理
-set -e
-
-# 日志函数
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-}
+# ServerStatus Dashboard 入口脚本
+# 兼容 scratch 镜像环境
 
 # 健康检查模式
 if [ "$1" = "--health-check" ]; then
-    # 检查应用是否响应
-    if command -v wget >/dev/null 2>&1; then
-        wget --quiet --tries=1 --timeout=5 --spider http://localhost:80/api/v1/service/status || exit 1
-    elif command -v curl >/dev/null 2>&1; then
-        curl -f -s --max-time 5 http://localhost:80/api/v1/service/status >/dev/null || exit 1
+    # 检查进程是否存在
+    if [ -f "/proc/1/comm" ]; then
+        exit 0
     else
-        # 如果没有 wget 或 curl，检查进程是否存在
-        pgrep -f "/dashboard/app" >/dev/null || exit 1
+        exit 1
     fi
-    exit 0
 fi
+
+# 简单日志函数（不依赖 date 命令）
+log() {
+    echo "[ENTRYPOINT] $1"
+}
 
 log "Starting ServerStatus Dashboard..."
-
-# 配置 DNS（如果 /etc/resolv.conf 存在且可写）
-if [ -w /etc/resolv.conf ] 2>/dev/null; then
-    log "Configuring DNS servers..."
-    {
-        echo "nameserver 127.0.0.11"
-        echo "nameserver 8.8.4.4" 
-        echo "nameserver 223.5.5.5"
-        echo "nameserver 1.1.1.1"
-    } > /etc/resolv.conf
-fi
 
 # 检查数据目录
 if [ ! -d "/dashboard/data" ]; then
@@ -43,7 +28,7 @@ fi
 
 # 检查配置文件
 if [ ! -f "/dashboard/data/config.yaml" ]; then
-    log "No config.yaml found, creating default configuration..."
+    log "Creating default configuration..."
     cat > /dashboard/data/config.yaml << 'EOF'
 # ServerStatus Dashboard 配置文件
 debug: false
@@ -58,7 +43,7 @@ database:
   dsn: data/sqlite.db
 
 # JWT 密钥 (请修改为随机字符串)
-jwt_secret: "your-secret-key-here"
+jwt_secret: "default-secret-please-change"
 
 # 管理员账户 (首次启动后请立即修改)
 admin:
@@ -102,11 +87,16 @@ tgchatid: ""
 wxpushertoken: ""
 wxpusheruids: []
 EOF
-    log "Default configuration created at /dashboard/data/config.yaml"
-    log "Please review and modify the configuration as needed"
+    log "Default configuration created"
+    log "Please modify admin password after first login"
 fi
 
-# 检查应用文件权限
+# 检查应用文件
+if [ ! -f "/dashboard/app" ]; then
+    log "ERROR: Application binary not found at /dashboard/app"
+    exit 1
+fi
+
 if [ ! -x "/dashboard/app" ]; then
     log "Setting executable permissions for app..."
     chmod +x /dashboard/app
