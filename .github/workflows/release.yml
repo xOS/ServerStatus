@@ -160,8 +160,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            TARGETOS=linux
-            TARGETARCH=${{ matrix.goarch }}
             TZ=Asia/Shanghai
           tags: |
             ${{ steps.image-name.outputs.GHCR_IMAGE_NAME }}:latest

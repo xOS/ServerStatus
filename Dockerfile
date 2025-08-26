@@ -2,6 +2,24 @@
 FROM alpine:3.19 AS certs
 RUN apk update && apk add --no-cache ca-certificates tzdata busybox-static
 
+# 二进制文件准备阶段
+FROM alpine:3.19 AS binary-prep
+ARG TARGETARCH
+WORKDIR /prep
+
+# 复制所有构建产物和脚本
+COPY dist/ ./dist/
+COPY script/entrypoint.sh ./entrypoint.sh
+
+# 查找并复制正确的二进制文件
+RUN find ./dist -name "*linux*${TARGETARCH}*" -type f -executable | head -1 | xargs -I {} cp {} /prep/app || \
+    find ./dist -name "*${TARGETARCH}*" -type f -executable | head -1 | xargs -I {} cp {} /prep/app || \
+    find ./dist -name "server-dash*" -type f -executable | head -1 | xargs -I {} cp {} /prep/app
+
+# 设置执行权限
+RUN test -f /prep/app && chmod +x /prep/app
+RUN chmod +x /prep/entrypoint.sh
+
 # 最终运行阶段
 FROM scratch
 
@@ -25,8 +43,8 @@ COPY --from=certs /bin/busybox /bin/date
 COPY --from=certs /bin/busybox /bin/pgrep
 
 # 复制入口脚本和应用
-COPY ./script/entrypoint.sh /entrypoint.sh
-COPY dist/server-dash-${TARGETOS}-${TARGETARCH} /dashboard/app
+COPY --from=binary-prep /prep/entrypoint.sh /entrypoint.sh
+COPY --from=binary-prep /prep/app /dashboard/app
 
 # 复制静态资源文件（重要：应用依赖这些文件）
 COPY resource/ /dashboard/resource/
