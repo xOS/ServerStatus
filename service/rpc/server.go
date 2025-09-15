@@ -108,6 +108,10 @@ var (
 	// goroutine清理控制变量
 	lastGoroutineCleanupTime time.Time
 	lastCleanupMutex         sync.Mutex
+
+	// 周期流量检测节流：避免在高频上报路径中频繁获取 AlertsLock
+	cycleCheckMu   sync.Mutex
+	lastCycleCheck = make(map[uint64]time.Time)
 )
 
 type ServerHandler struct {
@@ -784,9 +788,9 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		oldBootTime := singleton.ServerList[clientID].Host.BootTime
 		bootTimeDiff := host.BootTime - oldBootTime
 
-		// 只有在 BootTime 显著增加（超过1小时）或减少时才认为是重启
-		// 这样可以避免频繁重启或时间同步问题导致的误判
-		if bootTimeDiff > 3600 || bootTimeDiff < 0 {
+		// 只有在 BootTime 显著增加（超过1小时）或出现回退时才认为是重启
+		// 注意：bootTimeDiff 为无符号，不能与 0 比较，回退用 host.BootTime < oldBootTime 判断
+		if bootTimeDiff > 3600 || host.BootTime < oldBootTime {
 			// 真正的重启：保持累计流量不变，只重置上次记录点
 			singleton.ServerList[clientID].PrevTransferInSnapshot = 0
 			singleton.ServerList[clientID].PrevTransferOutSnapshot = 0
@@ -916,173 +920,159 @@ func updateTrafficDisplay(serverID uint64, inTransfer, outTransfer uint64) {
 // checkAndResetCycleTraffic 检查并重置周期流量
 // 根据AlertRule中定义的transfer_all_cycle规则重置累计流量
 func checkAndResetCycleTraffic(clientID uint64) {
-	// 读取规则使用读锁；仅在需要修改服务器状态时获取写锁，缩短锁定范围
-	singleton.AlertsLock.RLock()
+	// 节流：同一服务器30秒内只检查一次，避免高频上报导致锁竞争
+	cycleCheckMu.Lock()
+	if last, ok := lastCycleCheck[clientID]; ok {
+		if time.Since(last) < 30*time.Second {
+			cycleCheckMu.Unlock()
+			return
+		}
+	}
+	lastCycleCheck[clientID] = time.Now()
+	cycleCheckMu.Unlock()
 
-	// 遍历所有启用的事件规则
+	// 1) 快照读取 Alerts 与匹配的规则（读锁极短持有）
+	singleton.AlertsLock.RLock()
+	var matchingAlert *model.AlertRule
+	var transferRule *model.Rule
 	for _, alert := range singleton.Alerts {
 		if !alert.Enabled() {
 			continue
 		}
-
-		// 检查规则是否包含此服务器
-		shouldMonitorServer := false
-		var transferRule *model.Rule
-
 		for i := range alert.Rules {
 			rule := &alert.Rules[i]
 			if !rule.IsTransferDurationRule() {
 				continue
 			}
-
-			// 检查规则覆盖范围
+			// 覆盖范围匹配
 			if rule.Cover == model.RuleCoverAll {
-				// 监控全部服务器，但排除了此服务器
 				if rule.Ignore[clientID] {
 					continue
 				}
 			} else if rule.Cover == model.RuleCoverIgnoreAll {
-				// 忽略全部服务器，但指定监控了此服务器
 				if !rule.Ignore[clientID] {
 					continue
 				}
 			}
-
-			shouldMonitorServer = true
+			matchingAlert = alert
 			transferRule = rule
 			break
 		}
-
-		if !shouldMonitorServer || transferRule == nil {
-			continue
+		if matchingAlert != nil {
+			break
 		}
-
-		// 获取当前周期的开始时间
-		currentCycleStart := transferRule.GetTransferDurationStart()
-		currentCycleEnd := transferRule.GetTransferDurationEnd()
-
-		// 检查周期是否已经发生变化（新周期开始）
-		singleton.ServerLock.RLock()
-		server := singleton.ServerList[clientID]
-		singleton.ServerLock.RUnlock()
-		lastResetTime := time.Time{}
-
-		// 从CycleTransferStats获取上次重置时间的记录
-		if stats, exists := singleton.AlertsCycleTransferStatsStore[alert.ID]; exists {
-			if nextUpdate, hasUpdate := stats.NextUpdate[clientID]; hasUpdate {
-				// 使用NextUpdate时间作为参考，判断是否进入新周期
-				if nextUpdate.Before(currentCycleStart) {
-					lastResetTime = nextUpdate
-				}
-			}
-		}
-
-		// 检查是否需要重置：当前时间已经进入新周期，且之前没有在这个周期重置过
-		needReset := false
-		now := time.Now()
-
-		if lastResetTime.IsZero() {
-			// 第一次运行，不需要重置，只记录时间
-			// 首次检查周期流量，静默处理
-		} else if now.After(currentCycleStart) && lastResetTime.Before(currentCycleStart) {
-			// 当前时间已过周期开始时间，且上次重置在当前周期开始之前
-			needReset = true
-		}
-
-		if needReset {
-			// 重置累计流量
-			singleton.ServerLock.Lock()
-			server = singleton.ServerList[clientID]
-			if server == nil {
-				singleton.ServerLock.Unlock()
-				break
-			}
-			oldInTransfer := server.CumulativeNetInTransfer
-			oldOutTransfer := server.CumulativeNetOutTransfer
-
-			server.CumulativeNetInTransfer = 0
-			server.CumulativeNetOutTransfer = 0
-
-			// 重置基准点
-			server.PrevTransferInSnapshot = 0
-			server.PrevTransferOutSnapshot = 0
-			singleton.ServerLock.Unlock()
-
-			// 周期流量重置完成，静默处理
-
-			// 立即保存到数据库
-			if singleton.Conf.DatabaseType == "badger" {
-				// 使用BadgerDB保存流量重置
-				if db.DB != nil {
-					serverOps := db.NewServerOps(db.DB)
-					if dbServer, err := serverOps.GetServer(clientID); err == nil && dbServer != nil {
-						dbServer.CumulativeNetInTransfer = 0
-						dbServer.CumulativeNetOutTransfer = 0
-						if err := serverOps.SaveServer(dbServer); err != nil {
-							log.Printf("保存服务器 %s 周期重置流量到BadgerDB失败: %v", server.Name, err)
-						}
-					}
-				}
-			} else {
-				// 使用SQLite保存流量重置
-				if singleton.DB != nil {
-					updateSQL := "UPDATE servers SET cumulative_net_in_transfer = ?, cumulative_net_out_transfer = ? WHERE id = ?"
-					if err := singleton.DB.Exec(updateSQL, 0, 0, clientID).Error; err != nil {
-						log.Printf("保存服务器 %s 周期重置流量到数据库失败: %v", server.Name, err)
-					}
-				}
-			}
-
-			// 更新AlertsCycleTransferStatsStore中的重置时间记录
-			if stats, exists := singleton.AlertsCycleTransferStatsStore[alert.ID]; exists {
-				stats.NextUpdate[clientID] = now
-				stats.Transfer[clientID] = 0 // 重置显示的流量
-
-				// 更新周期时间信息
-				stats.From = currentCycleStart
-				stats.To = currentCycleEnd
-
-				// 已更新AlertsCycleTransferStatsStore中的重置记录
-			}
-
-			// 发送流量重置通知
-			// 格式化流量为人性化显示
-			formatTraffic := func(bytes uint64) string {
-				const unit = 1024
-				if bytes < unit {
-					return fmt.Sprintf("%d B", bytes)
-				}
-				div, exp := uint64(unit), 0
-				for n := bytes / unit; n >= unit; n /= unit {
-					div *= unit
-					exp++
-				}
-				return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-			}
-
-			// 计算上个周期累计流量
-			totalOldTraffic := oldInTransfer + oldOutTransfer
-
-			resetMessage := fmt.Sprintf("流量重置通知\n服务器 %s [%s] 的周期流量已重置\n上个周期累计流量: %s (入站=%s, 出站=%s)\n新周期: %s 到 %s\n事件规则: %s",
-				server.Name,
-				singleton.IPDesensitize(server.Host.IP),
-				formatTraffic(totalOldTraffic),
-				formatTraffic(oldInTransfer),
-				formatTraffic(oldOutTransfer),
-				currentCycleStart.Format("2006-01-02 15:04:05"),
-				currentCycleEnd.Format("2006-01-02 15:04:05"),
-				alert.Name)
-
-			// 创建流量重置通知的静音标签，避免短时间内重复发送
-			resetMuteLabel := fmt.Sprintf("traffic-reset-%d-%d", alert.ID, clientID)
-
-			// 使用安全的通知发送方式，防止Goroutine泄漏
-			singleton.SafeSendNotification(alert.NotificationTag, resetMessage, &resetMuteLabel, server)
-		}
-
-		// 只处理第一个匹配的规则
-		break
 	}
+
+	// 若无匹配规则，尽早释放锁并返回
+	if matchingAlert == nil || transferRule == nil {
+		singleton.AlertsLock.RUnlock()
+		return
+	}
+
+	currentCycleStart := transferRule.GetTransferDurationStart()
+	currentCycleEnd := transferRule.GetTransferDurationEnd()
+
+	// 读取上次重置参考时间（仍在读锁下，随后立即释放）
+	lastResetTime := time.Time{}
+	if stats, exists := singleton.AlertsCycleTransferStatsStore[matchingAlert.ID]; exists && stats != nil {
+		if nextUpdate, has := stats.NextUpdate[clientID]; has {
+			if nextUpdate.Before(currentCycleStart) {
+				lastResetTime = nextUpdate
+			}
+		}
+	}
+	singleton.AlertsLock.RUnlock()
+
+	// 2) 判断是否需要重置（锁外计算）
+	needReset := false
+	now := time.Now()
+	if !lastResetTime.IsZero() && now.After(currentCycleStart) && lastResetTime.Before(currentCycleStart) {
+		needReset = true
+	}
+	if !needReset {
+		return
+	}
+
+	// 3) 重置累计流量（写锁仅包裹修改内存状态）
+	singleton.ServerLock.Lock()
+	server := singleton.ServerList[clientID]
+	if server == nil {
+		singleton.ServerLock.Unlock()
+		return
+	}
+	oldInTransfer := server.CumulativeNetInTransfer
+	oldOutTransfer := server.CumulativeNetOutTransfer
+	serverName := server.Name
+	serverIP := ""
+	if server.Host != nil {
+		serverIP = server.Host.IP
+	}
+
+	server.CumulativeNetInTransfer = 0
+	server.CumulativeNetOutTransfer = 0
+	server.PrevTransferInSnapshot = 0
+	server.PrevTransferOutSnapshot = 0
+	singleton.ServerLock.Unlock()
+
+	// 4) 持久化到数据库（锁外）
+	if singleton.Conf.DatabaseType == "badger" {
+		if db.DB != nil {
+			serverOps := db.NewServerOps(db.DB)
+			if dbServer, err := serverOps.GetServer(clientID); err == nil && dbServer != nil {
+				dbServer.CumulativeNetInTransfer = 0
+				dbServer.CumulativeNetOutTransfer = 0
+				_ = serverOps.SaveServer(dbServer) // 静默处理错误，避免打扰热路径
+			}
+		}
+	} else {
+		if singleton.DB != nil {
+			_ = singleton.DB.Exec("UPDATE servers SET cumulative_net_in_transfer = 0, cumulative_net_out_transfer = 0 WHERE id = ?", clientID).Error
+		}
+	}
+
+	// 5) 更新周期统计存储（需要写锁）
+	singleton.AlertsLock.Lock()
+	if stats, exists := singleton.AlertsCycleTransferStatsStore[matchingAlert.ID]; exists && stats != nil {
+		if stats.NextUpdate == nil {
+			stats.NextUpdate = make(map[uint64]time.Time)
+		}
+		if stats.Transfer == nil {
+			stats.Transfer = make(map[uint64]uint64)
+		}
+		stats.NextUpdate[clientID] = now
+		stats.Transfer[clientID] = 0
+		stats.From = currentCycleStart
+		stats.To = currentCycleEnd
+	}
+	singleton.AlertsLock.Unlock()
+
+	// 6) 发送通知（锁外）
+	formatTraffic := func(bytes uint64) string {
+		const unit = 1024
+		if bytes < unit {
+			return fmt.Sprintf("%d B", bytes)
+		}
+		div, exp := uint64(unit), 0
+		for n := bytes / unit; n >= unit; n /= unit {
+			div *= unit
+			exp++
+		}
+		return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+	}
+	totalOldTraffic := oldInTransfer + oldOutTransfer
+	resetMessage := fmt.Sprintf(
+		"流量重置通知\n服务器 %s [%s] 的周期流量已重置\n上个周期累计流量: %s (入站=%s, 出站=%s)\n新周期: %s 到 %s\n事件规则: %s",
+		serverName,
+		singleton.IPDesensitize(serverIP),
+		formatTraffic(totalOldTraffic),
+		formatTraffic(oldInTransfer),
+		formatTraffic(oldOutTransfer),
+		currentCycleStart.Format("2006-01-02 15:04:05"),
+		currentCycleEnd.Format("2006-01-02 15:04:05"),
+		matchingAlert.Name,
+	)
+	resetMuteLabel := fmt.Sprintf("traffic-reset-%d-%d", matchingAlert.ID, clientID)
+	singleton.SafeSendNotification(matchingAlert.NotificationTag, resetMessage, &resetMuteLabel, nil)
 }
 
 // GetConnectionStats 获取连接统计信息
