@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,6 +79,10 @@ func main() {
 		fmt.Println(singleton.Version)
 		os.Exit(0)
 	}
+
+	// 避免 cgo getaddrinfo 在某些环境导致的崩溃，强制使用 Go 纯解析器
+	// 参见崩溃栈: net._C2func_getaddrinfo -> net.cgoLookupHostIP
+	net.DefaultResolver = &net.Resolver{PreferGo: true}
 
 	// 初始化 dao 包
 	singleton.InitConfigFromPath(dashboardCliParam.ConfigFile)

@@ -195,6 +195,10 @@ func (a *authHandler) Check(ctx context.Context) (uint64, error) {
 		clientSecret = value[0]
 	}
 
+	if clientSecret == "" {
+		return 0, status.Errorf(codes.Unauthenticated, "客户端认证失败")
+	}
+
 	// 先尝试从缓存获取
 	if clientID, found := globalAuthCache.get(clientSecret); found {
 		return clientID, nil

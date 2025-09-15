@@ -281,7 +281,7 @@ func LoadSingleton() {
 
 		// 加载定时任务
 		loadCronTasks()
-		
+
 		// BadgerDB模式下需要手动初始化Cron任务的Servers字段
 		if Conf.DatabaseType == "badger" {
 			initCronServersForBadgerDB()
@@ -977,6 +977,8 @@ func CheckServerOnlineStatus() {
 
 	// 优化：使用读锁进行初步数据收集，减少写锁持有时间
 	var serverSnapshots []*model.Server
+	// 记录需要清理的 TaskClose 指针，避免在写锁内等待其它互斥锁
+	taskCloseMap := make(map[uint64]chan error)
 
 	// 第一阶段：使用读锁收集服务器快照
 	ServerLock.RLock()
@@ -1004,6 +1006,11 @@ func CheckServerOnlineStatus() {
 				snapshot.LastStateBeforeOffline = server.LastStateBeforeOffline
 			}
 			serverSnapshots = append(serverSnapshots, snapshot)
+
+			// 记录当前的 TaskClose 指针（只读获取，不在此处修改），用于锁外关闭
+			if server.TaskClose != nil {
+				taskCloseMap[server.ID] = server.TaskClose
+			}
 		}
 	}
 	ServerLock.RUnlock()
@@ -1066,44 +1073,21 @@ func CheckServerOnlineStatus() {
 		}
 
 		// 第三阶段：快速写锁批量更新内存状态
+		// 第三阶段：快速写锁批量更新内存状态（严格限制锁内工作量，不做阻塞等待）
 		ServerLock.Lock()
 		for i, snapshot := range serverSnapshots {
 			if server := ServerList[snapshot.ID]; server != nil && server.IsOnline {
 				// 快速更新关键状态
 				server.IsOnline = false
 
-				// 快速处理任务关闭（如果需要）
-				if server.TaskCloseLock != nil {
-					// 使用非阻塞方式获取TaskCloseLock，设置更短的超时
-					done := make(chan bool, 1)
-					go func() {
-						defer func() {
-							// 确保channel总是会被写入，避免goroutine泄漏
-							select {
-							case done <- true:
-							default:
-							}
-						}()
-
-						server.TaskCloseLock.Lock()
-						if server.TaskClose != nil {
-							// 将TaskClose保存到对应的update记录
-							if i < len(updates) {
-								updates[i].TaskClose = server.TaskClose
-							}
-							server.TaskClose = nil
-						}
-						server.TaskStream = nil
-						server.TaskCloseLock.Unlock()
-					}()
-
-					// 如果无法快速获取锁，跳过任务清理（避免阻塞）
-					select {
-					case <-done:
-					case <-time.After(10 * time.Millisecond):
-						// 超时跳过，避免长时间持有ServerLock
+				// 不在写锁内争用 TaskCloseLock，直接清除引用，实际关闭放到锁外完成
+				if i < len(updates) {
+					if ch, ok := taskCloseMap[snapshot.ID]; ok {
+						updates[i].TaskClose = ch
 					}
 				}
+				server.TaskStream = nil
+				server.TaskClose = nil
 
 				// 更新LastStateBeforeOffline（如果还没有）
 				if server.LastStateBeforeOffline == nil && i < len(updates) && updates[i].LastStateJSON != "" {
@@ -1143,7 +1127,7 @@ func CheckServerOnlineStatus() {
 		ServerLock.Unlock()
 	}
 
-	// 第二阶段：异步执行数据库操作（不持锁）
+	// 第二阶段：异步执行数据库操作与连接清理（不持锁）
 	if len(updates) > 0 {
 		go func() {
 			for _, update := range updates {

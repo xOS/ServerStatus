@@ -157,13 +157,13 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 
 			if cr.PushSuccessful && r.GetSuccessful() {
 				message := fmt.Sprintf("[%s]\n任务名称: %s\n执行设备: %s (ID:%d)\n开始时间: %s\n结束时间: %s\n执行结果: 成功",
-		singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "ScheduledTaskExecutedSuccessfully",
-		}),
-		cr.Name,
-		singleton.ServerList[clientID].Name, clientID,
-		startTime.Format("2006-01-02 15:04:05"),
-		endTime.Format("2006-01-02 15:04:05"))
+					singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
+						MessageID: "ScheduledTaskExecutedSuccessfully",
+					}),
+					cr.Name,
+					singleton.ServerList[clientID].Name, clientID,
+					startTime.Format("2006-01-02 15:04:05"),
+					endTime.Format("2006-01-02 15:04:05"))
 
 				singleton.SafeSendNotification(cr.NotificationTag, message, nil, &curServer)
 			}
@@ -459,17 +459,17 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 
 	// 准备数据库更新数据
 	dbUpdates := make(map[string]interface{})
-	
+
 	// 第一阶段：读取必要数据（短暂持读锁）
 	var needDBQuery bool
 	var dbCumulativeIn, dbCumulativeOut uint64
-	
+
 	singleton.ServerLock.RLock()
 	if server, exists := singleton.ServerList[clientID]; exists {
 		needDBQuery = isFirstReport && (server.CumulativeNetInTransfer == 0 && server.CumulativeNetOutTransfer == 0)
 	}
 	singleton.ServerLock.RUnlock()
-	
+
 	// 第二阶段：数据库查询（在锁外执行）
 	if needDBQuery && singleton.DB != nil {
 		var dbServer model.Server
@@ -698,10 +698,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		return nil, err
 	}
 	host := model.PB2Host(r)
-	singleton.ServerLock.RLock()
-	defer singleton.ServerLock.RUnlock()
-
-	// 检查并更新DDNS - 修复：添加锁保护
+	// 只在需要时短暂读取当前服务器的只读快照，避免重复加锁
 	singleton.ServerLock.RLock()
 	server := singleton.ServerList[clientID]
 	if server == nil {
@@ -709,7 +706,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		return &pb.Receipt{Proced: true}, nil
 	}
 	enableDDNS := server.EnableDDNS
-	ddnsProfiles := server.DDNSProfiles
+	ddnsProfiles := append([]uint64(nil), server.DDNSProfiles...)
 	serverName := server.Name
 	var serverHostIP string
 	if server.Host != nil {
@@ -823,7 +820,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		host.CountryCode = singleton.ServerList[clientID].Host.CountryCode
 	}
 
-	// 保存完整Host信息到数据库，用于重启后恢复
+	// 保存完整Host信息到数据库，用于重启后恢复（在锁外序列化）
 	hostJSON, err := utils.Json.Marshal(host)
 	if err == nil {
 		// 根据数据库类型选择不同的保存方式
@@ -849,7 +846,12 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		}
 	}
 
-	singleton.ServerList[clientID].Host = &host
+	// 最后一次快速写入 Host 指针
+	singleton.ServerLock.Lock()
+	if s := singleton.ServerList[clientID]; s != nil {
+		s.Host = &host
+	}
+	singleton.ServerLock.Unlock()
 	return &pb.Receipt{Proced: true}, nil
 }
 
@@ -914,12 +916,8 @@ func updateTrafficDisplay(serverID uint64, inTransfer, outTransfer uint64) {
 // checkAndResetCycleTraffic 检查并重置周期流量
 // 根据AlertRule中定义的transfer_all_cycle规则重置累计流量
 func checkAndResetCycleTraffic(clientID uint64) {
-	// 紧急修复：同时锁定AlertsLock和ServerLock，防止并发读写冲突
+	// 读取规则使用读锁；仅在需要修改服务器状态时获取写锁，缩短锁定范围
 	singleton.AlertsLock.RLock()
-	defer singleton.AlertsLock.RUnlock()
-
-	singleton.ServerLock.RLock()
-	defer singleton.ServerLock.RUnlock()
 
 	// 遍历所有启用的事件规则
 	for _, alert := range singleton.Alerts {
@@ -964,7 +962,9 @@ func checkAndResetCycleTraffic(clientID uint64) {
 		currentCycleEnd := transferRule.GetTransferDurationEnd()
 
 		// 检查周期是否已经发生变化（新周期开始）
+		singleton.ServerLock.RLock()
 		server := singleton.ServerList[clientID]
+		singleton.ServerLock.RUnlock()
 		lastResetTime := time.Time{}
 
 		// 从CycleTransferStats获取上次重置时间的记录
@@ -991,6 +991,12 @@ func checkAndResetCycleTraffic(clientID uint64) {
 
 		if needReset {
 			// 重置累计流量
+			singleton.ServerLock.Lock()
+			server = singleton.ServerList[clientID]
+			if server == nil {
+				singleton.ServerLock.Unlock()
+				break
+			}
 			oldInTransfer := server.CumulativeNetInTransfer
 			oldOutTransfer := server.CumulativeNetOutTransfer
 
@@ -1000,6 +1006,7 @@ func checkAndResetCycleTraffic(clientID uint64) {
 			// 重置基准点
 			server.PrevTransferInSnapshot = 0
 			server.PrevTransferOutSnapshot = 0
+			singleton.ServerLock.Unlock()
 
 			// 周期流量重置完成，静默处理
 

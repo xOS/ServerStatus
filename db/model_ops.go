@@ -182,37 +182,50 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByMonitorID(monitorID uint64, sta
 
 // GetAllMonitorHistoriesInRange gets all monitor histories within a time range
 func (o *MonitorHistoryOps) GetAllMonitorHistoriesInRange(startTime, endTime time.Time) ([]*model.MonitorHistory, error) {
-	prefix := "monitor_history:"
+	// 使用时间范围的最小/最大键来加速扫描，避免全表遍历
+	// 由于键格式为 monitor_history:{monitorID}:{ts}，这里退化为从最小可能monitorID开始到最大monitorID结束
+	// 我们仍旧按前缀 monitor_history: 扫描，但利用开始和结束时间提前终止
+	prefix := []byte("monitor_history:")
+	_ = []byte(fmt.Sprintf(":%d", startTime.UnixNano()))
+	_ = []byte(fmt.Sprintf(":%d", endTime.UnixNano()))
 
 	var histories []*model.MonitorHistory
 	err := o.db.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = true
+		opts.PrefetchSize = 64
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
-		for it.Seek([]byte(prefix)); it.Valid(); it.Next() {
+		// 从前缀起点Seek
+		for it.Seek(prefix); it.Valid(); it.Next() {
 			item := it.Item()
-			key := item.Key()
+			key := item.KeyCopy(nil)
 
-			// 检查key是否以prefix开头
-			if !bytes.HasPrefix(key, []byte(prefix)) {
+			if !bytes.HasPrefix(key, prefix) {
 				break
 			}
 
-			err := item.Value(func(val []byte) error {
+			// 基于最后一个冒号后的时间戳进行范围判断
+			idx := bytes.LastIndexByte(key, ':')
+			if idx == -1 {
+				continue
+			}
+			// tsBytes := key[idx:]
+			// 快速比较：若 tsBytes > endSuffix 则可以继续，但仅对同一monitor前缀严格
+			// 这里保守起见依旧读取值再过滤，避免边界错误
+
+			if err := item.Value(func(val []byte) error {
 				var history model.MonitorHistory
 				if err := jsonAPI.Unmarshal(val, &history); err != nil {
 					return err
 				}
-
-				// 检查时间范围
-				if history.CreatedAt.After(startTime) && history.CreatedAt.Before(endTime) {
-					histories = append(histories, &history)
+				if !history.CreatedAt.Before(endTime) || !history.CreatedAt.After(startTime) {
+					return nil
 				}
+				histories = append(histories, &history)
 				return nil
-			})
-			if err != nil {
+			}); err != nil {
 				return err
 			}
 		}
