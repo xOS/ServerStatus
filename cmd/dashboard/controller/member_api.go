@@ -90,7 +90,7 @@ func (ma *memberAPI) getToken(c *gin.Context) {
 			Note:  singleton.ApiTokenList[token].Note,
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{
+	WriteJSON(c, http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
 		"result":  res,
@@ -107,7 +107,7 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 	tf := &TokenForm{}
 	err := c.ShouldBindJSON(tf)
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
@@ -115,7 +115,7 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 	}
 	secureToken, err := utils.GenerateRandomString(32)
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
@@ -130,9 +130,9 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 	// BadgerDB 模式下使用 BadgerDB 操作
 	if singleton.Conf.DatabaseType == "badger" {
 		// 为新API令牌生成ID
-		nextID, err := db.GenerateNextID("api_token")
-		if err != nil {
-			log.Printf("生成API令牌ID失败: %v", err)
+		nextID, genErr := db.GenerateNextID("api_token")
+		if genErr != nil {
+			log.Printf("生成API令牌ID失败: %v", genErr)
 			token.ID = 1 // 使用默认ID
 		} else {
 			token.ID = nextID
@@ -140,10 +140,17 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 		// 使用ApiTokenOps保存
 		apiTokenOps := db.NewApiTokenOps(db.DB)
 		err = apiTokenOps.SaveApiToken(token)
+		if err != nil {
+			WriteJSON(c, http.StatusOK, model.Response{
+				Code:    http.StatusBadRequest,
+				Message: fmt.Sprintf("保存API令牌失败：%s", err),
+			})
+			return
+		}
 	} else if singleton.DB != nil {
 		err = singleton.DB.Create(token).Error
 		if err != nil {
-			c.JSON(http.StatusOK, model.Response{
+			WriteJSON(c, http.StatusOK, model.Response{
 				Code:    http.StatusBadRequest,
 				Message: fmt.Sprintf("保存API令牌失败：%s", err),
 			})
@@ -153,7 +160,7 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("保存API令牌失败：%s", err),
 		})
@@ -165,7 +172,7 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 	singleton.UserIDToApiTokenList[u.ID] = append(singleton.UserIDToApiTokenList[u.ID], token.Token)
 	singleton.ApiLock.Unlock()
 
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code:    http.StatusOK,
 		Message: "success",
 		Result: map[string]string{
@@ -179,7 +186,7 @@ func (ma *memberAPI) issueNewToken(c *gin.Context) {
 func (ma *memberAPI) deleteToken(c *gin.Context) {
 	token := c.Param("token")
 	if token == "" {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: "token 不能为空",
 		})
@@ -188,7 +195,7 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 	singleton.ApiLock.Lock()
 	defer singleton.ApiLock.Unlock()
 	if _, ok := singleton.ApiTokenList[token]; !ok {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: "token 不存在",
 		})
@@ -241,7 +248,7 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 	} else if singleton.DB != nil {
 		err = singleton.DB.Unscoped().Delete(&model.ApiToken{}, "token = ?", token).Error
 		if err != nil {
-			c.JSON(http.StatusOK, model.Response{
+			WriteJSON(c, http.StatusOK, model.Response{
 				Code:    http.StatusBadRequest,
 				Message: fmt.Sprintf("删除API令牌失败：%s", err),
 			})
@@ -277,7 +284,7 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 		log.Printf("警告: 数据库删除API令牌失败，但已从内存中清理: %v", err)
 	}
 
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code:    http.StatusOK,
 		Message: "success",
 	})
@@ -286,7 +293,7 @@ func (ma *memberAPI) deleteToken(c *gin.Context) {
 func (ma *memberAPI) delete(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	if id < 1 {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: "错误的 Server ID",
 		})
@@ -406,13 +413,13 @@ func (ma *memberAPI) delete(c *gin.Context) {
 		}
 	}
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("数据库错误：%s", err),
 		})
 		return
 	}
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }
@@ -468,7 +475,7 @@ func (ma *memberAPI) searchServer(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, map[string]interface{}{
+	WriteJSON(c, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"results": resp,
 	})
@@ -486,7 +493,7 @@ func (ma *memberAPI) searchTask(c *gin.Context) {
 			tasks, err := cronOps.GetAllCrons()
 			if err != nil {
 				log.Printf("searchTask: 查询任务失败: %v", err)
-				c.JSON(http.StatusOK, map[string]interface{}{
+				WriteJSON(c, http.StatusOK, map[string]interface{}{
 					"success": true,
 					"results": []searchResult{},
 				})
@@ -527,7 +534,7 @@ func (ma *memberAPI) searchTask(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, map[string]interface{}{
+	WriteJSON(c, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"results": resp,
 	})
@@ -546,7 +553,7 @@ func (ma *memberAPI) searchDDNS(c *gin.Context) {
 			if err != nil {
 				// 只在严重错误时记录日志
 				log.Printf("searchDDNS: 查询DDNS配置失败: %v", err)
-				c.JSON(http.StatusOK, map[string]interface{}{
+				WriteJSON(c, http.StatusOK, map[string]interface{}{
 					"success": true,
 					"results": []searchResult{},
 				})
@@ -587,7 +594,7 @@ func (ma *memberAPI) searchDDNS(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, map[string]interface{}{
+	WriteJSON(c, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"results": resp,
 	})
@@ -699,7 +706,7 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 		}
 	}
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
@@ -773,7 +780,7 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 		singleton.ServerLock.Unlock()
 	}
 	singleton.ReSortServer()
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }
@@ -889,13 +896,13 @@ func (ma *memberAPI) addOrEditMonitor(c *gin.Context) {
 		err = singleton.ServiceSentinelShared.OnMonitorUpdate(m)
 	}
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
 		return
 	}
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }
@@ -951,7 +958,7 @@ func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 				cr.Scheduler = strings.ReplaceAll(cr.Scheduler, "?", "*")
 				log.Printf("修复后的cron表达式: %s", cr.Scheduler)
 			}
-			
+
 			// 验证表达式是否有效
 			if _, testErr := singleton.Cron.AddFunc(cr.Scheduler, func() {}); testErr != nil {
 				err = fmt.Errorf("无效的cron表达式 '%s': %v", cr.Scheduler, testErr)
@@ -962,7 +969,7 @@ func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 	// 计划任务类型不得使用触发服务器执行方式
 	if cr.TaskType == model.CronTypeCronTask && cr.Cover == model.CronCoverAlertTrigger {
 		err = errors.New("计划任务类型不得使用触发服务器执行方式")
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
@@ -1029,7 +1036,7 @@ func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 		}
 	}
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
@@ -1046,7 +1053,7 @@ func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 	delete(singleton.Crons, cr.ID)
 	singleton.Crons[cr.ID] = &cr
 
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }
@@ -1055,7 +1062,7 @@ func (ma *memberAPI) manualTrigger(c *gin.Context) {
 	var cr model.Cron
 	cronID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: "无效的任务ID",
 		})
@@ -1072,7 +1079,7 @@ func (ma *memberAPI) manualTrigger(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: err.Error(),
 		})
@@ -1081,7 +1088,7 @@ func (ma *memberAPI) manualTrigger(c *gin.Context) {
 
 	singleton.ManualTrigger(cr)
 
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }
@@ -1094,7 +1101,7 @@ type BatchUpdateServerGroupRequest struct {
 func (ma *memberAPI) batchUpdateServerGroup(c *gin.Context) {
 	var req BatchUpdateServerGroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: err.Error(),
 		})
@@ -1107,7 +1114,7 @@ func (ma *memberAPI) batchUpdateServerGroup(c *gin.Context) {
 		for _, serverID := range req.Servers {
 			var server model.Server
 			if err := db.DB.FindModel(serverID, "server", &server); err != nil {
-				c.JSON(http.StatusOK, model.Response{
+				WriteJSON(c, http.StatusOK, model.Response{
 					Code:    http.StatusBadRequest,
 					Message: fmt.Sprintf("找不到服务器 %d: %v", serverID, err),
 				})
@@ -1126,7 +1133,7 @@ func (ma *memberAPI) batchUpdateServerGroup(c *gin.Context) {
 			// 使用ServerOps保存到数据库，确保Secret字段正确保存
 			serverOps := db.NewServerOps(db.DB)
 			if err := serverOps.SaveServer(&server); err != nil {
-				c.JSON(http.StatusOK, model.Response{
+				WriteJSON(c, http.StatusOK, model.Response{
 					Code:    http.StatusBadRequest,
 					Message: fmt.Sprintf("更新服务器 %d 失败: %v", serverID, err),
 				})
@@ -1136,14 +1143,14 @@ func (ma *memberAPI) batchUpdateServerGroup(c *gin.Context) {
 		}
 	} else if singleton.DB != nil {
 		if err := singleton.DB.Model(&model.Server{}).Where("id in (?)", req.Servers).Update("tag", req.Group).Error; err != nil {
-			c.JSON(http.StatusOK, model.Response{
+			WriteJSON(c, http.StatusOK, model.Response{
 				Code:    http.StatusBadRequest,
 				Message: err.Error(),
 			})
 			return
 		}
 	} else {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: "数据库未初始化",
 		})
@@ -1204,7 +1211,7 @@ func (ma *memberAPI) batchUpdateServerGroup(c *gin.Context) {
 
 	singleton.ReSortServer()
 
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }
@@ -1212,7 +1219,7 @@ func (ma *memberAPI) batchUpdateServerGroup(c *gin.Context) {
 func (ma *memberAPI) forceUpdate(c *gin.Context) {
 	var forceUpdateServers []uint64
 	if err := c.ShouldBindJSON(&forceUpdateServers); err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: err.Error(),
 		})
@@ -1238,7 +1245,7 @@ func (ma *memberAPI) forceUpdate(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code:    http.StatusOK,
 		Message: executeResult.String(),
 	})
@@ -1318,14 +1325,14 @@ func (ma *memberAPI) addOrEditNotification(c *gin.Context) {
 		}
 	}
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
 		return
 	}
 	singleton.OnRefreshOrAddNotification(&n)
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }
@@ -1417,14 +1424,14 @@ func (ma *memberAPI) addOrEditDDNS(c *gin.Context) {
 		}
 	}
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
 		return
 	}
 	singleton.OnDDNSUpdate()
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }
@@ -1480,14 +1487,14 @@ func (ma *memberAPI) addOrEditNAT(c *gin.Context) {
 		}
 	}
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
 		return
 	}
 	singleton.OnNATUpdate()
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }
@@ -1597,14 +1604,14 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 		}
 	}
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
 		return
 	}
 	singleton.OnRefreshOrAddAlert(r)
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }
@@ -1613,7 +1620,7 @@ func (ma *memberAPI) getAlertRule(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: "ID格式错误",
 		})
@@ -1632,14 +1639,14 @@ func (ma *memberAPI) getAlertRule(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusNotFound,
 			Message: fmt.Sprintf("通知规则不存在：%s", err),
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code:   http.StatusOK,
 		Result: alertRule,
 	})
@@ -1653,14 +1660,14 @@ func (ma *memberAPI) logout(c *gin.Context) {
 	admin := c.MustGet(model.CtxKeyAuthorizedUser).(*model.User)
 	var lf logoutForm
 	if err := c.ShouldBindJSON(&lf); err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
 		return
 	}
 	if lf.ID != admin.ID {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", "用户ID不匹配"),
 		})
@@ -1679,7 +1686,7 @@ func (ma *memberAPI) logout(c *gin.Context) {
 			TokenExpired: time.Now(),
 		})
 	}
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 
@@ -1713,7 +1720,7 @@ type settingForm struct {
 func (ma *memberAPI) updateSetting(c *gin.Context) {
 	var sf settingForm
 	if err := c.ShouldBind(&sf); err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
@@ -1721,7 +1728,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 	}
 
 	if _, yes := model.Themes[sf.Theme]; !yes {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("前台主题不存在：%s", sf.Theme),
 		})
@@ -1729,7 +1736,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 	}
 
 	if _, yes := model.DashboardThemes[sf.DashboardTheme]; !yes {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("后台主题不存在：%s", sf.DashboardTheme),
 		})
@@ -1738,7 +1745,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 
 	// 只检查本地文件是否存在，不再调用 resource.IsTemplateFileExist
 	if !utils.IsFileExists("resource/template/theme-" + sf.Theme + "/home.html") {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("前台主题文件异常：%s", sf.Theme),
 		})
@@ -1746,7 +1753,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 	}
 
 	if !utils.IsFileExists("resource/template/dashboard-" + sf.DashboardTheme + "/setting.html") {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("后台主题文件异常：%s", sf.DashboardTheme),
 		})
@@ -1775,7 +1782,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 		singleton.Conf.IPChangeNotificationTag = "default"
 	}
 	if err := singleton.Conf.Save(); err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("请求错误：%s", err),
 		})
@@ -1785,7 +1792,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 	singleton.InitLocalizer()
 	// 更新DNS服务器
 	singleton.OnNameserverUpdate()
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }
@@ -1793,7 +1800,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 func (ma *memberAPI) batchDeleteServer(c *gin.Context) {
 	var servers []uint64
 	if err := c.ShouldBindJSON(&servers); err != nil {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("JSON解码失败: %v", err),
 		})
@@ -1801,7 +1808,7 @@ func (ma *memberAPI) batchDeleteServer(c *gin.Context) {
 	}
 
 	if len(servers) == 0 {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: "没有选择要删除的服务器",
 		})
@@ -1812,7 +1819,7 @@ func (ma *memberAPI) batchDeleteServer(c *gin.Context) {
 		// 在BadgerDB模式下，逐个删除服务器
 		for _, serverID := range servers {
 			if err := db.DB.DeleteModel("server", serverID); err != nil {
-				c.JSON(http.StatusOK, model.Response{
+				WriteJSON(c, http.StatusOK, model.Response{
 					Code:    http.StatusBadRequest,
 					Message: fmt.Sprintf("删除服务器 %d 失败: %v", serverID, err),
 				})
@@ -1821,14 +1828,14 @@ func (ma *memberAPI) batchDeleteServer(c *gin.Context) {
 		}
 	} else if singleton.DB != nil {
 		if err := singleton.DB.Unscoped().Delete(&model.Server{}, "id in (?)", servers).Error; err != nil {
-			c.JSON(http.StatusOK, model.Response{
+			WriteJSON(c, http.StatusOK, model.Response{
 				Code:    http.StatusBadRequest,
 				Message: err.Error(),
 			})
 			return
 		}
 	} else {
-		c.JSON(http.StatusOK, model.Response{
+		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
 			Message: "数据库未初始化",
 		})
@@ -1841,7 +1848,7 @@ func (ma *memberAPI) batchDeleteServer(c *gin.Context) {
 	}
 	singleton.ServerLock.Unlock()
 	singleton.ReSortServer()
-	c.JSON(http.StatusOK, model.Response{
+	WriteJSON(c, http.StatusOK, model.Response{
 		Code: http.StatusOK,
 	})
 }

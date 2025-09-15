@@ -12,6 +12,7 @@ import (
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
+	"github.com/xos/serverstatus/pkg/utils"
 	"github.com/xos/serverstatus/service/singleton"
 )
 
@@ -24,8 +25,14 @@ var (
 	monitorCacheMu sync.Mutex
 	monitorCache   = map[uint64]struct {
 		ts   time.Time
-		data []*model.MonitorHistory
+		data []byte // pre-encoded JSON payload
 		dur  time.Duration
+	}{}
+	// serverList/serverDetails 短时缓存
+	listCacheMu sync.Mutex
+	listCache   = map[string]struct {
+		ts   time.Time
+		data []byte
 	}{}
 )
 
@@ -66,11 +73,33 @@ func (v *apiV1) serve() {
 // query: tag (服务器分组)
 func (v *apiV1) serverList(c *gin.Context) {
 	tag := c.Query("tag")
-	if tag != "" {
-		c.JSON(200, singleton.ServerAPI.GetListByTag(tag))
+	cacheKey := "serverList:tag=" + tag
+	listCacheMu.Lock()
+	if ce, ok := listCache[cacheKey]; ok && time.Since(ce.ts) <= 500*time.Millisecond {
+		payload := ce.data
+		listCacheMu.Unlock()
+	WriteJSONPayload(c, 200, payload)
 		return
 	}
-	c.JSON(200, singleton.ServerAPI.GetAllList())
+	listCacheMu.Unlock()
+
+	var res interface{}
+	if tag != "" {
+		res = singleton.ServerAPI.GetListByTag(tag)
+	} else {
+		res = singleton.ServerAPI.GetAllList()
+	}
+	payload, err := utils.EncodeJSON(res)
+	if err != nil {
+		payload, _ = utils.EncodeJSON([]any{})
+	}
+	listCacheMu.Lock()
+	listCache[cacheKey] = struct {
+		ts   time.Time
+		data []byte
+	}{ts: time.Now(), data: payload}
+	listCacheMu.Unlock()
+	WriteJSONPayload(c, 200, payload)
 }
 
 // serverDetails 获取服务器信息 不传入Query参数则获取全部
@@ -88,15 +117,35 @@ func (v *apiV1) serverDetails(c *gin.Context) {
 		}
 	}
 	tag := c.Query("tag")
+	cacheKey := "serverDetails:id=" + c.Query("id") + "&tag=" + tag
+	listCacheMu.Lock()
+	if ce, ok := listCache[cacheKey]; ok && time.Since(ce.ts) <= 500*time.Millisecond {
+		payload := ce.data
+		listCacheMu.Unlock()
+	WriteJSONPayload(c, 200, payload)
+		return
+	}
+	listCacheMu.Unlock()
+
+	var res interface{}
 	if tag != "" {
-		c.JSON(200, singleton.ServerAPI.GetStatusByTag(tag))
-		return
+		res = singleton.ServerAPI.GetStatusByTag(tag)
+	} else if len(idList) != 0 {
+		res = singleton.ServerAPI.GetStatusByIDList(idList)
+	} else {
+		res = singleton.ServerAPI.GetAllStatus()
 	}
-	if len(idList) != 0 {
-		c.JSON(200, singleton.ServerAPI.GetStatusByIDList(idList))
-		return
+	payload, err := utils.EncodeJSON(res)
+	if err != nil {
+		payload, _ = utils.EncodeJSON([]any{})
 	}
-	c.JSON(200, singleton.ServerAPI.GetAllStatus())
+	listCacheMu.Lock()
+	listCache[cacheKey] = struct {
+		ts   time.Time
+		data []byte
+	}{ts: time.Now(), data: payload}
+	listCacheMu.Unlock()
+	WriteJSONPayload(c, 200, payload)
 }
 
 // RegisterServer adds a server and responds with the full ServerRegisterResponse
@@ -107,7 +156,7 @@ func (v *apiV1) RegisterServer(c *gin.Context) {
 	var rs singleton.RegisterServer
 	// Attempt to bind JSON to RegisterServer struct
 	if err := c.ShouldBindJSON(&rs); err != nil {
-		c.JSON(400, singleton.ServerRegisterResponse{
+		WriteJSON(c, 400, singleton.ServerRegisterResponse{
 			CommonResponse: singleton.CommonResponse{
 				Code:    400,
 				Message: "Parse JSON failed",
@@ -131,9 +180,9 @@ func (v *apiV1) RegisterServer(c *gin.Context) {
 	response := singleton.ServerAPI.Register(&rs)
 	// Respond with Secret only if in simple mode, otherwise full response
 	if simple {
-		c.JSON(response.Code, response.Secret)
+		WriteJSON(c, response.Code, response.Secret)
 	} else {
-		c.JSON(response.Code, response)
+		WriteJSON(c, response.Code, response)
 	}
 }
 
@@ -141,12 +190,12 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		c.AbortWithStatusJSON(400, gin.H{"code": 400, "message": "id参数错误"})
+		WriteJSON(c, 400, gin.H{"code": 400, "message": "id参数错误"})
 		return
 	}
 	server, ok := singleton.ServerList[id]
 	if !ok {
-		c.AbortWithStatusJSON(404, gin.H{
+		WriteJSON(c, 404, gin.H{
 			"code":    404,
 			"message": "id不存在",
 		})
@@ -158,7 +207,7 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 	authorized := isMember || isViewPasswordVerfied
 
 	if server.HideForGuest && !authorized {
-		c.AbortWithStatusJSON(403, gin.H{"code": 403, "message": "需要认证"})
+		WriteJSON(c, 403, gin.H{"code": 403, "message": "需要认证"})
 		return
 	}
 
@@ -180,13 +229,17 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 			endTime := time.Now()
 			startTime := endTime.Add(-duration)
 
-			// 命中短时缓存则直接返回
+			// 命中短时缓存则直接返回（预编码 JSON）
 			monitorCacheMu.Lock()
 			if ce, ok := monitorCache[server.ID]; ok {
 				if time.Since(ce.ts) <= 500*time.Millisecond && ce.dur == duration {
-					data := ce.data
+					payload := ce.data
 					monitorCacheMu.Unlock()
-					c.JSON(200, data)
+					c.Status(200)
+					c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+					if _, gz, _ := utils.GzipIfAccepted(c.Writer, c.Request, payload); !gz {
+						_, _ = c.Writer.Write(payload)
+					}
 					return
 				}
 			}
@@ -262,19 +315,35 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 				networkHistories = sampled
 			}
 
+			// 预编码 JSON，减少后续重复编码
+			payload, err := utils.EncodeJSON(networkHistories)
+			if err != nil {
+				// 回退到空数组
+				payload, _ = utils.EncodeJSON([]any{})
+			}
+
 			// 写入短时缓存
 			monitorCacheMu.Lock()
 			monitorCache[server.ID] = struct {
 				ts   time.Time
-				data []*model.MonitorHistory
+				data []byte
 				dur  time.Duration
-			}{ts: time.Now(), data: networkHistories, dur: duration}
+			}{ts: time.Now(), data: payload, dur: duration}
 			monitorCacheMu.Unlock()
 
 			log.Printf("API /monitor/%d 返回 %d 条记录（范围: %v，所有监控器）", server.ID, len(networkHistories), duration)
-			c.JSON(200, networkHistories)
+			c.Status(200)
+			c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if _, gz, _ := utils.GzipIfAccepted(c.Writer, c.Request, payload); !gz {
+				_, _ = c.Writer.Write(payload)
+			}
 		} else {
-			c.JSON(200, []any{})
+			payload, _ := utils.EncodeJSON([]any{})
+			c.Status(200)
+			c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if _, gz, _ := utils.GzipIfAccepted(c.Writer, c.Request, payload); !gz {
+				_, _ = c.Writer.Write(payload)
+			}
 		}
 	} else {
 		// SQLite 模式下恢复原始查询逻辑
@@ -289,13 +358,25 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 				Order("created_at DESC").
 				Find(&networkHistories).Error
 
+			var payload []byte
 			if err != nil {
-				c.JSON(200, []any{})
+				payload, _ = utils.EncodeJSON([]any{})
 			} else {
-				c.JSON(200, networkHistories)
+				// 与 Badger 分支一致：预编码 + gzip 按需
+				payload, _ = utils.EncodeJSON(networkHistories)
+			}
+			c.Status(200)
+			c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if _, gz, _ := utils.GzipIfAccepted(c.Writer, c.Request, payload); !gz {
+				_, _ = c.Writer.Write(payload)
 			}
 		} else {
-			c.JSON(200, []any{})
+			payload, _ := utils.EncodeJSON([]any{})
+			c.Status(200)
+			c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if _, gz, _ := utils.GzipIfAccepted(c.Writer, c.Request, payload); !gz {
+				_, _ = c.Writer.Write(payload)
+			}
 		}
 	}
 }
@@ -304,8 +385,8 @@ func (v *apiV1) monitorConfigs(c *gin.Context) {
 	// 获取监控配置列表
 	if singleton.ServiceSentinelShared != nil {
 		monitors := singleton.ServiceSentinelShared.Monitors()
-		c.JSON(200, monitors)
+		WriteJSON(c, 200, monitors)
 	} else {
-		c.JSON(200, []interface{}{})
+		WriteJSON(c, 200, []interface{}{})
 	}
 }

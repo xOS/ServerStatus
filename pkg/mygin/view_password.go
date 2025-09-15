@@ -4,9 +4,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/service/singleton"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -41,7 +41,7 @@ func ValidateViewPassword(opt ValidateViewPasswordOption) gin.HandlerFunc {
 			}))
 
 		} else {
-			c.JSON(http.StatusOK, model.Response{
+			writeJSON(c, http.StatusOK, model.Response{
 				Code:    http.StatusForbidden,
 				Message: "访问受限",
 			})

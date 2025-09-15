@@ -8,42 +8,37 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"runtime"
+	"runtime/debug"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
-
-	"runtime"
-
-	"runtime/debug"
 
 	"code.cloudfoundry.org/bytefmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/go-uuid"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
-	"github.com/xos/serverstatus/proto"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
 	"github.com/xos/serverstatus/pkg/websocketx"
+	"github.com/xos/serverstatus/proto"
 	"github.com/xos/serverstatus/service/rpc"
 	"github.com/xos/serverstatus/service/singleton"
 )
 
-// bytes.Buffer 池，用于减少 JSON 序列化时的内存分配
-var bytesPool = sync.Pool{
-	New: func() interface{} {
-		return &bytes.Buffer{}
-	},
-}
-
-// 添加字节格式化缓存，减少重复计算
 var (
+	// 添加字节格式化缓存，减少重复计算
 	byteFmtCache = make(map[uint64]string)
 	byteFmtMutex sync.RWMutex
+	// bytes.Buffer 池，用于减少 JSON 序列化时的内存分配
+	bytesPool = sync.Pool{New: func() interface{} { return &bytes.Buffer{} }}
 )
 
 // cachedByteSize 带缓存的字节格式化函数
@@ -404,9 +399,68 @@ func (cp *commonPage) network(c *gin.Context) {
 	// 获取监控历史记录
 	var monitorHistories interface{}
 	if singleton.Conf.DatabaseType == "badger" {
-		// BadgerDB 模式：为提升首屏速度，network 页面不再在后端预取监控历史，改为前端异步加载
+		// 轻量级预取：默认展示第一个服务器最近24小时网络监控数据（受限并发+下采样）
 		monitorHistories = []model.MonitorHistory{}
 		monitorInfos = []byte("[]")
+		if id > 0 && db.DB != nil && singleton.ServiceSentinelShared != nil {
+			endTime := time.Now()
+			startTime := endTime.Add(-24 * time.Hour)
+			monitors := singleton.ServiceSentinelShared.Monitors()
+			if len(monitors) > 0 {
+				monitorOps := db.NewMonitorHistoryOps(db.DB)
+				type monitorResult struct {
+					histories []*model.MonitorHistory
+					err       error
+				}
+				sem := make(chan struct{}, 3)
+				resultChan := make(chan monitorResult, len(monitors))
+				active := 0
+				for _, m := range monitors {
+					if m == nil {
+						continue
+					}
+					if m.Type != model.TaskTypeICMPPing && m.Type != model.TaskTypeTCPPing {
+						continue
+					}
+					active++
+					go func(monitorID uint64) {
+						sem <- struct{}{}
+						defer func() { <-sem }()
+						hs, err := monitorOps.GetMonitorHistoriesByServerAndMonitorRangeReverseLimit(
+							id, monitorID, startTime, endTime, 1000,
+						)
+						resultChan <- monitorResult{histories: hs, err: err}
+					}(m.ID)
+				}
+				var networkHistories []*model.MonitorHistory
+				for i := 0; i < active; i++ {
+					r := <-resultChan
+					if r.err != nil {
+						continue
+					}
+					networkHistories = append(networkHistories, r.histories...)
+				}
+				sort.Slice(networkHistories, func(i, j int) bool {
+					return networkHistories[i].CreatedAt.After(networkHistories[j].CreatedAt)
+				})
+				const maxPoints = 1500
+				if len(networkHistories) > maxPoints {
+					step := float64(len(networkHistories)) / float64(maxPoints)
+					sampled := make([]*model.MonitorHistory, 0, maxPoints)
+					for i := 0; i < maxPoints; i++ {
+						idx := int(float64(i) * step)
+						if idx >= len(networkHistories) {
+							idx = len(networkHistories) - 1
+						}
+						sampled = append(sampled, networkHistories[idx])
+					}
+					networkHistories = sampled
+				}
+				if b, err := utils.Json.Marshal(networkHistories); err == nil {
+					monitorInfos = b
+				}
+			}
+		}
 	} else {
 		// SQLite 模式，使用 MonitorAPI
 		if singleton.MonitorAPI != nil {
@@ -1142,8 +1196,8 @@ func (cp *commonPage) home(c *gin.Context) {
 }
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  32768,
-	WriteBufferSize: 32768,
+	ReadBufferSize:  8192,
+	WriteBufferSize: 8192,
 	CheckOrigin: func(r *http.Request) bool {
 		// 允许所有来源的WebSocket连接，避免跨域问题
 		return true
@@ -1156,11 +1210,9 @@ var upgrader = websocket.Upgrader{
 
 func (cp *commonPage) ws(c *gin.Context) {
 	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-		ReadBufferSize:   16384, // 16KB
-		WriteBufferSize:  16384, // 16KB
+		CheckOrigin:      func(r *http.Request) bool { return true },
+		ReadBufferSize:   8192,
+		WriteBufferSize:  8192,
 		HandshakeTimeout: 10 * time.Second,
 	}
 
@@ -1586,7 +1638,7 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 	_, isViewPasswordVerified := c.Get(model.CtxKeyViewPasswordVerified)
 
 	if !isMember && !isViewPasswordVerified {
-		c.JSON(http.StatusForbidden, gin.H{
+		WriteJSON(c, http.StatusForbidden, gin.H{
 			"code":    403,
 			"message": "请先登录或输入访问密码",
 		})
@@ -1733,7 +1785,7 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 		singleton.ServerLock.RUnlock()
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	WriteJSON(c, http.StatusOK, gin.H{
 		"code": 200,
 		"data": trafficData,
 	})
@@ -1746,7 +1798,7 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 	_, isViewPasswordVerified := c.Get(model.CtxKeyViewPasswordVerified)
 
 	if !isMember && !isViewPasswordVerified {
-		c.JSON(http.StatusForbidden, gin.H{
+		WriteJSON(c, http.StatusForbidden, gin.H{
 			"code":    403,
 			"message": "请先登录或输入访问密码",
 		})
@@ -1756,7 +1808,7 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 	// 获取服务器ID
 	serverID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
+		WriteJSON(c, http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "无效的服务器ID",
 		})
@@ -1768,7 +1820,7 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 	server := singleton.ServerList[serverID]
 	singleton.ServerLock.RUnlock()
 	if server == nil {
-		c.JSON(http.StatusNotFound, gin.H{
+		WriteJSON(c, http.StatusNotFound, gin.H{
 			"code":    404,
 			"message": "服务器不存在",
 		})
@@ -1895,7 +1947,7 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 		trafficData = append(trafficData, trafficItem)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	WriteJSON(c, http.StatusOK, gin.H{
 		"code": 200,
 		"data": trafficData,
 	})

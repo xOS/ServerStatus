@@ -27,6 +27,25 @@ import (
 	"github.com/xos/serverstatus/service/singleton"
 )
 
+// WriteJSON encodes v to JSON once and writes with proper headers, using gzip when accepted.
+func WriteJSON(c *gin.Context, status int, v interface{}) {
+	payload, err := utils.EncodeJSON(v)
+	if err != nil {
+		// best-effort empty array fallback
+		payload, _ = utils.EncodeJSON([]any{})
+	}
+	WriteJSONPayload(c, status, payload)
+}
+
+// WriteJSONPayload writes a pre-encoded JSON payload with gzip when client accepts it.
+func WriteJSONPayload(c *gin.Context, status int, payload []byte) {
+	c.Status(status)
+	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if _, gz, _ := utils.GzipIfAccepted(c.Writer, c.Request, payload); !gz {
+		_, _ = c.Writer.Write(payload)
+	}
+}
+
 // handleBrokenPipe 中间件处理broken pipe错误
 func handleBrokenPipe(c *gin.Context) {
 	defer func() {
@@ -72,7 +91,7 @@ func pprofAuthMiddleware() gin.HandlerFunc {
 		user, exists := c.Get(model.CtxKeyAuthorizedUser)
 
 		if !exists || user == nil {
-			c.JSON(http.StatusForbidden, gin.H{
+			WriteJSON(c, http.StatusForbidden, gin.H{
 				"error": "需要登录才能访问性能分析工具",
 				"code":  403,
 			})
@@ -91,6 +110,26 @@ func ServeWeb(port uint) *http.Server {
 
 	// 创建自定义的Gin引擎，过滤网络连接错误
 	r := gin.New()
+
+	// 全局并发限制器：限制同时在处理的请求数量，避免低配机被打满
+	// 容量可通过环境变量 NG_MAX_INFLIGHT 配置，默认 64
+	inflightCap := 64
+	if v := os.Getenv("NG_MAX_INFLIGHT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			inflightCap = n
+		}
+	}
+	inflight := make(chan struct{}, inflightCap)
+	r.Use(func(c *gin.Context) {
+		select {
+		case inflight <- struct{}{}:
+			defer func() { <-inflight }()
+			c.Next()
+		default:
+			// 瞬时过载时快速失败，保护进程
+			c.AbortWithStatus(http.StatusServiceUnavailable)
+		}
+	})
 
 	// 添加自定义的日志中间件，过滤broken pipe等网络错误
 	r.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
@@ -155,6 +194,19 @@ func ServeWeb(port uint) *http.Server {
 	r.Use(natGateway)
 	r.Use(handleBrokenPipe) // 添加broken pipe错误处理中间件
 	r.Use(corsMiddleware)   // 添加CORS中间件处理OPTIONS请求
+	// 全局请求体大小限制（默认2MiB，可通过环境变量 NG_MAX_BODY_BYTES 调整）
+	maxBodyBytes := int64(2 << 20)
+	if v := os.Getenv("NG_MAX_BODY_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			maxBodyBytes = n
+		}
+	}
+	r.Use(func(c *gin.Context) {
+		if c.Request != nil && c.Request.Body != nil {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
+		}
+		c.Next()
+	})
 	tmpl := template.New("").Funcs(funcMap)
 	var err error
 	// 直接用本地模板目录
@@ -183,7 +235,11 @@ func ServeWeb(port uint) *http.Server {
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		ReadHeaderTimeout: time.Second * 5,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      20 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1MiB 头大小上限，避免过大头占用内存
 		Handler:           r,
 	}
 	return srv
@@ -374,9 +430,6 @@ var funcMap = template.FuncMap{
 		return math.Round(n*100) / 100
 	},
 	"TransUsedPercent": func(used, total float64) (n float64) {
-		if total <= 0 {
-			return 0
-		}
 		n = (used / total) * 100
 		if n > 100 {
 			n = 100
@@ -448,7 +501,7 @@ func globalPanicRecovery() gin.HandlerFunc {
 
 		// 确保响应头没有被写入
 		if !c.Writer.Written() {
-			c.JSON(http.StatusInternalServerError, gin.H{
+			WriteJSON(c, http.StatusInternalServerError, gin.H{
 				"error": "服务器内部错误，请稍后重试",
 				"code":  500,
 			})
@@ -530,8 +583,6 @@ func updateCycleStatsInfo(cycleID uint64, from, to time.Time, max uint64, name s
 	}
 }
 
-// buildTrafficData 构建用于前端显示的流量数据
-// 返回的数据符合周期配置的cycle_start和cycle_unit
 func buildTrafficData() []map[string]interface{} {
 	singleton.AlertsLock.RLock()
 	defer singleton.AlertsLock.RUnlock()
@@ -580,8 +631,7 @@ func buildTrafficData() []map[string]interface{} {
 	// 从statsStore构建流量数据
 	var trafficData []map[string]interface{}
 
-	if statsStore != nil {
-		for cycleID, stats := range statsStore {
+	for cycleID, stats := range statsStore {
 			// 查找对应的Alert规则，用于获取周期设置
 			var alert *model.AlertRule
 			for _, a := range singleton.Alerts {
@@ -671,18 +721,15 @@ func buildTrafficData() []map[string]interface{} {
 				}
 
 				trafficData = append(trafficData, trafficItem)
-			}
 		}
 	}
 
 	// 补充机制：为没有被警报规则覆盖的服务器创建默认流量数据（10TB月配额）
 	// 获取所有已被警报规则覆盖的服务器ID
 	coveredServerIDs := make(map[uint64]bool)
-	if statsStore != nil {
-		for _, stats := range statsStore {
-			for serverID := range stats.Transfer {
-				coveredServerIDs[serverID] = true
-			}
+	for _, stats := range statsStore {
+		for serverID := range stats.Transfer {
+			coveredServerIDs[serverID] = true
 		}
 	}
 

@@ -73,11 +73,11 @@ func (gp *guestPage) login(c *gin.Context) {
 
 func (gp *guestPage) debugLogin(c *gin.Context) {
 	if !singleton.Conf.Debug {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Debug mode not enabled"})
+		WriteJSON(c, http.StatusForbidden, gin.H{"error": "Debug mode not enabled"})
 		return
 	}
 
 	// 设置 admin token cookie
 	c.SetCookie(singleton.Conf.Site.CookieName, "admin", 3600*24*30, "/", "", false, false)
-	c.JSON(http.StatusOK, gin.H{"message": "Debug login successful"})
+	WriteJSON(c, http.StatusOK, gin.H{"message": "Debug login successful"})
 }

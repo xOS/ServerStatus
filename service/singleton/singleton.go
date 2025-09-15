@@ -1946,6 +1946,8 @@ var (
 	memoryPressureLevel int64 // 内存压力等级：0=正常，1=警告，2=严重，3=紧急
 	lastForceGCTime     time.Time
 	goroutineCount      int64
+	lastGCPercent       int   = 100
+	lastMemLimitMB      int64 = -1 // -1 表示无限制
 )
 
 func NewMemoryMonitor() *MemoryMonitor {
@@ -2000,6 +2002,19 @@ func (mm *MemoryMonitor) checkMemoryPressure() {
 
 	atomic.StoreInt64(&memoryPressureLevel, newPressureLevel)
 
+	// 动态调整 GC 参数与内存上限（幂等变更，避免频繁切换）
+	// 目标：在压力上升时更积极 GC，并设置温和内存上限；压力解除后恢复默认
+	switch newPressureLevel {
+	case 3: // 高压
+		mm.applyGCSettings(25, 700) // 更激进GC，内存上限约700MB
+	case 2: // 严重
+		mm.applyGCSettings(40, 900)
+	case 1: // 警告
+		mm.applyGCSettings(70, 0) // 0 表示不调整上限
+	default: // 正常
+		mm.applyGCSettings(100, -1) // 恢复默认，无内存上限
+	}
+
 	// 硬性内存限制 - 超过800MB强制退出让systemd重启
 	if currentMemMB > 800 {
 		log.Printf("内存使用超过800MB (%dMB)，程序即将强制退出避免系统崩溃", currentMemMB)
@@ -2035,6 +2050,26 @@ func (mm *MemoryMonitor) checkMemoryPressure() {
 		runtime.GC()
 		debug.FreeOSMemory()
 		lastForceGCTime = time.Now()
+	}
+}
+
+// applyGCSettings 幂等设置 GC 百分比与内存上限（MB）
+func (mm *MemoryMonitor) applyGCSettings(gcPercent int, memLimitMB int64) {
+	if gcPercent != lastGCPercent {
+		debug.SetGCPercent(gcPercent)
+		lastGCPercent = gcPercent
+	}
+	// memLimitMB: -1=无限制, 0=不变, >0=设置限制
+	if memLimitMB > 0 {
+		if lastMemLimitMB != memLimitMB {
+			debug.SetMemoryLimit(memLimitMB << 20)
+			lastMemLimitMB = memLimitMB
+		}
+	} else if memLimitMB == -1 {
+		if lastMemLimitMB != -1 {
+			debug.SetMemoryLimit(math.MaxInt64)
+			lastMemLimitMB = -1
+		}
 	}
 }
 
