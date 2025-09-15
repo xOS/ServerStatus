@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,16 @@ import (
 type apiV1 struct {
 	r gin.IRouter
 }
+
+// monitor API 短时缓存（包级别）
+var (
+	monitorCacheMu sync.Mutex
+	monitorCache   = map[uint64]struct {
+		ts   time.Time
+		data []*model.MonitorHistory
+		dur  time.Duration
+	}{}
+)
 
 func (v *apiV1) serve() {
 	r := v.r.Group("")
@@ -169,6 +180,18 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 			endTime := time.Now()
 			startTime := endTime.Add(-duration)
 
+			// 命中短时缓存则直接返回
+			monitorCacheMu.Lock()
+			if ce, ok := monitorCache[server.ID]; ok {
+				if time.Since(ce.ts) <= 500*time.Millisecond && ce.dur == duration {
+					data := ce.data
+					monitorCacheMu.Unlock()
+					c.JSON(200, data)
+					return
+				}
+			}
+			monitorCacheMu.Unlock()
+
 			// 获取该服务器的监控配置，展示所有监控器
 			monitors := singleton.ServiceSentinelShared.Monitors()
 			var networkHistories []*model.MonitorHistory
@@ -182,31 +205,26 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 					err       error
 				}
 
-				// 创建通道收集结果
+				// 创建通道收集结果 + 控制并发
 				resultChan := make(chan monitorResult, len(monitors))
 				activeQueries := 0
+				// 限制并发，避免在低配机上压爆 CPU
+				sem := make(chan struct{}, 4)
 
 				// 并发查询所有ICMP/TCP监控器
 				for _, monitor := range monitors {
 					if monitor.Type == model.TaskTypeICMPPing || monitor.Type == model.TaskTypeTCPPing {
 						activeQueries++
 						go func(monitorID uint64) {
-							// 使用高效的时间范围查询
-							allHistories, err := monitorOps.GetMonitorHistoriesByMonitorID(
-								monitorID, startTime, endTime)
-
-							var serverHistories []*model.MonitorHistory
-							if err == nil {
-								// 快速过滤出该服务器的记录
-								for _, history := range allHistories {
-									if history.ServerID == server.ID {
-										serverHistories = append(serverHistories, history)
-									}
-								}
-							}
+							sem <- struct{}{}
+							defer func() { <-sem }()
+							// 使用反向限量，优先拿最近的数据，最多取 6000 条/监控器，足够覆盖 72h
+							allHistories, err := monitorOps.GetMonitorHistoriesByServerAndMonitorRangeReverseLimit(
+								server.ID, monitorID, startTime, endTime, 6000,
+							)
 
 							resultChan <- monitorResult{
-								histories: serverHistories,
+								histories: allHistories,
 								err:       err,
 							}
 						}(monitor.ID)
@@ -224,10 +242,34 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 				}
 			}
 
-			// 按时间排序（数据已经基本有序，排序很快）
+			// 将多个监控器结果汇总后统一按时间倒序
 			sort.Slice(networkHistories, func(i, j int) bool {
 				return networkHistories[i].CreatedAt.After(networkHistories[j].CreatedAt)
 			})
+
+			// 下采样：当点数超过 5000 时，按等间隔抽取，减少前端渲染负荷
+			const maxPoints = 5000
+			if len(networkHistories) > maxPoints {
+				step := float64(len(networkHistories)) / float64(maxPoints)
+				sampled := make([]*model.MonitorHistory, 0, maxPoints)
+				for i := 0; i < maxPoints; i++ {
+					idx := int(float64(i) * step)
+					if idx >= len(networkHistories) {
+						idx = len(networkHistories) - 1
+					}
+					sampled = append(sampled, networkHistories[idx])
+				}
+				networkHistories = sampled
+			}
+
+			// 写入短时缓存
+			monitorCacheMu.Lock()
+			monitorCache[server.ID] = struct {
+				ts   time.Time
+				data []*model.MonitorHistory
+				dur  time.Duration
+			}{ts: time.Now(), data: networkHistories, dur: duration}
+			monitorCacheMu.Unlock()
 
 			log.Printf("API /monitor/%d 返回 %d 条记录（范围: %v，所有监控器）", server.ID, len(networkHistories), duration)
 			c.JSON(200, networkHistories)

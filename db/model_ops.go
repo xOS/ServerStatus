@@ -299,6 +299,76 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitor(serverID, moni
 
 // 删除有问题的优化方法，恢复使用原始的GetMonitorHistoriesByServerAndMonitor方法
 
+// GetMonitorHistoriesByServerAndMonitorRangeReverseLimit
+// 高效查询：按 monitorID 前缀 + 时间范围，使用反向迭代从 endTime 向前扫描，尽快拿到最近的 N 条
+func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitorRangeReverseLimit(serverID, monitorID uint64, startTime, endTime time.Time, limit int) ([]*model.MonitorHistory, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+
+	prefix := fmt.Sprintf("monitor_history:%d:", monitorID)
+	// 以 endTime 为起点反向扫描
+	endKey := fmt.Sprintf("%s%d", prefix, endTime.UnixNano())
+	startSuffix := []byte(fmt.Sprintf(":%d", startTime.UnixNano()))
+
+	var histories []*model.MonitorHistory
+	err := o.db.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = true
+		opts.PrefetchSize = 32
+		opts.Reverse = true
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		// 定位到 endKey 附近
+		for it.Seek([]byte(endKey)); it.Valid(); it.Next() {
+			item := it.Item()
+			key := item.KeyCopy(nil)
+
+			if !bytes.HasPrefix(key, []byte(prefix)) {
+				// 反向迭代一旦越过前缀范围即可退出
+				break
+			}
+
+			// 时间下界：若 key 的时间戳 < startTime 则可以继续反向，但达到更小时间即可停止
+			// 由于键格式 monitor_history:{monitorID}:{ts}，用最后一个冒号后部分快速判断
+			if idx := bytes.LastIndexByte(key, ':'); idx != -1 {
+				tsPart := key[idx:]
+				if bytes.Compare(tsPart, startSuffix) < 0 {
+					// 已经早于 startTime，停止
+					break
+				}
+			}
+
+			if err := item.Value(func(val []byte) error {
+				var history model.MonitorHistory
+				if err := jsonAPI.Unmarshal(val, &history); err != nil {
+					return err
+				}
+				if history.ServerID == serverID &&
+					!history.CreatedAt.Before(startTime) && history.CreatedAt.Before(endTime) {
+					histories = append(histories, &history)
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
+
+			if len(histories) >= limit {
+				break
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 当前结果为时间倒序（新->旧），保持这一顺序即可满足大部分展示；如需正序可反转
+	return histories, nil
+}
+
 // CleanupOldMonitorHistories removes monitor histories older than maxAge
 func (o *MonitorHistoryOps) CleanupOldMonitorHistories(maxAge time.Duration) (int, error) {
 	// Get all monitor IDs
