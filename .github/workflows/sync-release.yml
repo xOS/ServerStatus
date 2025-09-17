@@ -6,7 +6,7 @@ on:
 jobs:
   sync-release-to-gitee:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     env:
       GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
       GH_TOKEN: ${{ github.token }}
@@ -99,57 +99,27 @@ jobs:
             local attempt ok http_code body tmp
             ok=0
             tmp=$(mktemp)
-            # 依次尝试不同参数形式（不使用 -f，以便获取返回体进行判定）
-            for attempt in 1 2 3 4 5 6; do
+            # 依据前一轮日志，Gitee 需要字段名为 file；优先用 form token + file，其次 URL token + file
+            for attempt in 1 2; do
               case "$attempt" in
                 1)
-                  echo "  - try1: form token + files=@"$filepath""
+                  echo "  - try1: form token + file=@\"$filepath\""
                   http_code=$(curl --http1.1 -4 -sS -X POST \
-                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
+                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --retry-all-errors \
+                    --no-keepalive --tcp-nodelay --expect100-timeout 0 \
+                    --connect-timeout 10 --max-time 3600 \
                     -F access_token="${GITEE_TOKEN}" \
-                    -F files=@"$filepath" \
+                    -F file=@"$filepath" \
                     -o "$tmp" -w "%{http_code}" \
                     "$attach_api")
                   ;;
                 2)
-                  echo "  - try2: form token + file=@"$filepath""
+                  echo "  - try2: url token + file=@\"$filepath\""
                   http_code=$(curl --http1.1 -4 -sS -X POST \
-                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
-                    -F access_token="${GITEE_TOKEN}" \
+                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --retry-all-errors \
+                    --no-keepalive --tcp-nodelay --expect100-timeout 0 \
+                    --connect-timeout 10 --max-time 3600 \
                     -F file=@"$filepath" \
-                    -o "$tmp" -w "%{http_code}" \
-                    "$attach_api")
-                  ;;
-                3)
-                  echo "  - try3: form token + files[]=@"$filepath""
-                  http_code=$(curl --http1.1 -4 -sS -X POST \
-                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
-                    -F access_token="${GITEE_TOKEN}" \
-                    -F 'files[]=@'"$filepath" \
-                    -o "$tmp" -w "%{http_code}" \
-                    "$attach_api")
-                  ;;
-                4)
-                  echo "  - try4: url token + files=@"$filepath""
-                  http_code=$(curl --http1.1 -4 -sS -X POST \
-                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
-                    -F files=@"$filepath" \
-                    -o "$tmp" -w "%{http_code}" \
-                    "$attach_api?access_token=${GITEE_TOKEN}")
-                  ;;
-                5)
-                  echo "  - try5: url token + file=@"$filepath""
-                  http_code=$(curl --http1.1 -4 -sS -X POST \
-                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
-                    -F file=@"$filepath" \
-                    -o "$tmp" -w "%{http_code}" \
-                    "$attach_api?access_token=${GITEE_TOKEN}")
-                  ;;
-                6)
-                  echo "  - try6: url token + files[]=@"$filepath""
-                  http_code=$(curl --http1.1 -4 -sS -X POST \
-                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
-                    -F 'files[]=@'"$filepath" \
                     -o "$tmp" -w "%{http_code}" \
                     "$attach_api?access_token=${GITEE_TOKEN}")
                   ;;
@@ -168,6 +138,12 @@ jobs:
             [ "$ok" = "1" ]
           }
 
+          # 并发上传（最多 3 个同时进行）
+          MAX_PAR=3
+          tmpdir=$(mktemp -d)
+          pids=()
+          names=()
+          i=0
           for f in "${files[@]}"; do
             name="$f"
             if echo " $existing " | grep -q " $name "; then
@@ -175,10 +151,30 @@ jobs:
               continue
             fi
             echo "Uploading $name ..."
-            if upload_one "$name"; then
-              echo " -> uploaded"
-            else
-              echo "Upload failed for $name after all attempts" >&2
-              exit 1
+            (
+              if upload_one "$name"; then
+                echo ok >"$tmpdir/${name}.status"
+                echo " -> uploaded"
+              else
+                echo fail >"$tmpdir/${name}.status"
+                echo "Upload failed for $name after all attempts" >&2
+              fi
+            ) &
+            pids+=("$!")
+            names+=("$name")
+            i=$((i+1))
+            if [ "$((i % MAX_PAR))" -eq 0 ]; then
+              wait -n || true
             fi
           done
+          # 等待剩余任务
+          wait || true
+          # 汇总结果
+          fails=$(ls "$tmpdir" | grep -c \.status$ || true)
+          if ls "$tmpdir"/*.status >/dev/null 2>&1; then
+            if grep -q '^fail$' "$tmpdir"/*.status; then
+              echo "One or more uploads failed." >&2
+              exit 1
+            fi
+          fi
+          rm -rf "$tmpdir"
