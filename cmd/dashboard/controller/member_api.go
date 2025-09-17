@@ -826,6 +826,14 @@ func (ma *memberAPI) addOrEditMonitor(c *gin.Context) {
 		m.RecoverTriggerTasksRaw = mf.RecoverTriggerTasksRaw
 		m.FailTriggerTasksRaw = mf.FailTriggerTasksRaw
 
+		// 兼容旧前端取值：3 代表 TCP-Ping，0 视为默认 ICMP-Ping
+		if m.Type == 3 {
+			m.Type = model.TaskTypeTCPPing
+		}
+		if m.Type == 0 {
+			m.Type = model.TaskTypeICMPPing
+		}
+
 		// 处理 SkipServersRaw，确保它是有效的JSON数组
 		if mf.SkipServersRaw == "" {
 			mf.SkipServersRaw = "[]"

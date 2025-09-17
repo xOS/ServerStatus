@@ -101,6 +101,25 @@ func (m *Monitor) BeforeSave(tx *gorm.DB) error {
 }
 
 func (m *Monitor) AfterFind(tx *gorm.DB) error {
+	// 类型兼容：历史数据中可能存在 0 或 3 的取值（旧前端/旧版本遗留）
+	// 0 归一化为 ICMP(1)，3 归一化为 TCP(2)
+	if m.Type == 0 {
+		m.Type = TaskTypeICMPPing
+		// 尝试静默纠正数据库中的值，失败则记录日志但不阻断
+		if tx != nil {
+			if err := tx.Model(m).Update("type", TaskTypeICMPPing).Error; err != nil {
+				log.Printf("修正Monitor %s(Type=0)为ICMP失败: %v", m.Name, err)
+			}
+		}
+	} else if m.Type == 3 {
+		m.Type = TaskTypeTCPPing
+		if tx != nil {
+			if err := tx.Model(m).Update("type", TaskTypeTCPPing).Error; err != nil {
+				log.Printf("修正Monitor %s(Type=3)为TCP失败: %v", m.Name, err)
+			}
+		}
+	}
+
 	m.SkipServers = make(map[uint64]bool)
 	var skipServers []uint64
 	if err := utils.Json.Unmarshal([]byte(m.SkipServersRaw), &skipServers); err != nil {
