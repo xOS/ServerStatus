@@ -233,7 +233,7 @@ def sync_to_gitee(tag: str, body: str, files, asset_links=None):
                     curl_cmd = (
                         f"curl -sS -f --http1.1 -4 -X POST "
                         f"--connect-timeout 10 --max-time {SOCKET_TIMEOUT} "
-                        f"-F files=@{shlex.quote(path)};type=application/octet-stream "
+                        f"-F files=@{shlex.quote(path)} "
                         f"-F access_token={shlex.quote(access_token)} "
                         f"{shlex.quote(attach_api)}"
                     )
@@ -249,7 +249,7 @@ def sync_to_gitee(tag: str, body: str, files, asset_links=None):
                     curl_cmd2 = (
                         f"curl -sS -f --http1.1 -4 -X POST "
                         f"--connect-timeout 10 --max-time {SOCKET_TIMEOUT} "
-                        f"-F file=@{shlex.quote(path)};type=application/octet-stream "
+                        f"-F file=@{shlex.quote(path)} "
                         f"-F access_token={shlex.quote(access_token)} "
                         f"{shlex.quote(attach_api)}"
                     )
@@ -287,7 +287,7 @@ def sync_to_gitee(tag: str, body: str, files, asset_links=None):
                 curl_cmd = (
                     f"curl -sS -f --http1.1 -4 -X POST "
                     f"--connect-timeout 10 --max-time {SOCKET_TIMEOUT} "
-                    f"-F files=@{shlex.quote(path)};type=application/octet-stream "
+                    f"-F files=@{shlex.quote(path)} "
                     f"-F access_token={shlex.quote(access_token)} "
                     f"{shlex.quote(attach_api)}"
                 )
@@ -322,7 +322,7 @@ def sync_to_gitee(tag: str, body: str, files, asset_links=None):
                     curl_cmd = (
                         f"curl -sS -f --http1.1 -4 -X POST "
                         f"--connect-timeout 10 --max-time {SOCKET_TIMEOUT} "
-                        f"-F file=@{shlex.quote(path)};type=application/octet-stream "
+                        f"-F file=@{shlex.quote(path)} "
                         f"-F access_token={shlex.quote(access_token)} "
                         f"https://gitee.com/api/v5/repos/{owner}/{repo}/attachments"
                     )

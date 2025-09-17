@@ -10,15 +10,101 @@ jobs:
     env:
       GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
       GH_TOKEN: ${{ github.token }}
-      # 如需跳过大文件上传，打开并设置阈值：
-      # SYNC_LINK_ONLY: true
-      # 若仅想跳过大于阈值(MiB)的文件，可改用如下设置（默认16）：
-      # SYNC_LINK_THRESHOLD_MB: '16'
-      # 如需不中断整个任务，即便单个上传失败：
-      # SYNC_CONTINUE_ON_UPLOAD_ERROR: true
     steps:
       - uses: actions/checkout@v4
-      - name: Sync to Gitee
+      - name: Install jq and curl
         run: |
-          pip3 install PyGitHub
-          python3 .github/sync.py
+          sudo apt-get update -y
+          sudo apt-get install -y jq curl
+      - name: Sync to Gitee via bash
+        env:
+          GH_OWNER: xOS
+          GH_REPO: ServerStatus
+          GITEE_OWNER: Ten
+          GITEE_REPO: ServerStatus
+          CURL_RETRY: '5'
+          CURL_RETRY_DELAY: '3'
+        run: |
+          set -euo pipefail
+          GH_API="https://api.github.com/repos/${GH_OWNER}/${GH_REPO}"
+          GITEE_API="https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}"
+
+          # 获取最新 release 信息
+          echo "Fetching latest GitHub release..."
+          rel_json=$(curl -sS -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "${GH_API}/releases/latest")
+          tag=$(echo "$rel_json" | jq -r .tag_name)
+          body=$(echo "$rel_json" | jq -r .body)
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "No release found on GitHub" >&2
+            exit 1
+          fi
+          echo "Latest tag: $tag"
+
+          # 下载资产
+          asset_count=$(echo "$rel_json" | jq '.assets | length')
+          if [ "$asset_count" -eq 0 ]; then
+            echo "No assets to sync." >&2
+            exit 1
+          fi
+          echo "Downloading $asset_count assets..."
+          echo "$rel_json" | jq -r '.assets[] | "\(.name) \(.browser_download_url)"' | while read -r name url; do
+            echo "Downloading $name"
+            curl -L --fail --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} -H "Authorization: Bearer ${GH_TOKEN}" -o "$name" "$url"
+          done
+
+          # 创建或复用 Gitee release
+          echo "Creating or reusing Gitee release..."
+          create_resp=$(curl -sS -X POST "${GITEE_API}/releases" \
+            -F access_token="${GITEE_TOKEN}" \
+            -F tag_name="$tag" \
+            -F name="$tag" \
+            -F body="$body" \
+            -F target_commitish="master" \
+            -w "\n%{http_code}")
+          http_code=$(echo "$create_resp" | tail -n1)
+          create_body=$(echo "$create_resp" | sed '$d')
+          if [ "$http_code" = "201" ]; then
+            release_id=$(echo "$create_body" | jq -r .id)
+          else
+            echo "Create release failed ($http_code), try list to reuse..."
+            list_json=$(curl -sS "${GITEE_API}/releases?access_token=${GITEE_TOKEN}&page=1&per_page=100")
+            release_id=$(echo "$list_json" | jq -r ".[] | select(.tag_name==\"$tag\") | .id" | head -n1)
+            if [ -z "$release_id" ]; then
+              echo "No Gitee release id available for tag $tag" >&2
+              echo "Create response: $create_body" >&2
+              exit 1
+            fi
+          fi
+          echo "Gitee release id: $release_id"
+
+          # 列出已有资产，避免重复
+          detail_json=$(curl -sS "${GITEE_API}/releases/${release_id}?access_token=${GITEE_TOKEN}")
+          existing=$(echo "$detail_json" | jq -r '.assets[]?.name' | tr '\n' ' ')
+          echo "Existing assets: $existing"
+
+          # 生成上传列表（以下载得到的资产为准），并按大小排序（先小后大）
+          echo "$rel_json" | jq -r '.assets[] | .name' > asset_names.txt
+          : > upload_list.txt
+          while read -r n; do
+            [ -f "$n" ] || continue
+            sz=$(stat -c %s "$n" 2>/dev/null || stat -f %z "$n")
+            printf "%s %s\n" "$sz" "$n" >> upload_list.txt
+          done < asset_names.txt
+          mapfile -t files < <(sort -n upload_list.txt | awk '{print $2}')
+
+          attach_api="${GITEE_API}/releases/${release_id}/attach_files"
+          for f in "${files[@]}"; do
+            name="$f"
+            if echo " $existing " | grep -q " $name "; then
+              echo "Skip $name (exists)"
+              continue
+            fi
+            echo "Uploading $name ..."
+            # 使用 curl 表单上传，带重试
+            curl --http1.1 -4 -sS -f -X POST \
+              --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
+              -F access_token="${GITEE_TOKEN}" \
+              -F files=@"$name" \
+              "$attach_api"
+            echo " -> uploaded"
+          done
