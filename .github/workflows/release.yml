@@ -44,8 +44,12 @@ jobs:
         env:
           IPINFO_TOKEN: ${{ secrets.IPINFO_TOKEN }}
         run: |
-          rm pkg/geoip/geoip.db
-          wget -qO pkg/geoip/geoip.db https://ipinfo.io/data/free/country.mmdb?token=${IPINFO_TOKEN}
+          if [ -z "$IPINFO_TOKEN" ]; then
+            echo "IPINFO_TOKEN is not set. Please add it to your repository secrets."
+            exit 1
+          fi
+          rm -f pkg/geoip/geoip.db
+          wget -qO pkg/geoip/geoip.db "https://ipinfo.io/data/free/country.mmdb?token=${IPINFO_TOKEN}"
 
       - name: Set up Go
         uses: actions/setup-go@v5
