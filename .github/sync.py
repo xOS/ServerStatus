@@ -28,6 +28,7 @@ def get_github_latest_release():
         print(f"Latest release tag is: {release.tag_name}")
         print(f"Latest release info is: {release.body}")
         files = []
+        asset_links = {}
         for asset in release.get_assets():
             url = asset.browser_download_url
             name = asset.name
@@ -52,7 +53,8 @@ def get_github_latest_release():
                 raise RuntimeError(f"Failed to download {name} after {MAX_DOWNLOAD_RETRIES} attempts")
             file_abs_path = get_abs_path(asset.name)
             files.append(file_abs_path)
-        sync_to_gitee(release.tag_name, release.body, files)
+            asset_links[name] = url
+        sync_to_gitee(release.tag_name, release.body, files, asset_links)
     else:
         print("No releases found.")
 
@@ -90,7 +92,7 @@ def delete_gitee_releases(latest_id, client, uri, token):
             raise ValueError(f"Delete release #{rid} failed: {delete_response.status_code} {delete_response.text}")
 
 
-def sync_to_gitee(tag: str, body: str, files: slice):
+def sync_to_gitee(tag: str, body: str, files: slice, asset_links=None):
     release_id = ""
     owner = os.environ.get('GITEE_OWNER', 'Ten')
     repo = os.environ.get('GITEE_REPO', 'ServerStatus')
@@ -158,6 +160,17 @@ def sync_to_gitee(tag: str, body: str, files: slice):
 
     # 附件上传回退开关与出错是否继续
     allow_partial = os.environ.get('SYNC_CONTINUE_ON_UPLOAD_ERROR', 'false').lower() == 'true'
+    # 链接模式：跳过上传，直接把 GitHub 资产链接写入 release body
+    link_only = os.environ.get('SYNC_LINK_ONLY', 'false').lower() == 'true'
+    try:
+        link_threshold_mb = float(os.environ.get('SYNC_LINK_THRESHOLD_MB', '16'))
+    except ValueError:
+        link_threshold_mb = 16.0
+
+    if asset_links is None:
+        asset_links = {}
+
+    body_additions = []
 
     for file_path in files:
         file_name = os.path.basename(file_path)
@@ -168,6 +181,22 @@ def sync_to_gitee(tag: str, body: str, files: slice):
             pass
         success = False
         for attempt in range(1, MAX_UPLOAD_RETRIES + 1):
+            # 若启用链接模式或超过阈值，直接跳过上传改为追加链接
+            try:
+                size_bytes = os.path.getsize(file_path)
+            except OSError:
+                size_bytes = 0
+            if link_only or (link_threshold_mb > 0 and size_bytes >= link_threshold_mb * 1024 * 1024):
+                url = asset_links.get(file_name)
+                if url:
+                    line = f"- {file_name}: {url}"
+                    if line not in body_additions:
+                        body_additions.append(line)
+                    print(f"Link-only mode: skip upload and add link for {file_name}")
+                    success = True
+                    break
+                else:
+                    print(f"Link-only mode requested but no URL for {file_name}, will attempt upload.")
             try:
                 # 如果已存在同名资产，则跳过上传
                 if file_name in existing_assets:
@@ -231,7 +260,7 @@ def sync_to_gitee(tag: str, body: str, files: slice):
             time.sleep(min(60, 2 ** (attempt - 1)))
         if not success:
             print(f"Primary upload failed for {file_name} after {MAX_UPLOAD_RETRIES} attempts, trying attachments fallback...")
-            # 回退：通过 attachments 接口上传，并把链接附加到 release body
+            # 回退：通过 attachments 接口上传，并把链接收集，末尾统一追加到 release body
             attach_uri = f"https://gitee.com/api/v5/repos/{owner}/{repo}/attachments"
             try:
                 with open(file_path, 'rb') as fh:
@@ -245,13 +274,11 @@ def sync_to_gitee(tag: str, body: str, files: slice):
                     aj = ar.json()
                     url = aj.get('url') or aj.get('browser_download_url') or aj.get('html_url')
                     if url:
-                        new_body = (body or '') + f"\n\n- {file_name}: {url}"
-                        ur = api_client.patch(f"{release_api_uri}/{release_id}", data={'access_token': access_token, 'body': new_body}, timeout=REQUEST_TIMEOUT)
-                        if ur.status_code in (200, 201):
-                            print(f"Fallback: attached {file_name} via attachments, link added to release body.")
-                            success = True
-                        else:
-                            print(f"Fallback: update release body failed: {ur.status_code} {ur.text}")
+                        line = f"- {file_name}: {url}"
+                        if line not in body_additions:
+                            body_additions.append(line)
+                        print(f"Fallback: attached {file_name} via attachments, link collected to append.")
+                        success = True
                     else:
                         print(f"Fallback: attachments API did not return a URL. Resp: {aj}")
                 else:
@@ -265,6 +292,26 @@ def sync_to_gitee(tag: str, body: str, files: slice):
                     continue
                 else:
                     raise RuntimeError(msg)
+
+    # 若收集到需要追加的链接，统一更新 release body 一次
+    if body_additions:
+        combined = (body or '').rstrip() + "\n\n" + "\n".join(body_additions)
+        ur = api_client.patch(
+            f"{release_api_uri}/{release_id}",
+            data={
+                'access_token': access_token,
+                'body': combined,
+                # Gitee 对 PATCH 可能要求带上这些字段
+                'tag_name': tag,
+                'name': tag,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        if ur.status_code in (200, 201):
+            print("Release body updated with asset links.")
+            body = combined
+        else:
+            print(f"Update release body failed: {ur.status_code} {ur.text}")
 
     # 仅保留最新 Release 以防超出 Gitee 仓库配额
     try:

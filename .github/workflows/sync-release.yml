@@ -10,6 +10,12 @@ jobs:
     env:
       GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
       GH_TOKEN: ${{ github.token }}
+      # 临时：跳过大文件上传，直接把 GitHub 资产链接追加到 Gitee Release 说明
+      SYNC_LINK_ONLY: true
+      # 若仅想跳过大于阈值(MiB)的文件，可改用如下设置（默认16）：
+      # SYNC_LINK_THRESHOLD_MB: '16'
+      # 如需不中断整个任务，即便单个上传失败：
+      # SYNC_CONTINUE_ON_UPLOAD_ERROR: true
     steps:
       - uses: actions/checkout@v4
       - name: Sync to Gitee
