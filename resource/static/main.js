@@ -87,111 +87,19 @@ function showFormModal(modelSelector, formID, URL, getData) {
         }
         form.children(".message").remove();
         btn.toggleClass("loading");
-        const data = getData
-          ? getData()
-          : $(formID)
-            .serializeArray()
-            .reduce(function (obj, item) {
-              // ID 类的数据
-              if (
-                item.name.endsWith("_id") ||
-                item.name === "id" ||
-                item.name === "ID" ||
-                item.name === "ServerID" ||
-                item.name === "RequestType" ||
-                item.name === "RequestMethod" ||
-                item.name === "TriggerMode" ||
-                item.name === "TaskType" ||
-                item.name === "DisplayIndex" ||
-                item.name === "Type" ||
-                item.name === "Cover" ||
-                item.name === "Duration" ||
-                item.name === "MaxRetries" ||
-                item.name === "Provider" ||
-                item.name === "WebhookMethod" ||
-                item.name === "WebhookRequestType"
-              ) {
-                obj[item.name] = parseInt(item.value);
-              } else if (item.name.endsWith("Latency")) {
-                obj[item.name] = parseFloat(item.value);
-              } else {
-                obj[item.name] = item.value;
-              }
+        // 1) 用 Dropdown API 写回隐藏 input 的实时值
+        $(formID).find('.ui.multiple.dropdown').each(function() {
+          const $dropdown = $(this);
+          const $hidden = $dropdown.find('input[type="hidden"]');
+          const name = $hidden.attr('name');
+          if (!name || !name.endsWith('Raw')) return;
+          let values = $dropdown.dropdown('get values') || [];
+          values = values.map(v => { const n = parseInt(v); return isNaN(n) ? v : n; });
+          $hidden.val(JSON.stringify(values));
+        });
 
-              if (item.name.endsWith("ServersRaw")) {
-                // 直接使用隐藏input的值，它已经是正确的JSON格式
-                if (item.value && item.value.length > 2) {
-                  try {
-                    // 验证是否为有效的JSON数组
-                    var parsedValue = JSON.parse(item.value);
-                    if (Array.isArray(parsedValue)) {
-                      obj[item.name] = item.value;
-                    } else {
-                      obj[item.name] = "[]";
-                    }
-                  } catch (e) {
-                    // 如果不是有效JSON，尝试从字符串中提取数字
-                    obj[item.name] = JSON.stringify(
-                      [...item.value.matchAll(/\d+/gm)].map((k) =>
-                        parseInt(k[0])
-                      )
-                    );
-                  }
-                } else {
-                  obj[item.name] = "[]";
-                }
-              }
-
-              if (item.name.endsWith("TasksRaw")) {
-                // 直接使用隐藏input的值，它已经是正确的JSON格式
-                if (item.value && item.value.length > 2) {
-                  try {
-                    // 验证是否为有效的JSON数组
-                    var parsedValue = JSON.parse(item.value);
-                    if (Array.isArray(parsedValue)) {
-                      obj[item.name] = item.value;
-                    } else {
-                      obj[item.name] = "[]";
-                    }
-                  } catch (e) {
-                    // 如果不是有效JSON，尝试从字符串中提取数字
-                    obj[item.name] = JSON.stringify(
-                      [...item.value.matchAll(/\d+/gm)].map((k) =>
-                        parseInt(k[0])
-                      )
-                    );
-                  }
-                } else {
-                  obj[item.name] = "[]";
-                }
-              }
-
-              if (item.name.endsWith("DDNSProfilesRaw")) {
-                // 直接使用隐藏input的值，它已经是正确的JSON格式
-                if (item.value && item.value.length > 2) {
-                  try {
-                    // 验证是否为有效的JSON数组
-                    var parsedValue = JSON.parse(item.value);
-                    if (Array.isArray(parsedValue)) {
-                      obj[item.name] = item.value;
-                    } else {
-                      obj[item.name] = "[]";
-                    }
-                  } catch (e) {
-                    // 如果不是有效JSON，尝试从字符串中提取数字
-                    obj[item.name] = JSON.stringify(
-                      [...item.value.matchAll(/\d+/gm)].map((k) =>
-                        parseInt(k[0])
-                      )
-                    );
-                  }
-                } else {
-                  obj[item.name] = "[]";
-                }
-              }
-
-              return obj;
-            }, {});
+        // 2) serialize 生成标准 x-www-form-urlencoded 字符串
+        const serialized = $(formID).serialize();
 
         // 特殊处理checkbox字段，确保未选中的checkbox也被包含在数据中
         // 检查所有checkbox，如果没有在数据中，则设置为空字符串（表示未选中）
@@ -214,8 +122,8 @@ function showFormModal(modelSelector, formID, URL, getData) {
           data[name] = JSON.stringify(values);
         });
 
-        // 使用表单方式提交（application/x-www-form-urlencoded），与历史行为一致
-        $.post(URL, data)
+  // 按标准表单方式提交
+  $.post(URL, serialized)
           .done(function (resp) {
             if (resp.code == 200) {
               window.location.reload()

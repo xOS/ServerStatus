@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/robfig/cron/v3"
 	"github.com/xos/serverstatus/pkg/utils"
@@ -116,6 +117,17 @@ func (m *Monitor) AfterFind(tx *gorm.DB) error {
 		if tx != nil {
 			if err := tx.Model(m).Update("type", TaskTypeTCPPing).Error; err != nil {
 				log.Printf("修正Monitor %s(Type=3)为TCP失败: %v", m.Name, err)
+			}
+		}
+	} else if m.Type == 2 {
+		// 兼容历史：早期 2 代表 ICMP。若目标不含端口，视为 ICMP 并静默纠正；
+		// 若目标包含端口，保持为 TCP。
+		if !strings.Contains(m.Target, ":") {
+			m.Type = TaskTypeICMPPing
+			if tx != nil {
+				if err := tx.Model(m).Update("type", TaskTypeICMPPing).Error; err != nil {
+					log.Printf("修正Monitor %s(Type=2无端口)为ICMP失败: %v", m.Name, err)
+				}
 			}
 		}
 	}

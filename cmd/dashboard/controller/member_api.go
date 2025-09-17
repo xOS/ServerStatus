@@ -807,12 +807,13 @@ type monitorForm struct {
 func (ma *memberAPI) addOrEditMonitor(c *gin.Context) {
 	var mf monitorForm
 	var m model.Monitor
-	err := c.ShouldBindJSON(&mf)
-	if err != nil {
-		// 回退到表单绑定，兼容 application/x-www-form-urlencoded
-		if ferr := c.ShouldBind(&mf); ferr == nil {
-			err = nil
-		}
+	var err error
+	ctype := c.GetHeader("Content-Type")
+	if strings.HasPrefix(ctype, "application/json") {
+		err = c.ShouldBindJSON(&mf)
+	} else {
+		// 表单方式
+		err = c.ShouldBind(&mf)
 	}
 	if err == nil {
 		log.Printf("[Monitor] 收到提交: ID=%d Name=%s Type=%d Cover=%d Duration=%d SkipServersRaw=%s FailTasks=%s RecoverTasks=%s",
@@ -834,18 +835,35 @@ func (ma *memberAPI) addOrEditMonitor(c *gin.Context) {
 		m.RecoverTriggerTasksRaw = mf.RecoverTriggerTasksRaw
 		m.FailTriggerTasksRaw = mf.FailTriggerTasksRaw
 
-		// 兼容旧前端取值：3 代表 TCP-Ping，0 视为默认 ICMP-Ping
-		if m.Type == 3 {
-			m.Type = model.TaskTypeTCPPing
-		}
-		if m.Type == 0 {
+		// 兼容历史与新值：
+		// 历史：2=ICMP, 3=TCP；新值：1=ICMP, 2=TCP；0 视为 ICMP
+		switch m.Type {
+		case 0:
 			m.Type = model.TaskTypeICMPPing
+		case 1:
+			m.Type = model.TaskTypeICMPPing
+		case 2:
+			// 模糊：根据 Target 是否含端口推断
+			if strings.Contains(m.Target, ":") {
+				m.Type = model.TaskTypeTCPPing
+			} else {
+				m.Type = model.TaskTypeICMPPing
+			}
+		case 3:
+			m.Type = model.TaskTypeTCPPing
 		}
 
 		// 处理 SkipServersRaw，确保它是有效的JSON数组
 		if mf.SkipServersRaw == "" {
 			mf.SkipServersRaw = "[]"
 			m.SkipServersRaw = "[]"
+		}
+		// 处理 触发任务 Raw 字段，空字符串时置为 []
+		if m.FailTriggerTasksRaw == "" {
+			m.FailTriggerTasksRaw = "[]"
+		}
+		if m.RecoverTriggerTasksRaw == "" {
+			m.RecoverTriggerTasksRaw = "[]"
 		}
 
 		// 尝试初始化跳过服务器列表，如果失败则设置为空数组
@@ -862,10 +880,23 @@ func (ma *memberAPI) addOrEditMonitor(c *gin.Context) {
 		if m.NotificationTag == "" {
 			m.NotificationTag = "default"
 		}
-		err = utils.Json.Unmarshal([]byte(mf.FailTriggerTasksRaw), &m.FailTriggerTasks)
+		// 容错解析触发任务列表
+		if strings.TrimSpace(m.FailTriggerTasksRaw) == "" {
+			m.FailTriggerTasks = []uint64{}
+		} else if uerr := utils.Json.Unmarshal([]byte(m.FailTriggerTasksRaw), &m.FailTriggerTasks); uerr != nil {
+			log.Printf("解析FailTriggerTasksRaw失败（%s），重置为空数组: %v", m.FailTriggerTasksRaw, uerr)
+			m.FailTriggerTasks = []uint64{}
+			m.FailTriggerTasksRaw = "[]"
+		}
 	}
 	if err == nil {
-		err = utils.Json.Unmarshal([]byte(mf.RecoverTriggerTasksRaw), &m.RecoverTriggerTasks)
+		if strings.TrimSpace(m.RecoverTriggerTasksRaw) == "" {
+			m.RecoverTriggerTasks = []uint64{}
+		} else if uerr := utils.Json.Unmarshal([]byte(m.RecoverTriggerTasksRaw), &m.RecoverTriggerTasks); uerr != nil {
+			log.Printf("解析RecoverTriggerTasksRaw失败（%s），重置为空数组: %v", m.RecoverTriggerTasksRaw, uerr)
+			m.RecoverTriggerTasks = []uint64{}
+			m.RecoverTriggerTasksRaw = "[]"
+		}
 	}
 	if err == nil {
 		if m.ID == 0 {
