@@ -105,7 +105,14 @@ type TokenForm struct {
 func (ma *memberAPI) issueNewToken(c *gin.Context) {
 	u := c.MustGet(model.CtxKeyAuthorizedUser).(*model.User)
 	tf := &TokenForm{}
-	err := c.ShouldBindJSON(tf)
+	// 兼容 JSON 与表单
+	ct := c.GetHeader("Content-Type")
+	var err error
+	if strings.HasPrefix(ct, "application/json") {
+		err = c.ShouldBindJSON(tf)
+	} else {
+		err = c.ShouldBind(tf)
+	}
 	if err != nil {
 		WriteJSON(c, http.StatusOK, model.Response{
 			Code:    http.StatusBadRequest,
@@ -617,7 +624,14 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 	var sf serverForm
 	var s model.Server
 	var isEdit bool
-	err := c.ShouldBindJSON(&sf)
+	// 兼容 JSON 与表单
+	ct := c.GetHeader("Content-Type")
+	var err error
+	if strings.HasPrefix(ct, "application/json") {
+		err = c.ShouldBindJSON(&sf)
+	} else {
+		err = c.ShouldBind(&sf)
+	}
 	if err == nil {
 		s.Name = sf.Name
 		s.Secret = sf.Secret
@@ -626,8 +640,9 @@ func (ma *memberAPI) addOrEditServer(c *gin.Context) {
 		s.Tag = sf.Tag
 		s.Note = sf.Note
 		s.PublicNote = sf.PublicNote
-		s.HideForGuest = sf.HideForGuest == "on"
-		s.EnableDDNS = sf.EnableDDNS == "on"
+		// 兼容表单与JSON布尔值
+		s.HideForGuest = sf.HideForGuest == "on" || sf.HideForGuest == "true" || sf.HideForGuest == "1"
+		s.EnableDDNS = sf.EnableDDNS == "on" || sf.EnableDDNS == "true" || sf.EnableDDNS == "1"
 
 		// 处理DDNSProfilesRaw，确保它是有效的JSON数组
 		if sf.DDNSProfilesRaw == "" {
@@ -969,14 +984,22 @@ type cronForm struct {
 func (ma *memberAPI) addOrEditCron(c *gin.Context) {
 	var cf cronForm
 	var cr model.Cron
-	err := c.ShouldBindJSON(&cf)
+	// 兼容 JSON 与 x-www-form-urlencoded 提交
+	ct := c.GetHeader("Content-Type")
+	var err error
+	if strings.HasPrefix(ct, "application/json") {
+		err = c.ShouldBindJSON(&cf)
+	} else {
+		err = c.ShouldBind(&cf)
+	}
 	if err == nil {
 		cr.TaskType = cf.TaskType
 		cr.Name = cf.Name
 		cr.Scheduler = cf.Scheduler
 		cr.Command = cf.Command
 		cr.ServersRaw = cf.ServersRaw
-		cr.PushSuccessful = cf.PushSuccessful == "on"
+		// 兼容多种布尔表示：表单“on”、JSON "true"/"1"
+		cr.PushSuccessful = cf.PushSuccessful == "on" || cf.PushSuccessful == "true" || cf.PushSuccessful == "1"
 		cr.NotificationTag = cf.NotificationTag
 		cr.ID = cf.ID
 		cr.Cover = cf.Cover
@@ -1314,7 +1337,14 @@ type notificationForm struct {
 func (ma *memberAPI) addOrEditNotification(c *gin.Context) {
 	var nf notificationForm
 	var n model.Notification
-	err := c.ShouldBindJSON(&nf)
+	// 兼容 JSON 与表单
+	ct := c.GetHeader("Content-Type")
+	var err error
+	if strings.HasPrefix(ct, "application/json") {
+		err = c.ShouldBindJSON(&nf)
+	} else {
+		err = c.ShouldBind(&nf)
+	}
 	if err == nil {
 		n.Name = nf.Name
 		n.Tag = nf.Tag
@@ -1323,7 +1353,7 @@ func (ma *memberAPI) addOrEditNotification(c *gin.Context) {
 		n.RequestHeader = nf.RequestHeader
 		n.RequestBody = nf.RequestBody
 		n.URL = nf.URL
-		verifySSL := nf.VerifySSL == "on"
+		verifySSL := nf.VerifySSL == "on" || nf.VerifySSL == "true" || nf.VerifySSL == "1"
 		n.VerifySSL = &verifySSL
 		n.ID = nf.ID
 		ns := model.NotificationServerBundle{
@@ -1404,7 +1434,14 @@ type ddnsForm struct {
 func (ma *memberAPI) addOrEditDDNS(c *gin.Context) {
 	var df ddnsForm
 	var p model.DDNSProfile
-	err := c.ShouldBindJSON(&df)
+	// 兼容 JSON 与表单
+	ct := c.GetHeader("Content-Type")
+	var err error
+	if strings.HasPrefix(ct, "application/json") {
+		err = c.ShouldBindJSON(&df)
+	} else {
+		err = c.ShouldBind(&df)
+	}
 	if err == nil {
 		if df.MaxRetries < 1 || df.MaxRetries > 10 {
 			err = errors.New("重试次数必须为大于 1 且不超过 10 的整数")
@@ -1413,8 +1450,8 @@ func (ma *memberAPI) addOrEditDDNS(c *gin.Context) {
 	if err == nil {
 		p.Name = df.Name
 		p.ID = df.ID
-		enableIPv4 := df.EnableIPv4 == "on"
-		enableIPv6 := df.EnableIPv6 == "on"
+		enableIPv4 := df.EnableIPv4 == "on" || df.EnableIPv4 == "true" || df.EnableIPv4 == "1"
+		enableIPv6 := df.EnableIPv6 == "on" || df.EnableIPv6 == "true" || df.EnableIPv6 == "1"
 		p.EnableIPv4 = &enableIPv4
 		p.EnableIPv6 = &enableIPv6
 		p.MaxRetries = df.MaxRetries
@@ -1494,7 +1531,14 @@ type natForm struct {
 func (ma *memberAPI) addOrEditNAT(c *gin.Context) {
 	var nf natForm
 	var n model.NAT
-	err := c.ShouldBindJSON(&nf)
+	// 兼容 JSON 与表单
+	ct := c.GetHeader("Content-Type")
+	var err error
+	if strings.HasPrefix(ct, "application/json") {
+		err = c.ShouldBindJSON(&nf)
+	} else {
+		err = c.ShouldBind(&nf)
+	}
 	if err == nil {
 		n.Name = nf.Name
 		n.ID = nf.ID
@@ -1560,7 +1604,14 @@ type alertRuleForm struct {
 func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 	var arf alertRuleForm
 	var r model.AlertRule
-	err := c.ShouldBindJSON(&arf)
+	// 兼容 JSON 与表单
+	ct := c.GetHeader("Content-Type")
+	var err error
+	if strings.HasPrefix(ct, "application/json") {
+		err = c.ShouldBindJSON(&arf)
+	} else {
+		err = c.ShouldBind(&arf)
+	}
 	if err == nil {
 		// 清理 RulesRaw 中的千位分隔符和修复 ignore 字段格式
 		cleanedRulesRaw := cleanNumbersInJSON(arf.RulesRaw)
@@ -1604,7 +1655,7 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 		r.FailTriggerTasksRaw = arf.FailTriggerTasksRaw
 		r.RecoverTriggerTasksRaw = arf.RecoverTriggerTasksRaw
 		r.NotificationTag = arf.NotificationTag
-		enable := arf.Enable == "on"
+		enable := arf.Enable == "on" || arf.Enable == "true" || arf.Enable == "1"
 		r.TriggerMode = arf.TriggerMode
 		r.Enable = &enable
 		r.ID = arf.ID

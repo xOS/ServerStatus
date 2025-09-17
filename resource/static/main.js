@@ -87,40 +87,47 @@ function showFormModal(modelSelector, formID, URL, getData) {
         }
         form.children(".message").remove();
         btn.toggleClass("loading");
-        // 1) 用 Dropdown API 写回隐藏 input 的实时值
+        // 1) 写回隐藏 input 的实时值
+        // 兼容当前实现：标签是手动添加到 DOM 的，dropdown API 可能拿不到值
         $(formID).find('.ui.multiple.dropdown').each(function() {
           const $dropdown = $(this);
           const $hidden = $dropdown.find('input[type="hidden"]');
           const name = $hidden.attr('name');
           if (!name || !name.endsWith('Raw')) return;
-          let values = $dropdown.dropdown('get values') || [];
-          values = values.map(v => { const n = parseInt(v); return isNaN(n) ? v : n; });
+          // 优先从可见标签读取 data-value
+          let values = [];
+          $dropdown.find('a.ui.label').each(function() {
+            const v = $(this).attr('data-value');
+            if (v !== undefined && v !== null && v !== '') {
+              const n = parseInt(v);
+              values.push(isNaN(n) ? v : n);
+            }
+          });
+          // 若未读到标签，再回退使用 dropdown API
+          if (values.length === 0) {
+            const apiVals = $dropdown.dropdown('get values') || [];
+            for (let i = 0; i < apiVals.length; i++) {
+              const n = parseInt(apiVals[i]);
+              values.push(isNaN(n) ? apiVals[i] : n);
+            }
+          }
           $hidden.val(JSON.stringify(values));
         });
 
-        // 2) serialize 生成标准 x-www-form-urlencoded 字符串
-        const serialized = $(formID).serialize();
+  // 2) 使用 serializeArray 获取键值对，便于补齐未选中的 checkbox
+  let arr = $(formID).serializeArray();
 
-        // 特殊处理checkbox字段，确保未选中的checkbox也被包含在数据中
-        // 检查所有checkbox，如果没有在数据中，则设置为空字符串（表示未选中）
+        // 3) 补齐未选中的 checkbox（用空字符串表示未选中）
         $(formID).find('input[type="checkbox"]').each(function() {
-          const checkboxName = $(this).attr('name');
-          if (checkboxName && !(checkboxName in data)) {
-            data[checkboxName] = "";
+          const name = $(this).attr('name');
+          if (!name) return;
+          if (!arr.find(p => p.name === name)) {
+            arr.push({ name, value: '' });
           }
         });
 
-        // 更优雅：使用 Semantic UI Dropdown API 获取多选值，避免依赖 onChange 或标签扫描
-        $(formID).find('.ui.multiple.dropdown').each(function() {
-          const $dropdown = $(this);
-          const $hidden = $dropdown.find('input[type="hidden"]');
-          const name = $hidden.attr('name');
-          if (!name || !name.endsWith('Raw')) return;
-          let values = $dropdown.dropdown('get values') || [];
-          // 统一为数字（若能转换），再序列化为 JSON 数组字符串
-          values = values.map(v => { const n = parseInt(v); return isNaN(n) ? v : n; });
-          data[name] = JSON.stringify(values);
-        });
+        // 4) 序列化为标准 x-www-form-urlencoded 字符串
+        const serialized = $.param(arr);
 
   // 按标准表单方式提交
   $.post(URL, serialized)
@@ -169,7 +176,7 @@ function addOrEditAlertRule(rule) {
   } else {
     modal.find(".ui.rule-enable.checkbox").checkbox("set unchecked");
   }
-  modal.find("a.ui.label.visible").each((i, el) => {
+  modal.find("a.ui.label").each((i, el) => {
     el.remove();
   });
 
@@ -397,7 +404,7 @@ function addOrEditServer(server, conf) {
   modal.find("input[name=id]").val(server ? server.ID : null);
   modal.find("input[name=name]").val(server ? server.Name : null);
   modal.find("input[name=Tag]").val(server ? server.Tag : null);
-  modal.find("a.ui.label.visible").each((i, el) => {
+  modal.find("a.ui.label").each((i, el) => {
     el.remove();
   });
 
@@ -537,7 +544,7 @@ function addOrEditMonitor(monitor) {
   } else {
     modal.find(".ui.nb-lt-notify.checkbox").checkbox("set unchecked");
   }
-  modal.find("a.ui.label.visible").each((i, el) => {
+  modal.find("a.ui.label").each((i, el) => {
     el.remove();
   });
   if (monitor && monitor.EnableTriggerTask) {
@@ -656,7 +663,7 @@ function addOrEditCron(cron) {
   modal.find("select[name=Cover]").val(cron ? cron.Cover : 0);
   modal.find("input[name=NotificationTag]").val(cron ? cron.NotificationTag : null);
   modal.find("input[name=Scheduler]").val(cron ? cron.Scheduler : null);
-  modal.find("a.ui.label.visible").each((i, el) => {
+  modal.find("a.ui.label").each((i, el) => {
     el.remove();
   });
 
@@ -731,7 +738,28 @@ function addOrEditCron(cron) {
       },
       // 禁用onChange事件，避免干扰现有标签
       onChange: function(value, text, $choice) {
-        // 不做任何操作，保持现有标签不变
+        // 同步隐藏域，保持与标签一致
+        var dropdown = $(this);
+        var hiddenInput = dropdown.find('input[type="hidden"][name="ServersRaw"]');
+        if (hiddenInput.length) {
+          var currentValues = [];
+          dropdown.find('a.ui.label').each(function() {
+            var labelValue = $(this).attr('data-value');
+            if (labelValue !== undefined && labelValue !== null && labelValue !== '') {
+              var n = parseInt(labelValue);
+              currentValues.push(isNaN(n) ? labelValue : n);
+            }
+          });
+          // 若标签为空，回退到 API 获取值
+          if (currentValues.length === 0) {
+            var apiVals = dropdown.dropdown('get values') || [];
+            for (var i = 0; i < apiVals.length; i++) {
+              var n2 = parseInt(apiVals[i]);
+              currentValues.push(isNaN(n2) ? apiVals[i] : n2);
+            }
+          }
+          hiddenInput.val(JSON.stringify(currentValues));
+        }
       }
     });
   }, 500); // 延迟500ms确保标签已经创建完成
@@ -847,7 +875,7 @@ function initializeServersDropdown() {
 
         // 获取当前所有可见的标签
         var currentValues = [];
-        dropdown.find('a.ui.label.visible').each(function() {
+        dropdown.find('a.ui.label').each(function() {
           var labelValue = $(this).attr('data-value');
           if (labelValue) {
             currentValues.push(parseInt(labelValue));
@@ -871,7 +899,7 @@ function initializeServersDropdown() {
             // 更新隐藏的input值
             var hiddenInput = dropdown.find('input[type="hidden"]');
             var currentValues = [];
-            dropdown.find('a.ui.label.visible').each(function() {
+            dropdown.find('a.ui.label').each(function() {
               var labelValue = $(this).attr('data-value');
               if (labelValue && $(this)[0] !== $label[0]) {
                 currentValues.push(parseInt(labelValue));
@@ -918,7 +946,7 @@ function initializeTasksDropdown() {
 
         // 获取当前所有可见的标签
         var currentValues = [];
-        dropdown.find('a.ui.label.visible').each(function() {
+        dropdown.find('a.ui.label').each(function() {
           var labelValue = $(this).attr('data-value');
           if (labelValue) {
             currentValues.push(parseInt(labelValue));
@@ -942,7 +970,7 @@ function initializeTasksDropdown() {
             // 更新隐藏的input值
             var hiddenInput = dropdown.find('input[type="hidden"]');
             var currentValues = [];
-            dropdown.find('a.ui.label.visible').each(function() {
+            dropdown.find('a.ui.label').each(function() {
               var labelValue = $(this).attr('data-value');
               if (labelValue && $(this)[0] !== $label[0]) {
                 currentValues.push(parseInt(labelValue));
@@ -989,7 +1017,7 @@ function initializeDDNSDropdown() {
 
         // 获取当前所有可见的标签
         var currentValues = [];
-        dropdown.find('a.ui.label.visible').each(function() {
+        dropdown.find('a.ui.label').each(function() {
           var labelValue = $(this).attr('data-value');
           if (labelValue) {
             currentValues.push(parseInt(labelValue));
@@ -1013,7 +1041,7 @@ function initializeDDNSDropdown() {
             // 更新隐藏的input值
             var hiddenInput = dropdown.find('input[type="hidden"]');
             var currentValues = [];
-            dropdown.find('a.ui.label.visible').each(function() {
+            dropdown.find('a.ui.label').each(function() {
               var labelValue = $(this).attr('data-value');
               if (labelValue && $(this)[0] !== $label[0]) {
                 currentValues.push(parseInt(labelValue));
