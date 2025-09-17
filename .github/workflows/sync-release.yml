@@ -93,6 +93,81 @@ jobs:
           mapfile -t files < <(sort -n upload_list.txt | awk '{print $2}')
 
           attach_api="${GITEE_API}/releases/${release_id}/attach_files"
+          # 上传辅助函数：尝试多种参数形式
+          upload_one() {
+            local filepath="$1"
+            local attempt ok http_code body tmp
+            ok=0
+            tmp=$(mktemp)
+            # 依次尝试不同参数形式（不使用 -f，以便获取返回体进行判定）
+            for attempt in 1 2 3 4 5 6; do
+              case "$attempt" in
+                1)
+                  echo "  - try1: form token + files=@"$filepath""
+                  http_code=$(curl --http1.1 -4 -sS -X POST \
+                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
+                    -F access_token="${GITEE_TOKEN}" \
+                    -F files=@"$filepath" \
+                    -o "$tmp" -w "%{http_code}" \
+                    "$attach_api")
+                  ;;
+                2)
+                  echo "  - try2: form token + file=@"$filepath""
+                  http_code=$(curl --http1.1 -4 -sS -X POST \
+                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
+                    -F access_token="${GITEE_TOKEN}" \
+                    -F file=@"$filepath" \
+                    -o "$tmp" -w "%{http_code}" \
+                    "$attach_api")
+                  ;;
+                3)
+                  echo "  - try3: form token + files[]=@"$filepath""
+                  http_code=$(curl --http1.1 -4 -sS -X POST \
+                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
+                    -F access_token="${GITEE_TOKEN}" \
+                    -F 'files[]=@'"$filepath" \
+                    -o "$tmp" -w "%{http_code}" \
+                    "$attach_api")
+                  ;;
+                4)
+                  echo "  - try4: url token + files=@"$filepath""
+                  http_code=$(curl --http1.1 -4 -sS -X POST \
+                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
+                    -F files=@"$filepath" \
+                    -o "$tmp" -w "%{http_code}" \
+                    "$attach_api?access_token=${GITEE_TOKEN}")
+                  ;;
+                5)
+                  echo "  - try5: url token + file=@"$filepath""
+                  http_code=$(curl --http1.1 -4 -sS -X POST \
+                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
+                    -F file=@"$filepath" \
+                    -o "$tmp" -w "%{http_code}" \
+                    "$attach_api?access_token=${GITEE_TOKEN}")
+                  ;;
+                6)
+                  echo "  - try6: url token + files[]=@"$filepath""
+                  http_code=$(curl --http1.1 -4 -sS -X POST \
+                    --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
+                    -F 'files[]=@'"$filepath" \
+                    -o "$tmp" -w "%{http_code}" \
+                    "$attach_api?access_token=${GITEE_TOKEN}")
+                  ;;
+              esac
+              body=$(head -c 256 "$tmp" || true)
+              echo "    http=$http_code body=${body}"
+              if [ "$http_code" = "201" ]; then
+                ok=1; break
+              fi
+              # 容错：若服务端提示已存在，视为成功
+              if echo "$body" | grep -Eqi '已存在|already exists|exist'; then
+                ok=1; break
+              fi
+            done
+            rm -f "$tmp"
+            [ "$ok" = "1" ]
+          }
+
           for f in "${files[@]}"; do
             name="$f"
             if echo " $existing " | grep -q " $name "; then
@@ -100,11 +175,10 @@ jobs:
               continue
             fi
             echo "Uploading $name ..."
-            # 使用 curl 表单上传，带重试
-            curl --http1.1 -4 -sS -f -X POST \
-              --retry ${CURL_RETRY} --retry-delay ${CURL_RETRY_DELAY} --connect-timeout 10 --max-time 1800 \
-              -F access_token="${GITEE_TOKEN}" \
-              -F files=@"$name" \
-              "$attach_api"
-            echo " -> uploaded"
+            if upload_one "$name"; then
+              echo " -> uploaded"
+            else
+              echo "Upload failed for $name after all attempts" >&2
+              exit 1
+            fi
           done
