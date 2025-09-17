@@ -202,7 +202,20 @@ function showFormModal(modelSelector, formID, URL, getData) {
           }
         });
 
-        $.post(URL, JSON.stringify(data))
+        // 更优雅：使用 Semantic UI Dropdown API 获取多选值，避免依赖 onChange 或标签扫描
+        $(formID).find('.ui.multiple.dropdown').each(function() {
+          const $dropdown = $(this);
+          const $hidden = $dropdown.find('input[type="hidden"]');
+          const name = $hidden.attr('name');
+          if (!name || !name.endsWith('Raw')) return;
+          let values = $dropdown.dropdown('get values') || [];
+          // 统一为数字（若能转换），再序列化为 JSON 数组字符串
+          values = values.map(v => { const n = parseInt(v); return isNaN(n) ? v : n; });
+          data[name] = JSON.stringify(values);
+        });
+
+        // 使用表单方式提交（application/x-www-form-urlencoded），与历史行为一致
+        $.post(URL, data)
           .done(function (resp) {
             if (resp.code == 200) {
               window.location.reload()

@@ -808,7 +808,15 @@ func (ma *memberAPI) addOrEditMonitor(c *gin.Context) {
 	var mf monitorForm
 	var m model.Monitor
 	err := c.ShouldBindJSON(&mf)
+	if err != nil {
+		// 回退到表单绑定，兼容 application/x-www-form-urlencoded
+		if ferr := c.ShouldBind(&mf); ferr == nil {
+			err = nil
+		}
+	}
 	if err == nil {
+		log.Printf("[Monitor] 收到提交: ID=%d Name=%s Type=%d Cover=%d Duration=%d SkipServersRaw=%s FailTasks=%s RecoverTasks=%s",
+			mf.ID, mf.Name, mf.Type, mf.Cover, mf.Duration, mf.SkipServersRaw, mf.FailTriggerTasksRaw, mf.RecoverTriggerTasksRaw)
 		m.Name = mf.Name
 		m.Target = strings.TrimSpace(mf.Target)
 		m.Type = mf.Type
