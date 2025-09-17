@@ -426,8 +426,9 @@ func (cp *commonPage) network(c *gin.Context) {
 					go func(monitorID uint64) {
 						sem <- struct{}{}
 						defer func() { <-sem }()
+						// 提升上限到6000条，覆盖更高采样频率（~15s采样≈5760），确保完整24小时窗口
 						hs, err := monitorOps.GetMonitorHistoriesByServerAndMonitorRangeReverseLimit(
-							id, monitorID, startTime, endTime, 1000,
+							id, monitorID, startTime, endTime, 6000,
 						)
 						resultChan <- monitorResult{histories: hs, err: err}
 					}(m.ID)

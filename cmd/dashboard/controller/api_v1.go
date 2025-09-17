@@ -78,7 +78,7 @@ func (v *apiV1) serverList(c *gin.Context) {
 	if ce, ok := listCache[cacheKey]; ok && time.Since(ce.ts) <= 500*time.Millisecond {
 		payload := ce.data
 		listCacheMu.Unlock()
-	WriteJSONPayload(c, 200, payload)
+		WriteJSONPayload(c, 200, payload)
 		return
 	}
 	listCacheMu.Unlock()
@@ -122,7 +122,7 @@ func (v *apiV1) serverDetails(c *gin.Context) {
 	if ce, ok := listCache[cacheKey]; ok && time.Since(ce.ts) <= 500*time.Millisecond {
 		payload := ce.data
 		listCacheMu.Unlock()
-	WriteJSONPayload(c, 200, payload)
+		WriteJSONPayload(c, 200, payload)
 		return
 	}
 	listCacheMu.Unlock()

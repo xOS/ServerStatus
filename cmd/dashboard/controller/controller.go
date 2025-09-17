@@ -632,95 +632,95 @@ func buildTrafficData() []map[string]interface{} {
 	var trafficData []map[string]interface{}
 
 	for cycleID, stats := range statsStore {
-			// 查找对应的Alert规则，用于获取周期设置
-			var alert *model.AlertRule
-			for _, a := range singleton.Alerts {
-				if a.ID == cycleID {
-					alert = a
-					break
+		// 查找对应的Alert规则，用于获取周期设置
+		var alert *model.AlertRule
+		for _, a := range singleton.Alerts {
+			if a.ID == cycleID {
+				alert = a
+				break
+			}
+		}
+
+		// 如果找不到Alert规则，跳过此项
+		if alert == nil {
+			continue
+		}
+
+		// 找到与流量相关的Rule
+		var flowRule *model.Rule
+		for i := range alert.Rules {
+			if alert.Rules[i].IsTransferDurationRule() {
+				flowRule = &alert.Rules[i]
+				break
+			}
+		}
+
+		// 如果没有流量相关规则，跳过
+		if flowRule == nil {
+			continue
+		}
+
+		// 确保周期开始和结束时间正确设置
+		from := flowRule.GetTransferDurationStart()
+		to := flowRule.GetTransferDurationEnd()
+
+		// 更新stats中的周期时间，确保与规则一致
+		stats.From = from
+		stats.To = to
+		stats.Max = uint64(flowRule.Max)
+		stats.Name = alert.Name
+
+		// 在读锁外部异步更新周期信息，避免死锁
+		go updateCycleStatsInfo(cycleID, from, to, uint64(flowRule.Max), alert.Name)
+
+		// 生成流量数据条目
+		for serverID, transfer := range stats.Transfer {
+			serverName := ""
+			if stats.ServerName != nil {
+				if name, exists := stats.ServerName[serverID]; exists {
+					serverName = name
 				}
 			}
 
-			// 如果找不到Alert规则，跳过此项
-			if alert == nil {
-				continue
+			// 如果没有名称，尝试从ServerList获取
+			if serverName == "" {
+				singleton.ServerLock.RLock()
+				if server := singleton.ServerList[serverID]; server != nil {
+					serverName = server.Name
+				}
+				singleton.ServerLock.RUnlock()
 			}
 
-			// 找到与流量相关的Rule
-			var flowRule *model.Rule
-			for i := range alert.Rules {
-				if alert.Rules[i].IsTransferDurationRule() {
-					flowRule = &alert.Rules[i]
-					break
-				}
+			// 计算使用百分比
+			usedPercent := float64(0)
+			if stats.Max > 0 {
+				usedPercent = (float64(transfer) / float64(stats.Max)) * 100
+				usedPercent = math.Max(0, math.Min(100, usedPercent)) // 限制在0-100范围
 			}
 
-			// 如果没有流量相关规则，跳过
-			if flowRule == nil {
-				continue
+			// 获取周期单位和开始时间，用于前端展示
+			cycleUnit := flowRule.CycleUnit
+
+			// 构建完整的流量数据项，包含周期信息
+			trafficItem := map[string]interface{}{
+				"server_id":       serverID,
+				"server_name":     serverName,
+				"max_bytes":       stats.Max,
+				"used_bytes":      transfer,
+				"max_formatted":   formatBytes(stats.Max),
+				"used_formatted":  formatBytes(transfer),
+				"used_percent":    math.Round(usedPercent*100) / 100,
+				"cycle_name":      stats.Name,
+				"cycle_id":        strconv.FormatUint(cycleID, 10),
+				"cycle_start":     stats.From.Format(time.RFC3339),
+				"cycle_end":       stats.To.Format(time.RFC3339),
+				"cycle_unit":      cycleUnit,
+				"cycle_interval":  flowRule.CycleInterval,
+				"is_bytes_source": true,
+				"now":             time.Now().Unix() * 1000,
 			}
 
-			// 确保周期开始和结束时间正确设置
-			from := flowRule.GetTransferDurationStart()
-			to := flowRule.GetTransferDurationEnd()
-
-			// 更新stats中的周期时间，确保与规则一致
-			stats.From = from
-			stats.To = to
-			stats.Max = uint64(flowRule.Max)
-			stats.Name = alert.Name
-
-			// 在读锁外部异步更新周期信息，避免死锁
-			go updateCycleStatsInfo(cycleID, from, to, uint64(flowRule.Max), alert.Name)
-
-			// 生成流量数据条目
-			for serverID, transfer := range stats.Transfer {
-				serverName := ""
-				if stats.ServerName != nil {
-					if name, exists := stats.ServerName[serverID]; exists {
-						serverName = name
-					}
-				}
-
-				// 如果没有名称，尝试从ServerList获取
-				if serverName == "" {
-					singleton.ServerLock.RLock()
-					if server := singleton.ServerList[serverID]; server != nil {
-						serverName = server.Name
-					}
-					singleton.ServerLock.RUnlock()
-				}
-
-				// 计算使用百分比
-				usedPercent := float64(0)
-				if stats.Max > 0 {
-					usedPercent = (float64(transfer) / float64(stats.Max)) * 100
-					usedPercent = math.Max(0, math.Min(100, usedPercent)) // 限制在0-100范围
-				}
-
-				// 获取周期单位和开始时间，用于前端展示
-				cycleUnit := flowRule.CycleUnit
-
-				// 构建完整的流量数据项，包含周期信息
-				trafficItem := map[string]interface{}{
-					"server_id":       serverID,
-					"server_name":     serverName,
-					"max_bytes":       stats.Max,
-					"used_bytes":      transfer,
-					"max_formatted":   formatBytes(stats.Max),
-					"used_formatted":  formatBytes(transfer),
-					"used_percent":    math.Round(usedPercent*100) / 100,
-					"cycle_name":      stats.Name,
-					"cycle_id":        strconv.FormatUint(cycleID, 10),
-					"cycle_start":     stats.From.Format(time.RFC3339),
-					"cycle_end":       stats.To.Format(time.RFC3339),
-					"cycle_unit":      cycleUnit,
-					"cycle_interval":  flowRule.CycleInterval,
-					"is_bytes_source": true,
-					"now":             time.Now().Unix() * 1000,
-				}
-
-				trafficData = append(trafficData, trafficItem)
+			trafficData = append(trafficData, trafficItem)
 		}
 	}
 

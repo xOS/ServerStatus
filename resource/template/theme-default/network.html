@@ -94,6 +94,7 @@
     resizeTimer: null,
     tooltipTimer: null,
         monitorConfigsLoaded: false,
+        loadedFromAPI: false,
         timeRange: '24h', // 默认显示24小时
     currentServerId: null, // 当前选中的服务器ID
     hoverTipLabel: '' // 悬停在自定义按钮时的临时 tooltip 文本
@@ -347,16 +348,28 @@
 
     // 优化初始化序列，先加载监控配置
     this.$nextTick(() => {
-        // 先渲染图表
-        this.renderChart();
+    // 先渲染图表
+    this.renderChart();
 
         // 先加载监控配置，然后再处理数据
         loadMonitorConfigs().always(() => {
             this.monitorConfigsLoaded = true;
 
+            // 将当前选中服务器默认设置为列表中的第一个，确保后续切换时间范围触发 API 拉取
+            if (!this.currentServerId && Array.isArray(this.servers) && this.servers.length > 0 && this.servers[0] && this.servers[0].ID) {
+                this.currentServerId = this.servers[0].ID;
+            }
+
             // 然后加载数据，避免阻塞UI，默认显示24小时数据
             setTimeout(() => {
+                // 首屏先用预取数据渲染
                 this.filterInitialDataByTimeRange(this.timeRange);
+                // 再异步用后端完整窗口刷新一次
+                if (this.currentServerId) {
+                    this.getMonitorHistory(this.currentServerId, this.timeRange)
+                        .then((monitorInfo) => { this.parseMonitorInfo(monitorInfo); })
+                        .catch(() => { /* 保留预取数据 */ });
+                }
             }, 50);
         });
     });
@@ -523,6 +536,7 @@
         redirectNetwork(id) {
             // 保存当前选中的服务器ID
             this.currentServerId = id;
+            this.loadedFromAPI = false;
 
             // 性能优化：显示加载状态，避免用户等待
             // 临时关闭 tooltip，避免渲染过程中 HTML tooltip 触发 innerHTML 报错
@@ -608,6 +622,9 @@
                 });
                 return;
             }
+
+            // 成功解析后，认为已使用后端返回数据
+            this.loadedFromAPI = true;
 
             // 固定图例顺序：按监测点名称（升序）排序，PC/移动端一致
             const displayData = processedData.slice().sort((a, b) => {
@@ -895,10 +912,7 @@
             }
         },
         switchTimeRange(range) {
-            // 如果时间范围没有变化，直接返回
-            if (this.timeRange === range) {
-                return;
-            }
+            // 即使与当前时间范围相同也触发刷新，确保不使用首屏的有限预取数据
 
             this.timeRange = range;
 
@@ -986,6 +1000,7 @@
         },
         filterInitialDataByTimeRange(range) {
             // 根据时间范围过滤初始数据
+            this.loadedFromAPI = false; // 预取数据不算后端完整数据
             const now = Date.now();
             const timeLimit = range === '24h' ? 24 * 60 * 60 * 1000 : 72 * 60 * 60 * 1000; // 改为72小时
             const cutoffTime = now - timeLimit;
