@@ -202,13 +202,7 @@ function showFormModal(modelSelector, formID, URL, getData) {
           }
         });
 
-        $.ajax({
-          url: URL,
-          type: "POST",
-          data: JSON.stringify(data),
-          contentType: "application/json",
-          dataType: "json"
-        })
+        $.post(URL, JSON.stringify(data))
           .done(function (resp) {
             if (resp.code == 200) {
               window.location.reload()

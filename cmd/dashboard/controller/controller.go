@@ -27,14 +27,9 @@ import (
 	"github.com/xos/serverstatus/service/singleton"
 )
 
-// WriteJSON encodes v to JSON once and writes with proper headers, using gzip when accepted.
+// WriteJSON 使用 Gin 原生 JSON 写出，保持历史行为，避免前端解析差异
 func WriteJSON(c *gin.Context, status int, v interface{}) {
-	payload, err := utils.EncodeJSON(v)
-	if err != nil {
-		// best-effort empty array fallback
-		payload, _ = utils.EncodeJSON([]any{})
-	}
-	WriteJSONPayload(c, status, payload)
+	c.JSON(status, v)
 }
 
 // WriteJSONPayload writes a pre-encoded JSON payload with gzip when client accepts it.
