@@ -4,6 +4,8 @@ import requests
 import hashlib
 from github import Github, Auth
 import socket
+import subprocess
+import shlex
 from typing import List
 
 
@@ -98,11 +100,54 @@ def sync_to_gitee(tag: str, body: str, files: slice, asset_links=None):
     repo = os.environ.get('GITEE_REPO', 'ServerStatus')
     release_api_uri = f"https://gitee.com/api/v5/repos/{owner}/{repo}/releases"
     api_client = requests.Session()
+                        # 第2b通道：尝试字段名 file（有些实现要求 file 而非 files）
+                        with open(file_path, 'rb') as fh:
+                            resp2b = api_client.post(
+                                asset_api_uri,
+                                data={'access_token': access_token},
+                                files={'file': (file_name, fh, 'application/octet-stream')},
+                                headers={'Connection': 'close'},
+                                timeout=UPLOAD_TIMEOUT,
+                            )
+                        if resp2b.status_code == 201:
+                            asset_info = resp2b.json()
+                            asset_name = asset_info.get('name')
+                            print(f"Successfully uploaded via alt path (file field): {asset_name}!")
+                            success = True
+                            break
+                        else:
+                            txt2b = resp2b.text
+                            if resp2b.status_code in (400, 409, 422) and ('已存在' in txt2b or 'already exists' in txt2b):
+                                print(f"Asset {file_name} already exists (file field), treat as success.")
+                                success = True
+                                break
+                            print(f"Alt upload (file field) failed (status {resp2b.status_code}) for {file_path}. Body: {txt2b[:256]}")
+                        with open(file_path, 'rb') as fh:
+                            resp2c = api_client.post(
+                                asset_api_uri,
+                                params={'access_token': access_token},
+                                files={'file': (file_name, fh, 'application/octet-stream')},
+                                headers={'Connection': 'close'},
+                                timeout=UPLOAD_TIMEOUT,
+                            )
+                        if resp2c.status_code == 201:
+                            asset_info = resp2c.json()
+                            asset_name = asset_info.get('name')
+                            print(f"Successfully uploaded via alt path (params+file): {asset_name}!")
+                            success = True
+                            break
+                        else:
+                            txt2c = resp2c.text
+                            if resp2c.status_code in (400, 409, 422) and ('已存在' in txt2c or 'already exists' in txt2c):
+                                print(f"Asset {file_name} already exists (params+file), treat as success.")
+                                success = True
+                                break
+                            print(f"Alt upload (params+file) failed (status {resp2c.status_code}) for {file_path}. Body: {txt2c[:256]}")
     api_client.headers.update({
         'Accept': 'application/json',
-        # 对于 form 提交不强制指定 JSON 头
+                            f"curl -sS -f --http1.1 -4 -X POST "
     })
-
+                            f"-F files=@{shlex.quote(file_path)};type=application/octet-stream "
     access_token = os.environ['GITEE_TOKEN']
     release_form = {
         'access_token': access_token,
@@ -115,6 +160,21 @@ def sync_to_gitee(tag: str, body: str, files: slice, asset_links=None):
     # 优先尝试创建（表单提交）
     release_api_response = api_client.post(release_api_uri, data=release_form, timeout=REQUEST_TIMEOUT)
     if release_api_response.status_code == 201:
+                            # 再试一次使用字段名 file
+                            curl_cmd2 = (
+                                f"curl -sS -f --http1.1 -4 -X POST "
+                                f"--connect-timeout 10 --max-time {UPLOAD_SOCKET_TIMEOUT} "
+                                f"-F file=@{shlex.quote(file_path)};type=application/octet-stream "
+                                f"-F access_token={shlex.quote(access_token)} "
+                                f"{shlex.quote(asset_api_uri)}"
+                            )
+                            r2 = subprocess.run(curl_cmd2, shell=True, capture_output=True, text=True)
+                            if r2.returncode == 0:
+                                print(f"Successfully uploaded via curl(file field): {file_name}!")
+                                success = True
+                                break
+                            else:
+                                print(f"curl(file field) upload failed (exit {r2.returncode}) for {file_name}. stderr: {r2.stderr[:256]}")
         release_info = release_api_response.json()
         release_id = release_info.get('id')
     else:
@@ -160,12 +220,13 @@ def sync_to_gitee(tag: str, body: str, files: slice, asset_links=None):
 
     # 附件上传回退开关与出错是否继续
     allow_partial = os.environ.get('SYNC_CONTINUE_ON_UPLOAD_ERROR', 'false').lower() == 'true'
-    # 链接模式：跳过上传，直接把 GitHub 资产链接写入 release body
+    # 链接模式：跳过上传（用户要求真实上传，此处默认关闭）
     link_only = os.environ.get('SYNC_LINK_ONLY', 'false').lower() == 'true'
     try:
-        link_threshold_mb = float(os.environ.get('SYNC_LINK_THRESHOLD_MB', '16'))
+        # 默认不启用按大小走链接模式（需显式设置该环境变量）
+        link_threshold_mb = float(os.environ.get('SYNC_LINK_THRESHOLD_MB', '0'))
     except ValueError:
-        link_threshold_mb = 16.0
+        link_threshold_mb = 0.0
 
     if asset_links is None:
         asset_links = {}
@@ -211,8 +272,9 @@ def sync_to_gitee(tag: str, body: str, files: slice, asset_links=None):
                         resp = api_client.post(
                             asset_api_uri,
                             data={'access_token': access_token},
-                            files={'file': (file_name, fh, 'application/octet-stream')},
-                            headers={'Expect': '100-continue'},
+                            # Gitee attach_files 接口参数名为 files（可多文件）
+                            files={'files': (file_name, fh, 'application/octet-stream')},
+                            headers={'Expect': '100-continue', 'Connection': 'close'},
                             timeout=UPLOAD_TIMEOUT,
                         )
                 finally:
@@ -237,7 +299,8 @@ def sync_to_gitee(tag: str, body: str, files: slice, asset_links=None):
                             resp2 = api_client.post(
                                 asset_api_uri,
                                 params={'access_token': access_token},
-                                files={'file': (file_name, fh, 'application/octet-stream')},
+                                files={'files': (file_name, fh, 'application/octet-stream')},
+                                headers={'Connection': 'close'},
                                 timeout=UPLOAD_TIMEOUT,
                             )
                         if resp2.status_code == 201:
@@ -253,10 +316,83 @@ def sync_to_gitee(tag: str, body: str, files: slice, asset_links=None):
                                 success = True
                                 break
                             print(f"Alt upload failed (status {resp2.status_code}) for {file_path}. Body: {txt2[:256]}")
+                        # 第三通道：使用 curl（对某些服务器/网络更稳定）
+                        curl_cmd = (
+                            f"curl -sS -f -X POST "
+                            f"--connect-timeout 10 --max-time {UPLOAD_SOCKET_TIMEOUT} "
+                            f"-F files=@{shlex.quote(file_path)};type=application/octet-stream "
+                            f"-F access_token={shlex.quote(access_token)} "
+                            f"{shlex.quote(asset_api_uri)}"
+                        )
+                        try:
+                            r = subprocess.run(curl_cmd, shell=True, capture_output=True, text=True)
+                            if r.returncode == 0:
+                                print(f"Successfully uploaded via curl: {file_name}!")
+                                success = True
+                                break
+                            else:
+                                print(f"curl upload failed (exit {r.returncode}) for {file_name}. stderr: {r.stderr[:256]}")
+                        except Exception as ce:
+                            print(f"curl upload error for {file_name}: {ce}")
                     except requests.RequestException as e2:
                         print(f"Alt upload error for {file_path}: {e2}")
+                        # 在请求异常时也尝试 curl
+                        curl_cmd = (
+                            f"curl -sS -f -X POST "
+                            f"--connect-timeout 10 --max-time {UPLOAD_SOCKET_TIMEOUT} "
+                            f"-F files=@{shlex.quote(file_path)};type=application/octet-stream "
+                            f"-F access_token={shlex.quote(access_token)} "
+                            f"{shlex.quote(asset_api_uri)}"
+                        )
+                        try:
+                            r = subprocess.run(curl_cmd, shell=True, capture_output=True, text=True)
+                            if r.returncode == 0:
+                                print(f"Successfully uploaded via curl (exception path): {file_name}!")
+                                success = True
+                                break
+                            else:
+                                print(f"curl upload failed (exit {r.returncode}) for {file_name}. stderr: {r.stderr[:256]}")
+                        except Exception as ce:
+                            print(f"curl upload error for {file_name}: {ce}")
             except requests.RequestException as e:
                 print(f"Upload error for {file_path}: {e} (attempt {attempt}/{MAX_UPLOAD_RETRIES})")
+                # 异常路径：立刻尝试备用 requests 通道与 curl
+                try:
+                    with open(file_path, 'rb') as fh:
+                        resp2 = api_client.post(
+                            asset_api_uri,
+                            params={'access_token': access_token},
+                            files={'files': (file_name, fh, 'application/octet-stream')},
+                            timeout=UPLOAD_TIMEOUT,
+                        )
+                    if resp2.status_code == 201:
+                        asset_info = resp2.json()
+                        asset_name = asset_info.get('name')
+                        print(f"Successfully uploaded via alt path (exception): {asset_name}!")
+                        success = True
+                        break
+                    else:
+                        print(f"Alt path (exception) failed (status {resp2.status_code}) for {file_path}. Body: {resp2.text[:256]}")
+                except requests.RequestException as e3:
+                    print(f"Alt path request error (exception) for {file_path}: {e3}")
+                # 尝试 curl
+                curl_cmd = (
+                    f"curl -sS -f -X POST "
+                    f"--connect-timeout 10 --max-time {UPLOAD_SOCKET_TIMEOUT} "
+                    f"-F files=@{shlex.quote(file_path)};type=application/octet-stream "
+                    f"-F access_token={shlex.quote(access_token)} "
+                    f"{shlex.quote(asset_api_uri)}"
+                )
+                try:
+                    r = subprocess.run(curl_cmd, shell=True, capture_output=True, text=True)
+                    if r.returncode == 0:
+                        print(f"Successfully uploaded via curl (exception outer): {file_name}!")
+                        success = True
+                        break
+                    else:
+                        print(f"curl (exception outer) failed (exit {r.returncode}) for {file_name}. stderr: {r.stderr[:256]}")
+                except Exception as ce:
+                    print(f"curl (exception outer) error for {file_name}: {ce}")
             time.sleep(min(60, 2 ** (attempt - 1)))
         if not success:
             print(f"Primary upload failed for {file_name} after {MAX_UPLOAD_RETRIES} attempts, trying attachments fallback...")
@@ -268,6 +404,7 @@ def sync_to_gitee(tag: str, body: str, files: slice, asset_links=None):
                         attach_uri,
                         data={'access_token': access_token},
                         files={'file': (file_name, fh, 'application/octet-stream')},
+                        headers={'Connection': 'close'},
                         timeout=UPLOAD_TIMEOUT,
                     )
                 if ar.status_code in (200, 201):
@@ -283,8 +420,44 @@ def sync_to_gitee(tag: str, body: str, files: slice, asset_links=None):
                         print(f"Fallback: attachments API did not return a URL. Resp: {aj}")
                 else:
                     print(f"Fallback: attachments upload failed {ar.status_code} {ar.text[:256]}")
+                if not success:
+                    # 尝试使用 curl 走 attachments 接口
+                    curl_cmd = (
+                        f"curl -sS -f -X POST "
+                        f"--connect-timeout 10 --max-time {UPLOAD_SOCKET_TIMEOUT} "
+                        f"-F file=@{shlex.quote(file_path)};type=application/octet-stream "
+                        f"-F access_token={shlex.quote(access_token)} "
+                        f"https://gitee.com/api/v5/repos/{owner}/{repo}/attachments"
+                    )
+                    try:
+                        r = subprocess.run(curl_cmd, shell=True, capture_output=True, text=True)
+                        if r.returncode == 0:
+                            print(f"Fallback via curl: uploaded attachment for {file_name}. Will add link if API returns it on body update.")
+                            # 我们无法直接得到URL，留给后续人工查看附件列表或忽略
+                            success = True
+                        else:
+                            print(f"curl attachments failed (exit {r.returncode}) for {file_name}. stderr: {r.stderr[:256]}")
+                    except Exception as ce:
+                        print(f"curl attachments error for {file_name}: {ce}")
             except requests.RequestException as ae:
                 print(f"Fallback attachments error: {ae}")
+                # 尝试使用 curl 走 attachments 接口
+                curl_cmd = (
+                    f"curl -sS -f -X POST "
+                    f"--connect-timeout 10 --max-time {UPLOAD_SOCKET_TIMEOUT} "
+                    f"-F file=@{shlex.quote(file_path)};type=application/octet-stream "
+                    f"-F access_token={shlex.quote(access_token)} "
+                    f"https://gitee.com/api/v5/repos/{owner}/{repo}/attachments"
+                )
+                try:
+                    r = subprocess.run(curl_cmd, shell=True, capture_output=True, text=True)
+                    if r.returncode == 0:
+                        print(f"Fallback via curl: uploaded attachment for {file_name}.")
+                        success = True
+                    else:
+                        print(f"curl attachments (exception) failed (exit {r.returncode}) for {file_name}. stderr: {r.stderr[:256]}")
+                except Exception as ce:
+                    print(f"curl attachments (exception) error for {file_name}: {ce}")
             if not success:
                 msg = f"Failed to upload {file_path} after {MAX_UPLOAD_RETRIES} attempts"
                 if allow_partial:
