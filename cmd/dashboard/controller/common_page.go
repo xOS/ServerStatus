@@ -567,6 +567,7 @@ func (cp *commonPage) network(c *gin.Context) {
 		"Servers":         string(serversBytes),
 		"MonitorInfos":    string(monitorInfos),
 		"MaxTCPPingValue": singleton.Conf.MaxTCPPingValue,
+		"DefaultServerID": id,
 	}))
 }
 

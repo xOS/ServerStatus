@@ -58,6 +58,7 @@
 
     const monitorInfo = JSON.parse('{{.MonitorInfos}}');
     const initData = JSON.parse('{{.Servers}}').servers;
+    const defaultServerID = {{.DefaultServerID}} || (initData && initData[0] ? initData[0].ID : null);
     let MaxTCPPingValue = {{.MaxTCPPingValue }};
 
     // 性能优化：移除同步AJAX，改为异步加载
@@ -356,16 +357,16 @@
             this.monitorConfigsLoaded = true;
 
             // 将当前选中服务器默认设置为列表中的第一个，确保后续切换时间范围触发 API 拉取
-            if (!this.currentServerId && Array.isArray(this.servers) && this.servers.length > 0 && this.servers[0] && this.servers[0].ID) {
-                this.currentServerId = this.servers[0].ID;
+            if (!this.currentServerId) {
+                this.currentServerId = defaultServerID;
             }
 
             // 然后加载数据，避免阻塞UI，默认显示24小时数据
             setTimeout(() => {
                 // 首屏先用预取数据渲染
                 this.filterInitialDataByTimeRange(this.timeRange);
-                // 再异步用后端完整窗口刷新一次
-                if (this.currentServerId) {
+                // 如预取窗口不足，再异步用后端完整窗口刷新一次
+                if (this.currentServerId && !this.hasFullWindowForCurrent(this.timeRange)) {
                     this.getMonitorHistory(this.currentServerId, this.timeRange)
                         .then((monitorInfo) => { this.parseMonitorInfo(monitorInfo); })
                         .catch(() => { /* 保留预取数据 */ });
@@ -378,6 +379,23 @@
         window.removeEventListener('resize', this.resizeHandle, { passive: true });
     },
     methods: {
+        // 判断当前 server 的首屏预取数据是否覆盖了完整时间窗口
+        hasFullWindowForCurrent(range) {
+            try {
+                if (!this.currentServerId || !Array.isArray(monitorInfo) || monitorInfo.length === 0) return false;
+                const timeLimit = range === '24h' ? 24 * 60 * 60 * 1000 : 72 * 60 * 60 * 1000;
+                const cutoff = Date.now() - timeLimit + 60000; // 放宽1分钟
+                let minTs = Infinity;
+                for (let i = 0; i < monitorInfo.length; i++) {
+                    const it = monitorInfo[i];
+                    const sid = it.ServerID || it.server_id;
+                    if (sid !== this.currentServerId) continue;
+                    const ts = Date.parse(it.CreatedAt || it.created_at);
+                    if (!isNaN(ts) && ts < minTs) minTs = ts;
+                }
+                return minTs !== Infinity && minTs <= cutoff;
+            } catch (e) { return false; }
+        },
         // 极致性能优化：简化数据处理逻辑
         processMonitorHistories(histories) {
             if (!histories || histories.length === 0) {
