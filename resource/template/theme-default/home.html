@@ -543,9 +543,14 @@
             if (offlineCount === total) {
                 return { backgroundColor: '#f44336' };
             }
-            if (offlineCount > 0) {
-                return { backgroundColor: '#ff8840' };
-            }
+                if (offlineCount === 0) {
+                    // 全部在线：绿
+                    return { backgroundColor: '#4caf50' };
+                }
+                if (offlineCount > 0) {
+                    // 部分离线：橙
+                    return { backgroundColor: '#ff8840' };
+                }
             return {};
         },
         getServerTrafficData(serverId) {
