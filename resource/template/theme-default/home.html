@@ -27,6 +27,9 @@
             line-height: 1;
             min-width: 14px;
             z-index: 1;
+            /* 默认未选中时降低不透明度 */
+            opacity: 0.8;
+            transition: opacity 0.2s ease;
         }
         
         .custom-tab[data-tag="online"] .server-count-badge {
@@ -38,11 +41,13 @@
         }
         
         .custom-tab.active .server-count-badge {
-            opacity: 0.9;
+            /* 选中时显示原色（不降不透明度） */
+            opacity: 1;
         }
         
         .custom-tab:hover .server-count-badge {
-            opacity: 0.8;
+            /* 悬停时显示原色（不降不透明度） */
+            opacity: 1;
         }
     `;
     document.head.appendChild(style);
@@ -122,23 +127,23 @@
                     <div class="custom-tab" :class="{ active: activeTag === '' }" @click="handleTabClick('', $event)"
                         ref="allTab" data-tag="all">
                         {{tr "All"}}
-                        <span class="server-count-badge">@#getServerCountForTag('')#@</span>
+                        <span class="server-count-badge" :style="getBadgeStyle('')">@#getServerCountForTag('')#@</span>
                     </div>
                     <div class="custom-tab" :class="{ active: activeTag === 'online' }"
                         @click="handleTabClick('online', $event)" ref="onlineTab" data-tag="online">
                         {{tr "OnlineServers"}}
-                        <span class="server-count-badge">@#getServerCountForTag('online')#@</span>
+                        <span class="server-count-badge" :style="getBadgeStyle('online')">@#getServerCountForTag('online')#@</span>
                     </div>
                     <div class="custom-tab" :class="{ active: activeTag === 'offline' }"
                         @click="handleTabClick('offline', $event)" ref="offlineTab" data-tag="offline">
                         {{tr "OfflineServers"}}
-                        <span class="server-count-badge">@#getServerCountForTag('offline')#@</span>
+                        <span class="server-count-badge" :style="getBadgeStyle('offline')">@#getServerCountForTag('offline')#@</span>
                     </div>
                     <div v-for="(tag, index) in uniqueTags.slice().reverse()" :key="tag" class="custom-tab"
                         :class="{ active: activeTag === tag }" @click="handleTabClick(tag, $event)"
                         :ref="'tagTab' + index" data-tag="custom">
                         @#tag#@
-                        <span class="server-count-badge">@#getServerCountForTag(tag)#@</span>
+                        <span class="server-count-badge" :style="getBadgeStyle(tag)">@#getServerCountForTag(tag)#@</span>
                     </div>
                 </div>
                 <div class="tab-slider" ref="tabSlider"></div>
@@ -517,6 +522,32 @@
         }
     },
     methods: {
+        // 返回某个分组下可展示的服务器列表
+        getGroupServers(tag) {
+            if (!this.servers || !Array.isArray(this.servers)) return [];
+            const displayable = this.servers.filter(s => s.Host);
+            if (tag === '') return displayable;
+            if (tag === 'online') return displayable.filter(s => s.live === true);
+            if (tag === 'offline') return displayable.filter(s => s.live === false);
+            return displayable.filter(s => s.Tag === tag);
+        },
+        // 计算某分组徽章颜色：
+        // - 组内全部离线：#f44336（红色）
+        // - 组内存在离线（且不是全部离线）：#ff8840（橙色）
+        // - 其他：保留默认（空，使用CSS原色）
+        getBadgeStyle(tag) {
+            const servers = this.getGroupServers(tag);
+            const total = servers.length;
+            if (total === 0) return {};
+            const offlineCount = servers.filter(s => s.live === false).length;
+            if (offlineCount === total) {
+                return { backgroundColor: '#f44336' };
+            }
+            if (offlineCount > 0) {
+                return { backgroundColor: '#ff8840' };
+            }
+            return {};
+        },
         getServerTrafficData(serverId) {
             if (!serverId) return null;
 
