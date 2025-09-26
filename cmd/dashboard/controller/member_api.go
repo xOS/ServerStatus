@@ -608,16 +608,16 @@ func (ma *memberAPI) searchDDNS(c *gin.Context) {
 }
 
 type serverForm struct {
-	ID              uint64
-	Name            string `binding:"required"`
-	DisplayIndex    int
-	Secret          string
-	Tag             string
-	Note            string
-	PublicNote      string
-	HideForGuest    string
-	EnableDDNS      string
-	DDNSProfilesRaw string
+	ID              uint64 `form:"id" json:"id"`
+	Name            string `form:"name" json:"name" binding:"required"`
+	DisplayIndex    int    `form:"DisplayIndex" json:"display_index"`
+	Secret          string `form:"secret" json:"secret"`
+	Tag             string `form:"Tag" json:"tag"`
+	Note            string `form:"Note" json:"note"`
+	PublicNote      string `form:"PublicNote" json:"public_note"`
+	HideForGuest    string `form:"HideForGuest" json:"hide_for_guest"`
+	EnableDDNS      string `form:"EnableDDNS" json:"enable_ddns"`
+	DDNSProfilesRaw string `form:"DDNSProfilesRaw" json:"ddns_profiles_raw"`
 }
 
 func (ma *memberAPI) addOrEditServer(c *gin.Context) {
