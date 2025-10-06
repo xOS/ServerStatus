@@ -682,9 +682,11 @@ i.os-opensuse, i.fl-opensuse { color: #73ba25 !important; }
 /* 合并箭头和 up/down 图标色 */
 i.arrow.alternate.circle.down.outline.icon,
 i.fa-solid.fa-down,
+i.fa-solid.fa-t,
 i.fa-regular.fa-down { color: green; }
 i.arrow.alternate.circle.up.outline.icon,
 i.fa-solid.fa-up,
+i.fa-solid.fa-u,
 i.fa-regular.fa-up { color: #ff5722; }
 
 i.yellow.icon {
@@ -859,9 +861,10 @@ i.note.icon {
 }
 
 .status.cards .wide.column {
-    padding-top: 0 !important;
+    padding-top: 0.5em !important;
     padding-bottom: 0 !important;
     height: 2rem !important;
+    margin-top: 0px !important;
 }
 
 .status.cards .three.wide.column {
@@ -873,7 +876,7 @@ i.note.icon {
 }
 
 .status.cards .wide.column:nth-child(2) {
-    margin-top: 0.5rem !important;
+    margin-top: 0 !important;
 }
 
 .ui.grid {

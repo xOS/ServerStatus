@@ -277,14 +277,18 @@
                                     <i class="fa-solid fa-up"></i>
                                     @#formatByteSize(server.State.NetOutTransfer)#@
                                 </div>
-                                <div class="three wide column">{{tr "ProcessCount"}}</div>
-                                <div class="thirteen wide column">
-                                    <i class="fa-regular fa-bars-progress"></i>
-                                    @# server.State.ProcessCount #@ {{tr "Count"}}
+                                
+                                <div class="three wide column">{{tr "Live"}}</div>
+                                <div class="thirteen wide column"><i class="fa-regular fa-bars-progress"></i>
+                                    @# server.State.ProcessCount #@ | <i class="fa-solid fa-t"></i>
+                                    @#server.State.TcpConnCount#@ |
+                                    <i class="fa-solid fa-u"></i>
+                                    @#server.State.UdpConnCount#@
                                 </div>
+                                
                                 <div class="three wide column">{{tr "Uptime"}}</div>
                                 <div class="thirteen wide column">
-                                    <i class="clock icon"></i>@#secondToDate(server.State.Uptime)#@
+                                <i class="clock icon"></i>@#secondToDate(server.State.Uptime)#@
                                 </div>
                             </div>
                         </div>

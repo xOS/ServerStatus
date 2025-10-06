@@ -507,13 +507,16 @@ other = "实时通道断开"
 other = "无法实时获取最新监控数据咯"
 
 [30DaysOnline]
-other = "30天在线率"
+other = "30 天在线率"
 
 [Details]
 other = "详情"
 
 [Status]
 other = "状态"
+
+[Live]
+other = "动态"
 
 [Availability]
 other = "在线率"
