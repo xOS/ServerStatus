@@ -45,7 +45,12 @@
                     <td>{{$server.ID}}({{$server.DisplayIndex}})</td>
                     <td>{{$server.Name}}</td>
                     <td>{{$server.Tag}}</td>
-                    <td>IP:{{$server.Host.IP}}</td>
+                    <td>
+                        IP:{{$server.Host.IP}}
+                        <button class="ui icon mini button" data-clipboard-text="{{$server.Host.IP}}" data-tooltip="{{tr "ClickToCopy"}}" style="margin-left: 5px;">
+                            <i class="copy icon"></i>
+                        </button>
+                    </td>
                     <td>{{$server.Host.Version}}</td>
                     <td>{{$server.HideForGuest}}</td>
                     <td>{{$server.EnableDDNS}}</td>
