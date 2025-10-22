@@ -95,10 +95,6 @@ function showFormModal(modelSelector, formID, URL, getData) {
           const name = $hidden.attr('name');
           if (!name || !name.endsWith('Raw')) return;
           
-          // 检查当前值是否已经是有效的 JSON 字符串
-          const currentVal = $hidden.val();
-          let shouldUpdate = false;
-          
           // 优先从可见标签读取 data-value
           let values = [];
           $dropdown.find('a.ui.label').each(function() {
@@ -106,29 +102,29 @@ function showFormModal(modelSelector, formID, URL, getData) {
             if (v !== undefined && v !== null && v !== '') {
               const n = parseInt(v);
               values.push(isNaN(n) ? v : n);
-              shouldUpdate = true;  // 有标签说明用户进行了操作
             }
           });
           
           // 若未读到标签，再回退使用 dropdown API
-          if (values.length === 0 && !shouldUpdate) {
+          // 但要注意：dropdown API 可能返回的是已有的 JSON 字符串值（如 "[]"），
+          // 我们需要过滤掉这些无效值
+          if (values.length === 0) {
             const apiVals = $dropdown.dropdown('get values') || [];
             for (let i = 0; i < apiVals.length; i++) {
-              const n = parseInt(apiVals[i]);
-              values.push(isNaN(n) ? apiVals[i] : n);
-            }
-            // 如果 API 返回了值，也应该更新
-            if (apiVals.length > 0) {
-              shouldUpdate = true;
+              const val = apiVals[i];
+              // 跳过看起来像 JSON 字符串的值（如 "[]", "{}", 等）
+              if (val && val.trim() !== '' && 
+                  !val.startsWith('[') && !val.startsWith('{') &&
+                  !val.startsWith('"')) {
+                const n = parseInt(val);
+                values.push(isNaN(n) ? val : n);
+              }
             }
           }
           
-          // 只有在需要更新时才重新序列化
-          if (shouldUpdate) {
-            const jsonValue = JSON.stringify(values);
-            $hidden.val(jsonValue);
-          }
-          // 否则保持原值（可能已经是正确的 JSON 字符串了）
+          // 总是更新值为正确的 JSON 字符串
+          const jsonValue = JSON.stringify(values);
+          $hidden.val(jsonValue);
         });
 
         // 确保所有 *Raw 字段都有有效的默认值

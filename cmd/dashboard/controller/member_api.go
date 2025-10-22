@@ -1618,16 +1618,30 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 		log.Printf("  FailTriggerTasksRaw: %q (len=%d)", arf.FailTriggerTasksRaw, len(arf.FailTriggerTasksRaw))
 		log.Printf("  RecoverTriggerTasksRaw: %q (len=%d)", arf.RecoverTriggerTasksRaw, len(arf.RecoverTriggerTasksRaw))
 
-		// 清理可能的编码问题
-		// 如果值看起来像是被双重序列化的，尝试修复
-		if strings.HasPrefix(arf.FailTriggerTasksRaw, `"`) && strings.HasSuffix(arf.FailTriggerTasksRaw, `"`) {
+		// 修复错误的数据格式
+		// 情况1: ["[]"] -> []
+		// 情况2: "[]" (被双引号包裹) -> []
+		// 情况3: "" (空字符串) -> []
+		
+		// 处理 FailTriggerTasksRaw
+		if arf.FailTriggerTasksRaw == `["[]"]` || arf.FailTriggerTasksRaw == `[""]` {
+			arf.FailTriggerTasksRaw = "[]"
+			log.Printf("  修复错误格式的 FailTriggerTasksRaw: [] (from %q)", arf.FailTriggerTasksRaw)
+		} else if strings.HasPrefix(arf.FailTriggerTasksRaw, `"`) && strings.HasSuffix(arf.FailTriggerTasksRaw, `"`) {
+			// 双重序列化的情况："[]" 或 "[1,2,3]"
 			var temp string
 			if err := utils.Json.Unmarshal([]byte(arf.FailTriggerTasksRaw), &temp); err == nil {
 				arf.FailTriggerTasksRaw = temp
 				log.Printf("  修复双重序列化的 FailTriggerTasksRaw: %q", arf.FailTriggerTasksRaw)
 			}
 		}
-		if strings.HasPrefix(arf.RecoverTriggerTasksRaw, `"`) && strings.HasSuffix(arf.RecoverTriggerTasksRaw, `"`) {
+		
+		// 处理 RecoverTriggerTasksRaw
+		if arf.RecoverTriggerTasksRaw == `["[]"]` || arf.RecoverTriggerTasksRaw == `[""]` {
+			arf.RecoverTriggerTasksRaw = "[]"
+			log.Printf("  修复错误格式的 RecoverTriggerTasksRaw: [] (from %q)", arf.RecoverTriggerTasksRaw)
+		} else if strings.HasPrefix(arf.RecoverTriggerTasksRaw, `"`) && strings.HasSuffix(arf.RecoverTriggerTasksRaw, `"`) {
+			// 双重序列化的情况："[]" 或 "[1,2,3]"
 			var temp string
 			if err := utils.Json.Unmarshal([]byte(arf.RecoverTriggerTasksRaw), &temp); err == nil {
 				arf.RecoverTriggerTasksRaw = temp
