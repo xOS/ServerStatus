@@ -94,6 +94,11 @@ function showFormModal(modelSelector, formID, URL, getData) {
           const $hidden = $dropdown.find('input[type="hidden"]');
           const name = $hidden.attr('name');
           if (!name || !name.endsWith('Raw')) return;
+          
+          // 检查当前值是否已经是有效的 JSON 字符串
+          const currentVal = $hidden.val();
+          let shouldUpdate = false;
+          
           // 优先从可见标签读取 data-value
           let values = [];
           $dropdown.find('a.ui.label').each(function() {
@@ -101,19 +106,29 @@ function showFormModal(modelSelector, formID, URL, getData) {
             if (v !== undefined && v !== null && v !== '') {
               const n = parseInt(v);
               values.push(isNaN(n) ? v : n);
+              shouldUpdate = true;  // 有标签说明用户进行了操作
             }
           });
+          
           // 若未读到标签，再回退使用 dropdown API
-          if (values.length === 0) {
+          if (values.length === 0 && !shouldUpdate) {
             const apiVals = $dropdown.dropdown('get values') || [];
             for (let i = 0; i < apiVals.length; i++) {
               const n = parseInt(apiVals[i]);
               values.push(isNaN(n) ? apiVals[i] : n);
             }
+            // 如果 API 返回了值，也应该更新
+            if (apiVals.length > 0) {
+              shouldUpdate = true;
+            }
           }
-          // 确保总是设置有效的 JSON 数组字符串
-          const jsonValue = JSON.stringify(values);
-          $hidden.val(jsonValue);
+          
+          // 只有在需要更新时才重新序列化
+          if (shouldUpdate) {
+            const jsonValue = JSON.stringify(values);
+            $hidden.val(jsonValue);
+          }
+          // 否则保持原值（可能已经是正确的 JSON 字符串了）
         });
 
         // 确保所有 *Raw 字段都有有效的默认值
@@ -138,8 +153,17 @@ function showFormModal(modelSelector, formID, URL, getData) {
           }
         });
 
+        // 调试：打印提交前的数据
+        console.log('提交前的表单数据:', arr);
+        arr.forEach(function(item) {
+          if (item.name && item.name.endsWith('Raw')) {
+            console.log(`${item.name} 的值:`, item.value, '类型:', typeof item.value);
+          }
+        });
+
         // 4) 序列化为标准 x-www-form-urlencoded 字符串
         const serialized = $.param(arr);
+        console.log('序列化后的数据:', serialized);
 
   // 按标准表单方式提交
   $.post(URL, serialized)

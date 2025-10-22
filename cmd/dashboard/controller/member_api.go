@@ -1613,6 +1613,28 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 		err = c.ShouldBind(&arf)
 	}
 	if err == nil {
+		// 调试：打印接收到的原始数据
+		log.Printf("收到的通知规则数据:")
+		log.Printf("  FailTriggerTasksRaw: %q (len=%d)", arf.FailTriggerTasksRaw, len(arf.FailTriggerTasksRaw))
+		log.Printf("  RecoverTriggerTasksRaw: %q (len=%d)", arf.RecoverTriggerTasksRaw, len(arf.RecoverTriggerTasksRaw))
+
+		// 清理可能的编码问题
+		// 如果值看起来像是被双重序列化的，尝试修复
+		if strings.HasPrefix(arf.FailTriggerTasksRaw, `"`) && strings.HasSuffix(arf.FailTriggerTasksRaw, `"`) {
+			var temp string
+			if err := utils.Json.Unmarshal([]byte(arf.FailTriggerTasksRaw), &temp); err == nil {
+				arf.FailTriggerTasksRaw = temp
+				log.Printf("  修复双重序列化的 FailTriggerTasksRaw: %q", arf.FailTriggerTasksRaw)
+			}
+		}
+		if strings.HasPrefix(arf.RecoverTriggerTasksRaw, `"`) && strings.HasSuffix(arf.RecoverTriggerTasksRaw, `"`) {
+			var temp string
+			if err := utils.Json.Unmarshal([]byte(arf.RecoverTriggerTasksRaw), &temp); err == nil {
+				arf.RecoverTriggerTasksRaw = temp
+				log.Printf("  修复双重序列化的 RecoverTriggerTasksRaw: %q", arf.RecoverTriggerTasksRaw)
+			}
+		}
+
 		// 清理 RulesRaw 中的千位分隔符和修复 ignore 字段格式
 		cleanedRulesRaw := cleanNumbersInJSON(arf.RulesRaw)
 		// 修复 ignore 字段的格式：将 {40:true} 转换为 {"40":true}
@@ -1669,9 +1691,19 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 	}
 	if err == nil {
 		err = utils.Json.Unmarshal([]byte(r.FailTriggerTasksRaw), &r.FailTriggerTasks)
+		if err != nil {
+			log.Printf("FailTriggerTasksRaw 解析失败: %v, 原始值: %q", err, r.FailTriggerTasksRaw)
+		} else {
+			log.Printf("FailTriggerTasksRaw 解析成功: %v", r.FailTriggerTasks)
+		}
 	}
 	if err == nil {
 		err = utils.Json.Unmarshal([]byte(r.RecoverTriggerTasksRaw), &r.RecoverTriggerTasks)
+		if err != nil {
+			log.Printf("RecoverTriggerTasksRaw 解析失败: %v, 原始值: %q", err, r.RecoverTriggerTasksRaw)
+		} else {
+			log.Printf("RecoverTriggerTasksRaw 解析成功: %v", r.RecoverTriggerTasks)
+		}
 	}
 	//保证NotificationTag不为空
 	if err == nil {
