@@ -53,7 +53,7 @@ other = "服务"
 other = "任务"
 
 [Notification]
-other = "事件通知"
+other = "通知"
 
 [Settings]
 other = "设置"
@@ -211,7 +211,7 @@ other = "请求类型"
 other = "验证SSL"
 
 [AddNotificationRule]
-other = "添加事件通知规则"
+other = "添加通知规则"
 
 [Rules]
 other = "规则"
@@ -339,10 +339,10 @@ other = "删除通知方式"
 other = "确认删除此通知方式？"
 
 [DeleteNotificationRule]
-other = "删除事件通知规则"
+other = "删除通知规则"
 
 [ConfirmToDeleteThisNotificationRule]
-other = "确认删除此事件通知规则？"
+other = "确认删除此通知规则？"
 
 [ForceUpdate]
 other = "强制更新"
@@ -507,7 +507,7 @@ other = "实时通道断开"
 other = "无法实时获取最新监控数据咯"
 
 [30DaysOnline]
-other = "30 天在线率"
+other = "30天在线率"
 
 [Details]
 other = "详情"
@@ -636,7 +636,7 @@ other = "添加"
 other = "修改"
 
 [AlarmRule]
-other = "事件规则"
+other = "通知规则"
 
 [NotificationMethod]
 other = "通知方式"
@@ -859,10 +859,10 @@ other = "自定义DDNS使用的公共DNS服务器（逗号分隔）"
 other = "套餐"
 
 [TrafficAlert]
-other = "流量事件"
+other = "流量通知"
 
 [SetupTrafficAlert]
-other = "设置流量事件"
+other = "设置流量通知"
 
 [MonthlyTrafficLimit]
 other = "月流量限制"
@@ -871,28 +871,28 @@ other = "月流量限制"
 other = "通知组"
 
 [AlertThresholds]
-other = "事件阈值"
+other = "通知阈值"
 
 [Alert50Percent]
-other = "50% 流量事件"
+other = "50% 流量通知"
 
 [Alert90Percent]
-other = "90% 流量事件"
+other = "90% 流量通知"
 
 [Alert100Percent]
-other = "100% 流量事件"
+other = "100% 流量通知"
 
 [CreateAlert]
-other = "创建事件"
+other = "创建通知"
 
 [TrafficAlertInfo]
-other = "流量事件说明"
+other = "流量通知说明"
 
 [TrafficAlertInfo1]
 other = "流量统计周期为自然月（每月1号重置）"
 
 [TrafficAlertInfo2]
-other = "可同时启用多个阈值事件"
+other = "可同时启用多个阈值通知"
 
 [TrafficAlertInfo3]
-other = "事件通知将发送到指定的通知组"
+other = "通知将发送到指定的通知组"

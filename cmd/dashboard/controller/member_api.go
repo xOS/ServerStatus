@@ -1652,8 +1652,15 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 	if err == nil {
 		r.Name = arf.Name
 		r.RulesRaw = arf.RulesRaw
+		// 修复空字符串问题：如果 FailTriggerTasksRaw 或 RecoverTriggerTasksRaw 为空，设置为 "[]"
 		r.FailTriggerTasksRaw = arf.FailTriggerTasksRaw
+		if r.FailTriggerTasksRaw == "" {
+			r.FailTriggerTasksRaw = "[]"
+		}
 		r.RecoverTriggerTasksRaw = arf.RecoverTriggerTasksRaw
+		if r.RecoverTriggerTasksRaw == "" {
+			r.RecoverTriggerTasksRaw = "[]"
+		}
 		r.NotificationTag = arf.NotificationTag
 		enable := arf.Enable == "on" || arf.Enable == "true" || arf.Enable == "1"
 		r.TriggerMode = arf.TriggerMode
@@ -1661,10 +1668,10 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 		r.ID = arf.ID
 	}
 	if err == nil {
-		err = utils.Json.Unmarshal([]byte(arf.FailTriggerTasksRaw), &r.FailTriggerTasks)
+		err = utils.Json.Unmarshal([]byte(r.FailTriggerTasksRaw), &r.FailTriggerTasks)
 	}
 	if err == nil {
-		err = utils.Json.Unmarshal([]byte(arf.RecoverTriggerTasksRaw), &r.RecoverTriggerTasks)
+		err = utils.Json.Unmarshal([]byte(r.RecoverTriggerTasksRaw), &r.RecoverTriggerTasks)
 	}
 	//保证NotificationTag不为空
 	if err == nil {

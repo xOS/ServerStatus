@@ -111,7 +111,19 @@ function showFormModal(modelSelector, formID, URL, getData) {
               values.push(isNaN(n) ? apiVals[i] : n);
             }
           }
-          $hidden.val(JSON.stringify(values));
+          // 确保总是设置有效的 JSON 数组字符串
+          const jsonValue = JSON.stringify(values);
+          $hidden.val(jsonValue);
+        });
+
+        // 确保所有 *Raw 字段都有有效的默认值
+        $(formID).find('input[name$="Raw"]').each(function() {
+          const $input = $(this);
+          const currentVal = $input.val();
+          // 如果字段为空或未定义，设置为 "[]"
+          if (!currentVal || currentVal.trim() === '') {
+            $input.val('[]');
+          }
         });
 
   // 2) 使用 serializeArray 获取键值对，便于补齐未选中的 checkbox
