@@ -974,10 +974,13 @@ func checkAndResetCycleTraffic(clientID uint64) {
 
 	// 读取上次重置参考时间（仍在读锁下，随后立即释放）
 	lastResetTime := time.Time{}
+	hasNextUpdate := false
 	if stats, exists := singleton.AlertsCycleTransferStatsStore[matchingAlert.ID]; exists && stats != nil {
-		if nextUpdate, has := stats.NextUpdate[clientID]; has {
-			if nextUpdate.Before(currentCycleStart) {
-				lastResetTime = nextUpdate
+		if nu, has := stats.NextUpdate[clientID]; has {
+			hasNextUpdate = true
+			// 如果NextUpdate在当前周期开始之前，说明是上个周期的记录，可以作为重置参考
+			if nu.Before(currentCycleStart) {
+				lastResetTime = nu
 			}
 		}
 	}
@@ -986,9 +989,12 @@ func checkAndResetCycleTraffic(clientID uint64) {
 	// 2) 判断是否需要重置（锁外计算）
 	needReset := false
 	now := time.Now()
-	if !lastResetTime.IsZero() && now.After(currentCycleStart) && lastResetTime.Before(currentCycleStart) {
+
+	// 重置条件：有NextUpdate记录且lastResetTime在当前周期之前
+	if hasNextUpdate && now.After(currentCycleStart) && !lastResetTime.IsZero() && lastResetTime.Before(currentCycleStart) {
 		needReset = true
 	}
+
 	if !needReset {
 		return
 	}

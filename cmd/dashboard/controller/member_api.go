@@ -1622,7 +1622,7 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 		// 情况1: ["[]"] -> []
 		// 情况2: "[]" (被双引号包裹) -> []
 		// 情况3: "" (空字符串) -> []
-		
+
 		// 处理 FailTriggerTasksRaw
 		if arf.FailTriggerTasksRaw == `["[]"]` || arf.FailTriggerTasksRaw == `[""]` {
 			arf.FailTriggerTasksRaw = "[]"
@@ -1635,7 +1635,7 @@ func (ma *memberAPI) addOrEditAlertRule(c *gin.Context) {
 				log.Printf("  修复双重序列化的 FailTriggerTasksRaw: %q", arf.FailTriggerTasksRaw)
 			}
 		}
-		
+
 		// 处理 RecoverTriggerTasksRaw
 		if arf.RecoverTriggerTasksRaw == `["[]"]` || arf.RecoverTriggerTasksRaw == `[""]` {
 			arf.RecoverTriggerTasksRaw = "[]"
