@@ -13,14 +13,15 @@ const (
 )
 
 type CycleTransferStats struct {
-	Name       string
-	From       time.Time
-	To         time.Time
-	Max        uint64
-	Min        uint64
-	ServerName map[uint64]string
-	Transfer   map[uint64]uint64
-	NextUpdate map[uint64]time.Time
+	Name          string
+	From          time.Time
+	To            time.Time
+	Max           uint64
+	Min           uint64
+	ServerName    map[uint64]string
+	Transfer      map[uint64]uint64
+	NextUpdate    map[uint64]time.Time // 下次检查时间
+	LastResetTime map[uint64]time.Time // 上次重置时间（用于判断是否需要重置）
 }
 
 type AlertRule struct {

@@ -46,14 +46,15 @@ func addCycleTransferStatsInfo(alert *model.AlertRule) {
 			from := alert.Rules[j].GetTransferDurationStart()
 			to := alert.Rules[j].GetTransferDurationEnd()
 			AlertsCycleTransferStatsStore[alert.ID] = &model.CycleTransferStats{
-				Name:       alert.Name,
-				From:       from,
-				To:         to,
-				Max:        uint64(alert.Rules[j].Max),
-				Min:        uint64(alert.Rules[j].Min),
-				ServerName: make(map[uint64]string),
-				Transfer:   make(map[uint64]uint64),
-				NextUpdate: make(map[uint64]time.Time),
+				Name:          alert.Name,
+				From:          from,
+				To:            to,
+				Max:           uint64(alert.Rules[j].Max),
+				Min:           uint64(alert.Rules[j].Min),
+				ServerName:    make(map[uint64]string),
+				Transfer:      make(map[uint64]uint64),
+				NextUpdate:    make(map[uint64]time.Time),
+				LastResetTime: make(map[uint64]time.Time),
 			}
 		}
 	}
@@ -350,7 +351,7 @@ func checkStatus() {
 			}
 			continue
 		}
-		
+
 		// 初始化每个Rule的字段，避免nil指针
 		for i := range alert.Rules {
 			if alert.Rules[i].NextTransferAt == nil {
@@ -372,7 +373,7 @@ func checkStatus() {
 				}
 				continue
 			}
-			
+
 			// 安全检查：确保alert不为nil
 			if alert == nil {
 				if Conf.Debug {
@@ -409,7 +410,7 @@ func checkStatus() {
 				// SQLite模式下，传入DB参数
 				snapshot = alert.Snapshot(cycleStats, server, DB)
 			}
-			
+
 			// 安全检查：确保snapshot不为nil
 			if snapshot == nil {
 				snapshot = make([]interface{}, 0)
@@ -1197,7 +1198,7 @@ func generateThresholdAlertMessage(alert *model.AlertRule, server *model.Server,
 	}
 
 	usagePercent := float64(currentUsage) / rule.Max * 100
-	
+
 	// 根据实际使用百分比生成动态标题
 	var dynamicTitle string
 	if usagePercent >= 100 {
@@ -1207,7 +1208,7 @@ func generateThresholdAlertMessage(alert *model.AlertRule, server *model.Server,
 	} else {
 		dynamicTitle = fmt.Sprintf("%.1f%%流量使用提醒", usagePercent)
 	}
-	
+
 	message := fmt.Sprintf("%s %s\n", icon, dynamicTitle)
 	message += fmt.Sprintf("时间: %s\n", now.Format("2006-01-02 15:04:05"))
 	message += fmt.Sprintf("服务器: %s\n", server.Name)

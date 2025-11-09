@@ -971,72 +971,101 @@ func checkAndResetCycleTraffic(clientID uint64) {
 
 	currentCycleStart := transferRule.GetTransferDurationStart()
 	currentCycleEnd := transferRule.GetTransferDurationEnd()
-
-	// 读取上次重置参考时间（仍在读锁下，随后立即释放）
-	lastResetTime := time.Time{}
-	hasNextUpdate := false
-	if stats, exists := singleton.AlertsCycleTransferStatsStore[matchingAlert.ID]; exists && stats != nil {
-		if nu, has := stats.NextUpdate[clientID]; has {
-			hasNextUpdate = true
-			// 如果NextUpdate在当前周期开始之前，说明是上个周期的记录，可以作为重置参考
-			if nu.Before(currentCycleStart) {
-				lastResetTime = nu
-			}
-		}
-	}
 	singleton.AlertsLock.RUnlock()
 
-	// 2) 判断是否需要重置（锁外计算）
+	// 2) 读取服务器的上次重置时间（从持久化字段）
+	singleton.ServerLock.RLock()
+	server := singleton.ServerList[clientID]
+	if server == nil {
+		singleton.ServerLock.RUnlock()
+		return
+	}
+	lastResetTime := server.LastTrafficResetTime
+	singleton.ServerLock.RUnlock()
+
+	// 3) 判断是否需要重置（锁外计算）
 	needReset := false
 	now := time.Now()
 
-	// 重置条件：有NextUpdate记录且lastResetTime在当前周期之前
-	if hasNextUpdate && now.After(currentCycleStart) && !lastResetTime.IsZero() && lastResetTime.Before(currentCycleStart) {
+	// 重置条件：上次重置时间在当前周期开始之前
+	// 如果LastTrafficResetTime为零值（从未重置过），则初始化为当前周期起点
+	if lastResetTime.IsZero() {
+		// 首次检测，将重置时间初始化为当前周期起点，避免启动时误触发
+		singleton.ServerLock.Lock()
+		if svr := singleton.ServerList[clientID]; svr != nil {
+			svr.LastTrafficResetTime = currentCycleStart
+			log.Printf("[周期流量初始化] 服务器ID=%d 初始化重置时间为当前周期起点: %s",
+				clientID, currentCycleStart.Format("2006-01-02 15:04:05"))
+
+			// 持久化到数据库
+			if singleton.Conf.DatabaseType == "badger" {
+				if db.DB != nil {
+					serverOps := db.NewServerOps(db.DB)
+					if dbServer, err := serverOps.GetServer(clientID); err == nil && dbServer != nil {
+						dbServer.LastTrafficResetTime = currentCycleStart
+						_ = serverOps.SaveServer(dbServer)
+					}
+				}
+			} else if singleton.DB != nil {
+				_ = singleton.DB.Model(&model.Server{}).Where("id = ?", clientID).
+					Update("last_traffic_reset_time", currentCycleStart).Error
+			}
+		}
+		singleton.ServerLock.Unlock()
+		return
+	}
+
+	// 检查是否需要重置：上次重置在当前周期之前
+	if lastResetTime.Before(currentCycleStart) && now.After(currentCycleStart) {
 		needReset = true
+		log.Printf("[周期流量重置] 服务器ID=%d 触发重置: 上次重置时间=%s 在当前周期 %s 之前",
+			clientID, lastResetTime.Format("2006-01-02 15:04:05"), currentCycleStart.Format("2006-01-02 15:04:05"))
 	}
 
 	if !needReset {
 		return
 	}
 
-	// 3) 重置累计流量（写锁仅包裹修改内存状态）
+	// 4) 重置累计流量（写锁仅包裹修改内存状态）
 	singleton.ServerLock.Lock()
-	server := singleton.ServerList[clientID]
-	if server == nil {
+	resetServer := singleton.ServerList[clientID]
+	if resetServer == nil {
 		singleton.ServerLock.Unlock()
 		return
 	}
-	oldInTransfer := server.CumulativeNetInTransfer
-	oldOutTransfer := server.CumulativeNetOutTransfer
-	serverName := server.Name
+	oldInTransfer := resetServer.CumulativeNetInTransfer
+	oldOutTransfer := resetServer.CumulativeNetOutTransfer
+	serverName := resetServer.Name
 	serverIP := ""
-	if server.Host != nil {
-		serverIP = server.Host.IP
+	if resetServer.Host != nil {
+		serverIP = resetServer.Host.IP
 	}
 
-	server.CumulativeNetInTransfer = 0
-	server.CumulativeNetOutTransfer = 0
-	server.PrevTransferInSnapshot = 0
-	server.PrevTransferOutSnapshot = 0
+	resetServer.CumulativeNetInTransfer = 0
+	resetServer.CumulativeNetOutTransfer = 0
+	resetServer.PrevTransferInSnapshot = 0
+	resetServer.PrevTransferOutSnapshot = 0
+	resetServer.LastTrafficResetTime = now // 更新重置时间
 	singleton.ServerLock.Unlock()
 
-	// 4) 持久化到数据库（锁外）
+	// 5) 持久化到数据库（锁外）
 	if singleton.Conf.DatabaseType == "badger" {
 		if db.DB != nil {
 			serverOps := db.NewServerOps(db.DB)
 			if dbServer, err := serverOps.GetServer(clientID); err == nil && dbServer != nil {
 				dbServer.CumulativeNetInTransfer = 0
 				dbServer.CumulativeNetOutTransfer = 0
+				dbServer.LastTrafficResetTime = now
 				_ = serverOps.SaveServer(dbServer) // 静默处理错误，避免打扰热路径
 			}
 		}
 	} else {
 		if singleton.DB != nil {
-			_ = singleton.DB.Exec("UPDATE servers SET cumulative_net_in_transfer = 0, cumulative_net_out_transfer = 0 WHERE id = ?", clientID).Error
+			_ = singleton.DB.Exec("UPDATE servers SET cumulative_net_in_transfer = 0, cumulative_net_out_transfer = 0, last_traffic_reset_time = ? WHERE id = ?", now, clientID).Error
 		}
 	}
 
-	// 5) 更新周期统计存储（需要写锁）
+	// 6) 更新周期统计存储（需要写锁）
 	singleton.AlertsLock.Lock()
 	if stats, exists := singleton.AlertsCycleTransferStatsStore[matchingAlert.ID]; exists && stats != nil {
 		if stats.NextUpdate == nil {
@@ -1052,7 +1081,7 @@ func checkAndResetCycleTraffic(clientID uint64) {
 	}
 	singleton.AlertsLock.Unlock()
 
-	// 6) 发送通知（锁外）
+	// 7) 发送通知（锁外）
 	formatTraffic := func(bytes uint64) string {
 		const unit = 1024
 		if bytes < unit {

@@ -47,6 +47,7 @@ type Server struct {
 	// 累计流量数据
 	CumulativeNetInTransfer  uint64    `gorm:"default:0" json:"cumulative_net_in_transfer"`  // 累计入站使用量
 	CumulativeNetOutTransfer uint64    `gorm:"default:0" json:"cumulative_net_out_transfer"` // 累计出站使用量
+	LastTrafficResetTime     time.Time `gorm:"type:datetime" json:"last_traffic_reset_time"` // 最后一次流量重置时间
 	LastFlowSaveTime         time.Time `gorm:"-" json:"-"`                                   // 最后一次保存流量数据的时间
 	LastDBUpdateTime         time.Time `gorm:"-" json:"-"`                                   // 最后一次数据库更新时间
 }
@@ -64,6 +65,7 @@ func (s *Server) CopyFromRunningServer(old *Server) {
 	s.IsOnline = old.IsOnline
 	s.CumulativeNetInTransfer = old.CumulativeNetInTransfer
 	s.CumulativeNetOutTransfer = old.CumulativeNetOutTransfer
+	s.LastTrafficResetTime = old.LastTrafficResetTime
 	s.LastFlowSaveTime = old.LastFlowSaveTime
 
 	// 注意：不要复制配置相关的字段，因为这些可能已经在编辑时更新了
