@@ -7,47 +7,55 @@
     style.textContent = `
         .custom-tab {
             position: relative;
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding-left: 10px !important;
+            padding-right: 10px !important;
         }
         
         .server-count-badge {
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            display: flex;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
             background-color: #03a9f4;
             color: white;
             border-radius: 50%;
-            width: 14px;
-            height: 14px;
-            font-size: 8px;
-            font-weight: bold;
-            line-height: 1;
-            min-width: 14px;
-            z-index: 1;
-            /* 默认未选中时降低不透明度 */
-            opacity: 0.8;
-            transition: opacity 0.2s ease;
-        }
-        
-        .custom-tab[data-tag="online"] .server-count-badge {
-            background-color: #4caf50;
-        }
-        
-        .custom-tab[data-tag="offline"] .server-count-badge {
-            background-color: #f44336;
+            width: 18px;
+            height: 18px;
+            min-width: 18px;
+            max-width: 18px;
+            min-height: 18px;
+            max-height: 18px;
+            padding: 0;
+            margin: 0;
+            font-size: 10px;
+            font-weight: 600;
+            line-height: 18px;
+            text-align: center;
+            vertical-align: middle;
+            box-sizing: border-box;
+            flex-shrink: 0;
+            opacity: 0.85;
+            transition: all 0.2s ease;
         }
         
         .custom-tab.active .server-count-badge {
-            /* 选中时显示原色（不降不透明度） */
             opacity: 1;
         }
         
         .custom-tab:hover .server-count-badge {
-            /* 悬停时显示原色（不降不透明度） */
             opacity: 1;
+        }
+        
+        /* 在线标签特殊样式 */
+        .custom-tab[data-tag="online"] .server-count-badge {
+            background-color: #4caf50;
+        }
+        
+        /* 离线标签特殊样式 */
+        .custom-tab[data-tag="offline"] .server-count-badge {
+            background-color: #f44336;
         }
     `;
     document.head.appendChild(style);
