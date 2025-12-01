@@ -842,6 +842,48 @@
                         hasUpdates = true;
                     }
 
+                    // 更新Host信息（服务器重启后CPU、内存等配置可能变化）
+                    if (wsServer.Host) {
+                        const oldHost = serverItem.Host || {};
+                        // 检查Host信息是否有实际变化
+                        const hostChanged = 
+                            JSON.stringify(oldHost.CPU) !== JSON.stringify(wsServer.Host.CPU) ||
+                            oldHost.MemTotal !== wsServer.Host.MemTotal ||
+                            oldHost.DiskTotal !== wsServer.Host.DiskTotal ||
+                            oldHost.Platform !== wsServer.Host.Platform ||
+                            oldHost.PlatformVersion !== wsServer.Host.PlatformVersion ||
+                            oldHost.Arch !== wsServer.Host.Arch ||
+                            JSON.stringify(oldHost.GPU) !== JSON.stringify(wsServer.Host.GPU);
+                        
+                        if (hostChanged) {
+                            serverItem.Host = {
+                                ...oldHost,
+                                ...wsServer.Host
+                            };
+                            hasUpdates = true;
+                        }
+                    }
+
+                    // 更新服务器基本信息（后台修改名称、标签等）
+                    if (wsServer.Name !== undefined && serverItem.Name !== wsServer.Name) {
+                        serverItem.Name = wsServer.Name;
+                        hasUpdates = true;
+                    }
+                    if (wsServer.Tag !== undefined && serverItem.Tag !== wsServer.Tag) {
+                        serverItem.Tag = wsServer.Tag;
+                        hasUpdates = true;
+                        // 标签变化需要重新生成标签列表
+                        this._needRegenerateTags = true;
+                    }
+                    if (wsServer.PublicNote !== undefined && serverItem.PublicNote !== wsServer.PublicNote) {
+                        serverItem.PublicNote = wsServer.PublicNote;
+                        hasUpdates = true;
+                    }
+                    if (wsServer.DisplayIndex !== undefined && serverItem.DisplayIndex !== wsServer.DisplayIndex) {
+                        serverItem.DisplayIndex = wsServer.DisplayIndex;
+                        hasUpdates = true;
+                    }
+
                     // 更新最后活动时间
                     if (wsServer.LastActive) {
                         serverItem.LastActive = wsServer.LastActive;
@@ -892,6 +934,12 @@
 
             // 只有在有实际更新时才强制更新视图
             if (hasUpdates) {
+                // 如果标签发生变化，重新生成标签列表
+                if (this._needRegenerateTags) {
+                    this.generateUniqueTags();
+                    this._needRegenerateTags = false;
+                }
+
                 // 立即更新，不使用防抖（防抖可能导致状态显示延迟）
                 this.$forceUpdate();
 
