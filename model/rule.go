@@ -297,7 +297,13 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 
 	if u.Type == "offline" {
 		// 修复离线检测逻辑：只有曾经上线过且当前离线的服务器才能触发离线通知
-		if !server.LastActive.IsZero() && !server.IsOnline && float64(time.Now().Unix())-src > 6 {
+		// 使用用户配置的 Duration（秒）作为离线阈值，如果未设置则默认 60 秒
+		offlineThreshold := float64(u.Duration)
+		if offlineThreshold <= 0 {
+			offlineThreshold = 60 // 默认 60 秒
+		}
+		offlineSeconds := float64(time.Now().Unix()) - src
+		if !server.LastActive.IsZero() && !server.IsOnline && offlineSeconds > offlineThreshold {
 			return struct{}{}
 		}
 		// 从未上线的服务器或当前在线的服务器不触发离线通知

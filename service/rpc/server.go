@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nicksnyder/go-i18n/v2/i18n"
@@ -50,7 +51,7 @@ func isConnectionError(err error) bool {
 
 // GetGoroutineStats 获取 goroutine 统计信息
 func GetGoroutineStats() (total int, requestTasks int64) {
-	return runtime.NumGoroutine(), activeRequestTaskGoroutines
+	return runtime.NumGoroutine(), atomic.LoadInt64(&activeRequestTaskGoroutines)
 }
 
 // ForceCleanupStaleConnections 强制清理僵尸连接（紧急情况使用）
@@ -224,7 +225,7 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	// 检查 goroutine 数量限制，防止 goroutine 泄漏导致程序崩溃
 	currentGoroutines := func() int64 {
 		// 使用原子操作获取当前活跃的 RequestTask goroutine 数量
-		current := activeRequestTaskGoroutines
+		current := atomic.LoadInt64(&activeRequestTaskGoroutines)
 		total := int64(runtime.NumGoroutine())
 
 		// 修复根本问题后，使用更合理的阈值
@@ -270,11 +271,11 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 		return fmt.Errorf("服务器负载过高，请稍后重试")
 	}
 
-	// 增加活跃 goroutine 计数
-	activeRequestTaskGoroutines++
+	// 增加活跃 goroutine 计数（使用原子操作）
+	atomic.AddInt64(&activeRequestTaskGoroutines, 1)
 	defer func() {
-		// 确保在函数退出时减少计数
-		activeRequestTaskGoroutines--
+		// 确保在函数退出时减少计数（使用原子操作）
+		atomic.AddInt64(&activeRequestTaskGoroutines, -1)
 	}()
 
 	// 使用带缓冲的通道避免阻塞
@@ -301,10 +302,9 @@ func (s *ServerHandler) RequestTask(h *pb.Host, stream pb.ServerService_RequestT
 	singleton.ServerList[clientID].TaskCloseLock.Unlock()
 	singleton.ServerLock.RUnlock()
 
-	// 创建一个带超时的上下文，确保所有goroutine都能正确退出
-	// 修复：使用更合理的超时时间，避免正常连接被误杀
-	ctx, cancel := context.WithTimeout(stream.Context(), 5*time.Minute)
-	defer cancel()
+	// 使用stream自带的context，不设置额外超时
+	// 让gRPC的keepalive机制和客户端自己管理连接生命周期
+	ctx := stream.Context()
 
 	// 根本修复：不再创建额外的监控goroutine
 	// 所有逻辑都在主goroutine中处理，避免goroutine泄漏
@@ -1112,7 +1112,7 @@ func checkAndResetCycleTraffic(clientID uint64) {
 
 // GetConnectionStats 获取连接统计信息
 func GetConnectionStats() (int, int, error) {
-	activeConns := int(activeRequestTaskGoroutines)
+	activeConns := int(atomic.LoadInt64(&activeRequestTaskGoroutines))
 	maxConns := int(maxRequestTaskGoroutines)
 	return activeConns, maxConns, nil
 }

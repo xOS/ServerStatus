@@ -44,18 +44,18 @@ func isGRPCTransportError(err error) bool {
 func ServeRPC(port uint) {
 	// 配置 gRPC 服务器选项，防止 goroutine 泄漏和连接问题
 	opts := []grpc.ServerOption{
-		// 优化 keepalive 参数，减少broken pipe错误
+		// 优化 keepalive 参数：使用长连接策略，减少重连
 		grpc.KeepaliveParams(keepalive.ServerParameters{
-			MaxConnectionIdle:     3 * time.Minute,  // 减少到3分钟，更快检测断开连接
-			MaxConnectionAge:      15 * time.Minute, // 增加到15分钟，减少频繁重连
-			MaxConnectionAgeGrace: 60 * time.Second, // 增加优雅关闭时间到60秒
-			Time:                  20 * time.Second, // 减少到20秒，更频繁的心跳检测
-			Timeout:               10 * time.Second, // 增加超时到10秒，避免网络抖动
+			MaxConnectionIdle:     30 * time.Minute, // 空闲30分钟后断开（防止僵尸连接）
+			MaxConnectionAge:      2 * time.Hour,    // 连接最长2小时（定期刷新，防止资源泄漏）
+			MaxConnectionAgeGrace: 30 * time.Second, // 优雅关闭时间30秒
+			Time:                  30 * time.Second, // 每30秒发送心跳
+			Timeout:               10 * time.Second, // 心跳超时10秒
 		}),
 		// 优化 keepalive 强制策略
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             5 * time.Second, // 减少到5秒，允许更频繁的keepalive
-			PermitWithoutStream: true,            // 允许没有活跃流时发送keepalive
+			MinTime:             10 * time.Second, // 最小心跳间隔10秒
+			PermitWithoutStream: true,             // 允许没有活跃流时发送keepalive
 		}),
 		// 设置最大接收消息大小
 		grpc.MaxRecvMsgSize(4 * 1024 * 1024), // 4MB
@@ -129,8 +129,19 @@ func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
 				workedServerIndex++
 				continue
 			}
+
+			// 安全发送任务的辅助函数，防止竞态条件下的nil pointer dereference
+			sendTask := func() error {
+				// 再次检查TaskStream是否为nil（防止竞态条件）
+				stream := currentServer.TaskStream
+				if stream == nil {
+					return nil // 连接已断开，静默跳过
+				}
+				return stream.Send(task.PB())
+			}
+
 			if task.Cover == model.MonitorCoverIgnoreAll && skipServers[currentServer.ID] {
-				if err := currentServer.TaskStream.Send(task.PB()); err != nil {
+				if err := sendTask(); err != nil {
 					// 清理失效的连接
 					currentServer.TaskStream = nil
 					// 只在非正常网络错误时记录日志
@@ -142,7 +153,7 @@ func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
 				continue
 			}
 			if task.Cover == model.MonitorCoverAll && !skipServers[currentServer.ID] {
-				if err := currentServer.TaskStream.Send(task.PB()); err != nil {
+				if err := sendTask(); err != nil {
 					// 清理失效的连接
 					currentServer.TaskStream = nil
 					// 只在非正常网络错误时记录日志
@@ -154,7 +165,7 @@ func DispatchTask(serviceSentinelDispatchBus <-chan model.Monitor) {
 				continue
 			}
 			// 找到合适机器执行任务，跳出循环
-			if err := currentServer.TaskStream.Send(task.PB()); err != nil {
+			if err := sendTask(); err != nil {
 				// 清理失效的连接
 				currentServer.TaskStream = nil
 				// 只在非正常网络错误时记录日志
@@ -174,11 +185,16 @@ func DispatchKeepalive() {
 		singleton.SortedServerLock.RLock()
 		defer singleton.SortedServerLock.RUnlock()
 		for i := 0; i < len(singleton.SortedServerList); i++ {
-			if singleton.SortedServerList[i] == nil || singleton.SortedServerList[i].TaskStream == nil {
+			server := singleton.SortedServerList[i]
+			if server == nil {
 				continue
 			}
-
-			singleton.SortedServerList[i].TaskStream.Send(&pb.Task{Type: model.TaskTypeKeepalive})
+			// 防止竞态条件下的nil pointer dereference
+			stream := server.TaskStream
+			if stream == nil {
+				continue
+			}
+			stream.Send(&pb.Task{Type: model.TaskTypeKeepalive})
 		}
 	})
 }

@@ -126,6 +126,18 @@ func (r *AlertRule) Check(points [][]interface{}) (int, bool) {
 					count++
 				}
 			}
+		} else if r.Rules[i].Type == "offline" {
+			// 离线规则特殊处理：Duration 表示离线秒数阈值，不是采样点数
+			// 只需要检查最新的采样点即可
+			if maxNum < 1 {
+				maxNum = 1
+			}
+			if len(points) > 0 && i < len(points[len(points)-1]) {
+				// 检查最新采样点，如果不为 nil 说明已触发离线检测
+				if points[len(points)-1][i] != nil {
+					count++
+				}
+			}
 		} else {
 			// 常规报警
 			total := 0.0
