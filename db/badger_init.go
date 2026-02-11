@@ -310,15 +310,15 @@ func startBadgerDBMaintenanceTasks() {
 
 	// 例如定期清理过期的监控历史记录
 	go func() {
-		ticker := time.NewTicker(24 * time.Hour)
+		ticker := time.NewTicker(6 * time.Hour) // 改为每6小时清理一次
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ticker.C:
-				// 清理7天前的监控历史记录，减少数据库大小
+				// 清理3天前的监控历史记录，减少数据库大小
 				monitorHistoryOps := NewMonitorHistoryOps(DB)
-				count, err := monitorHistoryOps.CleanupOldMonitorHistories(7 * 24 * time.Hour)
+				count, err := monitorHistoryOps.CleanupOldMonitorHistories(3 * 24 * time.Hour)
 				if err != nil {
 					log.Printf("清理过期监控历史记录失败: %v", err)
 				} else if count > 0 {

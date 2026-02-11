@@ -25,18 +25,30 @@ func InitCronTask() {
 	// 添加基础的系统定时任务 - 修复重复任务注册问题
 	// 每天凌晨3点清理累计流量数据（已废弃，保留为空函数）
 	if _, err := Cron.AddFunc("0 0 3 * * *", func() {
-		CleanCumulativeTransferData(7) // 改为7天，保持与监控历史一致
+		CleanCumulativeTransferData(3) // 改为3天，与监控历史保持一致
 	}); err != nil {
 		panic(err)
 	}
 
-	// 每天的3:30 对 监控记录 和 流量记录 进行清理（7天前数据）
+	// 每天的3:30 对 监控记录 和 流量记录 进行清理（3天前数据）
 	if _, err := Cron.AddFunc("0 30 3 * * *", func() {
 		count, err := CleanMonitorHistory() // 处理返回值
 		if err != nil {
 			log.Printf("清理监控历史记录失败: %v", err)
-		} else if Conf.Debug {
+		} else if count > 0 {
 			log.Printf("清理监控历史记录成功，共清理 %d 条记录", count)
+		}
+	}); err != nil {
+		panic(err)
+	}
+
+	// 每6小时清理一次监控历史记录，避免数据积累过多
+	if _, err := Cron.AddFunc("0 0 */6 * * *", func() {
+		count, err := CleanMonitorHistory()
+		if err != nil {
+			log.Printf("定时清理监控历史记录失败: %v", err)
+		} else if count > 0 {
+			log.Printf("定时清理监控历史记录完成，共清理 %d 条记录", count)
 		}
 	}); err != nil {
 		panic(err)
@@ -168,7 +180,7 @@ func loadCronTasksFromBadgerDB() {
 		// 注册计划任务到cron调度器
 		crons[i].CronJobID, taskErr = Cron.AddFunc(crons[i].Scheduler, CronTrigger(*crons[i]))
 		if taskErr == nil {
-			Crons[crons[i].ID] = crons[i]  // 注意：crons[i] 已经是指针类型
+			Crons[crons[i].ID] = crons[i] // 注意：crons[i] 已经是指针类型
 			log.Printf("成功注册定时任务: %s (ID: %d, 调度: %s, 推送成功通知: %t)",
 				crons[i].Name, crons[i].ID, crons[i].Scheduler, crons[i].PushSuccessful)
 		} else {
@@ -226,21 +238,21 @@ func SendTriggerTasks(taskIDs []uint64, triggerServer uint64) {
 }
 
 func CronTrigger(cr model.Cron, triggerServer ...uint64) func() {
-	taskID := cr.ID  // 只保存任务ID，不保存整个任务对象
+	taskID := cr.ID // 只保存任务ID，不保存整个任务对象
 	return func() {
 		// 动态获取最新的任务对象，而不是使用闭包捕获的旧对象
 		CronLock.RLock()
 		currentCr := Crons[taskID]
 		CronLock.RUnlock()
-		
+
 		if currentCr == nil {
 			log.Printf("警告：找不到任务ID=%d的配置，跳过执行", taskID)
 			return
 		}
-		
+
 		// 使用最新的任务对象
 		cr = *currentCr
-		
+
 		crIgnoreMap := make(map[uint64]bool)
 		for j := 0; j < len(cr.Servers); j++ {
 			crIgnoreMap[cr.Servers[j]] = true

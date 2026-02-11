@@ -700,7 +700,7 @@ func CleanMonitorHistory() (int64, error) {
 		if db.DB != nil {
 			// 使用BadgerDB的MonitorHistoryOps清理过期数据
 			monitorOps := db.NewMonitorHistoryOps(db.DB)
-			maxAge := 7 * 24 * time.Hour // 修改为7天，减少数据库大小
+			maxAge := 3 * 24 * time.Hour // 修改为3天，减少数据库大小
 			count, err := monitorOps.CleanupOldMonitorHistories(maxAge)
 			if err != nil {
 				log.Printf("BadgerDB监控历史清理失败: %v", err)
@@ -741,7 +741,7 @@ func CleanMonitorHistory() (int64, error) {
 	err := executeWithoutLock(func() error {
 		batchSize := 25                                // 增加批次大小到25（从20增加）
 		maxRetries := 3                                // 减少重试次数，更快失败
-		cutoffDate := time.Now().AddDate(0, 0, -7)     // 修改为7天，减少数据库大小和内存占用
+		cutoffDate := time.Now().AddDate(0, 0, -3)     // 修改为3天，减少数据库大小和内存占用
 		safetyBuffer := time.Now().Add(-6 * time.Hour) // 添加6小时安全缓冲区，避免误删新数据
 
 		// 使用非事务方式分批清理，避免长时间事务锁定

@@ -31,6 +31,7 @@ var (
 	alertsStore                   map[uint64]map[uint64][][]interface{} // [alert_id][server_id] -> 对应事件规则的检查结果
 	alertsPrevState               map[uint64]map[uint64]uint            // [alert_id][server_id] -> 对应事件规则的上一次事件状态
 	AlertsCycleTransferStatsStore map[uint64]*model.CycleTransferStats  // [alert_id] -> 对应事件规则的周期流量统计
+	serverLastOnlineTime          map[uint64]time.Time                  // [server_id] -> 服务器离线前的最后在线时间（用于恢复通知计算离线时长）
 )
 
 // addCycleTransferStatsInfo 向AlertsCycleTransferStatsStore中添加周期流量事件统计信息
@@ -72,6 +73,7 @@ func AlertSentinelStart() {
 	alertsStore = make(map[uint64]map[uint64][][]interface{})
 	alertsPrevState = make(map[uint64]map[uint64]uint)
 	AlertsCycleTransferStatsStore = make(map[uint64]*model.CycleTransferStats)
+	serverLastOnlineTime = make(map[uint64]time.Time)
 	AlertsLock.Lock()
 	defer func() {
 		if r := recover(); r != nil {
@@ -496,6 +498,20 @@ func checkStatus() {
 						alertsPrevStateCopy[alert.ID][server.ID] = _RuleCheckFail
 						log.Printf("[事件]\n%s\n规则：%s %s", server.Name, alert.Name, *NotificationMuteLabel.ServerIncident(alert.ID, server.ID))
 
+						// 记录最后在线时间（用于恢复通知计算真实离线时长）
+						if isOfflineAlert {
+							if _, exists := serverLastOnlineTime[server.ID]; !exists {
+								// 保存服务器离线前的最后在线时间
+								if !server.LastOnline.IsZero() {
+									serverLastOnlineTime[server.ID] = server.LastOnline
+								} else if !server.LastActive.IsZero() {
+									serverLastOnlineTime[server.ID] = server.LastActive
+								} else {
+									serverLastOnlineTime[server.ID] = time.Now()
+								}
+							}
+						}
+
 						// 生成详细的通知消息
 						message := generateDetailedAlertMessage(alert, server, alertsStoreCopy[alert.ID][server.ID])
 
@@ -693,11 +709,8 @@ func formatBytes(bytes uint64) string {
 func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, checkResultsHistory [][]interface{}) string {
 	now := time.Now()
 
-	// 基础通知信息
-	message := fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s[%s]"+"\n"+"服务器ID: %d"+"\n"+"通知时间: %s"+"\n",
-		Localizer.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "Notify",
-		}),
+	// 基础通知信息（移除了#探针通知前缀）
+	message := fmt.Sprintf("[%s]"+"\n"+"%s[%s]"+"\n"+"服务器ID: %d"+"\n"+"通知时间: %s"+"\n",
 		Localizer.MustLocalize(&i18n.LocalizeConfig{
 			MessageID: "Incident",
 		}),
@@ -793,7 +806,7 @@ func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, 
 					offlineDuration = time.Hour
 				}
 
-				message += fmt.Sprintf("• 服务器离线: 最后在线时间 %s (离线时长: %s)\n",
+				message += fmt.Sprintf("• 服务器离线: 最后在线时间 %s\n• 已离线时长: %s\n",
 					lastSeenTime.Format("2006-01-02 15:04:05"),
 					formatDuration(offlineDuration))
 			default:
@@ -1058,11 +1071,8 @@ func cleanupAlertMemoryDataAsync() {
 func generateDetailedRecoveryMessage(alert *model.AlertRule, server *model.Server) string {
 	now := time.Now()
 
-	// 基础恢复信息
-	message := fmt.Sprintf("#%s"+"\n"+"[%s]"+"\n"+"%s[%s]"+"\n"+"服务器ID: %d"+"\n"+"恢复时间: %s"+"\n",
-		Localizer.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "Notify",
-		}),
+	// 基础恢复信息（移除了#探针通知前缀）
+	message := fmt.Sprintf("[%s]"+"\n"+"%s[%s]"+"\n"+"服务器ID: %d"+"\n"+"恢复时间: %s"+"\n",
 		Localizer.MustLocalize(&i18n.LocalizeConfig{
 			MessageID: "Resolved",
 		}),
@@ -1083,30 +1093,30 @@ func generateDetailedRecoveryMessage(alert *model.AlertRule, server *model.Serve
 	}
 
 	if hasOfflineRule {
-		// 修复恢复消息中的离线时长计算
-		var lastSeenTime time.Time
+		// 使用记录的最后在线时间来计算真实的离线时长
+		var lastOnlineTime time.Time
 		var offlineDuration time.Duration
 
-		// 优先使用LastOnline字段（这是服务器最后一次在线的准确时间）
-		if !server.LastOnline.IsZero() {
-			lastSeenTime = server.LastOnline
-			offlineDuration = now.Sub(lastSeenTime)
-		} else if !server.LastActive.IsZero() {
-			// 如果没有LastOnline，使用LastActive，但需要考虑离线超时时间
-			lastSeenTime = server.LastActive
-			// 减去离线检测的超时时间（3分钟），得到更准确的离线时长
-			offlineDuration = now.Sub(lastSeenTime) - (3 * time.Minute)
-			if offlineDuration < 0 {
-				offlineDuration = now.Sub(lastSeenTime)
-			}
+		// 优先使用记录的最后在线时间（与事件通知中显示的一致）
+		if recordedTime, exists := serverLastOnlineTime[server.ID]; exists {
+			lastOnlineTime = recordedTime
+			offlineDuration = now.Sub(lastOnlineTime)
+			// 清除记录的最后在线时间
+			delete(serverLastOnlineTime, server.ID)
 		} else {
-			// 如果都没有，说明服务器从未上线过
-			lastSeenTime = now.Add(-time.Hour) // 默认1小时前
-			offlineDuration = time.Hour
+			// 如果没有记录，使用当前服务器的状态作为备选
+			if !server.LastOnline.IsZero() {
+				lastOnlineTime = server.LastOnline
+			} else if !server.LastActive.IsZero() {
+				lastOnlineTime = server.LastActive
+			} else {
+				lastOnlineTime = now.Add(-time.Hour)
+			}
+			offlineDuration = now.Sub(lastOnlineTime)
 		}
 
-		message += fmt.Sprintf("• 服务器已恢复上线: 上次离线时间 %s (离线时长: %s)\n",
-			lastSeenTime.Format("2006-01-02 15:04:05"),
+		message += fmt.Sprintf("• 服务器已恢复上线: 上次离线时间 %s\n• 离线时长: %s\n",
+			lastOnlineTime.Format("2006-01-02 15:04:05"),
 			formatDuration(offlineDuration))
 	} else {
 		message += "• 服务器监控指标已恢复正常\n"
