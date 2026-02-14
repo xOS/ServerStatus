@@ -350,8 +350,8 @@ func LoadSingleton() {
 
 	log.Println("正在添加定时任务...")
 
-	// 添加定时检查在线状态的任务，每分钟检查一次
-	Cron.AddFunc("0 */1 * * * *", CheckServerOnlineStatus)
+	// 添加定时检查在线状态的任务，每15秒检查一次（加快离线检测响应速度）
+	Cron.AddFunc("*/15 * * * * *", CheckServerOnlineStatus)
 
 	// 添加定时验证流量数据一致性的任务，每5分钟检查一次
 	Cron.AddFunc("0 */5 * * * *", VerifyTrafficDataConsistency)
@@ -955,7 +955,7 @@ func IPDesensitize(ip string) string {
 // CheckServerOnlineStatus 检查服务器在线状态，将超时未上报的服务器标记为离线
 func CheckServerOnlineStatus() {
 	now := time.Now()
-	offlineTimeout := time.Minute * 2 // 调整为2分钟无心跳视为离线，平衡稳定性和响应速度
+	offlineTimeout := time.Second * 40 // 40秒无心跳视为离线，兼顾响应速度与短暂网络波动容忍
 
 	// 数据收集阶段（持锁）
 	type serverUpdate struct {

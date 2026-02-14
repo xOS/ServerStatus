@@ -190,11 +190,9 @@ func AlertSentinelStart() {
 		AlertsLock.RUnlock()
 
 		if alertCount == 0 {
-			checkInterval = 30 * time.Second // 没有事件规则时30秒检查一次
-		} else if alertCount < 10 {
-			checkInterval = 10 * time.Second // 少量事件规则时10秒检查一次
+			checkInterval = 15 * time.Second // 没有事件规则时15秒检查一次
 		} else {
-			checkInterval = 5 * time.Second // 大量事件规则时5秒检查一次
+			checkInterval = 5 * time.Second // 有事件规则时5秒检查一次
 		}
 
 		// 计算剩余时间并睡眠，避免忙等待

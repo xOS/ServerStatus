@@ -300,7 +300,7 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 		// 使用用户配置的 Duration（秒）作为离线阈值，如果未设置则默认 60 秒
 		offlineThreshold := float64(u.Duration)
 		if offlineThreshold <= 0 {
-			offlineThreshold = 60 // 默认 60 秒
+			offlineThreshold = 10 // 默认 10 秒，加快离线告警响应
 		}
 		offlineSeconds := float64(time.Now().Unix()) - src
 		if !server.LastActive.IsZero() && !server.IsOnline && offlineSeconds > offlineThreshold {
