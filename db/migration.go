@@ -536,7 +536,7 @@ func (m *Migration) migrateServers() error {
 		if err := validateID(progress.LastProcessed); err != nil {
 			return fmt.Errorf("invalid LastProcessed ID: %w", err)
 		}
-		query += fmt.Sprintf(" AND id > %s", progress.LastProcessed)
+		query += fmt.Sprintf(" AND id > %s", progress.LastProcessed) // #nosec G202 -- validated by validateID
 	}
 	query += " ORDER BY id"
 
@@ -1202,7 +1202,7 @@ func (m *Migration) migrateMonitorHistories() error {
 				}
 				query += fmt.Sprintf(" LIMIT %d", batchSize)
 			} else if m.config.BatchSize > 0 {
-				query += fmt.Sprintf(" LIMIT %d", m.config.BatchSize)
+				query += fmt.Sprintf(" LIMIT %d", m.config.BatchSize) // #nosec G202 -- BatchSize is a typed int, not user input
 			}
 		} else {
 			// 如果不支持恢复，直接退出
@@ -1574,7 +1574,7 @@ func (m *Migration) migrateTransfers() error {
 			}
 			query = fmt.Sprintf("SELECT * FROM transfers WHERE id > %s ORDER BY id", lastID)
 			if m.config.BatchSize > 0 {
-				query += fmt.Sprintf(" LIMIT %d", m.config.BatchSize)
+				query += fmt.Sprintf(" LIMIT %d", m.config.BatchSize) // #nosec G202 -- BatchSize is a typed int, not user input
 			}
 		} else {
 			// 如果不支持恢复，直接退出

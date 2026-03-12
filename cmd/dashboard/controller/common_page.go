@@ -1229,7 +1229,7 @@ func (cp *commonPage) ws(c *gin.Context) {
 	log.Printf("WebSocket连接建立: %s", connID)
 
 	// 使用Context来统一控制此连接所有Goroutine的生命周期
-	ctx, cancel := context.WithCancel(c.Request.Context())
+	ctx, cancel := context.WithCancel(c.Request.Context()) // #nosec G118 -- cancel is deferred below
 
 	// defer确保在函数退出时，无论任何原因，都能调用cancel()来清理所有goroutine
 	defer func() {

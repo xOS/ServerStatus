@@ -132,6 +132,9 @@ func main() {
 
 	singleton.InitLocalizer()
 
+	// 初始化 GeoIP 数据库（在 RPC 服务启动前完成）
+	singleton.InitGeoIP()
+
 	// 初始化Goroutine池，防止内存泄漏
 	singleton.InitGoroutinePools()
 

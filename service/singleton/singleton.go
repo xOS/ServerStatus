@@ -239,12 +239,6 @@ func LoadSingleton() {
 		}
 	}()
 
-	// 初始化 GeoIP 数据库
-	log.Println("正在初始化 GeoIP 数据库...")
-	if err := geoip.Init(Conf.GeoIPDB); err != nil {
-		log.Printf("GeoIP 数据库初始化失败: %v", err)
-	}
-
 	// 加载通知服务
 	log.Println("正在加载通知服务...")
 	func() {
@@ -449,6 +443,14 @@ func LoadSingleton() {
 
 	// 验证和修复数据完整性
 	validateAndFixDataIntegrity()
+}
+
+// InitGeoIP 初始化 GeoIP 数据库
+func InitGeoIP() {
+	log.Println("正在初始化 GeoIP 数据库...")
+	if err := geoip.Init(Conf.GeoIPDB); err != nil {
+		log.Printf("GeoIP 数据库初始化失败: %v", err)
+	}
 }
 
 // InitConfigFromPath 从给出的文件路径中加载配置

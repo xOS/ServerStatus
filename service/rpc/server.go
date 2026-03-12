@@ -747,7 +747,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 					host.IP, len(providers))
 				for _, provider := range providers {
 					go func(provider *ddns.Provider) {
-						provider.UpdateDomain(context.Background())
+						provider.UpdateDomain(c) // #nosec G118 -- use request context for DDNS update
 					}(provider)
 				}
 			} else {
