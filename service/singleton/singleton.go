@@ -22,6 +22,7 @@ import (
 
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/pkg/geoip"
 	"github.com/xos/serverstatus/pkg/utils"
 )
 
@@ -237,6 +238,12 @@ func LoadSingleton() {
 			log.Println("使用BadgerDB，跳过数据库连接池相关操作")
 		}
 	}()
+
+	// 初始化 GeoIP 数据库
+	log.Println("正在初始化 GeoIP 数据库...")
+	if err := geoip.Init(Conf.GeoIPDB); err != nil {
+		log.Printf("GeoIP 数据库初始化失败: %v", err)
+	}
 
 	// 加载通知服务
 	log.Println("正在加载通知服务...")

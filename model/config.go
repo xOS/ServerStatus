@@ -99,6 +99,9 @@ type Config struct {
 	DatabaseType     string // 数据库类型，可选：sqlite、badger
 	DatabaseLocation string // 数据库文件路径
 
+	// GeoIP 配置
+	GeoIPDB string `yaml:"geoipdb" koanf:"geoipdb"` // 自定义 GeoIP 数据库路径（MMDB 格式），留空则使用内嵌数据库
+
 	k        *koanf.Koanf
 	filePath string
 }
