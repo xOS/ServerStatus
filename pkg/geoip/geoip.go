@@ -18,10 +18,10 @@ var geoDBFS embed.FS
 
 // IPInfo 用于 IPInfo 格式的 MMDB（扁平结构）
 type IPInfo struct {
-	Country       string `maxminddb:"country"`
-	CountryName   string `maxminddb:"country_name"`
-	Continent     string `maxminddb:"continent"`
-	ContinentName string `maxminddb:"continent_name"`
+	Country       string `maxminddb:"country_code"`   // 国家代码，如 US、CN
+	CountryName   string `maxminddb:"country"`        // 国家名称，如 United States、China
+	Continent     string `maxminddb:"continent_code"` // 洲代码，如 NA、AS
+	ContinentName string `maxminddb:"continent"`      // 洲名称，如 North America、Asia
 }
 
 // maxmindRecord 用于 MaxMind GeoLite2-Country 格式的 MMDB（嵌套结构）
