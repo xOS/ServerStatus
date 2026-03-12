@@ -45,13 +45,13 @@ const (
 )
 
 var (
-	db        *maxminddb.Reader
-	dbMu      sync.RWMutex
-	dbOnce    sync.Once // 向后兼容：保证至少初始化一次
-	dbPath    string    // 当前加载的数据库路径
-	dbFmt     dbFormat  // 当前数据库格式
-	initDone  bool      // 标记是否已通过 Init() 显式初始化
-	confPath  string    // 记录 Init 传入的路径，供 ensureInit 使用
+	db       *maxminddb.Reader
+	dbMu     sync.RWMutex
+	dbOnce   sync.Once // 向后兼容：保证至少初始化一次
+	dbPath   string    // 当前加载的数据库路径
+	dbFmt    dbFormat  // 当前数据库格式
+	initDone bool      // 标记是否已通过 Init() 显式初始化
+	confPath string    // 记录 Init 传入的路径，供 ensureInit 使用
 )
 
 // Init 初始化 GeoIP 数据库
@@ -103,7 +103,7 @@ func initLocked(path string) error {
 		}
 		log.Printf("NG>> GeoIP: 内嵌数据库不可用（%v），需要在配置中指定 geoipdb 路径", err)
 		initDone = true // 标记已尝试初始化，避免重复尝试
-		return nil       // 不返回 error，允许程序继续运行
+		return nil      // 不返回 error，允许程序继续运行
 	}
 
 	db = reader

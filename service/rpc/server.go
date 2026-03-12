@@ -819,10 +819,12 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		// 小幅度的 BootTime 变化不认为是重启，继续正常累加流量
 	}
 
-	// 不要冲掉国家码
+	// 不要冲掉国家码（需要加读锁保护）
+	singleton.ServerLock.RLock()
 	if singleton.ServerList[clientID].Host != nil {
 		host.CountryCode = singleton.ServerList[clientID].Host.CountryCode
 	}
+	singleton.ServerLock.RUnlock()
 
 	// 保存完整Host信息到数据库，用于重启后恢复（在锁外序列化）
 	hostJSON, err := utils.Json.Marshal(host)
@@ -900,13 +902,15 @@ func (s *ServerHandler) LookupGeoIP(c context.Context, r *pb.GeoIP) (*pb.GeoIP, 
 		return nil, err
 	}
 
-	// 将地区码写入到 Host
-	singleton.ServerLock.RLock()
-	defer singleton.ServerLock.RUnlock()
-	if singleton.ServerList[clientID].Host == nil {
+	// 将地区码写入到 Host（使用写锁，避免与 ReportSystemInfo 竞争）
+	singleton.ServerLock.Lock()
+	server := singleton.ServerList[clientID]
+	if server == nil || server.Host == nil {
+		singleton.ServerLock.Unlock()
 		return nil, fmt.Errorf("host not found")
 	}
-	singleton.ServerList[clientID].Host.CountryCode = location
+	server.Host.CountryCode = location
+	singleton.ServerLock.Unlock()
 
 	return &pb.GeoIP{Ip: ip, CountryCode: location}, nil
 }
