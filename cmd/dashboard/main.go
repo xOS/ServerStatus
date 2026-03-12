@@ -26,6 +26,7 @@ type DashboardCliParam struct {
 	ConfigFile       string // 配置文件路径
 	DatebaseLocation string // Sqlite3 数据库文件路径
 	DatabaseType     string // 数据库类型：sqlite 或 badger
+	GeoIPDB          string // 自定义 GeoIP 数据库路径（MMDB 格式）
 }
 
 var (
@@ -38,6 +39,7 @@ func init() {
 	flag.StringVarP(&dashboardCliParam.ConfigFile, "config", "c", "data/config.yaml", "配置文件路径")
 	flag.StringVar(&dashboardCliParam.DatebaseLocation, "db", "data/sqlite.db", "Sqlite3数据库文件路径")
 	flag.StringVar(&dashboardCliParam.DatabaseType, "dbtype", "", "数据库类型：sqlite 或 badger，默认使用配置文件中的设置")
+	flag.StringVar(&dashboardCliParam.GeoIPDB, "geoipdb", "", "自定义 GeoIP 数据库路径（MMDB 格式），默认使用配置文件中的设置")
 	flag.Parse()
 }
 
@@ -131,6 +133,11 @@ func main() {
 	}
 
 	singleton.InitLocalizer()
+
+	// 如果命令行指定了 GeoIP 数据库路径，则覆盖配置文件中的设置
+	if dashboardCliParam.GeoIPDB != "" {
+		singleton.Conf.GeoIPDB = dashboardCliParam.GeoIPDB
+	}
 
 	// 初始化 GeoIP 数据库（在 RPC 服务启动前完成）
 	singleton.InitGeoIP()

@@ -447,9 +447,12 @@ func LoadSingleton() {
 
 // InitGeoIP 初始化 GeoIP 数据库
 func InitGeoIP() {
-	log.Println("正在初始化 GeoIP 数据库...")
+	cwd, _ := os.Getwd()
+	log.Printf("NG>> GeoIP 初始化: geoipdb=%q, 工作目录=%s", Conf.GeoIPDB, cwd)
 	if err := geoip.Init(Conf.GeoIPDB); err != nil {
-		log.Printf("GeoIP 数据库初始化失败: %v", err)
+		log.Printf("NG>> GeoIP 数据库初始化失败: %v", err)
+	} else {
+		log.Printf("NG>> GeoIP 初始化完成: 可用=%v, 路径=%q", geoip.IsAvailable(), geoip.GetDBPath())
 	}
 }
 

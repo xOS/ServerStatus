@@ -32,6 +32,7 @@ var (
 	alertsPrevState               map[uint64]map[uint64]uint            // [alert_id][server_id] -> 对应事件规则的上一次事件状态
 	AlertsCycleTransferStatsStore map[uint64]*model.CycleTransferStats  // [alert_id] -> 对应事件规则的周期流量统计
 	serverLastOnlineTime          map[uint64]time.Time                  // [server_id] -> 服务器离线前的最后在线时间（用于恢复通知计算离线时长）
+	alertStartTime                time.Time                             // 记录 AlertSentinel 启动时间，用于启动保护期
 )
 
 // addCycleTransferStatsInfo 向AlertsCycleTransferStatsStore中添加周期流量事件统计信息
@@ -74,6 +75,7 @@ func AlertSentinelStart() {
 	alertsPrevState = make(map[uint64]map[uint64]uint)
 	AlertsCycleTransferStatsStore = make(map[uint64]*model.CycleTransferStats)
 	serverLastOnlineTime = make(map[uint64]time.Time)
+	alertStartTime = time.Now() // 记录启动时间，用于启动保护期
 	AlertsLock.Lock()
 	defer func() {
 		if r := recover(); r != nil {
@@ -484,6 +486,15 @@ func checkStatus() {
 						isOfflineAlert = true
 						break
 					}
+				}
+
+				// 启动保护期：启动后 2 分钟内不触发离线通知，等待 Agent 重新连接
+				if isOfflineAlert && time.Since(alertStartTime) < 2*time.Minute {
+					if Conf.Debug {
+						log.Printf("启动保护期：跳过服务器 %s (ID:%d) 的离线通知", server.Name, server.ID)
+					}
+					alertsPrevStateCopy[alert.ID][server.ID] = _RuleCheckPass
+					continue
 				}
 
 				// 如果是离线通知且服务器从未上线过，不触发通知
