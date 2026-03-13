@@ -85,7 +85,9 @@ func InitCronTask() {
 // loadCronTasks 加载计划任务
 func loadCronTasks() {
 	log.Println("加载计划任务...")
-	InitCronTask()
+	if Cron == nil {
+		InitCronTask()
+	}
 
 	// 如果使用BadgerDB，从BadgerDB加载定时任务
 	if Conf.DatabaseType == "badger" {

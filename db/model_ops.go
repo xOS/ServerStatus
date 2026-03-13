@@ -6,7 +6,6 @@ import (
 	"log"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -373,47 +372,84 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitorRangeReverseLim
 // CleanupOldMonitorHistories removes monitor histories older than maxAge
 func (o *MonitorHistoryOps) CleanupOldMonitorHistories(maxAge time.Duration) (int, error) {
 	cutoffNano := time.Now().Add(-maxAge).UnixNano()
-	keys, err := o.db.GetKeysWithPrefix("monitor_history:")
-	if err != nil {
-		return 0, err
-	}
+	const scanBatchSize = 5000
+	const deleteBatchSize = 1000
+	prefix := []byte("monitor_history:")
 
-	keysToDelete := make([]string, 0, len(keys)/2)
-	for _, key := range keys {
-		idx := strings.LastIndexByte(key, ':')
-		if idx <= 0 || idx+1 >= len(key) {
-			continue
-		}
+	deleted := 0
+	startKey := append([]byte{}, prefix...)
 
-		ts, parseErr := strconv.ParseInt(key[idx+1:], 10, 64)
-		if parseErr != nil {
-			continue
-		}
+	for {
+		keysToDelete := make([]string, 0, deleteBatchSize)
+		hasMore := false
+		nextStartKey := make([]byte, 0)
 
-		if ts <= cutoffNano {
-			keysToDelete = append(keysToDelete, key)
-		}
-	}
+		o.db.rwMutex.RLock()
+		err := o.db.db.View(func(txn *badger.Txn) error {
+			opts := badger.DefaultIteratorOptions
+			opts.PrefetchValues = false
+			it := txn.NewIterator(opts)
+			defer it.Close()
 
-	if len(keysToDelete) == 0 {
-		return 0, nil
-	}
+			scanned := 0
+			for it.Seek(startKey); it.ValidForPrefix(prefix); it.Next() {
+				scanned++
 
-	// Batch delete in one write transaction to reduce lock and txn overhead.
-	o.db.rwMutex.Lock()
-	defer o.db.rwMutex.Unlock()
-	if err := o.db.db.Update(func(txn *badger.Txn) error {
-		for _, key := range keysToDelete {
-			if delErr := txn.Delete([]byte(key)); delErr != nil {
-				return delErr
+				key := it.Item().KeyCopy(nil)
+				idx := bytes.LastIndexByte(key, ':')
+				if idx > 0 && idx+1 < len(key) {
+					ts, parseErr := strconv.ParseInt(string(key[idx+1:]), 10, 64)
+					if parseErr == nil && ts <= cutoffNano {
+						keysToDelete = append(keysToDelete, string(key))
+					}
+				}
+
+				if scanned >= scanBatchSize {
+					nextStartKey = append([]byte{}, key...)
+					nextStartKey = append(nextStartKey, 0)
+					hasMore = true
+					break
+				}
 			}
+
+			return nil
+		})
+		o.db.rwMutex.RUnlock()
+		if err != nil {
+			return deleted, err
 		}
-		return nil
-	}); err != nil {
-		return 0, err
+
+		for start := 0; start < len(keysToDelete); start += deleteBatchSize {
+			end := start + deleteBatchSize
+			if end > len(keysToDelete) {
+				end = len(keysToDelete)
+			}
+
+			batch := keysToDelete[start:end]
+			o.db.rwMutex.Lock()
+			err = o.db.db.Update(func(txn *badger.Txn) error {
+				for _, key := range batch {
+					if delErr := txn.Delete([]byte(key)); delErr != nil {
+						return delErr
+					}
+				}
+				return nil
+			})
+			o.db.rwMutex.Unlock()
+			if err != nil {
+				return deleted, err
+			}
+
+			deleted += len(batch)
+		}
+
+		if !hasMore {
+			break
+		}
+		startKey = append([]byte{}, nextStartKey...)
 	}
 
-	return len(keysToDelete), nil
+	return deleted, nil
 }
 
 // UserOps provides specialized operations for users

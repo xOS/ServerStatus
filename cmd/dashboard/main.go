@@ -60,12 +60,7 @@ func initSystem() {
 			singleton.SyncAllServerTrafficFromDB()
 		} else {
 			log.Println("使用BadgerDB，执行BadgerDB监控历史清理...")
-			count, err := singleton.CleanMonitorHistory()
-			if err != nil {
-				log.Printf("BadgerDB监控历史清理失败: %v", err)
-			} else {
-				log.Printf("BadgerDB监控历史清理完成，清理了%d条记录", count)
-			}
+			singleton.CleanMonitorHistory()
 		}
 
 		// 特别强调：面板重启时必须执行流量重新计算
