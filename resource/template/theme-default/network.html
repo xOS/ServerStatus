@@ -134,17 +134,66 @@
                     const lines = [];
                     lines.push(params[0].axisValueLabel);
 
-                    // 按监控点名称排序，确保显示顺序一致（拷贝一份避免原数组被修改）
-                    const sortedParams = params.slice().sort((a, b) => {
-                        return a.seriesName.localeCompare(b.seriesName);
+                    const axisTsRaw = params[0].axisValue;
+                    const axisTs = typeof axisTsRaw === 'number' ? axisTsRaw : Date.parse(axisTsRaw);
+
+                    // 先建立当前 params 的 marker 映射，命中的系列继续使用 ECharts 默认彩色 marker
+                    const markerMap = {};
+                    params.forEach(function (item) {
+                        if (item && item.seriesName) {
+                            markerMap[item.seriesName] = item.marker || '';
+                        }
                     });
 
-                    sortedParams.forEach(function (item) {
-                        if (item.value && item.value[1] !== undefined) {
-                            const delay = parseFloat(item.value[1]);
-                            const displayDelay = isNaN(delay) ? '超时' : delay.toFixed(2) + ' ms';
-                            lines.push(item.marker + item.seriesName + ": " + displayDelay);
+                    // 二分查找获取最接近 axisTs 的点
+                    function findNearestPoint(data, ts) {
+                        if (!Array.isArray(data) || data.length === 0 || isNaN(ts)) return null;
+
+                        let left = 0;
+                        let right = data.length - 1;
+                        while (left <= right) {
+                            const mid = (left + right) >> 1;
+                            const midTs = data[mid] && data[mid][0];
+                            if (midTs === ts) return data[mid];
+                            if (midTs < ts) left = mid + 1;
+                            else right = mid - 1;
                         }
+
+                        const cand1 = right >= 0 ? data[right] : null;
+                        const cand2 = left < data.length ? data[left] : null;
+                        if (!cand1) return cand2;
+                        if (!cand2) return cand1;
+                        return Math.abs(cand1[0] - ts) <= Math.abs(cand2[0] - ts) ? cand1 : cand2;
+                    }
+
+                    // 始终按当前图表上的全部系列生成提示，确保显示同一时刻所有检测点
+                    const allSeries = (vm && vm.option && Array.isArray(vm.option.series)) ? vm.option.series.slice() : [];
+                    allSeries.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+                    allSeries.forEach(function (series) {
+                        const point = findNearestPoint(series.data, axisTs);
+                        if (!point || point[1] === undefined) return;
+
+                        const delay = parseFloat(point[1]);
+                        const displayDelay = isNaN(delay) ? '超时' : delay.toFixed(2) + ' ms';
+
+                        const pointTs = point[0];
+                        let offsetText = '';
+                        if (!isNaN(axisTs) && typeof pointTs === 'number') {
+                            const offsetSeconds = (pointTs - axisTs) / 1000;
+                            // 只在存在偏移时展示，避免提示信息过长
+                            if (Math.abs(offsetSeconds) >= 0.001) {
+                                const sign = offsetSeconds > 0 ? '+' : '-';
+                                offsetText = ' (Δ' + sign + Math.abs(offsetSeconds).toFixed(1) + 's)';
+                            }
+                        }
+
+                        let marker = markerMap[series.name];
+                        if (!marker) {
+                            marker = '<span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background:#999;"></span>';
+                        }
+
+                        lines.push(marker + series.name + ': ' + displayDelay + offsetText);
                     });
 
                     return lines.join('<br/>');
@@ -161,6 +210,9 @@
                 triggerOn: 'mousemove',
                 axisPointer: {
                     type: 'cross',
+                    label: {
+                        show: false
+                    },
                     crossStyle: {
                         color: '#999'
                     }
@@ -214,6 +266,11 @@
             xAxis: {
                 type: 'time',
                 boundaryGap: false,
+                axisPointer: {
+                    label: {
+                        show: false
+                    }
+                },
                 axisLabel: {
                     formatter: function (value) {
                         // PC端不换行，移动端换行
@@ -236,6 +293,11 @@
             yAxis: {
                 type: 'value',
                 boundaryGap: false,
+                axisPointer: {
+                    label: {
+                        show: false
+                    }
+                },
                 z: 1,
                 zlevel: 0
             },
