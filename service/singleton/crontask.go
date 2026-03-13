@@ -72,6 +72,13 @@ func InitCronTask() {
 		}
 	} else {
 		log.Println("BadgerDB模式：跳过注册GORM相关的定时任务")
+
+		// 每天凌晨 4:15 执行一次深度 value log GC，作为低峰期空间回收补充
+		if _, err := Cron.AddFunc("0 15 4 * * *", func() {
+			runBadgerValueLogGC("nightly-deep", 0.55, 20)
+		}); err != nil {
+			panic(err)
+		}
 	}
 }
 

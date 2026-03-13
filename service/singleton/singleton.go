@@ -721,6 +721,7 @@ func CleanMonitorHistory() (int64, error) {
 				// 只在清理了记录时才输出日志
 				if count > 0 {
 					log.Printf("BadgerDB监控历史清理完成，清理了%d条记录", count)
+					runBadgerValueLogGC("post-cleanup", 0.65, 10)
 				}
 				return int64(count), nil
 			}
@@ -949,6 +950,28 @@ func CleanMonitorHistory() (int64, error) {
 	}()
 
 	return totalCleaned, nil
+}
+
+func runBadgerValueLogGC(trigger string, discardRatio float64, maxRounds int) {
+	if Conf == nil || Conf.DatabaseType != "badger" || db.DB == nil {
+		return
+	}
+
+	if isSystemBusy() {
+		log.Printf("系统繁忙，跳过BadgerDB ValueLog GC(%s)", trigger)
+		return
+	}
+
+	start := time.Now()
+	rounds, noRewrite, err := db.DB.RunValueLogGCWithStats(discardRatio, maxRounds)
+	if err != nil {
+		log.Printf("BadgerDB ValueLog GC失败(%s, ratio=%.2f, rounds=%d): %v", trigger, discardRatio, maxRounds, err)
+		return
+	}
+
+	if rounds > 0 || noRewrite {
+		log.Printf("BadgerDB ValueLog GC完成(%s): ratio=%.2f, rounds=%d, noRewrite=%t, cost=%s", trigger, discardRatio, rounds, noRewrite, time.Since(start))
+	}
 }
 
 // CleanCumulativeTransferData 清理累计流量数据
@@ -2363,6 +2386,10 @@ var (
 	monitorHistoryBatchBufferLock sync.Mutex
 	monitorHistoryBatchSize       = 100              // 默认批量大小，从50增加到100
 	monitorHistoryBatchInterval   = 10 * time.Second // 从3秒增加到10秒，降低处理频率
+
+	dbMaintenanceSchedulerStarted int32
+	dbOptimizeRunning             int32
+	dbWALCheckpointRunning        int32
 )
 
 // StartDBWriteWorker 启动数据库写入工作器
@@ -2953,22 +2980,25 @@ func StartDatabaseMaintenanceScheduler() {
 		return
 	}
 
+	// 避免重复启动维护调度器导致多个ticker并发执行
+	if !atomic.CompareAndSwapInt32(&dbMaintenanceSchedulerStarted, 0, 1) {
+		log.Println("数据库维护计划已启动，跳过重复启动")
+		return
+	}
+
 	log.Println("启动数据库维护计划...")
 
 	// 每6小时执行一次数据库优化
 	go func() {
-		// 启动时延迟30分钟再执行第一次优化，避免与启动时的其他操作冲突
-		time.Sleep(30 * time.Minute)
+		// 启动时延迟15分钟执行第一次优化，减少长期运行前的碎片积累
+		time.Sleep(15 * time.Minute)
+		runSQLiteMaintenanceCycle("startup")
 
 		ticker := time.NewTicker(6 * time.Hour)
 		defer ticker.Stop()
 
 		for range ticker.C {
-			if !isSystemBusy() {
-				OptimizeDatabase()
-			} else {
-				log.Println("系统繁忙，跳过定期数据库优化")
-			}
+			runSQLiteMaintenanceCycle("periodic")
 		}
 	}()
 
@@ -2976,20 +3006,57 @@ func StartDatabaseMaintenanceScheduler() {
 	go func() {
 		// 启动时延迟5分钟
 		time.Sleep(5 * time.Minute)
+		runSQLiteWALCheckpoint("startup")
 
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 
 		for range ticker.C {
-			if !isSystemBusy() {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				if err := DB.WithContext(ctx).Exec("PRAGMA wal_checkpoint(PASSIVE)").Error; err != nil {
-					log.Printf("执行WAL检查点失败: %v", err)
-				}
-				cancel()
-			}
+			runSQLiteWALCheckpoint("periodic")
 		}
 	}()
+}
+
+func runSQLiteMaintenanceCycle(trigger string) {
+	if Conf.DatabaseType == "badger" || DB == nil {
+		return
+	}
+
+	if !atomic.CompareAndSwapInt32(&dbOptimizeRunning, 0, 1) {
+		log.Printf("数据库优化任务仍在执行，跳过本次(%s)", trigger)
+		return
+	}
+	defer atomic.StoreInt32(&dbOptimizeRunning, 0)
+
+	if isSystemBusy() {
+		log.Printf("系统繁忙，跳过定期数据库优化(%s)", trigger)
+		return
+	}
+
+	OptimizeDatabase()
+}
+
+func runSQLiteWALCheckpoint(trigger string) {
+	if Conf.DatabaseType == "badger" || DB == nil {
+		return
+	}
+
+	if !atomic.CompareAndSwapInt32(&dbWALCheckpointRunning, 0, 1) {
+		log.Printf("WAL检查点任务仍在执行，跳过本次(%s)", trigger)
+		return
+	}
+	defer atomic.StoreInt32(&dbWALCheckpointRunning, 0)
+
+	if isSystemBusy() {
+		log.Printf("系统繁忙，跳过WAL检查点(%s)", trigger)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := DB.WithContext(ctx).Exec("PRAGMA wal_checkpoint(PASSIVE)").Error; err != nil {
+		log.Printf("执行WAL检查点失败(%s): %v", trigger, err)
+	}
 }
 
 // SafeUpdateServerStatus 使用无事务模式更新服务器状态，避免锁竞争

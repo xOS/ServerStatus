@@ -170,9 +170,9 @@ func (b *BadgerDB) startMaintenance() {
 		for {
 			select {
 			case <-ticker.C:
-				// 值日志GC - 智能阈值
-				err := b.db.RunValueLogGC(0.7)
-				if err != nil && err != badger.ErrNoRewrite {
+				// 值日志GC - 单次周期内尝试多轮回收，提升清理效果
+				_, _, err := b.RunValueLogGCWithStats(0.7, 3)
+				if err != nil {
 					log.Printf("Value log GC failed: %v", err)
 				}
 
@@ -186,6 +186,28 @@ func (b *BadgerDB) startMaintenance() {
 			}
 		}
 	}()
+}
+
+// RunValueLogGCWithStats runs bounded ValueLog GC rounds and returns execution stats.
+func (b *BadgerDB) RunValueLogGCWithStats(discardRatio float64, maxRounds int) (int, bool, error) {
+	if maxRounds <= 0 {
+		maxRounds = 1
+	}
+
+	rounds := 0
+	for i := 0; i < maxRounds; i++ {
+		err := b.db.RunValueLogGC(discardRatio)
+		if err == nil {
+			rounds++
+			continue
+		}
+		if err == badger.ErrNoRewrite {
+			return rounds, true, nil
+		}
+		return rounds, false, err
+	}
+
+	return rounds, false, nil
 }
 
 // SaveModel saves a model to the database

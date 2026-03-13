@@ -6,6 +6,7 @@ import (
 	"log"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -371,24 +372,48 @@ func (o *MonitorHistoryOps) GetMonitorHistoriesByServerAndMonitorRangeReverseLim
 
 // CleanupOldMonitorHistories removes monitor histories older than maxAge
 func (o *MonitorHistoryOps) CleanupOldMonitorHistories(maxAge time.Duration) (int, error) {
-	// Get all monitor IDs
-	serverOps := NewServerOps(o.db)
-	servers, err := serverOps.GetAllServers()
+	cutoffNano := time.Now().Add(-maxAge).UnixNano()
+	keys, err := o.db.GetKeysWithPrefix("monitor_history:")
 	if err != nil {
 		return 0, err
 	}
 
-	totalDeleted := 0
-	for _, server := range servers {
-		prefix := fmt.Sprintf("monitor_history:%d", server.ID)
-		deleted, err := o.db.CleanupExpiredData(prefix, maxAge)
-		if err != nil {
-			return totalDeleted, err
+	keysToDelete := make([]string, 0, len(keys)/2)
+	for _, key := range keys {
+		idx := strings.LastIndexByte(key, ':')
+		if idx <= 0 || idx+1 >= len(key) {
+			continue
 		}
-		totalDeleted += deleted
+
+		ts, parseErr := strconv.ParseInt(key[idx+1:], 10, 64)
+		if parseErr != nil {
+			continue
+		}
+
+		if ts <= cutoffNano {
+			keysToDelete = append(keysToDelete, key)
+		}
 	}
 
-	return totalDeleted, nil
+	if len(keysToDelete) == 0 {
+		return 0, nil
+	}
+
+	// Batch delete in one write transaction to reduce lock and txn overhead.
+	o.db.rwMutex.Lock()
+	defer o.db.rwMutex.Unlock()
+	if err := o.db.db.Update(func(txn *badger.Txn) error {
+		for _, key := range keysToDelete {
+			if delErr := txn.Delete([]byte(key)); delErr != nil {
+				return delErr
+			}
+		}
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+
+	return len(keysToDelete), nil
 }
 
 // UserOps provides specialized operations for users
