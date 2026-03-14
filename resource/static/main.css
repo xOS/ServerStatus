@@ -1163,16 +1163,66 @@ i.s {
     justify-content: center !important;
 }
 
-/* server 页面复制按钮 tooltip 缩小 */
-.server-copy-tooltip[data-tooltip]:after {
-    font-size: 0.72rem !important;
-    line-height: 1.2 !important;
-    padding: 0.32em 0.56em !important;
+/* server 页面复制提示：自包含紧凑样式，独立于 custom-server-popup */
+.tippy-box[data-theme~='copy-tooltip'] {
+    background-color: rgba(255, 255, 255, 0.92) !important;
+    color: #333 !important;
     border-radius: 6px !important;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12) !important;
+    backdrop-filter: blur(8px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.8) !important;
+    font-size: 12px !important;
+    line-height: 1.3 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: 100px !important;
+    padding: 0 !important;
 }
 
-.server-copy-tooltip[data-tooltip]:before {
-    transform: scale(0.82);
+.tippy-box[data-theme~='copy-tooltip'] .tippy-content {
+    padding: 5px 10px !important;
+    white-space: nowrap !important;
+    font-size: 12px !important;
+    line-height: 1.3 !important;
+}
+
+.tippy-box[data-theme~='copy-tooltip'] .tippy-arrow {
+    width: 16px !important;
+    height: 16px !important;
+}
+
+.tippy-box[data-theme~='copy-tooltip'] .tippy-arrow::before {
+    content: '' !important;
+    position: absolute !important;
+    border: 8px solid transparent !important;
+}
+
+.tippy-box[data-theme~='copy-tooltip'][data-placement^='top'] .tippy-arrow {
+    bottom: -9px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+}
+
+.tippy-box[data-theme~='copy-tooltip'][data-placement^='top'] .tippy-arrow::before {
+    bottom: 0 !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    border-top-color: rgba(255, 255, 255, 0.92) !important;
+    border-bottom: none !important;
+}
+
+.tippy-box[data-theme~='copy-tooltip'][data-placement^='bottom'] .tippy-arrow {
+    top: -9px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+}
+
+.tippy-box[data-theme~='copy-tooltip'][data-placement^='bottom'] .tippy-arrow::before {
+    top: 0 !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    border-bottom-color: rgba(255, 255, 255, 0.92) !important;
+    border-top: none !important;
 }
 
 /* 前台 network 页面按钮还原为胶囊形（避免被图标按钮规则影响） */
