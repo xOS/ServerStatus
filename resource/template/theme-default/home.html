@@ -1267,8 +1267,7 @@
                     existingError.remove();
                 }
                 const msg = document.createElement('div');
-                msg.className = 'ui positive message';
-                msg.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
+                msg.className = 'ui positive message websocket-toast websocket-success-msg';
                 msg.innerHTML = `
                 <i class="close icon" onclick="this.parentElement.remove()"></i>
                 <div class="header">连接已恢复</div>
@@ -1323,8 +1322,7 @@
             // 显示错误提示
             if (!document.querySelector('.websocket-error-msg')) {
                 const msg = document.createElement('div');
-                msg.className = 'ui warning message';
-                msg.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 400px;';
+                msg.className = 'ui warning message websocket-toast websocket-error-msg';
                 msg.innerHTML = `
                 <i class="close icon" onclick="this.parentElement.remove()"></i>
                 <div class="header">连接出现问题</div>

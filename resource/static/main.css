@@ -23,19 +23,9 @@
     .cpucontent {
         display: inline-block;
     }
-
-    .rollanimation {
-        animation: scroll 10s cubic-bezier(.2, 0, .8, 1) infinite;
-    }
     /*.ui.four.cards>.card {*/
     /*    width: auto! important;*/
     /*}*/
-
-    @keyframes scroll {
-        0% { transform: translateX(0%); }
-        30% { transform: translateX(0%); }
-        100% { transform: translateX(-100%); }
-    }
 }
 
 
@@ -76,7 +66,7 @@
     background-color: var(--glass-bg-soft);
     border-radius: 22px;
     padding: 5px 3px;
-    margin-bottom: 20px;
+    margin-bottom: 0;
     box-shadow: var(--glass-shadow);
     border: 1px solid var(--glass-border);
     backdrop-filter: blur(12px);
@@ -92,6 +82,9 @@
 .tabs-wrapper {
     display: flex;
     justify-content: center;
+    position: relative;
+    z-index: 2;
+    margin-bottom: 8px;
 }
 
 .tabs-content-area {
@@ -198,6 +191,14 @@
     margin: -0.5em -.5em!important;
 }
 
+/* 首页状态卡片不要向上/向左顶出，避免第一行左上角与上方区域叠接闪烁 */
+.ui.four.stackable.status.cards {
+    margin-top: 0 !important;
+    margin-left: 0 !important;
+    padding-top: 6px;
+    position: relative;
+}
+
 .ui.card>.content>.header+.description,
 .ui.cards>.card>.content>.header+.description {
     margin-top: 1em !important;
@@ -218,16 +219,6 @@
     display: inline-block;
 }
 
-.rollanimation {
-    animation: scroll 10s cubic-bezier(.2, 0, .8, 1) infinite;
-}
-
-@keyframes scroll {
-    0% { transform: translateX(0%); }
-    30% { transform: translateX(0%); }
-    100% { transform: translateX(-100%); }
-}
-
 td {
     word-wrap: break-word;
     word-break: break-all;
@@ -235,7 +226,7 @@ td {
 
 /**背景**/
 body {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--body-bg);
     font-size: 13px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
@@ -243,118 +234,6 @@ body {
 .no_transition,
 .no_transition * {
     transition: none !important;
-}
-
-.def_background_wrap {
-    position: fixed;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: -1;
-    background: var(--body-bg);
-}
-
-.def_background {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-}
-
-.def_background.default {}
-
-.def_background.motion {
-    left: -10px;
-    top: -10px;
-    width: calc(100% + 20px);
-    height: calc(100% + 20px);
-    animation: bg-motion 10s linear infinite;
-}
-
-.def_background_pattern {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    mix-blend-mode: overlay;
-    background: center repeat;
-    background-size: 420px auto;
-    background-image: var(--pattern-url, none);
-    opacity: var(--pattern-intensity, 1);
-}
-
-.def_background_pattern.default {
-    opacity: 0.22;
-    background-image: none;
-}
-
-html.def_background,
-body.def_background {
-    -webkit-mask: center repeat;
-    -webkit-mask-size: 420px auto;
-    -webkit-mask-image: var(--pattern-url, none);
-    opacity: var(--pattern-intensity, 1);
-}
-
-html.def_background.default,
-body.def_background.default {
-    opacity: 0.22;
-    -webkit-mask-image: none;
-}
-
-body.bg_light .def_background,
-body.bg_light .def_background.default {
-    -webkit-mask: none;
-    opacity: 1;
-}
-
-html.def_background_pattern,
-body.def_background_pattern {
-    display: none;
-}
-
-body.bg_light .def_background_pattern {
-    display: block;
-}
-
-@-webkit-keyframes bg-motion {
-    20% {
-        transform: translateX(0px);
-    }
-
-    25% {
-        transform: translateX(-10px);
-    }
-
-    35% {
-        transform: translateX(10px);
-    }
-
-    40% {
-        transform: translateX(0px);
-    }
-}
-
-@keyframes bg-motion {
-    20% {
-        transform: translateX(0px);
-    }
-
-    25% {
-        transform: translateX(-10px);
-    }
-
-    35% {
-        transform: translateX(10px);
-    }
-
-    40% {
-        transform: translateX(0px);
-    }
 }
 
 .content {
@@ -422,21 +301,22 @@ a {
     box-shadow: var(--glass-shadow) !important;
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    width: min(90vw, 320px);
-    min-height: 150px;
-    margin: 0.8rem auto;
+    width: min(92vw, 560px) !important;
+    min-height: 180px;
+    margin: 2.5rem auto 1.2rem !important;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
     text-align: center;
-    padding: 1rem 0.9rem;
+    padding: 1.4rem 1.4rem;
 }
 
 .ui.message.info .header,
 .ui.info.message .header {
     color: rgba(15, 23, 42, 0.9) !important;
-    font-size: 0.98rem !important;
+    font-size: 1.35rem !important;
+    font-weight: 700 !important;
     line-height: 1.4;
     text-align: center;
 }
@@ -444,10 +324,85 @@ a {
 .ui.message.info p,
 .ui.info.message p {
     color: rgba(51, 65, 85, 0.86) !important;
-    margin-top: 0.45em;
+    margin-top: 0.55em;
     margin-bottom: 0;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
+    line-height: 1.55;
     text-align: center;
+}
+
+/* 首页断连提示：右下角毛玻璃通知 */
+.websocket-toast {
+    position: fixed !important;
+    right: 20px !important;
+    left: auto !important;
+    bottom: 62px !important;
+    top: auto !important;
+    z-index: 2100 !important;
+    width: min(88vw, 340px) !important;
+    border-radius: 16px !important;
+    border: 1px solid rgba(189, 163, 116, 0.65) !important;
+    background: rgba(248, 244, 235, 0.80) !important;
+    box-shadow: 0 8px 24px rgba(60, 45, 25, 0.18) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+    padding: 0.8rem 1rem !important;
+    margin: 0 !important;
+}
+
+.websocket-toast .header {
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    color: #6c490f !important;
+    line-height: 1.3;
+}
+
+.websocket-toast p {
+    font-size: 0.88rem !important;
+    color: rgba(88, 68, 34, 0.92) !important;
+    line-height: 1.45;
+    margin-top: 0.3em !important;
+}
+
+.websocket-toast .close.icon {
+    color: rgba(109, 85, 46, 0.9) !important;
+    opacity: 1 !important;
+}
+
+.websocket-toast .close.icon:hover {
+    color: rgba(72, 54, 24, 0.95) !important;
+}
+
+@media (max-width: 768px) {
+    .ui.message.info {
+        width: min(94vw, 480px) !important;
+        min-height: 160px;
+    }
+
+    .ui.message.info .header,
+    .ui.info.message .header {
+        font-size: 1.2rem !important;
+    }
+
+    .ui.message.info p,
+    .ui.info.message p {
+        font-size: 0.9rem;
+    }
+
+    .websocket-toast {
+        right: 12px !important;
+        bottom: 62px !important;
+        width: min(85vw, 300px) !important;
+        border-radius: 14px !important;
+    }
+
+    .websocket-toast .header {
+        font-size: 0.95rem !important;
+    }
+
+    .websocket-toast p {
+        font-size: 0.83rem !important;
+    }
 }
 
 /**后台文本域**/
@@ -508,13 +463,15 @@ a {
     -ms-user-select: none;
     user-select: none;
     background-color: var(--glass-bg-card);
-    -webkit-transition: all .3s ease;
-    transition: all .3s ease;
+    -webkit-transition: box-shadow .2s ease, border-color .2s ease, background-color .2s ease;
+    transition: box-shadow .2s ease, border-color .2s ease, background-color .2s ease;
     -webkit-box-shadow: var(--glass-shadow);
     box-shadow: var(--glass-shadow);
     border: 1px solid var(--glass-border);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
+    overflow: hidden;
+    background-clip: padding-box;
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
@@ -528,8 +485,8 @@ a {
     user-select: none;
     inset: 37.1562px auto auto 220.82px;
     background-color: var(--glass-bg-popup);
-    -webkit-transition: all .3s ease;
-    transition: all .3s ease;
+    -webkit-transition: box-shadow .2s ease, border-color .2s ease, background-color .2s ease;
+    transition: box-shadow .2s ease, border-color .2s ease, background-color .2s ease;
     -webkit-box-shadow: var(--glass-shadow);
     box-shadow: var(--glass-shadow);
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
@@ -681,6 +638,7 @@ i.icon {
     -webkit-backdrop-filter: blur(12px);
     position: fixed;
     bottom: 0;
+    z-index: 10;
 }
 
 .ui.right.center.popup:before,
@@ -925,8 +883,8 @@ i.note.icon {
     border-radius: 19px;
     margin-bottom: 1rem;
     background-color: var(--glass-bg-soft);
-    -webkit-transition: all .3s ease;
-    transition: all .3s ease;
+    -webkit-transition: box-shadow .2s ease, border-color .2s ease, background-color .2s ease;
+    transition: box-shadow .2s ease, border-color .2s ease, background-color .2s ease;
     -webkit-box-shadow: var(--glass-shadow);
     box-shadow: var(--glass-shadow);
     border: 1px solid var(--glass-border);
@@ -1032,8 +990,8 @@ i.s {
     -ms-user-select: none;
     user-select: none;
     background-color: rgba(255, 255, 255, 0.6);
-    -webkit-transition: all .3s ease;
-    transition: all .3s ease;
+    -webkit-transition: box-shadow .2s ease, border-color .2s ease, background-color .2s ease;
+    transition: box-shadow .2s ease, border-color .2s ease, background-color .2s ease;
     -webkit-box-shadow: var(--glass-shadow);
     box-shadow: var(--glass-shadow);
     border: 1px solid var(--glass-border);
@@ -1331,13 +1289,6 @@ i.s {
     margin-right: 0.62rem !important;
 }
 
-/* 性能策略回滚到保守模式，避免列表残缺/错位 */
-@media (prefers-reduced-motion: reduce) {
-    .def_background.motion {
-        animation: none;
-    }
-}
-
 /* 性能优化CSS - 减少非被动事件监听器警告 (from home.html) */
 html, body {
     touch-action: manipulation; /* 优化触摸事件性能 */
@@ -1366,12 +1317,12 @@ html, body {
 
 /* 网络监控页面性能优化CSS (from network.html) */
 .ui.container {
-    contain: layout style;
+    contain: none;
 }
 
 .service-status {
-    will-change: transform;
-    contain: layout style;
+    will-change: auto;
+    contain: none;
 }
 
 .server-buttons-container {

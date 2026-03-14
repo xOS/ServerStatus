@@ -6,16 +6,6 @@
                 style="color: #4caf50;" target="_blank" >楠格</a>
     </div>
 </div>
-{{ if not .Conf.DisableSwitchTemplateInFrontend }}
-<script>
-    var def_bg = document.getElementById('def_background');
-    if (def_bg) {
-        Wallpaper.init(def_bg);
-        Wallpaper.animate(true);
-        window.onfocus = function () {Wallpaper.update(); };
-    }
-</script>
-{{ end }}
 <script>
 </script>
 </body>

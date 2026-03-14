@@ -14,13 +14,13 @@ other = "离线"
 other = "没有在线服务器"
 
 [NoOnlineServersDesc]
-other = "当前没有在线的服务器"
+other = "服务器离家出走了哦～"
 
 [NoOfflineServers]
 other = "没有离线服务器"
 
 [NoOfflineServersDesc]
-other = "当前没有离线的服务器"
+other = "服务器离家出走了哦～"
 
 [ID]
 other = "标识号"
