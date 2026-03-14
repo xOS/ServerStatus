@@ -53,7 +53,7 @@
 }
 
 :root {
-    --body-bg: linear-gradient(145deg, #f8fafc 0%, #f5f7fb 45%, #eef2f7 100%);
+    --body-bg: #f5f7fb;
     --glass-bg-soft: rgba(255, 255, 255, 0.52);
     --glass-bg-card: rgba(255, 255, 255, 0.64);
     --glass-bg-popup: rgba(255, 255, 255, 0.82);
@@ -289,7 +289,7 @@ body {
 
 .def_background_pattern.default {
     opacity: 0.22;
-    background-image: url('bg/pattern.svg');
+    background-image: none;
 }
 
 html.def_background,
@@ -303,7 +303,7 @@ body.def_background {
 html.def_background.default,
 body.def_background.default {
     opacity: 0.22;
-    -webkit-mask-image: url('bg/pattern.svg');
+    -webkit-mask-image: none;
 }
 
 body.bg_light .def_background,
@@ -1222,7 +1222,7 @@ i.s {
 /* 登录页按钮：避免过长，并让注册按钮与登录按钮同风格 */
 .login.nb-container .dashboard-login-btn {
     display: block !important;
-    width: 15% !important;
+    width: 18% !important;
     max-width: 200px !important;
     min-width: unset !important;
     margin: 0 auto 1rem !important;
@@ -1329,6 +1329,13 @@ i.s {
 .nb-menu .ui.simple.dropdown > .menu > .item i.icon,
 .nb-menu .ui.simple.dropdown > .menu > button.item i.icon {
     margin-right: 0.62rem !important;
+}
+
+/* 性能策略回滚到保守模式，避免列表残缺/错位 */
+@media (prefers-reduced-motion: reduce) {
+    .def_background.motion {
+        animation: none;
+    }
 }
 
 /* 性能优化CSS - 减少非被动事件监听器警告 (from home.html) */
