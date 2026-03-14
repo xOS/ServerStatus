@@ -1163,6 +1163,18 @@ i.s {
     justify-content: center !important;
 }
 
+/* server 页面复制按钮 tooltip 缩小 */
+.server-copy-tooltip[data-tooltip]:after {
+    font-size: 0.72rem !important;
+    line-height: 1.2 !important;
+    padding: 0.32em 0.56em !important;
+    border-radius: 6px !important;
+}
+
+.server-copy-tooltip[data-tooltip]:before {
+    transform: scale(0.82);
+}
+
 /* 前台 network 页面按钮还原为胶囊形（避免被图标按钮规则影响） */
 .server-buttons-container .network-primary-btn.icon.button {
     width: auto !important;

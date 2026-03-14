@@ -350,6 +350,9 @@ other = "强制更新"
 [SelectAll]
 other = "全选"
 
+[UnSelect]
+other = "全不选"
+
 [VersionNumber]
 other = "版本"
 

@@ -22,8 +22,8 @@
         <table class="ui very basic table">
             <thead>
                 <tr>
-                    <th><button onclick="checkAllServer()" class="ui mini server-primary-btn button">{{tr
-                            "SelectAll"}}</button></th>
+                    <th><button id="toggle-select-all-btn" onclick="checkAllServer()" class="ui right labeled server-primary-btn icon button" data-label-select="{{tr "SelectAll"}}" data-label-unselect="{{tr "UnSelect"}}"><i class="check square outline icon"></i><span class="toggle-select-all-text">{{tr
+                        "SelectAll"}}</span></button></th>
                     <th>ID({{tr "DisplayIndex"}})</th>
                     <th>{{tr "Name"}}</th>
                     <th>{{tr "ServerGroup"}}</th>
@@ -41,31 +41,31 @@
             <tbody>
                 {{range $server := .Servers}}
                 <tr>
-                    <td><input type="checkbox" class="server-servers" value="{{$server.ID}}" /></td>
+                    <td>
+                        <div class="ui checkbox server-select-checkbox">
+                            <input type="checkbox" class="server-servers hidden" value="{{$server.ID}}" tabindex="0" />
+                            <label></label>
+                        </div>
+                    </td>
                     <td>{{$server.ID}}({{$server.DisplayIndex}})</td>
                     <td>{{$server.Name}}</td>
                     <td>{{$server.Tag}}</td>
-                    <td>
-                        IP:{{$server.Host.IP}}
-                        <button class="ui icon mini button" data-clipboard-text="{{$server.Host.IP}}" data-tooltip="{{tr "ClickToCopy"}}" style="margin-left: 5px;">
-                            <i class="copy icon"></i>
-                        </button>
-                    </td>
+                    <td class="server-ip-cell" data-server-ip="{{if $server.Host}}{{$server.Host.IP}}{{end}}"></td>
                     <td>{{$server.Host.Version}}</td>
                     <td>{{$server.HideForGuest}}</td>
                     <td>{{$server.EnableDDNS}}</td>
                     <td>
-                        <button class="ui icon mini button" data-clipboard-text="{{$server.Secret}}"
-                            data-tooltip="{{tr "ClickToCopy"}}">
+                        <button class="ui icon mini button server-copy-tooltip" data-clipboard-text="{{$server.Secret}}"
+                            data-tippy-content="{{tr "ClickToCopy"}}">
                             <i class="copy icon"></i>
                         </button>
                     </td>
                     <td>
                         <div class="ui mini icon buttons">
-                            <button class="ui icon mini button linux-install-btn" data-server-id="{{$server.ID}}" data-secret="{{$server.Secret}}" data-server-ip="{{if $server.Host}}{{$server.Host.IP}}{{end}}" data-tooltip="{{tr "ClickToCopy"}}">
+                            <button class="ui icon mini button linux-install-btn server-copy-tooltip" data-server-id="{{$server.ID}}" data-secret="{{$server.Secret}}" data-server-ip="{{if $server.Host}}{{$server.Host.IP}}{{end}}" data-tippy-content="{{tr "ClickToCopy"}}">
                                 <i class="linux icon"></i>
                             </button>
-                            <button class="ui icon mini button" data-clipboard-text="{{if $.Conf.GRPCHost}}[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Ssl3 -bor [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12;set-ExecutionPolicy RemoteSigned;Invoke-WebRequest https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.ps1 -OutFile C:\server-status.ps1;powershell.exe C:\server-status.ps1 {{$.Conf.GRPCHost}}:{{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}" data-tooltip="{{tr "ClickToCopy"}}">
+                            <button class="ui icon mini button server-copy-tooltip" data-clipboard-text="{{if $.Conf.GRPCHost}}[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Ssl3 -bor [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12;set-ExecutionPolicy RemoteSigned;Invoke-WebRequest https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.ps1 -OutFile C:\server-status.ps1;powershell.exe C:\server-status.ps1 {{$.Conf.GRPCHost}}:{{if $.Conf.ProxyGRPCPort}}{{$.Conf.ProxyGRPCPort}}{{else}}{{$.Conf.GRPCPort}}{{end}} {{$server.Secret}}{{if $.Conf.TLS}} --tls{{end}}{{else}}{{tr "NoDomainAlert"}}{{end}}" data-tippy-content="{{tr "ClickToCopy"}}">
                                 <i class="windows icon"></i>
                             </button>
                         </div>
@@ -146,6 +146,107 @@
             console.warn(`无法解析有效IP地址: ${serverIPString}`);
             return null;
         }
+    }
+
+    // 解析并分类所有IP地址（用于页面展示）
+    function parseAllServerIPs(serverIPString) {
+        if (!serverIPString || serverIPString.trim() === '') {
+            return { ipv4List: [], ipv6List: [], otherList: [] };
+        }
+
+        const ipList = serverIPString.split(/[\/,;\s]+/).filter(ip => ip.trim() !== '');
+        const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+        const ipv6Regex = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
+
+        const ipv4List = [];
+        const ipv6List = [];
+        const otherList = [];
+
+        ipList.forEach(raw => {
+            const ip = raw.trim();
+            if (!ip) return;
+            if (ipv4Regex.test(ip)) {
+                ipv4List.push(ip);
+            } else if (ipv6Regex.test(ip)) {
+                ipv6List.push(ip);
+            } else {
+                otherList.push(ip);
+            }
+        });
+
+        return {
+            ipv4List: Array.from(new Set(ipv4List)),
+            ipv6List: Array.from(new Set(ipv6List)),
+            otherList: Array.from(new Set(otherList))
+        };
+    }
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function renderServerIPList() {
+        const ipCells = document.querySelectorAll('td.server-ip-cell');
+        ipCells.forEach(cell => {
+            const rawIP = (cell.getAttribute('data-server-ip') || '').trim();
+            const parsed = parseAllServerIPs(rawIP);
+            const rows = [];
+
+            const pushRows = (label, ips) => {
+                ips.forEach(ip => {
+                    const safeIP = escapeHtml(ip);
+                    rows.push(`
+                        <div style="display:flex;align-items:center;gap:6px;margin:2px 0;flex-wrap:wrap;">
+                            <span style="font-weight:600;min-width:44px;">${label}:</span>
+                            <span>${safeIP}</span>
+                            <button class="ui icon mini button server-ip-copy-btn server-copy-tooltip" data-clipboard-text="${safeIP}" data-tippy-content="{{tr "ClickToCopy"}}">
+                                <i class="copy icon"></i>
+                            </button>
+                        </div>
+                    `);
+                });
+            };
+
+            pushRows('IPv4', parsed.ipv4List);
+            pushRows('IPv6', parsed.ipv6List);
+            pushRows('IP', parsed.otherList);
+
+            if (rows.length === 0) {
+                cell.innerHTML = '<span>IP: -</span>';
+                return;
+            }
+
+            cell.innerHTML = rows.join('');
+        });
+    }
+
+    function initCopyTooltips() {
+        if (typeof tippy === 'undefined') {
+            return;
+        }
+
+        const tooltipTargets = document.querySelectorAll('.server-copy-tooltip[data-tippy-content]');
+        tooltipTargets.forEach(el => {
+            if (el._tippy) {
+                el._tippy.destroy();
+            }
+        });
+
+        tippy(tooltipTargets, {
+            theme: 'copy-tooltip',
+            allowHTML: false,
+            interactive: false,
+            trigger: 'mouseenter focus',
+            placement: 'top',
+            delay: [60, 0],
+            duration: [120, 80],
+            arrow: true
+        });
     }
 
     // 检测服务器IP地址所在地区
@@ -267,15 +368,42 @@
 
     // 页面加载完成后初始化
     document.addEventListener('DOMContentLoaded', function() {
+        renderServerIPList();
+        initCopyTooltips();
+        $('.ui.checkbox.server-select-checkbox').checkbox();
         initClipboard();
+        updateSelectAllButtonLabel();
+        checkBoxList.forEach(cb => {
+            cb.addEventListener('change', updateSelectAllButtonLabel);
+        });
     });
 
-    const checkBoxList = document.querySelectorAll('tbody > tr > td > input.server-servers[type=checkbox]')
+    const checkBoxList = document.querySelectorAll('tbody input.server-servers[type=checkbox]')
+    const toggleSelectAllBtn = document.getElementById('toggle-select-all-btn');
+
+    function updateSelectAllButtonLabel() {
+        if (!toggleSelectAllBtn) return;
+        const hasCheckbox = checkBoxList.length > 0;
+        const allChecked = hasCheckbox && Array.from(checkBoxList).every(cb => cb.checked);
+        const selectText = toggleSelectAllBtn.getAttribute('data-label-select') || '{{tr "SelectAll"}}';
+        const unselectText = toggleSelectAllBtn.getAttribute('data-label-unselect') || '{{tr "UnSelect"}}';
+        const textSpan = toggleSelectAllBtn.querySelector('.toggle-select-all-text');
+        if (textSpan) {
+            textSpan.textContent = allChecked ? unselectText : selectText;
+        }
+    }
 
     function checkAllServer() {
+        const shouldCheckAll = Array.from(checkBoxList).some(cb => !cb.checked);
         checkBoxList.forEach(cb => {
-            cb.checked = true
-        })
+            const wrapper = cb.closest('.ui.checkbox.server-select-checkbox');
+            if (wrapper) {
+                $(wrapper).checkbox(shouldCheckAll ? 'set checked' : 'set unchecked');
+            } else {
+                cb.checked = shouldCheckAll;
+            }
+        });
+        updateSelectAllButtonLabel();
     }
 
     function forceUpdate() {
