@@ -9,9 +9,9 @@
                     {{tr "Use"}} {{.LoginType}} {{tr "AccountToLogin"}}
                 </div>
             </h2>
-            <a href="/oauth2/login" class="ui fluid large server-primary-btn submit button">{{tr "Login"}}</a>
-            <div class="ui message">
-                {{tr "DontHaveAnAccount"}} <a href="{{.RegistrationLink}}" target="_blank" rel="noopener noreferrer">{{tr "SignUp"}}</a>
+            <a href="/oauth2/login" class="ui server-primary-btn submit button dashboard-login-btn">{{tr "Login"}}</a>
+            <div class="ui message login-signup-message">
+                {{tr "DontHaveAnAccount"}} <a href="{{.RegistrationLink}}" class="ui server-primary-btn button dashboard-signup-btn" target="_blank" rel="noopener noreferrer">{{tr "SignUp"}}</a>
             </div>
         </div>
     </div>

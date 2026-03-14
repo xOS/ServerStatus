@@ -29,7 +29,7 @@
     }
 
     body {
-        background-color: black;
+        background: linear-gradient(145deg, #f8fafc 0%, #f5f7fb 45%, #eef2f7 100%);
     }
 
     #file-list-iframe {
@@ -39,9 +39,20 @@
         width: 30%;
         height: 100%;
         border: none;
-        background-color: white;
+        background-color: rgba(255, 255, 255, 0.75);
+        box-shadow: -8px 0 24px rgba(15, 23, 42, 0.1);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
         display: none;
         z-index: 10;
+    }
+
+    #terminal-container,
+    #terminal-container .xterm,
+    #terminal-container .xterm-viewport,
+    #terminal-container .xterm-screen,
+    #terminal-container .xterm-helper-textarea {
+        background: #0b0f17 !important;
     }
 
     #folder-button {
@@ -50,9 +61,12 @@
         right: 20px;
         width: 50px;
         height: 50px;
-        background-color: #007bff;
-        color: white;
-        border: none;
+        background-color: rgba(255, 255, 255, 0.78);
+        color: #1f2937;
+        border: 1px solid rgba(255, 255, 255, 0.8);
+        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
         border-radius: 25px;
         font-size: 24px;
         display: flex;
@@ -113,6 +127,12 @@
             screenKeys: true,
             useStyle: true,
             cursorBlink: true,
+            theme: {
+                background: '#0b0f17',
+                foreground: '#e5edf7',
+                cursor: '#60a5fa',
+                selectionBackground: '#1d4ed880'
+            }
         });
         const socket = new WebSocket((window.location.protocol == 'https:' ? 'wss' : 'ws') + '://' + window.location.host + '/terminal/' + '{{.SessionID}}');
 

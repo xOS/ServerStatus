@@ -14,7 +14,7 @@
             </div>
             <div class="field">
                 <label>{{tr "Theme"}}</label>
-                <select name="Theme">
+                <select name="Theme" class="ui fluid dropdown">
                     {{range $k,$v := .Themes}}
                     <option value="{{$k}}" {{if eq $.Conf.Site.Theme $k }} selected="selected" {{end}}>{{$v}}
                     {{end}}
@@ -22,7 +22,7 @@
             </div>
             <div class="field">
                 <label>{{tr "DashboardTheme"}}</label>
-                <select name="DashboardTheme">
+                <select name="DashboardTheme" class="ui fluid dropdown">
                     {{range $k,$v := .DashboardThemes}}
                     <option value="{{$k}}" {{if eq $.Conf.Site.DashboardTheme $k }} selected="selected" {{end}}>{{$v}}
                         {{end}}
@@ -30,7 +30,7 @@
             </div>
             <div class="field">
                 <label>Language</label>
-                <select name="Language">
+                <select name="Language" class="ui fluid dropdown">
                     {{range $k,$v := .Languages}}
                     <option value="{{$k}}" {{if eq $.Conf.Language $k }} selected="selected" {{end}}>
                         {{$v}}</option>
@@ -136,6 +136,7 @@
         return false;
     })
     $('.checkbox').checkbox()
+    $('#settingForm .ui.dropdown').dropdown()
     $('#settingForm').find("select[name=Cover]").val({{.Conf.Cover }});
     {{if .Conf.EnableIPChangeNotification}}
     $('.checkbox.ip-change').checkbox('set checked')

@@ -16,6 +16,9 @@
 <style>
     body {
         font-family: 'Roboto', sans-serif;
+        margin: 0;
+        background: linear-gradient(145deg, #f8fafc 0%, #f5f7fb 45%, #eef2f7 100%);
+        color: #1f2937;
     }
 
     .file-list {
@@ -25,13 +28,17 @@
 
     .file-item {
         margin: 5px 0;
-        border: 1px solid #ccc;
+        border: 1px solid rgba(255, 255, 255, 0.72);
         border-radius: 5px;
         overflow: hidden;
         text-overflow: ellipsis;
         display: block;
         width: 100%;
         box-sizing: border-box;
+        background: rgba(255, 255, 255, 0.66);
+        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
     }
 
     #top-app-bar {
@@ -39,17 +46,29 @@
         align-items: center;
         justify-content: space-between;
         padding: 10px;
+        margin: 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.72);
+        background: rgba(255, 255, 255, 0.66);
+        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
     }
 
     #current-directory {
         font-size: 1rem;
-        font-weight: normal;
+        font-weight: 500;
         margin: 0 15px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
         max-width: calc(100% - 100px);
         box-sizing: border-box;
+        color: #111827;
+    }
+
+    #file-list {
+        padding: 0 10px 10px;
     }
 </style>
 

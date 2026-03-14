@@ -4,7 +4,7 @@
     }
     .ui.four.cards>.card {
         margin: 0.5em!important;
-        width: calc(25% - 1em);!important
+        width: calc(25% - 1em) !important;
     }
     
 }
@@ -52,17 +52,35 @@
     }
 }
 
+:root {
+    --body-bg: linear-gradient(145deg, #f8fafc 0%, #f5f7fb 45%, #eef2f7 100%);
+    --glass-bg-soft: rgba(255, 255, 255, 0.52);
+    --glass-bg-card: rgba(255, 255, 255, 0.64);
+    --glass-bg-popup: rgba(255, 255, 255, 0.82);
+    --glass-border: rgba(255, 255, 255, 0.72);
+    --glass-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+    --btn-bg: var(--glass-bg-card);
+    --btn-bg-hover: rgba(255, 255, 255, 0.72);
+    --btn-text: #777777;
+    --btn-primary-bg: var(--glass-bg-card);
+    --btn-primary-bg-hover: rgba(255, 255, 255, 0.72);
+    --btn-primary-text: #ffffff;
+}
+
 .custom-tabs-container {
     overflow-x: auto;
     width: fit-content;
     max-width: 100%;
     white-space: nowrap;
     position: relative;
-    background-color: #fbfbfb26;
+    background-color: var(--glass-bg-soft);
     border-radius: 22px;
     padding: 5px 3px;
     margin-bottom: 20px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.10);
+    box-shadow: var(--glass-shadow);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -112,9 +130,9 @@
     top: 5px;
     bottom: 5px;
     height: calc(100% - 10px);
-    background-color: #fafafaa3;
+    background-color: var(--glass-bg-card);
     border-radius: 17px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
     z-index: 1;
     transition: left 0.3s ease, width 0.3s ease;
 }
@@ -217,7 +235,7 @@ td {
 
 /**背景**/
 body {
-    background: rgb(255 255 255 / 50%);
+    background: rgba(255, 255, 255, 0.5);
     font-size: 13px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
@@ -270,7 +288,7 @@ body {
 }
 
 .def_background_pattern.default {
-    opacity: 0.3;
+    opacity: 0.22;
     background-image: url('bg/pattern.svg');
 }
 
@@ -284,7 +302,7 @@ body.def_background {
 
 html.def_background.default,
 body.def_background.default {
-    opacity: 0.3;
+    opacity: 0.22;
     -webkit-mask-image: url('bg/pattern.svg');
 }
 
@@ -388,17 +406,57 @@ a {
 /**未登录提示框**/
 .ui.message {
     border: 0px solid transparent;
-    border-radius: 0;
-    background: rgb(255 255 255 / 18%);
+    border-radius: 12px;
+    background: var(--glass-bg-soft);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 1.05em 1.2em;
+}
+
+.ui.message.info {
+    background: rgba(255, 255, 255, 0.68) !important;
+    border: 1px solid var(--glass-border) !important;
+    color: rgba(15, 23, 42, 0.86) !important;
+    box-shadow: var(--glass-shadow) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    width: min(90vw, 320px);
+    min-height: 150px;
+    margin: 0.8rem auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 1rem 0.9rem;
+}
+
+.ui.message.info .header,
+.ui.info.message .header {
+    color: rgba(15, 23, 42, 0.9) !important;
+    font-size: 0.98rem !important;
+    line-height: 1.4;
+    text-align: center;
+}
+
+.ui.message.info p,
+.ui.info.message p {
+    color: rgba(51, 65, 85, 0.86) !important;
+    margin-top: 0.45em;
+    margin-bottom: 0;
+    font-size: 0.9rem;
+    text-align: center;
 }
 
 /**后台文本域**/
 .ui.form select {
-    background: rgb(249 250 251 / 47%) !important;
+    background: rgba(255, 255, 255, 0.56) !important;
 }
 
 .ui.form textarea {
-    background: rgb(249 250 251 / 47%) !important;
+    background: rgba(255, 255, 255, 0.56) !important;
 }
 
 .ui.checkbox input:checked~.box:before,
@@ -413,11 +471,15 @@ a {
 }
 
 .ui.form textarea:focus {
-    background: rgb(249 250 251 / 47%) !important;
+    background: rgba(255, 255, 255, 0.62) !important;
 }
 
 .ui.segment {
-    background: rgb(255 255 255 / 55%) !important;
+    background: var(--glass-bg-soft) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: var(--glass-shadow) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
 }
 
 .ui.form input:not([type]),
@@ -432,7 +494,7 @@ a {
 .ui.form input[type=text],
 .ui.form input[type=time],
 .ui.form input[type=url] {
-    background: #ffffff45 !important;
+    background: rgba(255, 255, 255, 0.56) !important;
 }
 
 /**信息卡片透明**/
@@ -445,11 +507,14 @@ a {
     -moz-user-select: none;
     -ms-user-select: none;
     user-select: none;
-    background-color: #fafafaa3;
+    background-color: var(--glass-bg-card);
     -webkit-transition: all .3s ease;
     transition: all .3s ease;
-    -webkit-box-shadow: 0 1px 4px 0 rgb(0 0 0 / 20%);
-    box-shadow: 0 1px 4px 0 rgb(0 0 0 / 20%);
+    -webkit-box-shadow: var(--glass-shadow);
+    box-shadow: var(--glass-shadow);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
@@ -462,11 +527,11 @@ a {
     -ms-user-select: none;
     user-select: none;
     inset: 37.1562px auto auto 220.82px;
-    background-color: #fafafaeb;
+    background-color: var(--glass-bg-popup);
     -webkit-transition: all .3s ease;
     transition: all .3s ease;
-    -webkit-box-shadow: 0 1px 4px 0 rgb(0 0 0 / 20%);
-    box-shadow: 0 1px 4px 0 rgb(0 0 0 / 20%);
+    -webkit-box-shadow: var(--glass-shadow);
+    box-shadow: var(--glass-shadow);
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     min-width: 240px;
@@ -517,8 +582,9 @@ a {
 
 .ui.green.button,
 .ui.green.buttons .button {
-    background-color: #21ba45;
-    color: #1b1c1d;
+    background-color: var(--btn-bg);
+    color: var(--btn-text);
+    border: 1px solid var(--glass-border);
 }
 
 i.icon {
@@ -536,19 +602,23 @@ i.icon {
 
 /**后台服务器编辑区**/
 .ui.modal>.content {
-    background: #e1dae8b0 !important;
+    background: rgba(255, 255, 255, 0.74) !important;
 }
 
 .ui.modal>.actions {
-    background: #f9fafb78 !important;
+    background: rgba(255, 255, 255, 0.62) !important;
 }
 
 .ui.modal>.header {
-    background: #f9fafb78 !important;
+    background: rgba(255, 255, 255, 0.62) !important;
 }
 
 .ui.modal {
-    background: #ffffffa6 !important;
+    background: rgba(255, 255, 255, 0.66) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: var(--glass-shadow) !important;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
 }
 
 .column {
@@ -572,94 +642,108 @@ i.icon {
 
 .ui.teal.button,
 .ui.teal.buttons .button {
-    background-color: #ff9800;
+    background-color: var(--btn-bg);
+    color: var(--btn-text);
+    border: 1px solid var(--glass-border);
 }
 
 /**页头样式**/
 .ui.large.menu {
     border: 0;
     border-radius: 0px;
-    background-color: rgba(255, 255, 255, 55%);
+    background-color: rgba(255, 255, 255, 0.58);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
 }
 
 /**下拉菜单样式**/
 .ui.dropdown .menu {
     border: 0;
     border-radius: 0px;
-    background-color: rgba(255, 255, 255, 55%);
+    background-color: rgba(255, 255, 255, 0.68);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
 }
 
 /**页脚样式**/
 .ui.inverted.segment,
 .ui.primary.inverted.segment {
     width: 100%;
-    color: #8b6cc1f7;
-    background-color: rgba(255, 255, 255, 55%);
+    color: rgba(17, 24, 39, 0.76);
+    background-color: rgba(255, 255, 255, 0.58);
+    border-top: 1px solid var(--glass-border);
+    box-shadow: 0 -2px 12px rgba(15, 23, 42, 0.06);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     position: fixed;
     bottom: 0;
 }
 
 .ui.right.center.popup:before,
 .ui.left.center.popup:before {
-    border: 0px solid #fafafaeb !important;
-    background: #fafafaeb !important;
+    border: 0px solid rgba(255, 255, 255, 0.82) !important;
+    background: rgba(255, 255, 255, 0.82) !important;
 }
 
 .ui.top.popup:before {
-    border-color: #fafafaeb transparent transparent;
+    border-color: rgba(255, 255, 255, 0.82) transparent transparent;
 }
 
 .ui.popup:before {
-    border-color: #fafafaeb transparent transparent;
+    border-color: rgba(255, 255, 255, 0.82) transparent transparent;
 }
 
 .ui.bottom.left.popup:before {
     border-radius: 0px;
     border: 1px solid transparent;
-    border-color: #fafafaeb transparent transparent;
-    background: #fafafaeb;
-    -webkit-box-shadow: 0px 0px 0 0 #fafafaeb;
-    box-shadow: 0px 0px 0 0 #fafafaeb;
+    border-color: rgba(255, 255, 255, 0.82) transparent transparent;
+    background: rgba(255, 255, 255, 0.82);
+    -webkit-box-shadow: 0px 0px 0 0 rgba(255, 255, 255, 0.82);
+    box-shadow: 0px 0px 0 0 rgba(255, 255, 255, 0.82);
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
 .ui.bottom.right.popup:before {
     border-radius: 0px;
     border: 1px solid transparent;
-    border-color: #fafafaeb transparent transparent;
-    background: #fafafaeb;
-    -webkit-box-shadow: 0px 0px 0 0 #fafafaeb;
-    box-shadow: 0px 0px 0 0 #fafafaeb;
+    border-color: rgba(255, 255, 255, 0.82) transparent transparent;
+    background: rgba(255, 255, 255, 0.82);
+    -webkit-box-shadow: 0px 0px 0 0 rgba(255, 255, 255, 0.82);
+    box-shadow: 0px 0px 0 0 rgba(255, 255, 255, 0.82);
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
 .ui.top.left.popup:before {
     border-radius: 0px;
     border: 1px solid transparent;
-    border-color: #fafafaeb transparent transparent;
-    background: #fafafaeb;
-    -webkit-box-shadow: 0px 0px 0 0 #fafafaeb;
-    box-shadow: 0px 0px 0 0 #fafafaeb;
+    border-color: rgba(255, 255, 255, 0.82) transparent transparent;
+    background: rgba(255, 255, 255, 0.82);
+    -webkit-box-shadow: 0px 0px 0 0 rgba(255, 255, 255, 0.82);
+    box-shadow: 0px 0px 0 0 rgba(255, 255, 255, 0.82);
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
 .ui.top.right.popup:before {
     border-radius: 0px;
     border: 1px solid transparent;
-    border-color: #fafafaeb transparent transparent;
-    background: #fafafaeb;
-    -webkit-box-shadow: 0px 0px 0 0 #fafafaeb;
-    box-shadow: 0px 0px 0 0 #fafafaeb;
+    border-color: rgba(255, 255, 255, 0.82) transparent transparent;
+    background: rgba(255, 255, 255, 0.82);
+    -webkit-box-shadow: 0px 0px 0 0 rgba(255, 255, 255, 0.82);
+    box-shadow: 0px 0px 0 0 rgba(255, 255, 255, 0.82);
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
 .ui.left.center.popup:before {
     border-radius: 0px;
     border: 1px solid transparent;
-    border-color: #fafafaeb transparent transparent;
-    background: #fafafaeb;
-    -webkit-box-shadow: 0px 0px 0 0 #fafafaeb;
-    box-shadow: 0px 0px 0 0 #fafafaeb;
+    border-color: rgba(255, 255, 255, 0.82) transparent transparent;
+    background: rgba(255, 255, 255, 0.82);
+    -webkit-box-shadow: 0px 0px 0 0 rgba(255, 255, 255, 0.82);
+    box-shadow: 0px 0px 0 0 rgba(255, 255, 255, 0.82);
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
@@ -773,12 +857,25 @@ i.exchange.icon {
     color: #f2711c !important;
 }
 
+i.play.icon {
+    color: #f39c12 !important;
+}
+
 i.th.icon {
     color: #03a9f4 !important;
 }
 
 i.key.icon {
     color: #f88400 !important;
+}
+
+i.play.icon {
+    color: #f88400 !important;
+}
+
+i.sign-in.icon,
+i.sign.in.icon {
+    color: #03a9f4 !important;
 }
 
 i.fa-solid.fa-microchip {
@@ -827,11 +924,14 @@ i.note.icon {
 #app .ui.fluid.accordion {
     border-radius: 19px;
     margin-bottom: 1rem;
-    background-color: #fbfbfb26;
+    background-color: var(--glass-bg-soft);
     -webkit-transition: all .3s ease;
     transition: all .3s ease;
-    -webkit-box-shadow: 0 1px 4px 0 rgb(0 0 0 / 20%);
-    box-shadow: 0 1px 4px 0 rgb(0 0 0 / 20%);
+    -webkit-box-shadow: var(--glass-shadow);
+    box-shadow: var(--glass-shadow);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
@@ -901,12 +1001,17 @@ i.s {
 }
 
 .network-primary-btn {
-    background-color: rgb(255 255 255 / 50%) !important;
+    background-color: var(--btn-bg) !important;
+    border: 1px solid var(--glass-border) !important;
+    color: var(--btn-text) !important;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.07);
 }
 
 .server-primary-btn {
-    background-color: #f88400 !important;
-    color: white !important;
+    background-color: var(--btn-primary-bg) !important;
+    color: var(--btn-text) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: 0 1px 5px rgba(15, 23, 42, 0.07);
 }
 
 .server-primary-font {
@@ -926,11 +1031,14 @@ i.s {
     -moz-user-select: none;
     -ms-user-select: none;
     user-select: none;
-    background-color: #fafafa80;
+    background-color: rgba(255, 255, 255, 0.6);
     -webkit-transition: all .3s ease;
     transition: all .3s ease;
-    -webkit-box-shadow: 0 1px 4px 0 rgb(0 0 0 / 20%);
-    box-shadow: 0 1px 4px 0 rgb(0 0 0 / 20%);
+    -webkit-box-shadow: var(--glass-shadow);
+    box-shadow: var(--glass-shadow);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
@@ -940,11 +1048,287 @@ i.s {
 }
 
 .ui.button {
-    background: rgb(250 250 250 / 75%) none;
+    background: var(--btn-bg) none;
+    border: 1px solid rgba(255, 255, 255, 0.68);
+    color: var(--btn-text) !important;
+    border-radius: 999px;
+    min-height: 1.72em;
+    padding: 0.34em 0.72em;
+    font-size: 0.8rem;
+    font-weight: 700;
+    line-height: 1.1;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: background-color .2s ease, color .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+
+.ui.buttons .button,
+.network-primary-btn,
+.server-primary-btn {
+    border-radius: 999px !important;
+    color: var(--btn-text) !important;
+    background: var(--btn-bg) !important;
+    border-color: rgba(255, 255, 255, 0.68) !important;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* 纯图标按钮（无文字）：正圆形 */
+.ui.icon.button:not(.labeled):not(.network-primary-btn):not(.server-primary-btn) {
+    border-radius: 50% !important;
+    width: 2.4em !important;
+    height: 2.4em !important;
+    min-width: unset !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    color: var(--btn-text) !important;
+    background: var(--btn-bg) !important;
+    border-color: rgba(255, 255, 255, 0.68) !important;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* 带文字的 labeled 图标按钮：胶囊形，恢复正常宽高 */
+.ui.labeled.icon.button,
+.ui.right.labeled.icon.button {
+    border-radius: 999px !important;
+    width: auto !important;
+    height: auto !important;
+    padding: 0.5em 1.1em 0.5em 0.9em !important;
+    font-size: 0.88rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.35em !important;
+    line-height: 1.2 !important;
+}
+
+.ui.button:hover,
+.ui.button:focus {
+    background: var(--btn-bg-hover) none;
+    color: #333333 !important;
+    border-color: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.1);
+}
+
+.ui.primary.button,
+.ui.primary.buttons .button {
+    background: var(--btn-primary-bg) !important;
+    color: var(--btn-text) !important;
+    border: 1px solid rgba(255, 255, 255, 0.68) !important;
+}
+
+.ui.primary.button:hover,
+.ui.primary.buttons .button:hover,
+.server-primary-btn:hover {
+    background: var(--btn-primary-bg-hover) !important;
+    color: #333333 !important;
+    border-color: rgba(255, 255, 255, 0.78) !important;
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.1) !important;
+}
+
+.network-primary-btn:hover {
+    background-color: var(--btn-bg-hover) !important;
+    color: #333333 !important;
+    border-color: rgba(255, 255, 255, 0.78) !important;
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.1) !important;
+}
+
+.ui.button:active,
+.ui.primary.button:active,
+.ui.primary.buttons .button:active,
+.network-primary-btn:active,
+.server-primary-btn:active {
+    background: rgba(255, 255, 255, 0.6) !important;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* 覆盖 Semantic UI negative（取消）按钮为毛玻璃统一风格 */
+.ui.negative.button,
+.ui.negative.buttons .button {
+    background: var(--btn-bg) !important;
+    color: var(--btn-text) !important;
+    border: 1px solid rgba(255, 255, 255, 0.68) !important;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
+    text-shadow: none !important;
+}
+.ui.negative.button:hover,
+.ui.negative.buttons .button:hover {
+    background: var(--btn-bg-hover) !important;
+    color: #333333 !important;
+    border-color: rgba(255, 255, 255, 0.78) !important;
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.1) !important;
+}
+
+/* 覆盖 Semantic UI positive（确认）按钮为毛玻璃统一风格 */
+.ui.positive.button,
+.ui.positive.buttons .button {
+    background: var(--btn-bg) !important;
+    color: var(--btn-text) !important;
+    border: 1px solid rgba(255, 255, 255, 0.68) !important;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
+    text-shadow: none !important;
+}
+.ui.positive.button:hover,
+.ui.positive.buttons .button:hover {
+    background: var(--btn-bg-hover) !important;
+    color: #333333 !important;
+    border-color: rgba(255, 255, 255, 0.78) !important;
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.1) !important;
+}
+
+/* 后台弹窗按钮统一尺寸（取消/保存/确认） */
+.ui.modal .actions .ui.button,
+.ui.modal .actions button.ui.button {
+    min-height: 2.18em;
+    padding: 0.5em 1.05em;
+    font-size: 0.84rem;
+    line-height: 1.15;
+}
+
+/* 后台并排 mini 图标按钮：间距与正圆 */
+.ui.mini.icon.buttons {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ui.mini.icon.buttons .button {
+    margin: 0 !important;
+    width: 2.4em !important;
+    height: 2.4em !important;
+    min-width: unset !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* 前台 network 页面按钮还原为胶囊形（避免被图标按钮规则影响） */
+.server-buttons-container .network-primary-btn.icon.button {
+    width: auto !important;
+    height: auto !important;
+    min-width: 0 !important;
+    border-radius: 999px !important;
+    padding: 0.44em 0.96em !important;
+    font-size: 0.92rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: 1.2 !important;
+}
+
+/* 登录页按钮：避免过长，并让注册按钮与登录按钮同风格 */
+.login.nb-container .dashboard-login-btn {
+    display: block !important;
+    width: 15% !important;
+    max-width: 200px !important;
+    min-width: unset !important;
+    margin: 0 auto 1rem !important;
+    border-radius: 999px !important;
+    height: auto !important;
+    padding: 0.72em 1.2em !important;
+    font-size: 0.96rem !important;
+    text-align: center !important;
+}
+
+.login.nb-container .login-signup-message {
+    text-align: center;
+}
+
+.login.nb-container .dashboard-signup-btn {
+    margin-left: 0.45rem;
+    min-height: 2.22em;
+    padding: 0.62em 1.22em !important;
+    font-size: 0.95rem !important;
+    vertical-align: middle;
+    border-radius: 999px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* setting 页面保存按钮尺寸与后台按钮统一 */
+#settingForm > .ui.button[type="submit"] {
+    min-height: 2.2em !important;
+    padding: 0.56em 1.18em !important;
+    font-size: 0.9rem !important;
+    line-height: 1.2 !important;
+}
+
+/* 原生 select 下拉框统一毛玻璃效果 */
+.ui.form select {
+    background: rgba(255, 255, 255, 0.62) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    border-radius: 12px !important;
+    color: #555 !important;
+    min-height: 2.6em !important;
+    padding: 0.62em 0.95em !important;
+}
+
+.ui.form select:focus {
+    background: rgba(255, 255, 255, 0.74) !important;
+    border-color: rgba(255, 255, 255, 0.84) !important;
+}
+
+/* setting 等页面的 Semantic 下拉框毛玻璃 */
+.ui.form .ui.selection.dropdown,
+.ui.form .ui.fluid.dropdown {
+    background: rgba(255, 255, 255, 0.62) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    border-radius: 12px !important;
+    min-height: 2.6em !important;
+    color: #555 !important;
+}
+
+.ui.form .ui.selection.dropdown > .text,
+.ui.form .ui.selection.dropdown > .default.text {
+    color: #555 !important;
+}
+
+.ui.form .ui.selection.dropdown .menu {
+    border-radius: 12px !important;
+    background: rgba(255, 255, 255, 0.78) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+}
+
+.ui.form .ui.selection.dropdown .menu > .item {
+    color: #4b5563 !important;
 }
 
 .ui.menu .item:before {
     width: 0px !important;
+}
+
+/* 右上角折叠菜单统一圆角与尺寸 */
+.nb-menu .ui.simple.dropdown > .menu {
+    border-radius: 14px !important;
+    padding: 0.38rem !important;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12) !important;
+}
+
+.nb-menu .ui.simple.dropdown > .menu > .item,
+.nb-menu .ui.simple.dropdown > .menu > button.item {
+    border-radius: 10px !important;
+    margin: 0.12rem 0 !important;
+    padding: 0.68rem 0.78rem !important;
+    font-size: 0.98rem !important;
+    white-space: nowrap !important;
+}
+
+.nb-menu .ui.simple.dropdown > .menu > .item i.icon,
+.nb-menu .ui.simple.dropdown > .menu > button.item i.icon {
+    margin-right: 0.62rem !important;
 }
 
 /* 性能优化CSS - 减少非被动事件监听器警告 (from home.html) */
@@ -999,7 +1383,7 @@ html, body {
     will-change: auto;
     backface-visibility: hidden;
     transform: translateZ(0);
-    padding: 0.6em !important;
+    padding: 0.32em 0.56em !important;
 }
 
 /* 减少重绘 */
@@ -1047,12 +1431,12 @@ html, body {
 
 /* Tippy.js 自定义样式 - 服务器信息弹窗 */
 .tippy-box[data-theme~='custom-server-popup'] {
-    background-color: rgba(255, 255, 255, 0.8) !important;
+    background-color: rgba(255, 255, 255, 0.84) !important;
     color: #333 !important;
     border-radius: 8px !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.11) !important;
     backdrop-filter: blur(10px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    border: 1px solid rgba(255, 255, 255, 0.74) !important;
     font-size: 13px !important;
     line-height: 1.5 !important;
     padding: 10px 12px !important;
@@ -1113,7 +1497,7 @@ html, body {
     bottom: 0 !important;
     left: 50% !important;
     transform: translateX(-50%) !important;
-    border-top-color: rgba(255, 255, 255, 0.8) !important;
+    border-top-color: rgba(255, 255, 255, 0.84) !important;
     border-bottom: none !important;
 }
 
@@ -1122,7 +1506,7 @@ html, body {
     top: 0 !important;
     left: 50% !important;
     transform: translateX(-50%) !important;
-    border-bottom-color: rgba(255, 255, 255, 0.8) !important;
+    border-bottom-color: rgba(255, 255, 255, 0.84) !important;
     border-top: none !important;
 }
 
@@ -1131,7 +1515,7 @@ html, body {
     top: 47% !important;
     right: 0 !important;
     transform: translateY(-50%) !important;
-    border-left-color: rgba(255, 255, 255, 0.8) !important;
+    border-left-color: rgba(255, 255, 255, 0.84) !important;
     border-right: none !important;
 }
 
@@ -1140,16 +1524,57 @@ html, body {
     top: 47% !important;
     left: 0 !important;
     transform: translateY(-50%) !important;
-    border-right-color: rgba(255, 255, 255, 0.8) !important;
+    border-right-color: rgba(255, 255, 255, 0.84) !important;
     border-left: none !important;
 }
 
 /* 兼容性：同时支持SVG箭头 */
 .tippy-box[data-theme~='custom-server-popup'] .tippy-svg-arrow {
-    fill: rgba(255, 255, 255, 0.8) !important;
+    fill: rgba(255, 255, 255, 0.84) !important;
 }
 
 /* 隐藏原始内容 */
 .server-popup-content {
     display: none !important;
+}
+
+/* 下拉多选标签和普通标签：毛玻璃效果统一 */
+.ui.label,
+.ui.labels .label {
+    background: var(--glass-bg-card) !important;
+    border: 1px solid var(--glass-border) !important;
+    color: #555 !important;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    border-radius: 8px !important;
+    text-shadow: none !important;
+}
+
+.ui.label .delete.icon,
+.ui.label i.delete {
+    color: #aaa !important;
+    opacity: 1 !important;
+}
+
+.ui.label .delete.icon:hover,
+.ui.label i.delete:hover {
+    color: #f30606 !important;
+}
+
+/* 下拉框本体和输入框毛玻璃 */
+.ui.selection.dropdown,
+.ui.search.dropdown {
+    background: rgba(255, 255, 255, 0.56) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    color: #555 !important;
+}
+
+.ui.selection.dropdown:focus,
+.ui.selection.dropdown.active {
+    background: rgba(255, 255, 255, 0.72) !important;
+    border-color: rgba(255, 255, 255, 0.82) !important;
 }

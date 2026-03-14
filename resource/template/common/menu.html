@@ -37,9 +37,9 @@
                             <i class="th icon"></i>{{tr "AdminPanel"}}
                         </a>
                         {{end}}
-                        <button class="item" onclick="showConfirm('{{tr "ConfirmLogout"}}','{{tr "AfterLoggingOutYouHaveToLoginAgain"}}',logout,{{.Admin.ID}})">
+                        <a class="item" onclick="showConfirm('{{tr "ConfirmLogout"}}','{{tr "AfterLoggingOutYouHaveToLoginAgain"}}',logout,{{.Admin.ID}})">
                             <i class="logout icon"></i>{{tr "Logout"}}
-                        </button>
+                        </a>
                     </div>
                 </div>
                 {{else}}
