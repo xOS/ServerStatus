@@ -1610,3 +1610,143 @@ html, body {
     background: rgba(255, 255, 255, 0.72) !important;
     border-color: rgba(255, 255, 255, 0.82) !important;
 }
+
+/* 后台 select/dropdown 统一毛玻璃（页面 + 弹窗） */
+.nb-container select,
+.nb-container .ui.form select,
+.ui.modal select,
+.ui.modal .ui.form select {
+    background: rgba(255, 255, 255, 0.62) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    border-radius: 12px !important;
+    color: #555 !important;
+    min-height: 2.6em !important;
+    padding: 0.62em 0.95em !important;
+}
+
+.nb-container select:focus,
+.nb-container .ui.form select:focus,
+.ui.modal select:focus,
+.ui.modal .ui.form select:focus {
+    background: rgba(255, 255, 255, 0.74) !important;
+    border-color: rgba(255, 255, 255, 0.84) !important;
+}
+
+.nb-container .ui.form .ui.selection.dropdown,
+.nb-container .ui.form .ui.fluid.dropdown,
+.ui.modal .ui.form .ui.selection.dropdown,
+.ui.modal .ui.form .ui.fluid.dropdown,
+.ui.modal .ui.selection.dropdown,
+.ui.modal .ui.search.dropdown {
+    background: rgba(255, 255, 255, 0.62) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    border-radius: 12px !important;
+    min-height: 2.6em !important;
+    color: #555 !important;
+}
+
+.nb-container .ui.form .ui.selection.dropdown > .text,
+.nb-container .ui.form .ui.selection.dropdown > .default.text,
+.ui.modal .ui.form .ui.selection.dropdown > .text,
+.ui.modal .ui.form .ui.selection.dropdown > .default.text,
+.ui.modal .ui.selection.dropdown > .text,
+.ui.modal .ui.selection.dropdown > .default.text {
+    color: #555 !important;
+}
+
+.nb-container .ui.form .ui.selection.dropdown .menu,
+.ui.modal .ui.form .ui.selection.dropdown .menu,
+.ui.modal .ui.selection.dropdown .menu {
+    border-radius: 12px !important;
+    background: rgba(255, 255, 255, 0.78) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+}
+
+/* 后台弹窗按钮同轴对齐：修复“取消 + 添加/修改”不在同一水平线 */
+.ui.modal .actions {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-top: 0.7rem !important;
+    padding-bottom: 1rem !important;
+}
+
+.ui.modal .actions .ui.button,
+.ui.modal .actions button.ui.button,
+.ui.modal .actions .ui.right.labeled.icon.button {
+    min-height: 2.18em;
+    padding: 0.5em 1.05em;
+    font-size: 0.84rem;
+    line-height: 1.15;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    vertical-align: middle !important;
+    box-sizing: border-box;
+    transform: translateY(-1px);
+}
+
+.ui.modal .actions .ui.right.labeled.icon.button > .icon {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    align-self: center !important;
+}
+
+/* 后台移动端布局：操作区换行，表格横向滚动，避免内容被压成竖排 */
+@media (max-width: 768px) {
+    .nb-container .ui.grid > .right.floated.right.aligned.twelve.wide.column {
+        width: 100% !important;
+        display: flex !important;
+        flex-wrap: wrap !important;
+        justify-content: flex-start !important;
+        gap: 8px;
+    }
+
+    .nb-container .ui.grid > .right.floated.right.aligned.twelve.wide.column .ui.button {
+        margin: 0 !important;
+    }
+
+    .nb-container .ui.basic.table,
+    .nb-container .ui.very.basic.table {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch;
+        white-space: nowrap;
+        table-layout: auto !important;
+        padding-bottom: 4px;
+    }
+
+    .nb-container .ui.basic.table th,
+    .nb-container .ui.basic.table td,
+    .nb-container .ui.very.basic.table th,
+    .nb-container .ui.very.basic.table td {
+        white-space: nowrap !important;
+        word-break: normal !important;
+        overflow-wrap: normal !important;
+    }
+
+    .nb-container .ui.basic.table td .ui.mini.icon.buttons,
+    .nb-container .ui.very.basic.table td .ui.mini.icon.buttons {
+        flex-wrap: nowrap !important;
+    }
+
+    .nb-container .ui.basic.table td.server-ip-cell,
+    .nb-container .ui.very.basic.table td.server-ip-cell {
+        min-width: 9rem;
+    }
+}
