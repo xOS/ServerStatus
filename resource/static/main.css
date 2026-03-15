@@ -1151,6 +1151,7 @@ i.s {
     gap: 6px;
 }
 
+.ui.icon.mini.button:not(.labeled):not(.network-primary-btn):not(.server-primary-btn),
 .ui.mini.icon.buttons .button {
     margin: 0 !important;
     width: 2.4em !important;
@@ -1158,6 +1159,17 @@ i.s {
     min-width: unset !important;
     padding: 0 !important;
     border-radius: 50% !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.ui.icon.mini.button:not(.labeled):not(.network-primary-btn):not(.server-primary-btn) > .icon,
+.ui.mini.icon.buttons .button > .icon {
+    margin: 0 !important;
+    line-height: 1 !important;
+    width: auto !important;
+    height: auto !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
