@@ -106,7 +106,7 @@ i.fa-sharp.fa-solid.fa-u::before {
 }
 
 .custom-tab {
-    padding: 6px 18px;
+    padding: 6px 10px;
     margin: 0 3px;
     cursor: pointer;
     color: #777;
@@ -117,9 +117,50 @@ i.fa-sharp.fa-solid.fa-u::before {
     z-index: 2;
     background-color: transparent;
     font-weight: normal;
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     line-height: 1.5;
     -webkit-tap-highlight-color: transparent;
+}
+
+.server-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #03a9f4;
+    color: #fff;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    max-width: 18px;
+    min-height: 18px;
+    max-height: 18px;
+    padding: 0;
+    margin: 0;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 18px;
+    text-align: center;
+    vertical-align: middle;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    opacity: 0.85;
+    transition: all 0.2s ease;
+}
+
+.custom-tab.active .server-count-badge,
+.custom-tab:hover .server-count-badge {
+    opacity: 1;
+}
+
+.custom-tab[data-tag="online"] .server-count-badge {
+    background-color: #4caf50;
+}
+
+.custom-tab[data-tag="offline"] .server-count-badge {
+    background-color: #f44336;
 }
 
 .custom-tab.active {

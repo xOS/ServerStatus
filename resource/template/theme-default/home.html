@@ -2,126 +2,24 @@
 {{template "theme-default/header" .}}
 
 <script>
-    // 添加服务器数量徽章样式
-    const style = document.createElement('style');
-    style.textContent = `
-        .custom-tab {
-            position: relative;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding-left: 10px !important;
-            padding-right: 10px !important;
-        }
-        
-        .server-count-badge {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            background-color: #03a9f4;
-            color: white;
-            border-radius: 50%;
-            width: 18px;
-            height: 18px;
-            min-width: 18px;
-            max-width: 18px;
-            min-height: 18px;
-            max-height: 18px;
-            padding: 0;
-            margin: 0;
-            font-size: 10px;
-            font-weight: 600;
-            line-height: 18px;
-            text-align: center;
-            vertical-align: middle;
-            box-sizing: border-box;
-            flex-shrink: 0;
-            opacity: 0.85;
-            transition: all 0.2s ease;
-        }
-        
-        .custom-tab.active .server-count-badge {
-            opacity: 1;
-        }
-        
-        .custom-tab:hover .server-count-badge {
-            opacity: 1;
-        }
-        
-        /* 在线标签特殊样式 */
-        .custom-tab[data-tag="online"] .server-count-badge {
-            background-color: #4caf50;
-        }
-        
-        /* 离线标签特殊样式 */
-        .custom-tab[data-tag="offline"] .server-count-badge {
-            background-color: #f44336;
-        }
-    `;
-    document.head.appendChild(style);
-
-    // 性能优化 - 覆盖默认事件监听器为被动模式
-    (function () {
-        // 保存原始的 addEventListener
-        const originalAddEventListener = EventTarget.prototype.addEventListener;
-
-        // 需要设置为被动的事件类型
-        const passiveEvents = ['touchstart', 'touchmove', 'wheel', 'mousewheel'];
-
-        // 重写 addEventListener
-        EventTarget.prototype.addEventListener = function (type, listener, options) {
-            if (passiveEvents.includes(type) && typeof options !== 'object') {
-                options = { passive: true };
-            } else if (passiveEvents.includes(type) && typeof options === 'object' && options.passive === undefined) {
-                options.passive = true;
-            }
-
-            return originalAddEventListener.call(this, type, listener, options);
+    // 性能优化：避免全局重写事件系统，仅对首页高频容器使用被动监听
+    (function setupScopedPassiveListeners() {
+        const bindPassive = (selector, eventName) => {
+            const nodes = document.querySelectorAll(selector);
+            nodes.forEach((node) => {
+                node.addEventListener(eventName, function () {}, { passive: true });
+            });
         };
+
+        document.addEventListener('DOMContentLoaded', function () {
+            bindPassive('.custom-tabs-container', 'touchstart');
+            bindPassive('.custom-tabs-container', 'touchmove');
+            bindPassive('.nb-container', 'wheel');
+            bindPassive('.nb-container', 'mousewheel');
+            bindPassive('.ui.accordion', 'touchstart');
+            bindPassive('.ui.accordion', 'touchmove');
+        });
     })();
-    // jQuery 事件优化 - 延迟到jQuery加载完成后执行
-    document.addEventListener('DOMContentLoaded', function () {
-        // 等待jQuery加载完成
-        function waitForJQuery() {
-            if (typeof $ !== 'undefined' && $.fn && $.fn.on) {
-                const originalOn = $.fn.on;
-                $.fn.on = function (events, selector, data, handler) {
-                    if (typeof events === 'string' &&
-                        (events.includes('touchstart') || events.includes('touchmove') ||
-                            events.includes('wheel') || events.includes('mousewheel'))) {
-
-                        const passiveHandler = function (e) {
-                            if (typeof handler === 'function') {
-                                return handler.call(this, e);
-                            } else if (typeof data === 'function') {
-                                return data.call(this, e);
-                            }
-                        };
-
-                        if (typeof data === 'function') {
-                            handler = data;
-                            data = undefined;
-                        }
-
-                        this.each(function () {
-                            if (this.addEventListener) {
-                                this.addEventListener(events, passiveHandler, { passive: true });
-                            }
-                        });
-
-                        return this;
-                    }
-
-                    return originalOn.apply(this, arguments);
-                };
-            } else {
-                // jQuery还没加载完成，100ms后重试
-                setTimeout(waitForJQuery, 100);
-            }
-        }
-
-        waitForJQuery();
-    });
 </script>
 
 {{if ts .CustomCode}} {{.CustomCode|safe}} {{end}}
@@ -534,6 +432,27 @@
         }
     },
     methods: {
+        schedulePopupContentUpdate() {
+            if (this._popupRefreshQueued) return;
+            this._popupRefreshQueued = true;
+            requestAnimationFrame(() => {
+                this._popupRefreshQueued = false;
+                this.$nextTick(() => {
+                    if (window.TippyPopups && window.TippyPopups.updateContent) {
+                        window.TippyPopups.updateContent();
+                    }
+                });
+            });
+        },
+        areSimpleArraysEqual(a, b) {
+            if (a === b) return true;
+            if (!Array.isArray(a) || !Array.isArray(b)) return false;
+            if (a.length !== b.length) return false;
+            for (let i = 0; i < a.length; i++) {
+                if (a[i] !== b[i]) return false;
+            }
+            return true;
+        },
         // 返回某个分组下可展示的服务器列表
         getGroupServers(tag) {
             if (!this.servers || !Array.isArray(this.servers)) return [];
@@ -855,13 +774,13 @@
                         const oldHost = serverItem.Host || {};
                         // 检查Host信息是否有实际变化
                         const hostChanged = 
-                            JSON.stringify(oldHost.CPU) !== JSON.stringify(wsServer.Host.CPU) ||
+                            !this.areSimpleArraysEqual(oldHost.CPU, wsServer.Host.CPU) ||
                             oldHost.MemTotal !== wsServer.Host.MemTotal ||
                             oldHost.DiskTotal !== wsServer.Host.DiskTotal ||
                             oldHost.Platform !== wsServer.Host.Platform ||
                             oldHost.PlatformVersion !== wsServer.Host.PlatformVersion ||
                             oldHost.Arch !== wsServer.Host.Arch ||
-                            JSON.stringify(oldHost.GPU) !== JSON.stringify(wsServer.Host.GPU);
+                            !this.areSimpleArraysEqual(oldHost.GPU, wsServer.Host.GPU);
                         
                         if (hostChanged) {
                             serverItem.Host = {
@@ -948,12 +867,8 @@
                     this._needRegenerateTags = false;
                 }
 
-                // 更新当前显示的popup内容
-                this.$nextTick(() => {
-                    if (window.TippyPopups && window.TippyPopups.updateContent) {
-                        window.TippyPopups.updateContent();
-                    }
-                });
+                // 合并同一帧内的弹窗刷新，减少高频重复更新
+                this.schedulePopupContentUpdate();
             }
         },
         getTrafficProgressClass(serverId) {
@@ -1049,14 +964,8 @@
             });
 
             if (hasUpdates) {
-                this.$forceUpdate();
-
-                // 更新当前显示的popup内容
-                this.$nextTick(() => {
-                    if (window.TippyPopups && window.TippyPopups.updateContent) {
-                        window.TippyPopups.updateContent();
-                    }
-                });
+                // 合并同一帧内的弹窗刷新，减少高频重复更新
+                this.schedulePopupContentUpdate();
             }
         },
         hasTemperature(temperatureList, sensorList) {
@@ -1410,9 +1319,9 @@
             easing: 'easeOutQuad'
         });
 
-        $(document).off('touchstart.accordion touchmove.accordion');
-        $(document).on('touchstart.accordion', '.ui.accordion .title', function (e) {
-            // 被动处理，不阻止默认行为
+        document.querySelectorAll('.ui.accordion .title').forEach(function (el) {
+            el.addEventListener('touchstart', function () {}, { passive: true });
+            el.addEventListener('touchmove', function () {}, { passive: true });
         });
     });
 </script>
