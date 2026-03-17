@@ -12,6 +12,15 @@ let LANG = {
 // 标记流量相关函数已在主JS文件中准备就绪
 window.trafficFunctionsReady = true;
 
+// Chromium 内核标记：用于启用定向性能优化样式（不影响 Safari）
+(function markChromiumEngine() {
+  const ua = navigator.userAgent || '';
+  const isChromium = /Chrome|CriOS|Edg|OPR|Chromium/.test(ua) && !/Firefox/.test(ua);
+  if (isChromium && document && document.documentElement) {
+    document.documentElement.classList.add('is-chromium');
+  }
+})();
+
 function updateLang(newLang) {
   if (newLang) {
     LANG = newLang;
@@ -2149,11 +2158,6 @@ function initGlobalTippyPopups() {
                     // 动态更新内容 - 每次显示时都获取最新内容
                     const contentDiv = instance.reference.nextElementSibling;
                     if (contentDiv && contentDiv.classList.contains('server-popup-content')) {
-                        // 强制Vue渲染最新内容
-                        if (window.statusCards && window.statusCards.$forceUpdate) {
-                            window.statusCards.$forceUpdate();
-                        }
-                        
                         // 短暂延迟确保Vue渲染完成
                         setTimeout(() => {
                             const dynamicContent = contentDiv.innerHTML;
@@ -2300,8 +2304,7 @@ function setupTippyMutationObserver() {
     window.tippyMutationObserver.observe(targetNode, {
         childList: true,
         subtree: true,
-        attributes: true,
-        attributeFilter: ['data-server-popup', 'style', 'class'] // 增加style和class监听
+      attributes: false
     });
 }
 

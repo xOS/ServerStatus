@@ -488,6 +488,13 @@ a {
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
+/* Chromium 定向降载：首页高频刷新的卡片关闭毛玻璃采样，保留现有布局与色彩 */
+html.is-chromium .ui.four.cards>.card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background-color: rgba(255, 255, 255, 0.88);
+}
+
 /**信息弹框透明**/
 .status.cards .ui.content.popup {
     border-radius: 5px;
@@ -1435,17 +1442,12 @@ html, body {
 [ref="chartDom"] {
     contain: layout style; /* 改为较宽松的contain，避免strict影响滚动 */
     will-change: auto;
-    transform: scale(0.85); /* 整体缩小到85% */
-    transform-origin: top center; /* 从顶部中心开始缩放 */
-    margin-bottom: -60px; /* 调整底部边距补偿缩放后的空间 */
     touch-action: pan-y; /* 允许垂直滚动 */
 }
 
 /* 响应式设计：移动设备上进一步缩小 */
 @media (max-width: 768px) {
     [ref="chartDom"] {
-        transform: scale(0.75); /* 移动设备缩小到75% */
-        margin-bottom: -80px;
         touch-action: manipulation; /* 允许基本触摸操作 */
         overflow: visible;
     }

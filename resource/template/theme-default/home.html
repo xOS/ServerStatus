@@ -940,16 +940,13 @@
                 }
             });
 
-            // 只有在有实际更新时才强制更新视图
+            // 有实际更新时仅做必要的后处理，避免整页强制重绘
             if (hasUpdates) {
                 // 如果标签发生变化，重新生成标签列表
                 if (this._needRegenerateTags) {
                     this.generateUniqueTags();
                     this._needRegenerateTags = false;
                 }
-
-                // 立即更新，不使用防抖（防抖可能导致状态显示延迟）
-                this.$forceUpdate();
 
                 // 更新当前显示的popup内容
                 this.$nextTick(() => {
