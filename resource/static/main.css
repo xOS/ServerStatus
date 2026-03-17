@@ -57,6 +57,19 @@
     --btn-primary-text: #ffffff;
 }
 
+/* Safari 定点修复：fa-t/fa-u 实际是字母，单独走正文字体，避免命中 Font Awesome 字体异常 */
+i.fa-sharp.fa-solid.fa-t::before {
+    content: "T";
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+    font-weight: inherit;
+}
+
+i.fa-sharp.fa-solid.fa-u::before {
+    content: "U";
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+    font-weight: inherit;
+}
+
 .custom-tabs-container {
     overflow-x: auto;
     width: fit-content;
