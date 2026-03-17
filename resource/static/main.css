@@ -232,6 +232,30 @@ i.fa-sharp.fa-solid.fa-u::before {
     display: inline-block;
 }
 
+/* CPU 型号滚动动画（保留首页跑马灯效果） */
+.cpuroll {
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.cpuroll .rollanimation {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    will-change: transform;
+    animation: cpu-roll 20s linear infinite;
+}
+
+@keyframes cpu-roll {
+    0% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(-100%);
+    }
+}
+
 td {
     word-wrap: break-word;
     word-break: break-all;
