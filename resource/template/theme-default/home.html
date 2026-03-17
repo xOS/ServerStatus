@@ -444,6 +444,20 @@
                 });
             });
         },
+        // 合并同一帧内的 WebSocket 状态消息，避免高频重复渲染
+        queueServerLiveStatusUpdate(wsData) {
+            this._pendingWsData = wsData;
+            if (this._wsUpdateQueued) return;
+            this._wsUpdateQueued = true;
+            requestAnimationFrame(() => {
+                this._wsUpdateQueued = false;
+                const pending = this._pendingWsData;
+                this._pendingWsData = null;
+                if (pending) {
+                    this.updateServerLiveStatus(pending);
+                }
+            });
+        },
         areSimpleArraysEqual(a, b) {
             if (a === b) return true;
             if (!Array.isArray(a) || !Array.isArray(b)) return false;
@@ -759,14 +773,27 @@
 
                 const wsServer = serverMap.get(serverItem.ID);
                 if (wsServer) {
-                    // 更新服务器状态
+                    // 更新服务器状态（只在关键字段有实际变化时才触发响应式更新）
                     if (wsServer.State) {
-                        const oldState = serverItem.State;
-                        serverItem.State = {
-                            ...oldState,
-                            ...wsServer.State
-                        };
-                        hasUpdates = true;
+                        const oldState = serverItem.State || {};
+                        const s = wsServer.State;
+                        const stateChanged =
+                            oldState.CPU !== s.CPU ||
+                            oldState.MemUsed !== s.MemUsed ||
+                            oldState.DiskUsed !== s.DiskUsed ||
+                            oldState.NetInSpeed !== s.NetInSpeed ||
+                            oldState.NetOutSpeed !== s.NetOutSpeed ||
+                            oldState.NetInTransfer !== s.NetInTransfer ||
+                            oldState.NetOutTransfer !== s.NetOutTransfer ||
+                            oldState.Uptime !== s.Uptime ||
+                            oldState.ProcessCount !== s.ProcessCount ||
+                            oldState.TcpConnCount !== s.TcpConnCount ||
+                            oldState.UdpConnCount !== s.UdpConnCount ||
+                            oldState.Load1 !== s.Load1;
+                        if (stateChanged) {
+                            serverItem.State = { ...oldState, ...s };
+                            hasUpdates = true;
+                        }
                     }
 
                     // 更新Host信息（服务器重启后CPU、内存等配置可能变化）
@@ -1202,9 +1229,11 @@
                     return;
                 }
 
-                // 处理服务器状态更新
+                // 处理服务器状态更新（按帧合并，减少高频重复渲染）
                 if (data.servers && Array.isArray(data.servers)) {
-                    if (window.statusCards) {
+                    if (window.statusCards && typeof window.statusCards.queueServerLiveStatusUpdate === 'function') {
+                        window.statusCards.queueServerLiveStatusUpdate(data);
+                    } else if (window.statusCards) {
                         window.statusCards.updateServerLiveStatus(data);
                     }
                 }
