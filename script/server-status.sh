@@ -13,7 +13,7 @@ AGENT_SERVICE="/etc/systemd/system/server-agent.service"
 AGENT_CONFIG="${AGENT_PATH}/config.yml"
 AGENT_OPENRC_SERVICE="/etc/init.d/server-agent"
 AGENT_LAUNCHD_SERVICE="$HOME/Library/LaunchAgents/com.serverstatus.agent.plist"
-VERSION="v0.2.7"
+VERSION="v0.2.8"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -288,43 +288,66 @@ before_show_menu() {
 }
 
 install_base() {
-    if [ "$os_alpine" = 1 ] || [ "$os_macos" = 1 ]; then
-        # Alpine和macOS系统不需要getenforce，只检查基本工具
-        (command -v curl >/dev/null 2>&1 && command -v wget >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1) ||
-            (install_soft curl wget unzip)
-    else
-        # 其他系统检查包括getenforce
-        (command -v curl >/dev/null 2>&1 && command -v wget >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1 && command -v getenforce >/dev/null 2>&1) ||
-            (install_soft curl wget unzip)
+    ensure_commands curl wget unzip || return 1
+}
+
+# 确保依赖命令存在，不存在则尝试安装并做二次校验
+ensure_commands() {
+    local cmd
+    local missing_cmds=()
+
+    for cmd in "$@"; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            missing_cmds+=("$cmd")
+        fi
+    done
+
+    if [ ${#missing_cmds[@]} -gt 0 ]; then
+        echo -e "${yellow}检测到缺少依赖: ${missing_cmds[*]}，尝试自动安装...${plain}"
+        install_soft "${missing_cmds[@]}"
     fi
+
+    missing_cmds=()
+    for cmd in "$@"; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            missing_cmds+=("$cmd")
+        fi
+    done
+
+    if [ ${#missing_cmds[@]} -gt 0 ]; then
+        err "缺少必要命令: ${missing_cmds[*]}，请先安装后重试"
+        return 1
+    fi
+
+    return 0
 }
 
 install_soft() {
 	# 根据不同系统使用相应的包管理器
     if [ "$os_alpine" = 1 ]; then
         # Alpine Linux 使用 apk
-        apk update && apk add $*
+        sudo apk update && sudo apk add "$@"
     elif [ "$os_macos" = 1 ]; then
         # macOS 使用 Homebrew
         if command -v brew >/dev/null 2>&1; then
-            brew install $*
+            brew install "$@"
         else
             echo -e "${yellow}未检测到Homebrew，正在安装...${plain}"
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            brew install $*
+            brew install "$@"
         fi
     elif command -v yum >/dev/null 2>&1; then
         # RHEL/CentOS/Fedora 使用 yum
-        yum makecache && yum install $* selinux-policy -y
+        sudo yum makecache && sudo yum install "$@" selinux-policy -y
     elif command -v apt >/dev/null 2>&1; then
         # Debian/Ubuntu 使用 apt
-        apt update && apt install $* selinux-utils -y
+        sudo apt update && sudo apt install "$@" selinux-utils -y
     elif command -v pacman >/dev/null 2>&1; then
         # Arch Linux 使用 pacman
-        pacman -Syu $* base-devel --noconfirm && install_arch
+        sudo pacman -Syu "$@" base-devel --noconfirm && install_arch
     elif command -v apt-get >/dev/null 2>&1; then
         # 旧版 Debian/Ubuntu 使用 apt-get
-        apt-get update && apt-get install $* selinux-utils -y
+        sudo apt-get update && sudo apt-get install "$@" selinux-utils -y
     else
         echo -e "${red}未找到支持的包管理器${plain}"
         exit 1
@@ -351,7 +374,7 @@ selinux() {
 }
 
 install_agent() {
-    install_base
+    install_base || return 1
     selinux
 
     echo -e "> 安装探针"
@@ -523,6 +546,8 @@ install_agent() {
 
 update_agent() {
     echo -e "> 更新 探针"
+
+    install_base || return 1
 
     echo -e "正在获取探针版本号"
 
@@ -1269,6 +1294,8 @@ clean_all() {
 
 update_dashboard() {
     echo -e "> 更新探针面板"
+
+    install_base || return 1
 
     echo -e "正在获取探针面板版本号"
 
