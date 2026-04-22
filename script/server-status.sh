@@ -13,7 +13,7 @@ AGENT_SERVICE="/etc/systemd/system/server-agent.service"
 AGENT_CONFIG="${AGENT_PATH}/config.yml"
 AGENT_OPENRC_SERVICE="/etc/init.d/server-agent"
 AGENT_LAUNCHD_SERVICE="$HOME/Library/LaunchAgents/com.serverstatus.agent.plist"
-VERSION="v0.2.8"
+VERSION="v0.2.9"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -341,13 +341,27 @@ install_soft() {
         sudo yum makecache && sudo yum install "$@" selinux-policy -y
     elif command -v apt >/dev/null 2>&1; then
         # Debian/Ubuntu 使用 apt
-        sudo apt update && sudo apt install "$@" selinux-utils -y
+        if ! sudo apt install -y "$@"; then
+            echo -e "${yellow}apt 直接安装失败，尝试刷新软件源后重试...${plain}"
+            if ! sudo apt update; then
+                echo -e "${yellow}apt update 失败，尝试忽略失效源继续更新索引...${plain}"
+                sudo apt -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true update || true
+            fi
+            sudo apt install -y --fix-missing "$@"
+        fi
     elif command -v pacman >/dev/null 2>&1; then
         # Arch Linux 使用 pacman
         sudo pacman -Syu "$@" base-devel --noconfirm && install_arch
     elif command -v apt-get >/dev/null 2>&1; then
         # 旧版 Debian/Ubuntu 使用 apt-get
-        sudo apt-get update && sudo apt-get install "$@" selinux-utils -y
+        if ! sudo apt-get install -y "$@"; then
+            echo -e "${yellow}apt-get 直接安装失败，尝试刷新软件源后重试...${plain}"
+            if ! sudo apt-get update; then
+                echo -e "${yellow}apt-get update 失败，尝试忽略失效源继续更新索引...${plain}"
+                sudo apt-get -o Acquire::AllowInsecureRepositories=true -o Acquire::AllowDowngradeToInsecureRepositories=true update || true
+            fi
+            sudo apt-get install -y --fix-missing "$@"
+        fi
     else
         echo -e "${red}未找到支持的包管理器${plain}"
         exit 1
