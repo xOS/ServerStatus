@@ -442,6 +442,8 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 
 	// 检查是否是服务器重启或网络接口重置 - 优化频繁重启场景
 	isRestart := false
+	timeSinceLastActive := now.Sub(serverCopy.LastActive)
+
 	if serverCopy.Host != nil && prevState != nil {
 		// 获取之前显示的累计流量值
 		prevDisplayIn := prevState.NetInTransfer
@@ -449,8 +451,6 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 
 		// 优化重启检测逻辑，减少频繁重启时的误判
 		// 只有在流量大幅回退（超过80%）且上次活跃时间超过5分钟时才认为是重启
-		timeSinceLastActive := now.Sub(serverCopy.LastActive)
-
 		if timeSinceLastActive > 5*time.Minute {
 			// 长时间离线后重新上线，检查流量回退
 			if (prevDisplayIn > 0 && originalNetInTransfer < prevDisplayIn/5) ||
@@ -505,7 +505,7 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 		state.NetOutTransfer = server.CumulativeNetOutTransfer
 	} else {
 		// 正常增量更新
-		s.updateTrafficIncremental(server, state, originalNetInTransfer, originalNetOutTransfer)
+		s.updateTrafficIncremental(server, state, originalNetInTransfer, originalNetOutTransfer, timeSinceLastActive)
 	}
 
 	// 保存当前状态
@@ -599,7 +599,7 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 }
 
 // updateTrafficIncremental 增量更新流量数据
-func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *model.HostState, originalNetInTransfer, originalNetOutTransfer uint64) {
+func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *model.HostState, originalNetInTransfer, originalNetOutTransfer uint64, timeSinceLastActive time.Duration) {
 	var increaseIn, increaseOut uint64
 
 	// 计算增量（仅在流量增长时计算）
@@ -634,9 +634,28 @@ func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *mo
 	} else {
 		// 正常增量
 		increaseIn = originalNetInTransfer - prevIn
-		// 检查增量是否合理（防止异常大值）- 调整阈值为10TB，更适合高流量服务器
-		if increaseIn > 10*1024*1024*1024*1024 { // 增量超过10TB，可能是异常值
-			log.Printf("警告：服务器 %d 入站流量增量异常大 (%d)，可能是统计错误，本次不计入", server.ID, increaseIn)
+		
+		// 动态计算合理的增量阈值：假设最大物理网卡速率为 400Gbps (50GB/s)
+		var maxPossibleBytes uint64 = 10 * 1024 * 1024 * 1024 * 1024 // 默认10TB
+		if timeSinceLastActive > 0 {
+			seconds := uint64(timeSinceLastActive.Seconds())
+			if seconds < 31536000 { // 离线少于1年才计算动态限制
+				if seconds == 0 {
+					seconds = 1
+				}
+				dynamicMax := 50 * 1024 * 1024 * 1024 * seconds // 50GB/s
+				if dynamicMax < 10*1024*1024*1024 {
+					dynamicMax = 10 * 1024 * 1024 * 1024 // 最小10GB
+				}
+				if dynamicMax < maxPossibleBytes {
+					maxPossibleBytes = dynamicMax
+				}
+			}
+		}
+
+		// 检查增量是否合理（防止异常大值）
+		if increaseIn > maxPossibleBytes {
+			log.Printf("警告：服务器 %d 入站流量增量异常大 (%d > %d)，可能是统计错误，本次不计入", server.ID, increaseIn, maxPossibleBytes)
 			increaseIn = 0
 		} else if server.CumulativeNetInTransfer > 0 &&
 			increaseIn > ^uint64(0)-server.CumulativeNetInTransfer {
@@ -670,9 +689,28 @@ func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *mo
 	} else {
 		// 正常增量
 		increaseOut = originalNetOutTransfer - prevOut
-		// 检查增量是否合理（防止异常大值）- 调整阈值为10TB，更适合高流量服务器
-		if increaseOut > 10*1024*1024*1024*1024 { // 增量超过10TB，可能是异常值
-			log.Printf("警告：服务器 %d 出站流量增量异常大 (%d)，可能是统计错误，本次不计入", server.ID, increaseOut)
+
+		// 动态计算合理的增量阈值：假设最大物理网卡速率为 400Gbps (50GB/s)
+		var maxPossibleBytes uint64 = 10 * 1024 * 1024 * 1024 * 1024 // 默认10TB
+		if timeSinceLastActive > 0 {
+			seconds := uint64(timeSinceLastActive.Seconds())
+			if seconds < 31536000 { // 离线少于1年才计算动态限制
+				if seconds == 0 {
+					seconds = 1
+				}
+				dynamicMax := 50 * 1024 * 1024 * 1024 * seconds // 50GB/s
+				if dynamicMax < 10*1024*1024*1024 {
+					dynamicMax = 10 * 1024 * 1024 * 1024 // 最小10GB
+				}
+				if dynamicMax < maxPossibleBytes {
+					maxPossibleBytes = dynamicMax
+				}
+			}
+		}
+
+		// 检查增量是否合理（防止异常大值）
+		if increaseOut > maxPossibleBytes {
+			log.Printf("警告：服务器 %d 出站流量增量异常大 (%d > %d)，可能是统计错误，本次不计入", server.ID, increaseOut, maxPossibleBytes)
 			increaseOut = 0
 		} else if server.CumulativeNetOutTransfer > 0 &&
 			increaseOut > ^uint64(0)-server.CumulativeNetOutTransfer {

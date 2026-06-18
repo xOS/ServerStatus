@@ -587,9 +587,11 @@ func UpdateServer(s *model.Server) error {
 		
 		// 获取之前存储的快照值
 		var prevIn, prevOut uint64
+		var timeSinceLastActive time.Duration
 		if server, ok := ServerList[s.ID]; ok && server != nil {
 			prevIn = uint64(server.PrevTransferInSnapshot)
 			prevOut = uint64(server.PrevTransferOutSnapshot)
+			timeSinceLastActive = now.Sub(server.LastActive)
 		}
 		
 		// 计算增量并更新累计流量
@@ -599,10 +601,32 @@ func UpdateServer(s *model.Server) error {
 		} else {
 			// 正常增量
 			increase := originalIn - prevIn
-			// 检查是否会发生溢出
-			if s.CumulativeNetInTransfer > 0 &&
+			
+			// 动态计算合理的增量阈值：假设最大物理网卡速率为 400Gbps (50GB/s)
+			var maxPossibleBytes uint64 = 10 * 1024 * 1024 * 1024 * 1024 // 默认10TB
+			if timeSinceLastActive > 0 {
+				seconds := uint64(timeSinceLastActive.Seconds())
+				if seconds < 31536000 {
+					if seconds == 0 {
+						seconds = 1
+					}
+					dynamicMax := 50 * 1024 * 1024 * 1024 * seconds
+					if dynamicMax < 10*1024*1024*1024 {
+						dynamicMax = 10 * 1024 * 1024 * 1024
+					}
+					if dynamicMax < maxPossibleBytes {
+						maxPossibleBytes = dynamicMax
+					}
+				}
+			}
+
+			// 检查增量是否合理
+			if increase > maxPossibleBytes {
+				log.Printf("警告：服务器 %s 入站流量增量异常大 (%d > %d)，可能是统计错误，本次不计入", s.Name, increase, maxPossibleBytes)
+				// 异常值不累加
+			} else if s.CumulativeNetInTransfer > 0 &&
 				increase > ^uint64(0)-s.CumulativeNetInTransfer {
-				// 如果会发生溢出，保持当前值不变
+				// 溢出保护
 				log.Printf("警告：服务器 %s 入站流量累计值即将溢出，保持当前值", s.Name)
 			} else {
 				s.CumulativeNetInTransfer += increase
@@ -616,10 +640,32 @@ func UpdateServer(s *model.Server) error {
 		} else {
 			// 正常增量
 			increase := originalOut - prevOut
-			// 检查是否会发生溢出
-			if s.CumulativeNetOutTransfer > 0 &&
+			
+			// 动态计算合理的增量阈值
+			var maxPossibleBytes uint64 = 10 * 1024 * 1024 * 1024 * 1024 // 默认10TB
+			if timeSinceLastActive > 0 {
+				seconds := uint64(timeSinceLastActive.Seconds())
+				if seconds < 31536000 {
+					if seconds == 0 {
+						seconds = 1
+					}
+					dynamicMax := 50 * 1024 * 1024 * 1024 * seconds
+					if dynamicMax < 10*1024*1024*1024 {
+						dynamicMax = 10 * 1024 * 1024 * 1024
+					}
+					if dynamicMax < maxPossibleBytes {
+						maxPossibleBytes = dynamicMax
+					}
+				}
+			}
+
+			// 检查增量是否合理
+			if increase > maxPossibleBytes {
+				log.Printf("警告：服务器 %s 出站流量增量异常大 (%d > %d)，可能是统计错误，本次不计入", s.Name, increase, maxPossibleBytes)
+				// 异常值不累加
+			} else if s.CumulativeNetOutTransfer > 0 &&
 				increase > ^uint64(0)-s.CumulativeNetOutTransfer {
-				// 如果会发生溢出，保持当前值不变
+				// 溢出保护
 				log.Printf("警告：服务器 %s 出站流量累计值即将溢出，保持当前值", s.Name)
 			} else {
 				s.CumulativeNetOutTransfer += increase
