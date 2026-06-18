@@ -87,6 +87,8 @@ function showFormModal(modelSelector, formID, URL, getData) {
   $(modelSelector)
     .modal({
       closable: true,
+      transition: 'fade',
+      duration: 200,
       onApprove: function () {
         let success = false;
         const btn = $(modelSelector + " .server-primary-btn.button");
@@ -205,7 +207,7 @@ function addOrEditAlertRule(rule) {
   modal
     .find(".server-primary-btn.button")
     .html(
-      rule ? LANG.Edit + '<i class="edit icon"></i>' : LANG.Add + '<i class="add icon"></i>'
+      rule ? LANG.Edit : LANG.Add
     );
   modal.find("input[name=ID]").val(rule ? rule.ID : null);
   modal.find("input[name=Name]").val(rule ? rule.Name : null);
@@ -293,8 +295,8 @@ function addOrEditNotification(notification) {
     .find(".server-primary-btn.button")
     .html(
       notification
-        ? LANG.Edit + '<i class="edit icon"></i>'
-        : LANG.Add + '<i class="add icon"></i>'
+        ? LANG.Edit
+        : LANG.Add
     );
   modal.find("input[name=ID]").val(notification ? notification.ID : null);
   modal.find("input[name=Name]").val(notification ? notification.Name : null);
@@ -332,8 +334,8 @@ function addOrEditDDNS(ddns) {
     .find(".server-primary-btn.button")
     .html(
       ddns
-        ? LANG.Edit + '<i class="edit icon"></i>'
-        : LANG.Add + '<i class="add icon"></i>'
+        ? LANG.Edit
+        : LANG.Add
     );
   modal.find("input[name=ID]").val(ddns ? ddns.ID : null);
   modal.find("input[name=Name]").val(ddns ? ddns.Name : null);
@@ -381,8 +383,8 @@ function addOrEditNAT(nat) {
     .find(".server-primary-btn.button")
     .html(
       nat
-        ? LANG.Edit + '<i class="edit icon"></i>'
-        : LANG.Add + '<i class="add icon"></i>'
+        ? LANG.Edit
+        : LANG.Add
     );
   modal.find("input[name=ID]").val(nat ? nat.ID : null);
   modal.find("input[name=ServerID]").val(nat ? nat.ServerID : null);
@@ -428,7 +430,7 @@ function issueNewApiToken(apiToken) {
   modal
       .find(".server-primary-btn.button")
     .html(
-      apiToken ? LANG.Edit + '<i class="edit icon"></i>' : LANG.Add + '<i class="add icon"></i>'
+      apiToken ? LANG.Edit : LANG.Add
     );
   modal.find("textarea[name=Note]").val(apiToken ? apiToken.Note : null);
   showFormModal(".api.modal", "#apiForm", "/api/token");
@@ -440,7 +442,7 @@ function addOrEditServer(server, conf) {
   modal
     .find(".server-primary-btn.button")
     .html(
-      server ? LANG.Edit + '<i class="edit icon"></i>' : LANG.Add + '<i class="add icon"></i>'
+      server ? LANG.Edit : LANG.Add
     );
   modal.find("input[name=id]").val(server ? server.ID : null);
   modal.find("input[name=name]").val(server ? server.Name : null);
@@ -559,7 +561,7 @@ function addOrEditMonitor(monitor) {
   modal
     .find(".server-primary-btn.button")
     .html(
-      monitor ? LANG.Edit + '<i class="edit icon"></i>' : LANG.Add + '<i class="add icon"></i>'
+      monitor ? LANG.Edit : LANG.Add
     );
   modal.find("input[name=ID]").val(monitor ? monitor.ID : null);
   modal.find("input[name=Name]").val(monitor ? monitor.Name : null);
@@ -696,7 +698,7 @@ function addOrEditCron(cron) {
   modal
     .find(".server-primary-btn.button")
     .html(
-      cron ? LANG.Edit + '<i class="edit icon"></i>' : LANG.Add + '<i class="add icon"></i>'
+      cron ? LANG.Edit : LANG.Add
     );
   modal.find("input[name=ID]").val(cron ? cron.ID : null);
   modal.find("input[name=Name]").val(cron ? cron.Name : null);

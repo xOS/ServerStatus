@@ -1,4 +1,11 @@
 {{define "dashboard-default/server"}}
+    <style>
+        /* 根本性解决长列表渲染卡顿：现代浏览器可视区域外自动卸载渲染树 */
+        .server-list-row {
+            content-visibility: auto;
+            contain-intrinsic-size: 66px;
+        }
+    </style>
 {{template "common/header" .}}
 {{template "common/menu" .}}
 <div class="nb-container">
@@ -40,8 +47,8 @@
             </thead>
             <tbody>
                 {{range $server := .Servers}}
-                <tr>
-                    <td>
+                <tr class="server-list-row">
+                    <td style="text-align: center;">
                         <div class="ui checkbox server-select-checkbox">
                             <input type="checkbox" class="server-servers hidden" value="{{$server.ID}}" tabindex="0" />
                             <label></label>

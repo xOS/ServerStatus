@@ -6,7 +6,7 @@
         margin: 0.5em!important;
         width: calc(25% - 1em) !important;
     }
-    
+
 }
 
 @media only screen and (max-width: 1389px) {
@@ -46,7 +46,7 @@
     --body-bg: #f5f7fb;
     --glass-bg-soft: rgba(255, 255, 255, 0.52);
     --glass-bg-card: rgba(255, 255, 255, 0.64);
-    --glass-bg-popup: rgba(255, 255, 255, 0.82);
+    --glass-bg-popup: rgba(255, 255, 255, 0.90);
     --glass-border: rgba(255, 255, 255, 0.72);
     --glass-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
     --btn-bg: var(--glass-bg-card);
@@ -82,8 +82,8 @@ i.fa-sharp.fa-solid.fa-u::before {
     margin-bottom: 0;
     box-shadow: var(--glass-shadow);
     border: 1px solid var(--glass-border);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    transform: translateZ(0); will-change: transform; backdrop-filter: blur(12px);
+    -webkit-transform: translateZ(0); will-change: transform; backdrop-filter: blur(12px);
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -367,8 +367,8 @@ a {
     background: var(--glass-bg-soft);
     border: 1px solid var(--glass-border);
     box-shadow: var(--glass-shadow);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     padding: 1.05em 1.2em;
 }
 
@@ -377,8 +377,8 @@ a {
     border: 1px solid var(--glass-border) !important;
     color: rgba(15, 23, 42, 0.86) !important;
     box-shadow: var(--glass-shadow) !important;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     width: min(92vw, 560px) !important;
     min-height: 180px;
     margin: 2.5rem auto 1.2rem !important;
@@ -422,8 +422,8 @@ a {
     border: 1px solid rgba(189, 163, 116, 0.65) !important;
     background: rgba(248, 244, 235, 0.80) !important;
     box-shadow: 0 8px 24px rgba(60, 45, 25, 0.18) !important;
-    backdrop-filter: blur(14px) !important;
-    -webkit-backdrop-filter: blur(14px) !important;
+    transform: translateZ(0); will-change: transform; backdrop-filter: blur(14px) !important;
+    -webkit-transform: translateZ(0); will-change: transform; backdrop-filter: blur(14px) !important;
     padding: 0.8rem 1rem !important;
     margin: 0 !important;
 }
@@ -485,11 +485,16 @@ a {
 
 /**后台文本域**/
 .ui.form select {
-    background: rgba(255, 255, 255, 0.56) !important;
+    background: #f3f4f6 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 .ui.form textarea {
-    background: rgba(255, 255, 255, 0.56) !important;
+    background: #f3f4f6 !important;
+    border-radius: 10px !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 .ui.checkbox input:checked~.box:before,
@@ -504,15 +509,16 @@ a {
 }
 
 .ui.form textarea:focus {
-    background: rgba(255, 255, 255, 0.62) !important;
+    background: #f3f4f6 !important;
 }
 
 .ui.segment {
-    background: var(--glass-bg-soft) !important;
+    background: #ffffff !important;
     border: 1px solid var(--glass-border) !important;
     box-shadow: var(--glass-shadow) !important;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    border-radius: 10px !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 .ui.form input:not([type]),
@@ -527,7 +533,10 @@ a {
 .ui.form input[type=text],
 .ui.form input[type=time],
 .ui.form input[type=url] {
-    background: rgba(255, 255, 255, 0.56) !important;
+    background: #f3f4f6 !important;
+    border-radius: 20px !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 /**信息卡片透明**/
@@ -546,8 +555,8 @@ a {
     -webkit-box-shadow: var(--glass-shadow);
     box-shadow: var(--glass-shadow);
     border: 1px solid var(--glass-border);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     overflow: hidden;
     background-clip: padding-box;
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
@@ -555,8 +564,8 @@ a {
 
 /* Chromium 定向降载：首页高频刷新的卡片关闭毛玻璃采样，保留现有布局与色彩 */
 html.is-chromium .ui.four.cards>.card {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    transform: translateZ(0); will-change: transform; backdrop-filter: none;
+    -webkit-transform: translateZ(0); will-change: transform; backdrop-filter: none;
     background-color: rgba(255, 255, 255, 0.88);
 }
 
@@ -636,6 +645,9 @@ i.icon {
 /**后台文本信息可选可复制**/
 .ui.basic.table {
     user-select: text;
+    background-color: #ffffff !important;
+    padding: 1rem !important;
+    border-radius: 10px !important;
 }
 
 .ui.dimmer {
@@ -644,23 +656,32 @@ i.icon {
 
 /**后台服务器编辑区**/
 .ui.modal>.content {
-    background: rgba(255, 255, 255, 0.74) !important;
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 .ui.modal>.actions {
-    background: rgba(255, 255, 255, 0.62) !important;
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-radius: 0 0 10px 10px !important;
 }
 
 .ui.modal>.header {
-    background: rgba(255, 255, 255, 0.62) !important;
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-radius: 10px 10px 0 0 !important;
 }
 
 .ui.modal {
-    background: rgba(255, 255, 255, 0.66) !important;
+    background: #ffffff !important;
     border: 1px solid var(--glass-border) !important;
     box-shadow: var(--glass-shadow) !important;
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    border-radius: 10px !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 .column {
@@ -696,8 +717,8 @@ i.icon {
     background-color: rgba(255, 255, 255, 0.58);
     border: 1px solid var(--glass-border);
     box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    transform: translateZ(0); will-change: transform; backdrop-filter: blur(12px);
+    -webkit-transform: translateZ(0); will-change: transform; backdrop-filter: blur(12px);
 }
 
 /**下拉菜单样式**/
@@ -707,8 +728,8 @@ i.icon {
     background-color: rgba(255, 255, 255, 0.68);
     border: 1px solid var(--glass-border);
     box-shadow: var(--glass-shadow);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    transform: translateZ(0); will-change: transform; backdrop-filter: blur(12px);
+    -webkit-transform: translateZ(0); will-change: transform; backdrop-filter: blur(12px);
 }
 
 /**页脚样式**/
@@ -716,11 +737,11 @@ i.icon {
 .ui.primary.inverted.segment {
     width: 100%;
     color: rgba(17, 24, 39, 0.76);
-    background-color: rgba(255, 255, 255, 0.58);
+    background-color: rgba(255, 255, 255, 0.58) !important;
     border-top: 1px solid var(--glass-border);
     box-shadow: 0 -2px 12px rgba(15, 23, 42, 0.06);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    transform: translateZ(0); will-change: transform; backdrop-filter: blur(12px) !important;
+    -webkit-transform: translateZ(0); will-change: transform; backdrop-filter: blur(12px) !important;
     position: fixed;
     bottom: 0;
     z-index: 10;
@@ -962,20 +983,7 @@ i.note.icon {
     min-height: 100vh;
     padding-bottom: 55px;
     margin-bottom: -47px;
-}
-
-#app .ui.fluid.accordion {
-    border-radius: 19px;
-    margin-bottom: 1rem;
-    background-color: var(--glass-bg-soft);
-    -webkit-transition: box-shadow .2s ease, border-color .2s ease, background-color .2s ease;
-    transition: box-shadow .2s ease, border-color .2s ease, background-color .2s ease;
-    -webkit-box-shadow: var(--glass-shadow);
-    box-shadow: var(--glass-shadow);
-    border: 1px solid var(--glass-border);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+    background-color: #f4f5f7 !important;
 }
 
 .login.nb-container {
@@ -1080,8 +1088,8 @@ i.s {
     -webkit-box-shadow: var(--glass-shadow);
     box-shadow: var(--glass-shadow);
     border: 1px solid var(--glass-border);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
@@ -1101,9 +1109,10 @@ i.s {
     font-weight: 700;
     line-height: 1.1;
     box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+
     transition: background-color .2s ease, color .2s ease, box-shadow .2s ease, border-color .2s ease;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 .ui.buttons .button,
@@ -1227,6 +1236,8 @@ i.s {
     padding: 0.5em 1.05em;
     font-size: 0.84rem;
     line-height: 1.15;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 /* 后台并排 mini 图标按钮：间距与正圆 */
@@ -1262,11 +1273,11 @@ i.s {
 
 /* server 页面复制提示：自包含紧凑样式，独立于 custom-server-popup */
 .tippy-box[data-theme~='copy-tooltip'] {
-    background-color: rgba(255, 255, 255, 0.92) !important;
+    background-color: rgba(255, 255, 255, 0.90) !important;
     color: #333 !important;
     border-radius: 6px !important;
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12) !important;
-    backdrop-filter: blur(8px) !important;
+    backdrop-filter: none !important;
     border: 1px solid rgba(255, 255, 255, 0.8) !important;
     font-size: 12px !important;
     line-height: 1.3 !important;
@@ -1376,31 +1387,32 @@ i.s {
 
 /* 原生 select 下拉框统一毛玻璃效果 */
 .ui.form select {
-    background: rgba(255, 255, 255, 0.62) !important;
+    background: #f3f4f6 !important;
     border: 1px solid var(--glass-border) !important;
     box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06) !important;
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
-    border-radius: 12px !important;
+
+    border-radius: 20px !important;
     color: #555 !important;
     min-height: 2.6em !important;
     padding: 0.62em 0.95em !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 .ui.form select:focus {
-    background: rgba(255, 255, 255, 0.74) !important;
+    background: #f3f4f6 !important;
     border-color: rgba(255, 255, 255, 0.84) !important;
 }
 
 /* setting 等页面的 Semantic 下拉框毛玻璃 */
 .ui.form .ui.selection.dropdown,
 .ui.form .ui.fluid.dropdown {
-    background: rgba(255, 255, 255, 0.62) !important;
+    background: #f3f4f6 !important;
     border: 1px solid var(--glass-border) !important;
     box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06) !important;
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
-    border-radius: 12px !important;
+    border-radius: 20px !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     min-height: 2.6em !important;
     color: #555 !important;
 }
@@ -1411,12 +1423,13 @@ i.s {
 }
 
 .ui.form .ui.selection.dropdown .menu {
-    border-radius: 12px !important;
-    background: rgba(255, 255, 255, 0.78) !important;
+    border-radius:   12px !important;
+    background: #ffffff !important;
     border: 1px solid var(--glass-border) !important;
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1) !important;
-    backdrop-filter: blur(10px) !important;
-    -webkit-backdrop-filter: blur(10px) !important;
+
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 .ui.form .ui.selection.dropdown .menu > .item {
@@ -1467,6 +1480,8 @@ html, body {
 /* 弹窗触摸优化 */
 .ui.popup {
     touch-action: manipulation;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 /* 折叠面板触摸优化 */
@@ -1516,13 +1531,13 @@ html, body {
         touch-action: manipulation; /* 允许基本触摸操作 */
         overflow: visible;
     }
-    
+
     /* 温和的移动端滚动优化 */
     html, body {
         -webkit-overflow-scrolling: touch;
         overflow-y: auto;
     }
-    
+
     /* 确保容器不干扰滚动 */
     .nb-container {
         overflow: visible;
@@ -1543,11 +1558,11 @@ html, body {
 
 /* Tippy.js 自定义样式 - 服务器信息弹窗 */
 .tippy-box[data-theme~='custom-server-popup'] {
-    background-color: rgba(255, 255, 255, 0.84) !important;
+    background-color: rgba(255, 255, 255, 0.90) !important;
     color: #333 !important;
     border-radius: 8px !important;
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.11) !important;
-    backdrop-filter: blur(10px) !important;
+    backdrop-filter: none !important;
     border: 1px solid rgba(255, 255, 255, 0.74) !important;
     font-size: 13px !important;
     line-height: 1.5 !important;
@@ -1609,7 +1624,7 @@ html, body {
     bottom: 0 !important;
     left: 50% !important;
     transform: translateX(-50%) !important;
-    border-top-color: rgba(255, 255, 255, 0.84) !important;
+    border-top-color: rgba(255, 255, 255, 0.90) !important;
     border-bottom: none !important;
 }
 
@@ -1618,7 +1633,7 @@ html, body {
     top: 0 !important;
     left: 50% !important;
     transform: translateX(-50%) !important;
-    border-bottom-color: rgba(255, 255, 255, 0.84) !important;
+    border-bottom-color: rgba(255, 255, 255, 0.90) !important;
     border-top: none !important;
 }
 
@@ -1627,7 +1642,7 @@ html, body {
     top: 47% !important;
     right: 0 !important;
     transform: translateY(-50%) !important;
-    border-left-color: rgba(255, 255, 255, 0.84) !important;
+    border-left-color: rgba(255, 255, 255, 0.90) !important;
     border-right: none !important;
 }
 
@@ -1636,13 +1651,13 @@ html, body {
     top: 47% !important;
     left: 0 !important;
     transform: translateY(-50%) !important;
-    border-right-color: rgba(255, 255, 255, 0.84) !important;
+    border-right-color: rgba(255, 255, 255, 0.90) !important;
     border-left: none !important;
 }
 
 /* 兼容性：同时支持SVG箭头 */
 .tippy-box[data-theme~='custom-server-popup'] .tippy-svg-arrow {
-    fill: rgba(255, 255, 255, 0.84) !important;
+    fill: rgba(255, 255, 255, 0.90) !important;
 }
 
 /* 隐藏原始内容 */
@@ -1657,9 +1672,9 @@ html, body {
     border: 1px solid var(--glass-border) !important;
     color: #555 !important;
     box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06) !important;
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
-    border-radius: 8px !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-radius: 15px !important;
     text-shadow: none !important;
 }
 
@@ -1677,17 +1692,18 @@ html, body {
 /* 下拉框本体和输入框毛玻璃 */
 .ui.selection.dropdown,
 .ui.search.dropdown {
-    background: rgba(255, 255, 255, 0.56) !important;
+    background: #f3f4f6 !important;
     border: 1px solid var(--glass-border) !important;
     box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06) !important;
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
+    border-radius: 20px !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     color: #555 !important;
 }
 
 .ui.selection.dropdown:focus,
 .ui.selection.dropdown.active {
-    background: rgba(255, 255, 255, 0.72) !important;
+    background: #f3f4f6 !important;
     border-color: rgba(255, 255, 255, 0.82) !important;
 }
 
@@ -1696,12 +1712,12 @@ html, body {
 .nb-container .ui.form select,
 .ui.modal select,
 .ui.modal .ui.form select {
-    background: rgba(255, 255, 255, 0.62) !important;
+    background: #f3f4f6 !important;
     border: 1px solid var(--glass-border) !important;
     box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06) !important;
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
-    border-radius: 12px !important;
+    border-radius: 20px !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     color: #555 !important;
     min-height: 2.6em !important;
     padding: 0.62em 0.95em !important;
@@ -1711,7 +1727,7 @@ html, body {
 .nb-container .ui.form select:focus,
 .ui.modal select:focus,
 .ui.modal .ui.form select:focus {
-    background: rgba(255, 255, 255, 0.74) !important;
+    background: #f3f4f6 !important;
     border-color: rgba(255, 255, 255, 0.84) !important;
 }
 
@@ -1721,14 +1737,15 @@ html, body {
 .ui.modal .ui.form .ui.fluid.dropdown,
 .ui.modal .ui.selection.dropdown,
 .ui.modal .ui.search.dropdown {
-    background: rgba(255, 255, 255, 0.62) !important;
+    background: #f3f4f6 !important;
     border: 1px solid var(--glass-border) !important;
     box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06) !important;
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
-    border-radius: 12px !important;
+
+    border-radius: 20px !important;
     min-height: 2.6em !important;
     color: #555 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 .nb-container .ui.form .ui.selection.dropdown > .text,
@@ -1743,12 +1760,13 @@ html, body {
 .nb-container .ui.form .ui.selection.dropdown .menu,
 .ui.modal .ui.form .ui.selection.dropdown .menu,
 .ui.modal .ui.selection.dropdown .menu {
-    border-radius: 12px !important;
-    background: rgba(255, 255, 255, 0.78) !important;
+    border-radius:   12px !important;
+    background: #ffffff !important;
     border: 1px solid var(--glass-border) !important;
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1) !important;
-    backdrop-filter: blur(10px) !important;
-    -webkit-backdrop-filter: blur(10px) !important;
+
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 /* 后台弹窗按钮同轴对齐：修复“取消 + 添加/修改”不在同一水平线 */
@@ -1796,7 +1814,9 @@ html, body {
 
     .nb-container .ui.grid > .right.floated.right.aligned.twelve.wide.column .ui.button {
         margin: 0 !important;
-    }
+        backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
 
     .nb-container .ui.basic.table,
     .nb-container .ui.very.basic.table {
