@@ -30,7 +30,7 @@ func TestSplitDomainSOA(t *testing.T) {
 		{
 			domain: "example.com",
 			zone:   "example.com.",
-			prefix: "",
+			prefix: "@",
 		},
 	}
 

@@ -19,7 +19,11 @@ func TestServerMarshal(t *testing.T) {
 			Tag:  patterns[i],
 		}
 		serverStr := string(server.MarshalForDashboard())
-		var serverRestore Server
+		var serverRestore struct {
+			ID   string
+			Name string
+			Tag  string
+		}
 		if utils.Json.Unmarshal([]byte(serverStr), &serverRestore) != nil {
 			t.Fatalf("Error: %s", serverStr)
 		}

@@ -1,8 +1,6 @@
 module github.com/xos/serverstatus
 
-go 1.24.0
-
-toolchain go1.24.3
+go 1.25.0
 
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20240425163905-bcdc1ad063ea
@@ -31,13 +29,13 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/tidwall/gjson v1.18.0
 	github.com/xanzy/go-gitlab v0.103.0
-	golang.org/x/crypto v0.38.0
-	golang.org/x/net v0.40.0
-	golang.org/x/oauth2 v0.29.0
-	golang.org/x/sync v0.14.0
-	golang.org/x/text v0.25.0
-	google.golang.org/grpc v1.72.0
-	google.golang.org/protobuf v1.36.6
+	golang.org/x/crypto v0.53.0
+	golang.org/x/net v0.56.0
+	golang.org/x/oauth2 v0.36.0
+	golang.org/x/sync v0.21.0
+	golang.org/x/text v0.38.0
+	google.golang.org/grpc v1.81.1
+	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.26.0
@@ -68,7 +66,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-fed/httpsig v1.1.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.0.4 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.26.0 // indirect
@@ -99,9 +97,9 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	golang.org/x/arch v0.16.0 // indirect
-	golang.org/x/mod v0.24.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/mod v0.36.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
-	golang.org/x/tools v0.32.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250428153025-10db94c68c34 // indirect
+	golang.org/x/tools v0.45.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
 )
