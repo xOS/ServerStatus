@@ -1304,7 +1304,7 @@ window.extractTrafficData = function() {
                     // 从字节数据计算百分比
                     if (maxBytes > 0) {
                         percent = (usedBytes / maxBytes) * 100;
-                        percent = Math.max(0, Math.min(100, percent)); // 限制在0-100范围
+                        percent = Math.max(0, percent); // 限制在0-100范围
                     } else {
                         percent = 0;
                     }
@@ -1316,12 +1316,12 @@ window.extractTrafficData = function() {
                     maxBytes = window.parseTrafficToBytes ? window.parseTrafficToBytes(maxTraffic) : 0;
                     usedBytes = window.parseTrafficToBytes ? window.parseTrafficToBytes(usedTraffic) : 0;
                     
-                    // 如果有后端计算的百分比，作为备选
-                    if (typeof item.used_percent === 'number') {
-                        percent = item.used_percent;
-                    } else if (maxBytes > 0) {
+                    // 优先使用字节数据计算以允许超过100%，否则回退到后端限制的百分比
+                    if (maxBytes > 0) {
                         percent = (usedBytes / maxBytes) * 100;
-                        percent = Math.max(0, Math.min(100, percent));
+                        percent = Math.max(0, percent);
+                    } else if (typeof item.used_percent === 'number') {
+                        percent = item.used_percent;
                     } else {
                         percent = 0;
                     }
@@ -1489,7 +1489,7 @@ class TrafficManager {
                 // 从字节数据计算百分比
                 if (maxBytes > 0) {
                     percent = (usedBytes / maxBytes) * 100;
-                    percent = Math.max(0, Math.min(100, percent)); // 限制在0-100范围
+                    percent = Math.max(0, percent); // 限制在0-100范围
                 } else {
                     percent = 0;
                 }
@@ -1501,12 +1501,12 @@ class TrafficManager {
                 maxBytes = TrafficManager.parseTrafficToBytes(maxTraffic);
                 usedBytes = TrafficManager.parseTrafficToBytes(usedTraffic);
                 
-                // 如果有后端计算的百分比，作为备选
-                if (typeof item.used_percent === 'number') {
-                    percent = item.used_percent;
-                } else if (maxBytes > 0) {
+                // 优先使用字节数据计算以允许超过100%，否则回退到后端限制的百分比
+                if (maxBytes > 0) {
                     percent = (usedBytes / maxBytes) * 100;
-                    percent = Math.max(0, Math.min(100, percent));
+                    percent = Math.max(0, percent);
+                } else if (typeof item.used_percent === 'number') {
+                    percent = item.used_percent;
                 } else {
                     percent = 0;
                 }

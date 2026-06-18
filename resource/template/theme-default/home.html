@@ -276,7 +276,7 @@
                         // 从字节数据计算百分比
                         if (maxBytes > 0) {
                             percent = (usedBytes / maxBytes) * 100;
-                            percent = Math.max(0, Math.min(100, percent)); // 限制在0-100范围
+                            percent = Math.max(0, percent); // 限制在0-100范围
                         } else {
                             percent = 0;
                         }
@@ -288,12 +288,12 @@
                         maxBytes = (typeof window.parseTrafficToBytes === 'function') ? window.parseTrafficToBytes(maxTraffic) : 0;
                         usedBytes = (typeof window.parseTrafficToBytes === 'function') ? window.parseTrafficToBytes(usedTraffic) : 0;
 
-                        // 如果有后端计算的百分比，作为备选
-                        if (typeof item.used_percent === 'number') {
-                            percent = item.used_percent;
-                        } else if (maxBytes > 0) {
+                        // 优先使用字节数据计算以允许超过100%，否则回退到后端限制的百分比
+                        if (maxBytes > 0) {
                             percent = (usedBytes / maxBytes) * 100;
-                            percent = Math.max(0, Math.min(100, percent));
+                            percent = Math.max(0, percent);
+                        } else if (typeof item.used_percent === 'number') {
+                            percent = item.used_percent;
                         } else {
                             percent = 0;
                         }
@@ -604,10 +604,9 @@
                 let displayPercentValue = percent;
                 let classObject = { ui: true, progress: true };
                 let styleObject = {
-                    'transition-duration': '300ms', // 增加过渡时间，使变化更平滑
-                    'transition-timing-function': 'ease-out',
+                    'transition': 'width 300ms ease-out, background-color 300ms ease-out',
                     'min-width': 'unset',
-                    width: (percent >= 0 ? percent : 0) + '% !important',
+                    width: (percent >= 0 ? (percent > 100 ? 100 : percent) : 0) + '% !important',
                 };
 
                 if (percent < 0) {
@@ -762,6 +761,14 @@
                 });
             }
 
+            // 处理被移除的服务器 (在旧列表里，但不在新的 WebSocket 数据里)
+            const oldServerCount = this.servers.length;
+            this.servers = this.servers.filter(serverItem => serverMap.has(serverItem.ID));
+            if (this.servers.length !== oldServerCount) {
+                hasUpdates = true;
+                this._needRegenerateTags = true;
+            }
+
             this.servers.forEach(serverItem => {
                 if (!serverItem.Host) {
                     if (serverItem.live !== false) {
@@ -886,6 +893,20 @@
                 }
             });
 
+            // 处理新增加的服务器
+            if (wsData.servers) {
+                wsData.servers.forEach(wsServer => {
+                    if (!this.servers.some(s => s.ID === wsServer.ID)) {
+                        // 发现新服务器，初始化它的状态并添加
+                        wsServer.live = true;
+                        wsServer._offlineConfirmCount = 0;
+                        this.servers.push(wsServer);
+                        hasUpdates = true;
+                        this._needRegenerateTags = true;
+                    }
+                });
+            }
+
             // 有实际更新时仅做必要的后处理，避免整页强制重绘
             if (hasUpdates) {
                 // 如果标签发生变化，重新生成标签列表
@@ -921,7 +942,7 @@
             const trafficData = this.getServerTrafficData(serverId);
             if (!trafficData) {
                 return {
-                    'transition-duration': '300ms',
+                    'transition': 'width 300ms ease-out',
                     'width': '0%'
                 };
             }
@@ -936,8 +957,8 @@
             }
 
             return {
-                'transition-duration': '300ms',
-                'width': percent + '%',
+                'transition': 'width 300ms ease-out, background-color 300ms ease-out',
+                'width': (percent > 100 ? 100 : percent) + '% !important',
                 'background-color': bgColor
             };
         },
