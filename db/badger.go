@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
+	"github.com/tidwall/gjson"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/utils"
 )
@@ -176,31 +177,32 @@ func (b *BadgerDB) FixCorruptedIDs() error {
 			}
 
 			err = item.Value(func(val []byte) error {
-				var data map[string]interface{}
-				if err := utils.Json.Unmarshal(val, &data); err != nil {
-					return nil // 忽略解析错误
-				}
-
+				// 优先使用 gjson 提取原始 ID 避免 float64 截断带来的误判
 				var actualID uint64
-				idVal, exists := data["ID"]
-				if !exists {
-					idVal, exists = data["id"]
+				idRes := gjson.GetBytes(val, "ID")
+				if !idRes.Exists() {
+					idRes = gjson.GetBytes(val, "id")
 				}
-				if !exists {
-					return nil // 没有ID字段
-				}
-
-				if fl, ok := idVal.(float64); ok {
-					actualID = uint64(fl)
-				} else if str, ok := idVal.(string); ok {
-					actualID, _ = strconv.ParseUint(str, 10, 64)
-				} else if i, ok := idVal.(uint64); ok {
-					actualID = i
+				if idRes.Exists() && idRes.Type == gjson.Number {
+					actualID = idRes.Uint()
+				} else {
+					return nil // 找不到数字ID
 				}
 
 				// 如果 JSON 内部的 ID 和键名包含的 ID 不一致，说明发生了前端进度丢失修改
 				if actualID > 0 && actualID != expectedID {
 					log.Printf("FixCorruptedIDs: 发现损坏的数据库ID [%s]. 正确ID应为 %d, 但JSON内部为 %d. 正在修复...", key, expectedID, actualID)
+					
+					var data map[string]interface{}
+					// 这里反序列化是为了修改结构，即使有精度丢失，后续转换也会处理
+					if err := utils.Json.Unmarshal(val, &data); err != nil {
+						return nil // 忽略解析错误
+					}
+					
+					// 必须调用 convertDbFieldTypes 并传入原始 val 才能保证其他 ID 字段（比如 ServerID）不被 float64 污染
+					convertDbFieldTypes(&data, val)
+					
+					// 强制使用正确的 expectedID
 					data["ID"] = expectedID
 
 					// 写回修复后的数据
@@ -339,7 +341,7 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 		}
 
 		// 转换字段类型，确保布尔字段正确
-		convertDbFieldTypes(&userData)
+		convertDbFieldTypes(&userData, data)
 
 		// 重新序列化为 JSON
 		userJSON, err := utils.Json.Marshal(userData)
@@ -372,7 +374,7 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 		}
 
 		// 转换字段类型，确保字段正确
-		convertDbFieldTypes(&serverData)
+		convertDbFieldTypes(&serverData, data)
 
 		// 重新序列化为 JSON，但使用更高效的 utils.Json
 		serverJSON, err := utils.Json.Marshal(serverData)
@@ -446,7 +448,7 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 		}
 
 		// 转换字段类型，确保布尔字段正确
-		convertDbFieldTypes(&ruleData)
+		convertDbFieldTypes(&ruleData, data)
 
 		// 重新序列化为 JSON
 		ruleJSON, err := utils.Json.Marshal(ruleData)
@@ -464,7 +466,7 @@ func (b *BadgerDB) FindModel(id uint64, modelType string, result interface{}) er
 		}
 
 		// 转换字段类型，确保布尔字段正确
-		convertDbFieldTypes(&dataMap)
+		convertDbFieldTypes(&dataMap, data)
 
 		// 重新序列化为 JSON
 		dataJSON, err := utils.Json.Marshal(dataMap)
@@ -620,7 +622,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			}
 
 			// 转换字段类型，确保 JSON 字段正确
-			convertDbFieldTypes(&data)
+			convertDbFieldTypes(&data, item)
 
 			// 检查是否重复ID
 			if idVal, exists := data["ID"]; exists {
@@ -719,7 +721,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			}
 
 			// 转换字段类型，确保布尔字段正确
-			convertDbFieldTypes(&data)
+			convertDbFieldTypes(&data, item)
 			monitors = append(monitors, &data)
 		}
 
@@ -785,7 +787,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			}
 
 			// 转换字段类型，确保布尔字段正确
-			convertDbFieldTypes(&data)
+			convertDbFieldTypes(&data, item)
 			users = append(users, &data)
 		}
 
@@ -825,7 +827,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			}
 
 			// 转换字段类型，确保布尔字段正确
-			convertDbFieldTypes(&data)
+			convertDbFieldTypes(&data, item)
 			rules = append(rules, &data)
 		}
 
@@ -884,7 +886,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			}
 
 			// 转换字段类型，确保布尔字段正确
-			convertDbFieldTypes(&data)
+			convertDbFieldTypes(&data, item)
 
 			// 确保Token字段存在且不为空
 			if tokenVal, exists := data["Token"]; !exists || tokenVal == "" {
@@ -941,7 +943,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			}
 
 			// 转换字段类型，确保布尔字段正确
-			convertDbFieldTypes(&data)
+			convertDbFieldTypes(&data, item)
 			profiles = append(profiles, &data)
 		}
 
@@ -981,7 +983,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			}
 
 			// 转换字段类型，确保布尔字段正确
-			convertDbFieldTypes(&data)
+			convertDbFieldTypes(&data, item)
 			notifications = append(notifications, &data)
 		}
 
@@ -1002,7 +1004,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			}
 
 			// 转换字段类型，确保布尔字段正确
-			convertDbFieldTypes(&data)
+			convertDbFieldTypes(&data, item)
 			nats = append(nats, &data)
 		}
 
@@ -1024,7 +1026,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			}
 
 			// 转换字段类型，确保布尔字段正确
-			convertDbFieldTypes(&data)
+			convertDbFieldTypes(&data, item)
 			crons = append(crons, &data)
 		}
 
@@ -1069,7 +1071,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			}
 
 			// 转换字段类型，确保布尔字段正确
-			convertDbFieldTypes(&data)
+			convertDbFieldTypes(&data, item)
 			states = append(states, &data)
 		}
 
@@ -1090,7 +1092,7 @@ func (b *BadgerDB) FindAll(prefix string, result interface{}) error {
 			}
 
 			// 转换字段类型，确保布尔字段正确
-			convertDbFieldTypes(&data)
+			convertDbFieldTypes(&data, item)
 			others = append(others, &data)
 		}
 
@@ -1133,7 +1135,7 @@ func (b *BadgerDB) PrefetchCommonData() error {
 }
 
 // convertDbFieldTypes 转换从 BadgerDB 读取的字段类型，确保兼容性
-func convertDbFieldTypes(data *map[string]interface{}) {
+func convertDbFieldTypes(data *map[string]interface{}, rawJSON []byte) {
 	// 转换已知需要特殊处理的字段
 	d := *data
 
@@ -1153,9 +1155,18 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 		}
 	}
 
-	// 特殊处理ID字段，保持其原始类型（uint64）
-	idFields := []string{"id", "ID", "user_id", "UserID"}
+	// 特殊处理ID字段，保持其原始类型（uint64），从原始 JSON 中提取以防 float64 精度丢失
+	idFields := []string{"id", "ID", "user_id", "UserID", "server_id", "ServerID", "task_id", "TaskID"}
 	for _, field := range idFields {
+		// 优先从 rawJSON 中精确提取 ID，避开 map[string]interface{} 的 float64 转换
+		if rawJSON != nil {
+			res := gjson.GetBytes(rawJSON, field)
+			if res.Exists() && res.Type == gjson.Number {
+				d[field] = res.Uint()
+				continue
+			}
+		}
+
 		if val, ok := d[field]; ok {
 			switch v := val.(type) {
 			case string:
@@ -1165,7 +1176,7 @@ func convertDbFieldTypes(data *map[string]interface{}) {
 					d[field] = i
 				}
 			case float64:
-				// 如果已经是float64，转换回uint64
+				// 如果已经是float64，转换回uint64（警告：如果数值过大可能已经发生精度丢失）
 				d[field] = uint64(v)
 			case int:
 				d[field] = uint64(v)
