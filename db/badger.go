@@ -141,7 +141,82 @@ func OpenDB(path string) (*BadgerDB, error) {
 	globalCancel = cancel
 	DB = badgerDB
 
+	// 自动修复因为前端精度丢失导致的数据库ID损坏
+	if err := badgerDB.FixCorruptedIDs(); err != nil {
+		log.Printf("修复数据库ID失败: %v", err)
+	}
+
 	return badgerDB, nil
+}
+
+// FixCorruptedIDs 扫描数据库并修复由于前端 JavaScript float64 精度丢失导致的内部 JSON ID 与键名不一致的问题
+func (b *BadgerDB) FixCorruptedIDs() error {
+	b.rwMutex.Lock()
+	defer b.rwMutex.Unlock()
+
+	return b.db.Update(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = true
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			key := string(item.Key())
+
+			// 解析键名格式 modelType:id
+			parts := strings.Split(key, ":")
+			if len(parts) != 2 {
+				continue
+			}
+
+			expectedID, err := strconv.ParseUint(parts[1], 10, 64)
+			if err != nil {
+				continue
+			}
+
+			err = item.Value(func(val []byte) error {
+				var data map[string]interface{}
+				if err := utils.Json.Unmarshal(val, &data); err != nil {
+					return nil // 忽略解析错误
+				}
+
+				var actualID uint64
+				idVal, exists := data["ID"]
+				if !exists {
+					idVal, exists = data["id"]
+				}
+				if !exists {
+					return nil // 没有ID字段
+				}
+
+				if fl, ok := idVal.(float64); ok {
+					actualID = uint64(fl)
+				} else if str, ok := idVal.(string); ok {
+					actualID, _ = strconv.ParseUint(str, 10, 64)
+				} else if i, ok := idVal.(uint64); ok {
+					actualID = i
+				}
+
+				// 如果 JSON 内部的 ID 和键名包含的 ID 不一致，说明发生了前端进度丢失修改
+				if actualID > 0 && actualID != expectedID {
+					log.Printf("FixCorruptedIDs: 发现损坏的数据库ID [%s]. 正确ID应为 %d, 但JSON内部为 %d. 正在修复...", key, expectedID, actualID)
+					data["ID"] = expectedID
+
+					// 写回修复后的数据
+					newVal, err := utils.Json.Marshal(data)
+					if err == nil {
+						return txn.Set(item.Key(), newVal)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				log.Printf("FixCorruptedIDs: 修复键 %s 失败: %v", key, err)
+			}
+		}
+		return nil
+	})
 }
 
 // Close closes the database
