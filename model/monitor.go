@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"html/template"
 	"log"
 	"strings"
 
@@ -75,6 +76,26 @@ func (m *Monitor) PB() *pb.Task {
 		Type: uint64(m.Type),
 		Data: m.Target,
 	}
+}
+
+func (m Monitor) MarshalForDashboard() template.JS {
+	name, _ := utils.Json.Marshal(m.Name)
+	target, _ := utils.Json.Marshal(m.Target)
+	notificationTag, _ := utils.Json.Marshal(m.NotificationTag)
+	skipServersRaw, _ := utils.Json.Marshal(m.SkipServersRaw)
+	notify := "false"
+	if m.Notify {
+		notify = "true"
+	}
+	latencyNotify := "false"
+	if m.LatencyNotify {
+		latencyNotify = "true"
+	}
+	enableTriggerTask := "false"
+	if m.EnableTriggerTask {
+		enableTriggerTask = "true"
+	}
+	return template.JS(fmt.Sprintf(`{"ID":"%d","Name":%s,"Target":%s,"Type":%d,"Duration":%d,"NotificationTag":%s,"Notify":%s,"LatencyNotify":%s,"Cover":%d,"SkipServersRaw":%s,"EnableTriggerTask":%s}`, m.ID, name, target, m.Type, m.Duration, notificationTag, notify, latencyNotify, m.Cover, skipServersRaw, enableTriggerTask))
 }
 
 // CronSpec 返回服务监控请求间隔对应的 cron 表达式

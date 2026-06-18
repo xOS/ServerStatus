@@ -1,9 +1,12 @@
 package model
 
 import (
+	"fmt"
+	"html/template"
 	"strings"
 	"time"
 
+	"github.com/xos/serverstatus/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -79,6 +82,24 @@ type DDNSProfile struct {
 
 func (d DDNSProfile) TableName() string {
 	return "ddns"
+}
+
+func (d DDNSProfile) MarshalForDashboard() template.JS {
+	name, _ := utils.Json.Marshal(d.Name)
+	accessID, _ := utils.Json.Marshal(d.AccessID)
+	accessSecret, _ := utils.Json.Marshal(d.AccessSecret)
+	webhookURL, _ := utils.Json.Marshal(d.WebhookURL)
+	webhookBody, _ := utils.Json.Marshal(d.WebhookRequestBody)
+	webhookHeaders, _ := utils.Json.Marshal(d.WebhookHeaders)
+	enableIPv4 := "false"
+	if d.EnableIPv4 != nil && *d.EnableIPv4 {
+		enableIPv4 = "true"
+	}
+	enableIPv6 := "false"
+	if d.EnableIPv6 != nil && *d.EnableIPv6 {
+		enableIPv6 = "true"
+	}
+	return template.JS(fmt.Sprintf(`{"ID":"%d","Name":%s,"Provider":%d,"AccessID":%s,"AccessSecret":%s,"WebhookURL":%s,"WebhookMethod":%d,"WebhookRequestType":%d,"WebhookBody":%s,"WebhookHeaders":%s,"EnableIPv4":%s,"EnableIPv6":%s,"MaxRetries":%d}`, d.ID, name, d.Provider, accessID, accessSecret, webhookURL, d.WebhookMethod, d.WebhookRequestType, webhookBody, webhookHeaders, enableIPv4, enableIPv6, d.MaxRetries))
 }
 
 func (d *DDNSProfile) AfterFind(tx *gorm.DB) error {

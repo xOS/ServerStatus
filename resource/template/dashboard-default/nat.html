@@ -31,11 +31,11 @@
                     <td>{{$item.Domain}}</td>
                     <td>
                         <div class="ui mini icon buttons">
-                            <button class="ui button" onclick="addOrEditNAT({{$item}})">
+                            <button class="ui button" onclick="addOrEditNAT({{$item.MarshalForDashboard}})">
                                 <i class="edit icon"></i>
                             </button>
                             <button class="ui button"
-                                onclick="showConfirm('确定删除NAT隧道？','确认删除',deleteRequest,'/api/nat/'+{{$item.ID}})">
+                                onclick="showConfirm('确定删除NAT隧道？','确认删除',deleteRequest,'/api/nat/{{$item.ID}}')">
                                 <i class="trash alternate outline icon"></i>
                             </button>
                         </div>

@@ -30,7 +30,7 @@
                         </button>
                         {{if $token.Token}}
                         <button class="ui button"
-                                onclick="showConfirm('{{tr "DeleteToken"}}'+'[{{$token.Note}}]','{{tr "ConfirmToDeleteThisToken"}}',deleteRequest,'/api/token/{{$token.Token}}')">
+                                onclick="showConfirm('{{tr "DeleteToken"}} [{{$token.Note}}]', '{{tr "ConfirmToDeleteThisToken"}}', deleteRequest, '/api/token/{{$token.Token}}')">
                         <i class="trash alternate outline icon"></i>
                         </button>
                         {{else}}

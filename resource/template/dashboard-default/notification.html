@@ -31,11 +31,11 @@
                     <td>{{$notification.VerifySSL}}</td>
                     <td>
                         <div class="ui mini icon buttons">
-                            <button class="ui button" onclick="addOrEditNotification({{$notification}})">
+                            <button class="ui button" onclick="addOrEditNotification({{$notification.MarshalForDashboard}})">
                                 <i class="edit icon"></i>
                             </button>
                             <button class="ui button"
-                                onclick="showConfirm('{{tr "DeleteNotificationMethod"}}'+'[{{$notification.Name}}]','{{tr "ConfirmToDeleteThisNotificationMethod"}}',deleteRequest,'/api/notification/'+{{$notification.ID}})">
+                                onclick="showConfirm('{{tr "DeleteNotificationMethod"}}'+'[{{$notification.Name}}]','{{tr "ConfirmToDeleteThisNotificationMethod"}}',deleteRequest,'/api/notification/{{$notification.ID}}')">
                                 <i class="trash alternate outline icon"></i>
                             </button>
                         </div>
@@ -83,7 +83,7 @@
                                 <i class="edit icon"></i>
                             </button>
                             <button class="ui button"
-                                onclick="showConfirm('{{tr "DeleteNotificationRule"}}'+'[{{$rule.Name}}]','{{tr "ConfirmToDeleteThisNotificationRule"}}',deleteRequest,'/api/alert-rule/'+{{$rule.ID}})">
+                                onclick="showConfirm('{{tr "DeleteNotificationRule"}}'+'[{{$rule.Name}}]','{{tr "ConfirmToDeleteThisNotificationRule"}}',deleteRequest,'/api/alert-rule/{{$rule.ID}}')">
                                 <i class="trash alternate outline icon"></i>
                             </button>
                         </div>
@@ -103,7 +103,7 @@
     // 为编辑事件规则按钮添加事件监听器
     $(document).on('click', '.edit-alert-rule-btn', function() {
         const btn = $(this);
-        const ruleId = btn.data('id');
+        const ruleId = btn.attr('data-id');
 
         if (!ruleId) {
             console.error('事件规则ID不存在');

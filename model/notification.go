@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"net/url"
@@ -40,6 +41,17 @@ type Notification struct {
 	RequestHeader string `gorm:"type:longtext" `
 	RequestBody   string `gorm:"type:longtext" `
 	VerifySSL     *bool
+}
+
+func (n Notification) MarshalForDashboard() template.JS {
+	name, _ := utils.Json.Marshal(n.Name)
+	tag, _ := utils.Json.Marshal(n.Tag)
+	url, _ := utils.Json.Marshal(n.URL)
+	verifySSL := "false"
+	if n.VerifySSL != nil && *n.VerifySSL {
+		verifySSL = "true"
+	}
+	return template.JS(fmt.Sprintf(`{"ID":"%d","Name":%s,"Tag":%s,"URL":%s,"RequestMethod":%d,"RequestType":%d,"VerifySSL":%s}`, n.ID, name, tag, url, n.RequestMethod, n.RequestType, verifySSL))
 }
 
 func (ns *NotificationServerBundle) reqURL(message string) string {

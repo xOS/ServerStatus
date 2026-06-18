@@ -1,6 +1,8 @@
 package model
 
 import (
+	"fmt"
+	"html/template"
 	"log"
 	"time"
 
@@ -63,4 +65,17 @@ func (c *Cron) AfterFind(tx *gorm.DB) error {
 	}
 	
 	return nil
+}
+
+func (c Cron) MarshalForDashboard() template.JS {
+	name, _ := utils.Json.Marshal(c.Name)
+	scheduler, _ := utils.Json.Marshal(c.Scheduler)
+	command, _ := utils.Json.Marshal(c.Command)
+	notificationTag, _ := utils.Json.Marshal(c.NotificationTag)
+	serversRaw, _ := utils.Json.Marshal(c.ServersRaw)
+	pushSuccessful := "false"
+	if c.PushSuccessful {
+		pushSuccessful = "true"
+	}
+	return template.JS(fmt.Sprintf(`{"ID":"%d","Name":%s,"TaskType":%d,"Scheduler":%s,"Command":%s,"NotificationTag":%s,"PushSuccessful":%s,"Cover":%d,"ServersRaw":%s}`, c.ID, name, c.TaskType, scheduler, command, notificationTag, pushSuccessful, c.Cover, serversRaw))
 }

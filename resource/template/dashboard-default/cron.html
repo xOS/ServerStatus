@@ -46,11 +46,11 @@
                             <button class="ui button" onclick="manualTrigger(this, {{$cron.ID}})">
                                 <i class="play icon"></i>
                             </button>
-                            <button class="ui button" onclick="addOrEditCron({{$cron}})">
+                            <button class="ui button" onclick="addOrEditCron({{$cron.MarshalForDashboard}})">
                                 <i class="edit icon"></i>
                             </button>
                             <button class="ui button"
-                                onclick="showConfirm('{{tr "DeleteScheduledTask"}}'+'[{{$cron.Name}}]','{{tr "ConfirmToDeleteThisScheduledTask"}}',deleteRequest,'/api/cron/'+{{$cron.ID}})">
+                                onclick="showConfirm('{{tr "DeleteScheduledTask"}}'+'[{{$cron.Name}}]','{{tr "ConfirmToDeleteThisScheduledTask"}}',deleteRequest,'/api/cron/{{$cron.ID}}')">
                                 <i class="trash alternate outline icon"></i>
                             </button>
                         </div>
