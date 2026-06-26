@@ -763,8 +763,9 @@
 
             // 处理被移除的服务器 (在旧列表里，但不在新的 WebSocket 数据里)
             const oldServerCount = this.servers.length;
-            this.servers = this.servers.filter(serverItem => serverMap.has(serverItem.ID));
-            if (this.servers.length !== oldServerCount) {
+            const newServers = this.servers.filter(serverItem => serverMap.has(serverItem.ID));
+            if (newServers.length !== oldServerCount) {
+                this.servers = newServers;
                 hasUpdates = true;
                 this._needRegenerateTags = true;
             }
@@ -798,7 +799,12 @@
                             oldState.UdpConnCount !== s.UdpConnCount ||
                             oldState.Load1 !== s.Load1;
                         if (stateChanged) {
-                            serverItem.State = { ...oldState, ...s };
+                            // Mutate directly to prevent massive Vue Observer teardown/rebuild
+                            for (const key in s) {
+                                if (serverItem.State[key] !== s[key]) {
+                                    serverItem.State[key] = s[key];
+                                }
+                            }
                             hasUpdates = true;
                         }
                     }
@@ -817,10 +823,9 @@
                             !this.areSimpleArraysEqual(oldHost.GPU, wsServer.Host.GPU);
                         
                         if (hostChanged) {
-                            serverItem.Host = {
-                                ...oldHost,
-                                ...wsServer.Host
-                            };
+                            for (const key in wsServer.Host) {
+                                serverItem.Host[key] = wsServer.Host[key];
+                            }
                             hasUpdates = true;
                         }
                     }
@@ -942,7 +947,7 @@
             const trafficData = this.getServerTrafficData(serverId);
             if (!trafficData) {
                 return {
-                    'transition': 'width 300ms ease-out',
+                    'transition': 'width 300ms ease-out, background-color 300ms ease-out',
                     'width': '0%'
                 };
             }

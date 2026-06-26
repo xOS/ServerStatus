@@ -2192,9 +2192,16 @@ function initGlobalTippyPopups() {
                 }, 200);
             };
             
+            // 清除旧事件
+            if (trigger._showPopupFunc) trigger.removeEventListener('mouseenter', trigger._showPopupFunc);
+            if (trigger._hidePopupFunc) trigger.removeEventListener('mouseleave', trigger._hidePopupFunc);
+
             // 为trigger绑定事件
             trigger.addEventListener('mouseenter', showPopup);
             trigger.addEventListener('mouseleave', hidePopup);
+
+            trigger._showPopupFunc = showPopup;
+            trigger._hidePopupFunc = hidePopup;
             
             // 监听popup显示/隐藏事件，为popup元素绑定鼠标事件
             instance.setProps({

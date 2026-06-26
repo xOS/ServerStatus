@@ -282,8 +282,9 @@ i.fa-sharp.fa-solid.fa-u::before {
 .cpuroll .rollanimation {
     flex: 0 0 auto;
     white-space: nowrap;
-    will-change: transform;
     animation: cpu-roll 10s linear infinite;
+    will-change: transform;
+    transform: translateZ(0);
 }
 
 @keyframes cpu-roll {
@@ -558,6 +559,8 @@ a {
     overflow: hidden;
     background-clip: padding-box;
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+    will-change: transform;
+    transform: translateZ(0);
 }
 
 /* Chromium 定向降载：首页高频刷新的卡片关闭毛玻璃采样，保留现有布局与色彩 */
