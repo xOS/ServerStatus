@@ -44,9 +44,9 @@
 
 :root {
     --body-bg: #f5f7fb;
-    --glass-bg-soft: rgba(255, 255, 255, 0.52);
-    --glass-bg-card: rgba(255, 255, 255, 0.64);
-    --glass-bg-popup: rgba(255, 255, 255, 0.90);
+    --glass-bg-soft: rgba(255, 255, 255, 0.85);
+    --glass-bg-card: rgba(255, 255, 255, 0.90);
+    --glass-bg-popup: rgba(255, 255, 255, 0.98);
     --glass-border: rgba(255, 255, 255, 0.72);
     --glass-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
     --btn-bg: var(--glass-bg-card);
@@ -82,8 +82,6 @@ i.fa-sharp.fa-solid.fa-u::before {
     margin-bottom: 0;
     box-shadow: var(--glass-shadow);
     border: 1px solid var(--glass-border);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -419,10 +417,8 @@ a {
     width: min(88vw, 340px) !important;
     border-radius: 16px !important;
     border: 1px solid rgba(189, 163, 116, 0.65) !important;
-    background: rgba(248, 244, 235, 0.80) !important;
+    background: rgba(248, 244, 235, 0.95) !important;
     box-shadow: 0 8px 24px rgba(60, 45, 25, 0.18) !important;
-    backdrop-filter: blur(14px) !important;
-    -webkit-backdrop-filter: blur(14px) !important;
     padding: 0.8rem 1rem !important;
     margin: 0 !important;
 }
@@ -715,11 +711,9 @@ i.icon {
 .ui.large.menu {
     border: 0;
     border-radius: 0px;
-    background-color: rgba(255, 255, 255, 0.58);
+    background-color: rgba(255, 255, 255, 0.95);
     border: 1px solid var(--glass-border);
     box-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
 }
 
 /**下拉菜单样式**/
@@ -729,8 +723,6 @@ i.icon {
     background-color: rgba(255, 255, 255, 0.68);
     border: 1px solid var(--glass-border);
     box-shadow: var(--glass-shadow);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
 }
 
 /**页脚样式**/
@@ -738,11 +730,9 @@ i.icon {
 .ui.primary.inverted.segment {
     width: 100%;
     color: rgba(17, 24, 39, 0.76);
-    background-color: rgba(255, 255, 255, 0.58) !important;
+    background-color: rgba(255, 255, 255, 0.95) !important;
     border-top: 1px solid var(--glass-border);
     box-shadow: 0 -2px 12px rgba(15, 23, 42, 0.06);
-    backdrop-filter: blur(12px) !important;
-    -webkit-backdrop-filter: blur(12px) !important;
     position: fixed;
     bottom: 0;
     z-index: 10;

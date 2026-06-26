@@ -1,64 +1,9 @@
 {{define "theme-default/home"}}
 {{template "theme-default/header" .}}
 
-<script>
-    // 性能优化：避免全局重写事件系统，仅对首页高频容器使用被动监听
-    (function setupScopedPassiveListeners() {
-        const bindPassive = (selector, eventName) => {
-            const nodes = document.querySelectorAll(selector);
-            nodes.forEach((node) => {
-                node.addEventListener(eventName, function () {}, { passive: true });
-            });
-        };
 
-        document.addEventListener('DOMContentLoaded', function () {
-            bindPassive('.custom-tabs-container', 'touchstart');
-            bindPassive('.custom-tabs-container', 'touchmove');
-            bindPassive('.nb-container', 'wheel');
-            bindPassive('.nb-container', 'mousewheel');
-            bindPassive('.ui.accordion', 'touchstart');
-            bindPassive('.ui.accordion', 'touchmove');
-        });
-    })();
-</script>
-
-{{if ts .CustomCode}} {{.CustomCode|safe}} {{end}}
-{{template "theme-default/menu" .}}
-
-<div class="nb-container">
-    <div class="ui container" style="padding-bottom: 30px;">
-        <div class="tabs-wrapper">
-            <div v-if="servers && servers.length > 0" class="custom-tabs-container" ref="tabsContainer">
-                <div class="tabs-content-area">
-                    <div class="custom-tab" :class="{ active: activeTag === '' }" @click="handleTabClick('', $event)"
-                        ref="allTab" data-tag="all">
-                        {{tr "All"}}
-                        <span class="server-count-badge" :style="getBadgeStyle('')">@#getServerCountForTag('')#@</span>
-                    </div>
-                    <div class="custom-tab" :class="{ active: activeTag === 'online' }"
-                        @click="handleTabClick('online', $event)" ref="onlineTab" data-tag="online">
-                        {{tr "OnlineServers"}}
-                        <span class="server-count-badge" :style="getBadgeStyle('online')">@#getServerCountForTag('online')#@</span>
-                    </div>
-                    <div class="custom-tab" :class="{ active: activeTag === 'offline' }"
-                        @click="handleTabClick('offline', $event)" ref="offlineTab" data-tag="offline">
-                        {{tr "OfflineServers"}}
-                        <span class="server-count-badge" :style="getBadgeStyle('offline')">@#getServerCountForTag('offline')#@</span>
-                    </div>
-                    <div v-for="(tag, index) in uniqueTags.slice().reverse()" :key="tag" class="custom-tab"
-                        :class="{ active: activeTag === tag }" @click="handleTabClick(tag, $event)"
-                        :ref="'tagTab' + index" data-tag="custom">
-                        @#tag#@
-                        <span class="server-count-badge" :style="getBadgeStyle(tag)">@#getServerCountForTag(tag)#@</span>
-                    </div>
-                </div>
-                <div class="tab-slider" ref="tabSlider"></div>
-            </div>
-        </div>
-
-        <template v-if="filteredServers && filteredServers.length > 0">
-            <div class="ui four stackable status cards">
-                <div v-for="server in filteredServers" :key="server.ID" :id="server.ID" class="ui card">
+<script type="text/html" id="server-card-template">
+<div :id="server.ID" class="ui card">
                     <div class="content" v-if="server.Host" style="padding-bottom: 5px">
                         <div class="header">
                             <i :class="'fi fi-'+server.Host.CountryCode"></i>
@@ -204,6 +149,65 @@
                         <p><i class="fas fa-circle-notch fa-spin"></i> {{tr "Connecting"}}...</p>
                     </div>
                 </div>
+</script>
+<script>
+    // 性能优化：避免全局重写事件系统，仅对首页高频容器使用被动监听
+    (function setupScopedPassiveListeners() {
+        const bindPassive = (selector, eventName) => {
+            const nodes = document.querySelectorAll(selector);
+            nodes.forEach((node) => {
+                node.addEventListener(eventName, function () {}, { passive: true });
+            });
+        };
+
+        document.addEventListener('DOMContentLoaded', function () {
+            bindPassive('.custom-tabs-container', 'touchstart');
+            bindPassive('.custom-tabs-container', 'touchmove');
+            bindPassive('.nb-container', 'wheel');
+            bindPassive('.nb-container', 'mousewheel');
+            bindPassive('.ui.accordion', 'touchstart');
+            bindPassive('.ui.accordion', 'touchmove');
+        });
+    })();
+</script>
+
+{{if ts .CustomCode}} {{.CustomCode|safe}} {{end}}
+{{template "theme-default/menu" .}}
+
+<div class="nb-container">
+    <div class="ui container" style="padding-bottom: 30px;">
+        <div class="tabs-wrapper">
+            <div v-if="servers && servers.length > 0" class="custom-tabs-container" ref="tabsContainer">
+                <div class="tabs-content-area">
+                    <div class="custom-tab" :class="{ active: activeTag === '' }" @click="handleTabClick('', $event)"
+                        ref="allTab" data-tag="all">
+                        {{tr "All"}}
+                        <span class="server-count-badge" :style="getBadgeStyle('')">@#getServerCountForTag('')#@</span>
+                    </div>
+                    <div class="custom-tab" :class="{ active: activeTag === 'online' }"
+                        @click="handleTabClick('online', $event)" ref="onlineTab" data-tag="online">
+                        {{tr "OnlineServers"}}
+                        <span class="server-count-badge" :style="getBadgeStyle('online')">@#getServerCountForTag('online')#@</span>
+                    </div>
+                    <div class="custom-tab" :class="{ active: activeTag === 'offline' }"
+                        @click="handleTabClick('offline', $event)" ref="offlineTab" data-tag="offline">
+                        {{tr "OfflineServers"}}
+                        <span class="server-count-badge" :style="getBadgeStyle('offline')">@#getServerCountForTag('offline')#@</span>
+                    </div>
+                    <div v-for="(tag, index) in uniqueTags.slice().reverse()" :key="tag" class="custom-tab"
+                        :class="{ active: activeTag === tag }" @click="handleTabClick(tag, $event)"
+                        :ref="'tagTab' + index" data-tag="custom">
+                        @#tag#@
+                        <span class="server-count-badge" :style="getBadgeStyle(tag)">@#getServerCountForTag(tag)#@</span>
+                    </div>
+                </div>
+                <div class="tab-slider" ref="tabSlider"></div>
+            </div>
+        </div>
+
+        <template v-if="filteredServers && filteredServers.length > 0">
+            <div class="ui four stackable status cards">
+                <server-card v-for="server in filteredServers" :key="server.ID" :server="server" :sensor-list="sensorList"></server-card>
             </div>
         </template>
         <template v-else-if="servers && servers.length > 0 && filteredServers.length === 0 && activeTag !== ''">
@@ -336,7 +340,51 @@
     setInterval(window.extractTrafficData, 30000);
 
     // Vue实例配置
-    const statusCards = new Vue({
+    
+    const proxyFn = function(fnName) {
+        return function(...args) {
+            if (typeof this.$root[fnName] === 'function') {
+                return this.$root[fnName].apply(this.$root, args);
+            }
+            if (typeof window[fnName] === 'function') {
+                return window[fnName].apply(window, args);
+            }
+            console.error("Function " + fnName + " not found!");
+            return "";
+        };
+    };
+
+    const serverCardMethods = {
+        isWindowsPlatform: proxyFn('isWindowsPlatform'),
+        getFontLogoClass: proxyFn('getFontLogoClass'),
+        specialOS: proxyFn('specialOS'),
+        formatPlatformVersion: proxyFn('formatPlatformVersion'),
+        specialVir: proxyFn('specialVir'),
+        formatByteSize: proxyFn('formatByteSize'),
+        getTrafficTooltip: proxyFn('getTrafficTooltip'),
+        hasTemperature: proxyFn('hasTemperature'),
+        getTemperature: proxyFn('getTemperature'),
+        toFixed2: proxyFn('toFixed2'),
+        timeStamp: proxyFn('timeStamp'),
+        clearString: proxyFn('clearString'),
+        getK2Gb: proxyFn('getK2Gb'),
+        formatPercent: proxyFn('formatPercent'),
+        getTrafficProgressClass: proxyFn('getTrafficProgressClass'),
+        getTrafficProgressStyle: proxyFn('getTrafficProgressStyle'),
+        getTrafficDisplay: proxyFn('getTrafficDisplay'),
+        secondToDate: proxyFn('secondToDate')
+    };
+
+    const templateString = document.getElementById('server-card-template').innerHTML;
+
+    Vue.component('server-card', {
+        template: templateString,
+        props: ['server', 'sensorList'],
+        delimiters: ['@#', '#@'],
+        methods: serverCardMethods
+    });
+
+const statusCards = new Vue({
         el: '#app',
         delimiters: ['@#', '#@'],
         data: {
@@ -398,7 +446,7 @@
         // 订阅流量数据更新
         if (window.trafficManager) {
             window.trafficManager.subscribe((data, version) => {
-                this.trafficData = data;
+                this.trafficData = Object.freeze(data);
                 this._trafficVersion = version;
                 this.updateTrafficData();
             });
@@ -811,22 +859,11 @@
 
                     // 更新Host信息（服务器重启后CPU、内存等配置可能变化）
                     if (wsServer.Host) {
-                        const oldHost = serverItem.Host || {};
-                        // 检查Host信息是否有实际变化
-                        const hostChanged = 
-                            !this.areSimpleArraysEqual(oldHost.CPU, wsServer.Host.CPU) ||
-                            oldHost.MemTotal !== wsServer.Host.MemTotal ||
-                            oldHost.DiskTotal !== wsServer.Host.DiskTotal ||
-                            oldHost.Platform !== wsServer.Host.Platform ||
-                            oldHost.PlatformVersion !== wsServer.Host.PlatformVersion ||
-                            oldHost.Arch !== wsServer.Host.Arch ||
-                            !this.areSimpleArraysEqual(oldHost.GPU, wsServer.Host.GPU);
-                        
-                        if (hostChanged) {
-                            for (const key in wsServer.Host) {
+                        for (const key in wsServer.Host) {
+                            if (serverItem.Host[key] !== wsServer.Host[key]) {
                                 serverItem.Host[key] = wsServer.Host[key];
+                                hasUpdates = true;
                             }
-                            hasUpdates = true;
                         }
                     }
 
@@ -1010,7 +1047,7 @@
                         oldTraffic.used !== newTraffic.used ||
                         oldTraffic.total !== newTraffic.total ||
                         Math.abs(oldTraffic.percent - newTraffic.percent) > 0.01) { // 百分比变化超过0.01%才更新
-                        server.traffic = newTraffic;
+                        server.traffic = Object.freeze(newTraffic);
                         hasUpdates = true;
                     }
                 }
