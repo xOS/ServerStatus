@@ -420,28 +420,36 @@ const statusCards = new Vue({
         created() {
         try {
             const serverData = JSON.parse('{{.Servers}}');
+            let initialServers = [];
             if (serverData && serverData.servers && Array.isArray(serverData.servers)) {
-                this.servers = serverData.servers;
+                initialServers = serverData.servers;
             } else {
                 console.warn('服务器数据格式不正确，使用空数组');
-                this.servers = [];
             }
+
+            // 初始化时设置所有服务器的初始状态
+            // 必须在赋值给 this.servers 之前添加新属性，否则 Vue 无法进行响应式追踪
+            initialServers.forEach(server => {
+                if (server.Host) {
+                    // 初始化时先假设所有服务器在线，等待WebSocket更新
+                    server.live = true;
+                    server._offlineConfirmCount = 0;
+                } else {
+                    server.live = false;
+                }
+                // 确保 State 对象存在，防止后续更新时报错
+                if (!server.State) {
+                    server.State = {};
+                }
+            });
+            
+            this.servers = initialServers;
         } catch (e) {
             console.error('解析服务器数据失败:', e);
             this.servers = [];
         }
 
         this.generateUniqueTags();
-        // 初始化时设置所有服务器的初始状态
-        this.servers.forEach(server => {
-            if (server.Host) {
-                // 初始化时先假设所有服务器在线，等待WebSocket更新
-                server.live = true;
-                server._offlineConfirmCount = 0;
-            } else {
-                server.live = false;
-            }
-        });
 
         // 订阅流量数据更新
         if (window.trafficManager) {
@@ -847,10 +855,10 @@ const statusCards = new Vue({
                             oldState.UdpConnCount !== s.UdpConnCount ||
                             oldState.Load1 !== s.Load1;
                         if (stateChanged) {
-                            // Mutate directly to prevent massive Vue Observer teardown/rebuild
+                            // Mutate using Vue.$set to ensure new properties (if any) are reactive
                             for (const key in s) {
                                 if (serverItem.State[key] !== s[key]) {
-                                    serverItem.State[key] = s[key];
+                                    this.$set(serverItem.State, key, s[key]);
                                 }
                             }
                             hasUpdates = true;
@@ -861,7 +869,7 @@ const statusCards = new Vue({
                     if (wsServer.Host) {
                         for (const key in wsServer.Host) {
                             if (serverItem.Host[key] !== wsServer.Host[key]) {
-                                serverItem.Host[key] = wsServer.Host[key];
+                                this.$set(serverItem.Host, key, wsServer.Host[key]);
                                 hasUpdates = true;
                             }
                         }
