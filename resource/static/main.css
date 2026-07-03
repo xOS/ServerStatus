@@ -1872,7 +1872,7 @@ html, body {
     border: none !important; 
 }
 .nb-menu .item img {
-    height: clamp(24px, 2vw + 16px, 28px) !important;
+    height: clamp(28px, 2.5vw + 18px, 34px) !important;
 }
 .ui.large.top.fixed.menu.nb-menu .ui.container {
     min-height: clamp(48px, 3vw + 36px, 52px) !important;
@@ -1977,4 +1977,13 @@ html, body {
     .tabs-wrapper {
         margin-bottom: 0px !important; /* Mobile tabs gap */
     }
+}
+
+
+/* 专门调整 Logo 的边距 */
+.nb-menu a.item[href="/"] {
+    padding-left: clamp(4px, 0.5vw + 2px, 8px) !important;
+    padding-right: clamp(4px, 0.5vw + 2px, 8px) !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
 }
