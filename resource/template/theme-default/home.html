@@ -52,7 +52,7 @@
                             </div>
                         </div>
 
-                        <div class="header header_info">
+                        <div class="header header_info" v-once>
                             <i class="fa-solid fa-microchip"></i>
                             <div class="cpuroll" style="white-space: nowrap;overflow: hidden;">
                                 <div class="cpucontent rollanimation">
@@ -559,14 +559,14 @@ const statusCards = new Vue({
             this._pendingWsData = wsData;
             if (this._wsUpdateQueued) return;
             this._wsUpdateQueued = true;
-            requestAnimationFrame(() => {
+            setTimeout(() => { // 强制 500ms 节流
                 this._wsUpdateQueued = false;
                 const pending = this._pendingWsData;
                 this._pendingWsData = null;
                 if (pending) {
                     this.updateServerLiveStatus(pending);
                 }
-            });
+            }, 500);
         },
         areSimpleArraysEqual(a, b) {
             if (a === b) return true;
