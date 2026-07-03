@@ -95,7 +95,7 @@ i.fa-sharp.fa-solid.fa-u::before {
     justify-content: center;
     position: relative;
     z-index: 2;
-    margin-bottom: 8px;
+    margin-bottom: 7px !important;
 }
 
 .tabs-content-area {
@@ -730,7 +730,7 @@ i.icon {
 .ui.primary.inverted.segment {
     width: 100%;
     color: rgba(17, 24, 39, 0.76);
-    background-color: rgba(255, 255, 255, 0.95) !important;
+    background-color: rgba(255, 255, 255, 0.7) !important;
     border-top: 1px solid var(--glass-border);
     box-shadow: 0 -2px 12px rgba(15, 23, 42, 0.06);
     position: fixed;
@@ -970,17 +970,13 @@ i.note.icon {
 }
 
 .nb-container {
-    padding-top: 75px;
-    min-height: 100vh;
-    padding-bottom: 55px;
-    margin-bottom: -47px;
-    background-color: #f4f5f7 !important;
+    padding-top: calc(clamp(48px, 3vw + 36px, 52px) + 30px) !important;
+    padding-bottom: 80px !important;
 }
 
 .login.nb-container {
-    display: flex;
-    align-items: center;
-    padding-top: unset;
+    padding-top: calc(clamp(48px, 3vw + 36px, 52px) + 30px) !important;
+    padding-bottom: 80px !important;
 }
 
 .login.nb-container>.grid {
@@ -1531,9 +1527,9 @@ html, body {
 
     /* 确保容器不干扰滚动 */
     .nb-container {
-        overflow: visible;
-        position: relative;
-    }
+    padding-top: calc(clamp(48px, 3vw + 36px, 52px) + 30px) !important;
+    padding-bottom: 80px !important;
+}
 }
 
 /* 字体加载优化 */
@@ -1562,13 +1558,13 @@ html, body {
     height: auto !important;
     max-width: none !important;
     max-height: none !important;
-    overflow: visible !important;
+    overflow: hidden;
 }
 
 .tippy-box[data-theme~='custom-server-popup'] .tippy-content {
     padding: 0 !important;
     color: #333 !important;
-    overflow: visible !important;
+    overflow: hidden;
     max-width: none !important;
     max-height: none !important;
 }
@@ -1846,4 +1842,139 @@ html, body {
 .ui.progress .bar {
     transform: translateZ(0);
     -webkit-transform: translateZ(0);
+}
+
+/* ----------------------------------
+   Floating Island Header & Footer
+----------------------------------- */
+
+.ui.large.top.fixed.menu.nb-menu {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding-top: 10px !important;
+}
+
+.ui.large.top.fixed.menu.nb-menu .ui.container {
+    background-color: rgba(255, 255, 255, 0.7) !important;
+    backdrop-filter: blur(10px);
+    border-radius: 12px !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
+    border: 1px solid rgba(255,255,255,0.7) !important;
+}
+
+/* 页头菜单悬浮轮廓圆角化 */
+.nb-menu .item {
+    border-radius: 8px !important;
+    margin: clamp(2px, 0.4vw, 4px) clamp(2px, 0.4vw, 4px) !important;
+    padding: clamp(8px, 1vw + 4px, 10px) clamp(12px, 1.5vw + 6px, 16px) !important;
+    font-size: clamp(15px, 1vw + 11px, 16px) !important;
+    border: none !important; 
+}
+.nb-menu .item img {
+    height: clamp(24px, 2vw + 16px, 28px) !important;
+}
+.ui.large.top.fixed.menu.nb-menu .ui.container {
+    min-height: clamp(48px, 3vw + 36px, 52px) !important;
+}
+.nb-menu .item:before {
+    display: none !important; /* 移除 Semantic UI 默认的 item 之间的分割线 */
+}
+
+/* 移除 Semantic UI 默认菜单边框和圆角干扰 */
+.ui.menu {
+    border-radius: 12px !important;
+}
+
+.ui.inverted.vertical.footer.segment {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    position: fixed !important;
+    bottom: 10px !important;
+    left: 0 !important;
+    right: 0 !important;
+    padding: 0 !important;
+    z-index: 100 !important;
+    pointer-events: none !important;
+}
+
+.ui.inverted.vertical.footer.segment .ui.container {
+    background-color: rgba(255, 255, 255, 0.7) !important;
+    backdrop-filter: blur(10px);
+    border-radius: 12px !important;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.06) !important;
+    border: 1px solid rgba(255,255,255,0.7) !important;
+    padding: 15px !important;
+    color: rgba(0,0,0,0.7) !important;
+    pointer-events: auto !important;
+}
+
+.ui.inverted.vertical.footer.segment a {
+    color: rgba(0,0,0,0.7) !important;
+}
+
+.ui.inverted.vertical.footer.segment a[style*="color"] {
+    color: #4caf50 !important;
+}
+
+.nb-container {
+    padding-top: calc(clamp(48px, 3vw + 36px, 52px) + 30px) !important;
+    padding-bottom: 80px !important;
+}
+
+/* 修复页头Logo鼠标悬浮背景 */
+.nb-menu a.item[href="/"]:hover {
+    background: transparent !important;
+}
+
+
+}
+@media only screen and (min-width: 768px) and (max-width: 991px) {
+    .ui.large.top.fixed.menu.nb-menu .ui.container {
+        width: 723px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
+}
+
+
+/* 强制重置菜单和页脚容器的宽度以完美匹配主题宽度 */
+@media only screen and (max-width: 767px) {
+    .ui.large.top.fixed.menu.nb-menu .ui.container,
+    .ui.inverted.vertical.footer.segment .ui.container {
+        width: calc(100% - 2em) !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
+}
+@media only screen and (min-width: 768px) and (max-width: 991px) {
+    .ui.large.top.fixed.menu.nb-menu .ui.container,
+    .ui.inverted.vertical.footer.segment .ui.container {
+        width: 723px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
+}
+
+
+/* 动态缩放页头的登录按钮及右侧项 */
+.nb-menu .button {
+    font-size: clamp(13px, 0.8vw + 10px, 15px) !important;
+    padding: clamp(6px, 0.6vw + 4px, 8px) clamp(8px, 0.5vw + 4px, 12px) !important;
+    border-radius: 20px !important;
+}
+.nb-menu .item:has(.button) {
+    padding: clamp(2px, 0.3vw, 4px) clamp(4px, 0.5vw, 6px) !important; /* 减少按钮外层包裹的内边距，防止过于臃肿 */
+}
+/* 登录后的头像也能顺滑缩放 */
+.nb-menu .ui.avatar.image {
+    width: clamp(20px, 1.5vw + 14px, 28px) !important;
+    height: clamp(20px, 1.5vw + 14px, 28px) !important;
+}
+
+@media only screen and (max-width: 767px) {
+    .tabs-wrapper {
+        margin-bottom: 0px !important; /* Mobile tabs gap */
+    }
 }
