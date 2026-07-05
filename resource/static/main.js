@@ -1354,7 +1354,7 @@ window.extractTrafficData = function() {
         window.serverTrafficData = newTrafficData;
         window.lastTrafficUpdateTime = Date.now();
         
-        if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
+        if (!document.hidden && window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
             window.statusCards.updateTrafficData();
         }
     } catch (e) {
@@ -2081,183 +2081,224 @@ Date.prototype.format = function(format) {
 
 $.suiAlert=function(i){function t(){l=setTimeout(function(){c.transition({animation:e,duration:"2s",onComplete:function(){c.remove()}})},1e3*o.time)}var o=$.extend({title:"Semantic UI Alerts",description:"semantic ui alerts library",type:"error",time:5,position:"top-right",icon:!1},i);o.icon===!1&&("info"==o.type?o.icon="announcement":"success"==o.type?o.icon="checkmark":"error"==o.type?o.icon="remove":"warning"==o.type&&(o.icon="warning circle"));var e="drop";"top-right"==o.position?e="fly left":"top-center"==o.position?e="fly down":"top-left"==o.position?e="fly right":"bottom-right"==o.position?e="fly left":"bottom-center"==o.position?e="fly up":"bottom-left"==o.position&&(e="fly right");var n="",r=$(window).width();r<425&&(n="mini");var s="ui-alerts."+o.position;$("body > ."+s).length||$("body").append('<div class="ui-alerts '+o.position+'"></div>');var c=$('<div class="ui icon floating '+n+" message "+o.type+'" id="alert"> <i class="'+o.icon+' icon"></i> <i class="close icon" id="alertclose"></i> <div class="content"> <div class="header">'+o.title+"</div> <p>"+o.description+"</p> </div> </div>");$("."+s).prepend(c),c.transition("pulse"),$("#alertclose").on("click",function(){$(this).closest("#alert").transition({animation:e,onComplete:function(){c.remove()}})});var l=0;$(c).mouseenter(function(){clearTimeout(l)}).mouseleave(function(){t()}),t()};
   
-// ==================== Tippy.js 服务器信息弹窗相关功能 ====================
+// ==================== CPU 型号滚动优化 ====================
+(function setupCpuRollOptimizer() {
+    let intersectionObserver = null;
+    const observedRolls = new WeakSet();
+    let resizeTimer = null;
 
-// 更新当前显示的popup内容
-function updateVisibleTippyContent() {
-    if (window.tippyInstances) {
-        window.tippyInstances.forEach(instance => {
-            if (instance.state.isVisible) {
-                const contentDiv = instance.reference.nextElementSibling;
-                if (contentDiv && contentDiv.classList.contains('server-popup-content')) {
-                    const dynamicContent = contentDiv.innerHTML;
-                    instance.setContent(dynamicContent);
-                }
+    function getRolls(root) {
+        const scope = root && root.querySelectorAll ? root : document;
+        const rolls = Array.from(scope.querySelectorAll('.cpuroll'));
+        if (root && root.matches && root.matches('.cpuroll')) {
+            rolls.unshift(root);
+        }
+        return rolls;
+    }
+
+    function ensureIntersectionObserver() {
+        if (intersectionObserver || !('IntersectionObserver' in window)) {
+            return intersectionObserver;
+        }
+        intersectionObserver = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                entry.target.classList.toggle('is-paused', !entry.isIntersecting);
+            });
+        }, { rootMargin: '160px 0px' });
+        return intersectionObserver;
+    }
+
+    function refreshNow(root) {
+        const observer = ensureIntersectionObserver();
+        getRolls(root).forEach(roll => {
+            const firstItem = roll.querySelector('.rollanimation');
+            if (!firstItem) return;
+            const overflowing = firstItem.scrollWidth > roll.clientWidth + 8;
+            roll.classList.toggle('is-overflowing', overflowing);
+            if (observer && !observedRolls.has(roll)) {
+                observedRolls.add(roll);
+                observer.observe(roll);
             }
         });
     }
+
+    function refresh(root) {
+        requestAnimationFrame(() => refreshNow(root));
+    }
+
+    window.CpuRollOptimizer = { refresh };
+
+    document.addEventListener('DOMContentLoaded', () => refresh(document));
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => refresh(document), 150);
+    }, { passive: true });
+})();
+
+// ==================== Tippy.js 服务器信息弹窗相关功能 ====================
+
+function getServerPopupContent(trigger) {
+    if (!trigger) return '';
+    const serverId = trigger.getAttribute('data-server-id');
+    if (serverId && window.statusCards && typeof window.statusCards.getServerPopupContent === 'function') {
+        try {
+            return window.statusCards.getServerPopupContent(serverId);
+        } catch (e) {
+            console.warn('Failed to build server popup content:', e);
+            return '';
+        }
+    }
+    const contentDiv = trigger.nextElementSibling;
+    if (contentDiv && contentDiv.classList.contains('server-popup-content')) {
+        return contentDiv.innerHTML;
+    }
+    return '';
 }
 
-// 全局 Tippy.js 初始化（完全与 Vue 响应式系统解耦）
+// 更新当前显示的popup内容
+function updateVisibleTippyContent() {
+    if (!window.tippyInstances) return;
+    window.tippyInstances.forEach(instance => {
+        if (instance && instance.state.isVisible) {
+            instance.setContent(getServerPopupContent(instance.reference) || 'Loading...');
+        }
+    });
+}
+
+function cleanupTippyTrigger(trigger) {
+    if (!trigger) return;
+    if (trigger._showPopupFunc) {
+        trigger.removeEventListener('mouseenter', trigger._showPopupFunc);
+        delete trigger._showPopupFunc;
+    }
+    if (trigger._hidePopupFunc) {
+        trigger.removeEventListener('mouseleave', trigger._hidePopupFunc);
+        delete trigger._hidePopupFunc;
+    }
+    delete trigger._tippyInitialized;
+    delete trigger._tippyInstance;
+}
+
+// 全局 Tippy.js 初始化（增量绑定，避免状态刷新时全量重建）
 function initGlobalTippyPopups() {
-    // 检查Tippy.js是否已加载
     if (typeof tippy === 'undefined') {
         console.warn('Tippy.js not loaded, skipping popup initialization');
         return;
     }
-    
-    // 完全销毁现有的 tippy 实例，避免重复初始化
-    if (window.tippyInstances) {
-        window.tippyInstances.forEach(instance => {
+
+    const triggers = Array.from(document.querySelectorAll('[data-server-popup]'));
+    const triggerSet = new Set(triggers);
+    window.tippyInstances = (window.tippyInstances || []).filter(instance => {
+        if (!instance || !triggerSet.has(instance.reference)) {
             try {
-                instance.destroy();
+                if (instance && instance.reference) cleanupTippyTrigger(instance.reference);
+                if (instance) instance.destroy();
             } catch (e) {
                 console.warn('Failed to destroy tippy instance:', e);
             }
-        });
-    }
-    window.tippyInstances = [];
-    
-    // 获取所有触发元素（支持动态添加）
-    const triggers = document.querySelectorAll('[data-server-popup]');
-    
-    // 清除所有已初始化标记，强制重新初始化
-    triggers.forEach(trigger => {
-        delete trigger._tippyInitialized;
-        delete trigger._tippyInstance;
-    });
-    
-    triggers.forEach(trigger => {
-        const contentDiv = trigger.nextElementSibling;
-        if (contentDiv && contentDiv.classList.contains('server-popup-content')) {
-            // 使用 Tippy.js 创建 tooltip，关键是设置为手动模式，不自动隐藏
-            const instance = tippy(trigger, {
-                content: 'Loading...', // 初始内容，将动态更新
-                allowHTML: true,
-                interactive: true, // 允许与popup内容交互
-                trigger: 'manual', // 完全手动控制
-                hideOnClick: false,
-                delay: 0, // 无延迟
-                duration: 0, // 无动画
-                placement: 'auto',
-                theme: 'custom-server-popup',
-                maxWidth: 'none',
-                arrow: true,
-                appendTo: document.body,
-                boundary: 'viewport',
-                flip: true,
-                fallbackPlacements: ['top', 'bottom', 'left', 'right'],
-                sticky: false,
-                interactiveBorder: 0,
-                onShow(instance) {
-                    // 隐藏其他所有 popup
-                    window.tippyInstances.forEach(other => {
-                        if (other !== instance && other.state.isVisible) {
-                            other.hide();
-                        }
-                    });
-                    
-                    // 动态更新内容 - 每次显示时都获取最新内容
-                    const contentDiv = instance.reference.nextElementSibling;
-                    if (contentDiv && contentDiv.classList.contains('server-popup-content')) {
-                        // 短暂延迟确保Vue渲染完成
-                        setTimeout(() => {
-                            const dynamicContent = contentDiv.innerHTML;
-                            instance.setContent(dynamicContent);
-                        }, 10);
-                    }
-                }
-            });
-            
-            // 手动绑定鼠标事件 - 确保不会自动隐藏
-            let isHovering = false;
-            let mouseoverTimeout = null;
-            
-            const showPopup = function() {
-                if (mouseoverTimeout) {
-                    clearTimeout(mouseoverTimeout);
-                    mouseoverTimeout = null;
-                }
-                isHovering = true;
-                instance.show();
-            };
-            
-            const hidePopup = function() {
-                isHovering = false;
-                // 延迟200ms隐藏，给足够时间让鼠标移动到popup上
-                mouseoverTimeout = setTimeout(() => {
-                    if (!isHovering && instance.state.isVisible) {
-                        instance.hide();
-                    }
-                }, 200);
-            };
-            
-            // 清除旧事件
-            if (trigger._showPopupFunc) trigger.removeEventListener('mouseenter', trigger._showPopupFunc);
-            if (trigger._hidePopupFunc) trigger.removeEventListener('mouseleave', trigger._hidePopupFunc);
-
-            // 为trigger绑定事件
-            trigger.addEventListener('mouseenter', showPopup);
-            trigger.addEventListener('mouseleave', hidePopup);
-
-            trigger._showPopupFunc = showPopup;
-            trigger._hidePopupFunc = hidePopup;
-            
-            // 监听popup显示/隐藏事件，为popup元素绑定鼠标事件
-            instance.setProps({
-                onShown(instance) {
-                    const popupElement = instance.popper;
-                    if (popupElement) {
-                        const popupMouseEnter = function() {
-                            if (mouseoverTimeout) {
-                                clearTimeout(mouseoverTimeout);
-                                mouseoverTimeout = null;
-                            }
-                            isHovering = true;
-                        };
-                        
-                        const popupMouseLeave = function() {
-                            isHovering = false;
-                            mouseoverTimeout = setTimeout(() => {
-                                if (!isHovering) {
-                                    instance.hide();
-                                }
-                            }, 200);
-                        };
-                        
-                        popupElement.addEventListener('mouseenter', popupMouseEnter);
-                        popupElement.addEventListener('mouseleave', popupMouseLeave);
-                        
-                        // 保存引用用于清理
-                        popupElement._popupMouseEnter = popupMouseEnter;
-                        popupElement._popupMouseLeave = popupMouseLeave;
-                    }
-                },
-                onHidden(instance) {
-                    // 清理popup的事件监听器
-                    const popupElement = instance.popper;
-                    if (popupElement) {
-                        if (popupElement._popupMouseEnter) {
-                            popupElement.removeEventListener('mouseenter', popupElement._popupMouseEnter);
-                            delete popupElement._popupMouseEnter;
-                        }
-                        if (popupElement._popupMouseLeave) {
-                            popupElement.removeEventListener('mouseleave', popupElement._popupMouseLeave);
-                            delete popupElement._popupMouseLeave;
-                        }
-                    }
-                }
-            });
-            
-            // 标记为已初始化
-            trigger._tippyInitialized = true;
-            trigger._tippyInstance = instance;
-            
-            window.tippyInstances.push(instance);
+            return false;
         }
+        return true;
     });
-    
-    // console.log(`Initialized ${window.tippyInstances.length} Tippy.js popups`);
+
+    triggers.forEach(trigger => {
+        if (trigger._tippyInstance && trigger._tippyInstance.state && !trigger._tippyInstance.state.isDestroyed) {
+            return;
+        }
+
+        let isHovering = false;
+        let mouseoverTimeout = null;
+
+        const instance = tippy(trigger, {
+            content: getServerPopupContent(trigger) || 'Loading...',
+            allowHTML: true,
+            interactive: true,
+            trigger: 'manual',
+            hideOnClick: false,
+            delay: 0,
+            duration: 0,
+            placement: 'auto',
+            theme: 'custom-server-popup',
+            maxWidth: 'none',
+            arrow: true,
+            appendTo: document.body,
+            boundary: 'viewport',
+            flip: true,
+            fallbackPlacements: ['top', 'bottom', 'left', 'right'],
+            sticky: false,
+            interactiveBorder: 0,
+            onShow(instance) {
+                window.tippyInstances.forEach(other => {
+                    if (other !== instance && other.state.isVisible) {
+                        other.hide();
+                    }
+                });
+                instance.setContent(getServerPopupContent(instance.reference) || 'Loading...');
+            },
+            onShown(instance) {
+                const popupElement = instance.popper;
+                if (!popupElement) return;
+                const popupMouseEnter = function() {
+                    if (mouseoverTimeout) {
+                        clearTimeout(mouseoverTimeout);
+                        mouseoverTimeout = null;
+                    }
+                    isHovering = true;
+                };
+                const popupMouseLeave = function() {
+                    isHovering = false;
+                    mouseoverTimeout = setTimeout(() => {
+                        if (!isHovering) {
+                            instance.hide();
+                        }
+                    }, 200);
+                };
+                popupElement.addEventListener('mouseenter', popupMouseEnter);
+                popupElement.addEventListener('mouseleave', popupMouseLeave);
+                popupElement._popupMouseEnter = popupMouseEnter;
+                popupElement._popupMouseLeave = popupMouseLeave;
+            },
+            onHidden(instance) {
+                const popupElement = instance.popper;
+                if (!popupElement) return;
+                if (popupElement._popupMouseEnter) {
+                    popupElement.removeEventListener('mouseenter', popupElement._popupMouseEnter);
+                    delete popupElement._popupMouseEnter;
+                }
+                if (popupElement._popupMouseLeave) {
+                    popupElement.removeEventListener('mouseleave', popupElement._popupMouseLeave);
+                    delete popupElement._popupMouseLeave;
+                }
+            }
+        });
+
+        const showPopup = function() {
+            if (mouseoverTimeout) {
+                clearTimeout(mouseoverTimeout);
+                mouseoverTimeout = null;
+            }
+            isHovering = true;
+            instance.setContent(getServerPopupContent(trigger) || 'Loading...');
+            instance.show();
+        };
+
+        const hidePopup = function() {
+            isHovering = false;
+            mouseoverTimeout = setTimeout(() => {
+                if (!isHovering && instance.state.isVisible) {
+                    instance.hide();
+                }
+            }, 200);
+        };
+
+        trigger.addEventListener('mouseenter', showPopup);
+        trigger.addEventListener('mouseleave', hidePopup);
+        trigger._showPopupFunc = showPopup;
+        trigger._hidePopupFunc = hidePopup;
+        trigger._tippyInitialized = true;
+        trigger._tippyInstance = instance;
+        window.tippyInstances.push(instance);
+    });
 }
 
 // 使用MutationObserver监听DOM变化，确保新的server card能够绑定Tippy
@@ -2265,55 +2306,45 @@ function setupTippyMutationObserver() {
     if (window.tippyMutationObserver) {
         window.tippyMutationObserver.disconnect();
     }
-    
+
+    const nodeHasPopup = function(node) {
+        return node && node.nodeType === 1 && (
+            (node.matches && node.matches('[data-server-popup]')) ||
+            (node.querySelector && node.querySelector('[data-server-popup]'))
+        );
+    };
+
     window.tippyMutationObserver = new MutationObserver(function(mutations) {
-        let needsReinit = false;
-        
+        let needsSync = false;
+
         mutations.forEach(function(mutation) {
-            // 检查是否有新的server card添加或修改
-            if (mutation.type === 'childList') {
-                mutation.addedNodes.forEach(function(node) {
-                    if (node.nodeType === 1 && // Element node
-                        (node.querySelector && node.querySelector('[data-server-popup]'))) {
-                        needsReinit = true;
-                    }
-                });
-                
-                // 检查被移除的节点，如果有popup触发器被移除也需要重新初始化
-                mutation.removedNodes.forEach(function(node) {
-                    if (node.nodeType === 1 && 
-                        (node.querySelector && node.querySelector('[data-server-popup]'))) {
-                        needsReinit = true;
-                    }
-                });
-            }
-            
-            // 检查现有元素的属性变化（Vue响应式更新）
-            if (mutation.type === 'attributes' && 
-                mutation.target.hasAttribute && 
-                mutation.target.hasAttribute('data-server-popup')) {
-                needsReinit = true;
-            }
+            if (mutation.type !== 'childList') return;
+            mutation.addedNodes.forEach(function(node) {
+                if (nodeHasPopup(node)) needsSync = true;
+            });
+            mutation.removedNodes.forEach(function(node) {
+                if (nodeHasPopup(node)) needsSync = true;
+            });
         });
-        
-        if (needsReinit) {
-            // 防抖，避免频繁重新初始化
+
+        if (needsSync) {
             if (window.tippyReinitTimeout) {
                 clearTimeout(window.tippyReinitTimeout);
             }
             window.tippyReinitTimeout = setTimeout(() => {
-                console.log('Reinitializing Tippy instances due to DOM changes');
                 initGlobalTippyPopups();
-            }, 50); // 减少延迟时间，从300ms减少到50ms，让响应更快
+                if (window.CpuRollOptimizer) {
+                    window.CpuRollOptimizer.refresh();
+                }
+            }, 80);
         }
     });
-    
-    // 观察server cards容器和整个文档
+
     const targetNode = document.querySelector('.ui.four.stackable.status.cards') || document.body;
     window.tippyMutationObserver.observe(targetNode, {
         childList: true,
         subtree: true,
-      attributes: false
+        attributes: false
     });
 }
 
@@ -2339,5 +2370,6 @@ window.TippyPopups = {
     init: initTippyPopups,
     initGlobal: initGlobalTippyPopups,
     setupObserver: setupTippyMutationObserver,
+    sync: initGlobalTippyPopups,
     updateContent: updateVisibleTippyContent
 };

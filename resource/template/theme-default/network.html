@@ -42,20 +42,6 @@
         });
     }
 
-    // 减少重排提示
-    const originalSetTimeout = window.setTimeout;
-    let timeoutCount = 0;
-    window.setTimeout = function (fn, delay) {
-        timeoutCount++;
-        if (timeoutCount > 10) {
-            // 批量处理过多的setTimeout
-            return originalSetTimeout(() => {
-                requestAnimationFrame(fn);
-            }, delay || 0);
-        }
-        return originalSetTimeout(fn, delay);
-    };
-
     const monitorInfo = JSON.parse('{{.MonitorInfos}}');
     const initData = JSON.parse('{{.Servers}}').servers;
     const defaultServerID = {{.DefaultServerID}} || (initData && initData[0] ? initData[0].ID : null);
@@ -97,8 +83,9 @@
         monitorConfigsLoaded: false,
         loadedFromAPI: false,
         timeRange: '24h', // 默认显示24小时
-    currentServerId: null, // 当前选中的服务器ID
-    hoverTipLabel: '' // 悬停在自定义按钮时的临时 tooltip 文本
+        currentServerId: null, // 当前选中的服务器ID
+        hoverTipLabel: '', // 悬停在自定义按钮时的临时 tooltip 文本
+        tooltipSeries: []
         },
         mixins: [mixinsVue],
         created() {
@@ -166,9 +153,8 @@
                         return Math.abs(cand1[0] - ts) <= Math.abs(cand2[0] - ts) ? cand1 : cand2;
                     }
 
-                    // 始终按当前图表上的全部系列生成提示，确保显示同一时刻所有检测点
-                    const allSeries = (vm && vm.option && Array.isArray(vm.option.series)) ? vm.option.series.slice() : [];
-                    allSeries.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                    // 始终按当前图表上的全部系列生成提示；排序结果在数据解析阶段预先缓存。
+                    const allSeries = (vm && Array.isArray(vm.tooltipSeries)) ? vm.tooltipSeries : [];
 
                     allSeries.forEach(function (series) {
                         const point = findNearestPoint(series.data, axisTs);
@@ -613,6 +599,10 @@
             }
             return '';
         },
+        applyChartOption(option, opts) {
+            if (!this.myChart || typeof this.myChart.setOption !== 'function') return;
+            this.myChart.setOption(option, Object.assign({ lazyUpdate: true }, opts || {}));
+        },
         redirectNetwork(id) {
             // 保存当前选中的服务器ID
             this.currentServerId = id;
@@ -622,9 +612,7 @@
             // 临时关闭 tooltip，避免渲染过程中 HTML tooltip 触发 innerHTML 报错
             this.disableTooltip();
             this.option.title.text = "Loading...";
-            if (this.myChart) {
-                this.myChart.setOption(this.option, true);
-            }
+            this.applyChartOption(this.option, { notMerge: true });
 
             this.getMonitorHistory(id, this.timeRange)
                 .then((monitorInfo) => {
@@ -632,9 +620,7 @@
                 })
                 .catch((error) => {
                     this.option.title.text = "Failed to load data";
-                    if (this.myChart) {
-                        this.myChart.setOption(this.option, true);
-                    }
+                    this.applyChartOption(this.option, { notMerge: true });
                     // 出错也要恢复 tooltip
                     this.enableTooltip();
                 })
@@ -678,9 +664,7 @@
                 this.option.title.text = "No Data Available";
                 // 使用requestAnimationFrame避免强制重排
                 requestAnimationFrame(() => {
-                    if (this.myChart && typeof this.myChart.setOption === 'function') {
-                        this.myChart.setOption(this.option, true);
-                    }
+                    this.applyChartOption(this.option, { notMerge: true });
                     // 无数据时恢复 tooltip
                     if (this.tooltipTimer) { clearTimeout(this.tooltipTimer); }
                     this.tooltipTimer = setTimeout(() => { this.enableTooltip(); }, 0);
@@ -693,9 +677,7 @@
             if (!processedData || processedData.length === 0) {
                 this.option.title.text = "No Valid Data";
                 requestAnimationFrame(() => {
-                    if (this.myChart && typeof this.myChart.setOption === 'function') {
-                        this.myChart.setOption(this.option, true);
-                    }
+                    this.applyChartOption(this.option, { notMerge: true });
                     // 无有效数据时也恢复 tooltip
                     if (this.tooltipTimer) { clearTimeout(this.tooltipTimer); }
                     this.tooltipTimer = setTimeout(() => { this.enableTooltip(); }, 0);
@@ -826,6 +808,10 @@
             // 一次性更新所有配置
             this.option.title.text = titleText;
             this.option.series = tSeries;
+            this.tooltipSeries = tSeries
+                .slice()
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(series => ({ name: series.name, data: series.data }));
             this.option.legend.data = tLegendData;
             // 移动端减少右侧预留，减小留白；PC 端保持原值
             this.option.legend.right = this.isMobile ? '150px' : '160px';
@@ -884,7 +870,7 @@
                             });
                         } catch(e){}
                     }
-                    this.myChart.setOption(this.option, true);
+                    this.applyChartOption(this.option, { replaceMerge: ['series', 'legend'] });
                     // 重新应用时间范围按钮的选中样式，避免被整体 setOption 覆盖
                     this.updateTimeRangeButtons();
                     // 渲染完成后异步恢复 tooltip
@@ -925,7 +911,7 @@
                     this.$refs.chartDom.style.touchAction = 'manipulation';
                 }
 
-                this.myChart.setOption(this.option, true);
+                this.applyChartOption(this.option, { notMerge: true });
 
                 // 添加点击事件监听
                 this.myChart.on('click', (params) => {
@@ -1004,9 +990,7 @@
                 // 临时关闭 tooltip，避免渲染过程中 HTML tooltip 触发 innerHTML 报错
                 this.disableTooltip();
                 this.option.title.text = "Loading...";
-                if (this.myChart) {
-                    this.myChart.setOption(this.option, true);
-                }
+                this.applyChartOption(this.option, { notMerge: true });
 
                 this.getMonitorHistory(this.currentServerId, range)
                     .then((monitorInfo) => {
@@ -1014,9 +998,7 @@
                     })
                     .catch((error) => {
                         this.option.title.text = "Failed to load data";
-                        if (this.myChart) {
-                            this.myChart.setOption(this.option, true);
-                        }
+                        this.applyChartOption(this.option, { notMerge: true });
                         // 出错也要恢复 tooltip
                         if (this.tooltipTimer) { clearTimeout(this.tooltipTimer); }
                         this.tooltipTimer = setTimeout(() => { this.enableTooltip(); }, 0);
@@ -1032,11 +1014,11 @@
             if (!this.myChart) return;
             try { this.myChart.dispatchAction({ type: 'hideTip' }); } catch (e) {}
             if (this.tooltipTimer) { clearTimeout(this.tooltipTimer); this.tooltipTimer = null; }
-            try { this.myChart.setOption({ tooltip: { show: false, showContent: false, triggerOn: 'none', appendToBody: false } }, false); } catch (e) {}
+            try { this.applyChartOption({ tooltip: { show: false, showContent: false, triggerOn: 'none', appendToBody: false } }); } catch (e) {}
         },
         enableTooltip() {
             if (!this.myChart) return;
-            try { this.myChart.setOption({ tooltip: { show: true, showContent: true, triggerOn: 'mousemove', appendToBody: false } }, false); } catch (e) {}
+            try { this.applyChartOption({ tooltip: { show: true, showContent: true, triggerOn: 'mousemove', appendToBody: false } }); } catch (e) {}
         },
         updateTimeRangeButtons() {
             if (!this.myChart) return;
@@ -1065,7 +1047,7 @@
             }
 
             // 2) 立即更新图表上的样式
-            this.myChart.setOption({
+            this.applyChartOption({
                 graphic: [
                     // 24h 背景
                     { id: 'btn24hRect', style: { fill: this.timeRange === '24h' ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.4)' } },

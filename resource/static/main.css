@@ -280,9 +280,23 @@ i.fa-sharp.fa-solid.fa-u::before {
 .cpuroll .rollanimation {
     flex: 0 0 auto;
     white-space: nowrap;
+    animation: none;
+    will-change: auto;
+    transform: none;
+}
+
+.cpuroll:not(.is-overflowing) .rollanimation + .rollanimation {
+    display: none;
+}
+
+.cpuroll.is-overflowing .rollanimation {
     animation: cpu-roll 10s linear infinite;
-    will-change: transform;
-    transform: translateZ(0);
+    will-change: auto;
+    transform: none;
+}
+
+.cpuroll.is-paused .rollanimation {
+    animation-play-state: paused;
 }
 
 @keyframes cpu-roll {
@@ -555,8 +569,8 @@ a {
     overflow: hidden;
     background-clip: padding-box;
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
-    will-change: transform;
-    transform: translateZ(0);
+    will-change: auto;
+    transform: none;
 }
 
 /* Chromium 定向降载：首页高频刷新的卡片关闭毛玻璃采样，保留现有布局与色彩 */
@@ -1501,7 +1515,7 @@ html, body {
 .network-primary-btn {
     will-change: auto;
     backface-visibility: hidden;
-    transform: translateZ(0);
+    transform: none;
     padding: 0.32em 0.56em !important;
 }
 
@@ -1838,10 +1852,10 @@ html, body {
     }
 }
 
-/* 进度条动画隔离层，防止宽度变化引发整卡重绘，降低CPU消耗 */
+/* 避免为每个进度条常驻合成层，服务器数量较多时可降低合成压力 */
 .ui.progress .bar {
-    transform: translateZ(0);
-    -webkit-transform: translateZ(0);
+    transform: none;
+    -webkit-transform: none;
 }
 
 /* ----------------------------------

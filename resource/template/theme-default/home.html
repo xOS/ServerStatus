@@ -12,41 +12,7 @@
                                 class="fl-tux"></i>
                             <i v-else :class="'fl-' + getFontLogoClass(server.Host.Platform)"></i>
                             @#server.Name + (server.live?'':' [{{tr "Offline"}}]')#@
-                            <i class="server-primary-font info circle icon" style="height: 28px" data-server-popup></i>
-                            <div class="server-popup-content" style="display: none;">
-                                {{tr "Platform"}}：@#specialOS(server.Host.Platform)#@ <span
-                                    v-if='!isWindowsPlatform(server.Host.Platform)'>@#formatPlatformVersion(server.Host.PlatformVersion)#@
-                                </span> @#specialVir(server.Host.Virtualization)#@
-                                [@#server.Host.Arch#@]<br />
-                                {{tr "MemUsed"}}：@#formatByteSize(server.State.MemUsed)#@ /
-                                @#formatByteSize(server.Host.MemTotal)#@<br />
-                                <template v-if="server.Host.SwapTotal">
-                                    {{tr "SwapUsed"}}：@#formatByteSize(server.State.SwapUsed)#@ /
-                                    @#formatByteSize(server.Host.SwapTotal)#@<br />
-                                </template>
-                                {{tr "DiskUsed"}}：@#formatByteSize(server.State.DiskUsed)#@ /
-                                @#formatByteSize(server.Host.DiskTotal)#@<br />
-                                <template v-if="getTrafficTooltip(server.ID)">
-                                    {{tr "TrafficTotal"}}：@#getTrafficTooltip(server.ID)#@<br />
-                                </template>
-                                <template
-                                    v-if="server.Host.GPU && server.Host.GPU.length > 0 && server.Host.GPU.some(gpu => gpu !== 'unknown')">
-                                    {{tr "GPU"}}：@#server.Host.GPU.filter(gpu => gpu !== 'unknown').join(', ')#@<br />
-                                </template>
-                                <template v-if="hasTemperature(server.State.Temperatures, sensorList)">
-                                    {{tr "Temperature"}}：@#getTemperature(server.State.Temperatures,
-                                    sensorList)#@°C<br />
-                                </template>
-
-                                {{tr "Load"}}：@#toFixed2(server.State.Load1)#@ | @#toFixed2(server.State.Load5)#@ |
-                                @#toFixed2(server.State.Load15)#@<br />
-                                {{tr "ConnCount"}}：TCP @#server.State.TcpConnCount#@ {{tr "Count"}} | UDP
-                                @#server.State.UdpConnCount#@ {{tr "Count"}}
-                                <br />
-                                {{tr "BootTime"}}：@#timeStamp(server.Host.BootTime * 1000)#@<br />
-                                {{tr "LastActive"}}：@#timeStamp(server.LastActive)#@<br />
-                                {{tr "Version"}}：@#server.Host.Version#@<br />
-                            </div>
+                            <i class="server-primary-font info circle icon" style="height: 28px" data-server-popup :data-server-id="server.ID"></i>
                             <div class="ui divider"
                                 style="margin: .5rem 0 !important; border-bottom: 1px solid rgba(34,36,38,.15) !important;">
                             </div>
@@ -77,39 +43,34 @@
                             <div class="ui grid">
                                 <div class="three wide column">CPU</div>
                                 <div class="thirteen wide column">
-                                    <div :class="formatPercent(server.live,server.State.CPU, 100).class">
-                                        <div class="bar"
-                                            :style="formatPercent(server.live,server.State.CPU, 100).style">
-                                            <small>@#formatPercent(server.live,server.State.CPU,100).percent#@%</small>
+                                    <div :class="server._view.cpuProgress.class">
+                                        <div class="bar" :style="server._view.cpuProgress.style">
+                                            <small>@#server._view.cpuProgress.percent#@%</small>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="three wide column">{{tr "MemUsed"}}</div>
                                 <div class="thirteen wide column">
-                                    <div
-                                        :class="formatPercent(server.live,server.State.MemUsed, server.Host.MemTotal).class">
-                                        <div class="bar"
-                                            :style="formatPercent(server.live,server.State.MemUsed, server.Host.MemTotal).style">
-                                            <small>@#parseInt(server.State&&server.Host.MemTotal?server.State.MemUsed/server.Host.MemTotal*100:0)#@%</small>
+                                    <div :class="server._view.memProgress.class">
+                                        <div class="bar" :style="server._view.memProgress.style">
+                                            <small>@#server._view.memPercent#@%</small>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="three wide column">{{tr "DiskUsed"}}</div>
                                 <div class="thirteen wide column">
-                                    <div
-                                        :class="formatPercent(server.live,server.State.DiskUsed, server.Host.DiskTotal).class">
-                                        <div class="bar"
-                                            :style="formatPercent(server.live,server.State.DiskUsed, server.Host.DiskTotal).style">
-                                            <small>@#parseInt(server.State&&server.Host.DiskTotal?server.State.DiskUsed/server.Host.DiskTotal*100:0)#@%</small>
+                                    <div :class="server._view.diskProgress.class">
+                                        <div class="bar" :style="server._view.diskProgress.style">
+                                            <small>@#server._view.diskPercent#@%</small>
                                         </div>
                                     </div>
                                 </div>
 
                                 <div class="three wide column">{{tr "TrafficTotal"}}</div>
                                 <div class="thirteen wide column">
-                                    <div :class="getTrafficProgressClass(server.ID)">
-                                        <div class="bar" :style="getTrafficProgressStyle(server.ID)">
-                                            <small>@#getTrafficDisplay(server.ID)#@</small>
+                                    <div :class="server._view.trafficProgressClass">
+                                        <div class="bar" :style="server._view.trafficProgressStyle">
+                                            <small>@#server._view.trafficDisplay#@</small>
                                         </div>
                                     </div>
                                 </div>
@@ -117,29 +78,29 @@
                                 <div class="three wide column">{{tr "NetSpeed"}}</div>
                                 <div class="thirteen wide column">
                                     <i class="fa-regular fa-down"></i>
-                                    @#formatByteSize(server.State.NetInSpeed)#@/s |
+                                    @#server._view.netInSpeed#@/s |
                                     <i class="fa-regular fa-up"></i>
-                                    @#formatByteSize(server.State.NetOutSpeed)#@/s
+                                    @#server._view.netOutSpeed#@/s
                                 </div>
                                 <div class="three wide column">{{tr "NetTransfer"}}</div>
                                 <div class="thirteen wide column">
                                     <i class="fa-solid fa-down"></i>
-                                    @#formatByteSize(server.State.NetInTransfer)#@ |
+                                    @#server._view.netInTransfer#@ |
                                     <i class="fa-solid fa-up"></i>
-                                    @#formatByteSize(server.State.NetOutTransfer)#@
+                                    @#server._view.netOutTransfer#@
                                 </div>
 
                                 <div class="three wide column">{{tr "Live"}}</div>
                                 <div class="thirteen wide column"><i class="fa-regular fa-bars-progress"></i>
-                                    @# server.State.ProcessCount #@ | <i class="fa-sharp fa-solid fa-t"></i>
-                                    @#server.State.TcpConnCount#@ |
+                                    @#server._view.processCount#@ | <i class="fa-sharp fa-solid fa-t"></i>
+                                    @#server._view.tcpConnCount#@ |
                                     <i class="fa-sharp fa-solid fa-u"></i>
-                                    @#server.State.UdpConnCount#@
+                                    @#server._view.udpConnCount#@
                                 </div>
 
                                 <div class="three wide column">{{tr "Uptime"}}</div>
                                 <div class="thirteen wide column">
-                                <i class="clock icon"></i>@#secondToDate(server.State.Uptime)#@
+                                <i class="clock icon"></i>@#server._view.uptime#@
                                 </div>
                             </div>
                         </div>
@@ -325,7 +286,7 @@
             window.serverTrafficData = newTrafficData;
             window.lastTrafficUpdateTime = Date.now();
 
-            if (window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
+            if (!document.hidden && window.statusCards && typeof window.statusCards.updateTrafficData === 'function') {
                 window.statusCards.updateTrafficData();
             }
         } catch (e) {
@@ -427,23 +388,11 @@ const statusCards = new Vue({
                 console.warn('服务器数据格式不正确，使用空数组');
             }
 
-            // 初始化时设置所有服务器的初始状态
-            // 必须在赋值给 this.servers 之前添加新属性，否则 Vue 无法进行响应式追踪
-            initialServers.forEach(server => {
-                if (server.Host) {
-                    // 初始化时先假设所有服务器在线，等待WebSocket更新
-                    server.live = true;
-                    server._offlineConfirmCount = 0;
-                } else {
-                    server.live = false;
-                }
-                // 确保 State 对象存在，防止后续更新时报错
-                if (!server.State) {
-                    server.State = {};
-                }
-            });
+            // 初始化时添加后续渲染需要的响应式字段。
+            initialServers.forEach(server => this.prepareServer(server));
 
             this.servers = initialServers;
+            this.rebuildServerIndex();
         } catch (e) {
             console.error('解析服务器数据失败:', e);
             this.servers = [];
@@ -453,11 +402,14 @@ const statusCards = new Vue({
 
         // 订阅流量数据更新
         if (window.trafficManager) {
-            window.trafficManager.subscribe((data, version) => {
+            this._trafficCallback = (data, version) => {
                 this.trafficData = Object.freeze(data);
                 this._trafficVersion = version;
-                this.updateTrafficData();
-            });
+                if (!document.hidden) {
+                    this.updateTrafficData();
+                }
+            };
+            window.trafficManager.subscribe(this._trafficCallback);
         }
 
         // 不再设置定期更新，WebSocket会实时推送数据
@@ -466,6 +418,9 @@ const statusCards = new Vue({
         this.$nextTick(() => {
             this.updateSliderPosition();
             $('.ui.accordion').accordion();
+            if (window.CpuRollOptimizer) {
+                window.CpuRollOptimizer.refresh();
+            }
         });
     },
     computed: {
@@ -542,6 +497,150 @@ const statusCards = new Vue({
         }
     },
     methods: {
+        prepareServer(server) {
+            if (!server) return;
+            server.live = !!server.Host;
+            if (server.Host) {
+                // 初始化时先假设在线，等待 WebSocket 纠正。
+                server.live = true;
+            }
+            server._offlineConfirmCount = 0;
+            if (!server.State) {
+                server.State = {};
+            }
+            this.refreshServerView(server);
+        },
+        rebuildServerIndex() {
+            const index = Object.create(null);
+            if (Array.isArray(this.servers)) {
+                this.servers.forEach(server => {
+                    if (server && server.ID !== undefined) {
+                        index[String(server.ID)] = server;
+                    }
+                });
+            }
+            this._serverById = index;
+        },
+        getServerById(serverId) {
+            if (!serverId && serverId !== 0) return null;
+            const key = String(serverId);
+            if (this._serverById && this._serverById[key]) {
+                return this._serverById[key];
+            }
+            if (!Array.isArray(this.servers)) return null;
+            return this.servers.find(server => String(server.ID) === key) || null;
+        },
+        refreshServerView(server) {
+            if (!server || !server.Host) return;
+            const state = server.State || {};
+            const host = server.Host || {};
+            const memTotal = Number(host.MemTotal) || 0;
+            const diskTotal = Number(host.DiskTotal) || 0;
+            const memUsed = Number(state.MemUsed) || 0;
+            const diskUsed = Number(state.DiskUsed) || 0;
+            const view = {
+                cpuProgress: this.formatPercent(server.live, state.CPU, 100),
+                memProgress: this.formatPercent(server.live, state.MemUsed, host.MemTotal),
+                memPercent: parseInt(memTotal ? memUsed / memTotal * 100 : 0),
+                diskProgress: this.formatPercent(server.live, state.DiskUsed, host.DiskTotal),
+                diskPercent: parseInt(diskTotal ? diskUsed / diskTotal * 100 : 0),
+                trafficProgressClass: this.getTrafficProgressClass(server.ID),
+                trafficProgressStyle: this.getTrafficProgressStyle(server.ID),
+                trafficDisplay: this.getTrafficDisplay(server.ID),
+                netInSpeed: this.formatByteSize(state.NetInSpeed),
+                netOutSpeed: this.formatByteSize(state.NetOutSpeed),
+                netInTransfer: this.formatByteSize(state.NetInTransfer),
+                netOutTransfer: this.formatByteSize(state.NetOutTransfer),
+                processCount: state.ProcessCount || 0,
+                tcpConnCount: state.TcpConnCount || 0,
+                udpConnCount: state.UdpConnCount || 0,
+                uptime: this.secondToDate(state.Uptime || 0)
+            };
+            this.$set(server, '_view', view);
+        },
+        refreshCpuRoll() {
+            if (window.CpuRollOptimizer) {
+                this.$nextTick(() => window.CpuRollOptimizer.refresh());
+            }
+        },
+        escapePopupHtml(value) {
+            return String(value === undefined || value === null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        },
+        callFormatter(fnName, fallbackValue, ...args) {
+            if (typeof this[fnName] === 'function') {
+                return this[fnName](...args);
+            }
+            if (typeof window[fnName] === 'function') {
+                return window[fnName](...args);
+            }
+            return fallbackValue;
+        },
+        getServerPopupContent(serverId) {
+            const server = this.getServerById(serverId);
+            if (!server || !server.Host) return '';
+            const host = server.Host || {};
+            const state = server.State || {};
+            const lines = [];
+
+            let platformLine = '{{tr "Platform"}}：' + this.escapePopupHtml(this.callFormatter('specialOS', host.Platform || '', host.Platform));
+            if (!this.isWindowsPlatform(host.Platform)) {
+                const version = this.formatPlatformVersion(host.PlatformVersion);
+                if (version) platformLine += ' ' + this.escapePopupHtml(version);
+            }
+            const virtualization = this.callFormatter('specialVir', host.Virtualization || '', host.Virtualization);
+            if (virtualization) {
+                platformLine += ' ' + this.escapePopupHtml(virtualization);
+            }
+            platformLine += ' [' + this.escapePopupHtml(host.Arch || '') + ']';
+            lines.push(platformLine);
+
+            lines.push('{{tr "MemUsed"}}：' + this.escapePopupHtml(this.formatByteSize(state.MemUsed)) + ' / ' + this.escapePopupHtml(this.formatByteSize(host.MemTotal)));
+            if (host.SwapTotal) {
+                lines.push('{{tr "SwapUsed"}}：' + this.escapePopupHtml(this.formatByteSize(state.SwapUsed)) + ' / ' + this.escapePopupHtml(this.formatByteSize(host.SwapTotal)));
+            }
+            lines.push('{{tr "DiskUsed"}}：' + this.escapePopupHtml(this.formatByteSize(state.DiskUsed)) + ' / ' + this.escapePopupHtml(this.formatByteSize(host.DiskTotal)));
+            lines.push('{{tr "TrafficTotal"}}：' + this.escapePopupHtml(this.getTrafficTooltip(server.ID)));
+
+            const gpuList = Array.isArray(host.GPU) ? host.GPU.filter(gpu => gpu !== 'unknown') : [];
+            if (gpuList.length > 0) {
+                lines.push('{{tr "GPU"}}：' + this.escapePopupHtml(gpuList.join(', ')));
+            }
+            if (this.hasTemperature(state.Temperatures, this.sensorList)) {
+                lines.push('{{tr "Temperature"}}：' + this.escapePopupHtml(this.getTemperature(state.Temperatures, this.sensorList)) + '°C');
+            }
+
+            lines.push('{{tr "Load"}}：' + this.escapePopupHtml(this.toFixed2(Number(state.Load1) || 0)) + ' | ' + this.escapePopupHtml(this.toFixed2(Number(state.Load5) || 0)) + ' | ' + this.escapePopupHtml(this.toFixed2(Number(state.Load15) || 0)));
+            lines.push('{{tr "ConnCount"}}：TCP ' + this.escapePopupHtml(state.TcpConnCount || 0) + ' {{tr "Count"}} | UDP ' + this.escapePopupHtml(state.UdpConnCount || 0) + ' {{tr "Count"}}');
+            lines.push('{{tr "BootTime"}}：' + this.escapePopupHtml(host.BootTime ? this.timeStamp(host.BootTime * 1000) : ''));
+            lines.push('{{tr "LastActive"}}：' + this.escapePopupHtml(server.LastActive ? this.timeStamp(server.LastActive) : ''));
+            lines.push('{{tr "Version"}}：' + this.escapePopupHtml(host.Version || ''));
+
+            return lines.join('<br />');
+        },
+        flushDeferredUpdates() {
+            if (window.pendingServerStatusData) {
+                const pendingStatus = window.pendingServerStatusData;
+                window.pendingServerStatusData = null;
+                this.updateServerLiveStatus(pendingStatus);
+            }
+            if (window.pendingTrafficData) {
+                const pendingTraffic = window.pendingTrafficData;
+                window.pendingTrafficData = null;
+                window.serverTrafficRawData = pendingTraffic;
+                if (window.trafficManager) {
+                    window.trafficManager.processTrafficData(pendingTraffic);
+                } else if (typeof window.extractTrafficData === 'function') {
+                    window.extractTrafficData();
+                }
+            } else if (window.serverTrafficData) {
+                this.updateTrafficData();
+            }
+        },
         schedulePopupContentUpdate() {
             if (this._popupRefreshQueued) return;
             this._popupRefreshQueued = true;
@@ -624,7 +723,8 @@ const statusCards = new Vue({
             }).join(' ');
         },
         toFixed2(f) {
-            return f.toFixed(2);
+            const n = Number(f);
+            return isNaN(n) ? '0.00' : n.toFixed(2);
         },
         isWindowsPlatform(str) {
             return str && typeof str === 'string' && str.includes('indows');
@@ -780,6 +880,7 @@ const statusCards = new Vue({
                     if (window.TippyPopups && window.TippyPopups.initGlobal) {
                         window.TippyPopups.initGlobal();
                     }
+                    this.refreshCpuRoll();
                 }, 100);
             });
         },
@@ -822,6 +923,10 @@ const statusCards = new Vue({
         },
         updateServerLiveStatus(wsData) {
             if (!wsData || !this.servers) return;
+            if (document.hidden) {
+                window.pendingServerStatusData = wsData;
+                return;
+            }
 
             // 优先使用服务器提供的时间戳，如果没有则使用本地时间
             const nowMillisFromWS = wsData.now || Date.now();
@@ -837,20 +942,23 @@ const statusCards = new Vue({
             const serverMap = new Map();
             if (wsData.servers) {
                 wsData.servers.forEach(server => {
-                    serverMap.set(server.ID, server);
+                    serverMap.set(String(server.ID), server);
                 });
             }
 
             // 处理被移除的服务器 (在旧列表里，但不在新的 WebSocket 数据里)
             const oldServerCount = this.servers.length;
-            const newServers = this.servers.filter(serverItem => serverMap.has(serverItem.ID));
+            const newServers = this.servers.filter(serverItem => serverMap.has(String(serverItem.ID)));
             if (newServers.length !== oldServerCount) {
                 this.servers = newServers;
+                this.rebuildServerIndex();
                 hasUpdates = true;
                 this._needRegenerateTags = true;
+                this._needCpuRollRefresh = true;
             }
 
             this.servers.forEach(serverItem => {
+                let viewDirty = false;
                 if (!serverItem.Host) {
                     if (serverItem.live !== false) {
                         serverItem.live = false;
@@ -859,7 +967,7 @@ const statusCards = new Vue({
                     return;
                 }
 
-                const wsServer = serverMap.get(serverItem.ID);
+                const wsServer = serverMap.get(String(serverItem.ID));
                 if (wsServer) {
                     // 更新服务器状态（只在关键字段有实际变化时才触发响应式更新）
                     if (wsServer.State) {
@@ -877,25 +985,31 @@ const statusCards = new Vue({
                             oldState.ProcessCount !== s.ProcessCount ||
                             oldState.TcpConnCount !== s.TcpConnCount ||
                             oldState.UdpConnCount !== s.UdpConnCount ||
-                            oldState.Load1 !== s.Load1;
+                            oldState.Load1 !== s.Load1 ||
+                            oldState.Load5 !== s.Load5 ||
+                            oldState.Load15 !== s.Load15 ||
+                            oldState.Temperatures !== s.Temperatures;
                         if (stateChanged) {
-                            // Mutate using Vue.$set to ensure new properties (if any) are reactive
-                            for (const key in s) {
-                                if (serverItem.State[key] !== s[key]) {
-                                    this.$set(serverItem.State, key, s[key]);
-                                }
-                            }
+                            this.$set(serverItem, 'State', Object.assign({}, oldState, s));
                             hasUpdates = true;
+                            viewDirty = true;
                         }
                     }
 
                     // 更新Host信息（服务器重启后CPU、内存等配置可能变化）
                     if (wsServer.Host) {
+                        let hostChanged = false;
                         for (const key in wsServer.Host) {
                             if (serverItem.Host[key] !== wsServer.Host[key]) {
-                                this.$set(serverItem.Host, key, wsServer.Host[key]);
-                                hasUpdates = true;
+                                hostChanged = true;
+                                break;
                             }
+                        }
+                        if (hostChanged) {
+                            this.$set(serverItem, 'Host', Object.assign({}, serverItem.Host, wsServer.Host));
+                            hasUpdates = true;
+                            viewDirty = true;
+                            this._needCpuRollRefresh = true;
                         }
                     }
 
@@ -954,29 +1068,35 @@ const statusCards = new Vue({
                             serverItem.live = false;
                             serverItem._offlineConfirmCount = 0;
                             hasUpdates = true;
+                            viewDirty = true;
                         }
                     } else if (serverItem.live === false && newLiveStatus === true) {
                         // 从离线恢复到在线，立即更新
                         serverItem.live = true;
                         serverItem._offlineConfirmCount = 0;
                         hasUpdates = true;
+                        viewDirty = true;
                     }
                 } else {
                     // 状态没有变化，重置确认计数
                     serverItem._offlineConfirmCount = 0;
+                }
+                if (viewDirty) {
+                    this.refreshServerView(serverItem);
                 }
             });
 
             // 处理新增加的服务器
             if (wsData.servers) {
                 wsData.servers.forEach(wsServer => {
-                    if (!this.servers.some(s => s.ID === wsServer.ID)) {
+                    if (!this.servers.some(s => String(s.ID) === String(wsServer.ID))) {
                         // 发现新服务器，初始化它的状态并添加
-                        wsServer.live = true;
-                        wsServer._offlineConfirmCount = 0;
+                        this.prepareServer(wsServer);
                         this.servers.push(wsServer);
+                        this.rebuildServerIndex();
                         hasUpdates = true;
                         this._needRegenerateTags = true;
+                        this._needCpuRollRefresh = true;
                     }
                 });
             }
@@ -991,6 +1111,10 @@ const statusCards = new Vue({
 
                 // 合并同一帧内的弹窗刷新，减少高频重复更新
                 this.schedulePopupContentUpdate();
+                if (this._needCpuRollRefresh) {
+                    this.refreshCpuRoll();
+                    this._needCpuRollRefresh = false;
+                }
             }
         },
         getTrafficProgressClass(serverId) {
@@ -1059,6 +1183,9 @@ const statusCards = new Vue({
             if (!window.serverTrafficData) {
                 return;
             }
+            if (document.hidden) {
+                return;
+            }
 
             let hasUpdates = false;
             const trafficData = window.serverTrafficData;
@@ -1079,7 +1206,8 @@ const statusCards = new Vue({
                         oldTraffic.used !== newTraffic.used ||
                         oldTraffic.total !== newTraffic.total ||
                         Math.abs(oldTraffic.percent - newTraffic.percent) > 0.01) { // 百分比变化超过0.01%才更新
-                        server.traffic = Object.freeze(newTraffic);
+                        this.$set(server, 'traffic', Object.freeze(newTraffic));
+                        this.refreshServerView(server);
                         hasUpdates = true;
                     }
                 }
@@ -1132,6 +1260,7 @@ const statusCards = new Vue({
         activeTag() {
             this.$nextTick(() => {
                 this.updateSliderPosition();
+                this.refreshCpuRoll();
             });
         },
         uniqueTags() {
@@ -1140,15 +1269,17 @@ const statusCards = new Vue({
             });
         },
         servers() {
+            this.rebuildServerIndex();
             this.generateUniqueTags();
             this.$nextTick(() => {
                 this.updateSliderPosition();
+                this.refreshCpuRoll();
             });
         }
     },
     beforeDestroy() {
-        if (window.trafficManager) {
-            window.trafficManager.unsubscribe(this.updateTrafficData);
+        if (window.trafficManager && this._trafficCallback) {
+            window.trafficManager.unsubscribe(this._trafficCallback);
         }
     }
 });
@@ -1309,7 +1440,9 @@ const statusCards = new Vue({
 
                 // 处理服务器状态更新（按帧合并，减少高频重复渲染）
                 if (data.servers && Array.isArray(data.servers)) {
-                    if (window.statusCards && typeof window.statusCards.queueServerLiveStatusUpdate === 'function') {
+                    if (document.hidden) {
+                        window.pendingServerStatusData = data;
+                    } else if (window.statusCards && typeof window.statusCards.queueServerLiveStatusUpdate === 'function') {
                         window.statusCards.queueServerLiveStatusUpdate(data);
                     } else if (window.statusCards) {
                         window.statusCards.updateServerLiveStatus(data);
@@ -1319,7 +1452,9 @@ const statusCards = new Vue({
                 // 处理流量数据更新 - 流量数据可能单独发送或与服务器状态一起发送
                 if (data.trafficData && Array.isArray(data.trafficData)) {
                     window.serverTrafficRawData = data.trafficData;
-                    if (window.trafficManager) {
+                    if (document.hidden) {
+                        window.pendingTrafficData = data.trafficData;
+                    } else if (window.trafficManager) {
                         window.trafficManager.processTrafficData(data.trafficData);
                     } else {
                         window.extractTrafficData();
@@ -1377,6 +1512,9 @@ const statusCards = new Vue({
             // 添加页面可见性变化监听
             document.addEventListener('visibilitychange', function () {
                 if (document.visibilityState === 'visible') {
+                    if (window.statusCards && typeof window.statusCards.flushDeferredUpdates === 'function') {
+                        window.statusCards.flushDeferredUpdates();
+                    }
                     // 页面变为可见时，检查WebSocket连接状态
                     if (!wsManager.ws || wsManager.ws.readyState !== WebSocket.OPEN) {
                         console.log('Page became visible, checking WebSocket connection...');
