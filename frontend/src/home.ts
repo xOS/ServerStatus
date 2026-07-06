@@ -41,6 +41,7 @@ interface HostState {
   UdpConnCount?: number
   ProcessCount?: number
   Temperatures?: Array<{ Name?: string; Temperature?: number }>
+  GPU?: number
 }
 
 interface HostInfo {
@@ -404,18 +405,44 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 function normalizeServerList(payload: unknown): ServerInfo[] {
-  if (Array.isArray(payload)) return payload as ServerInfo[]
-  if (!payload || typeof payload !== 'object') return []
-
-  const source = payload as { result?: unknown; servers?: unknown; data?: unknown }
-  if (Array.isArray(source.result)) return source.result as ServerInfo[]
-  if (source.result && typeof source.result === 'object') {
-    const result = source.result as { servers?: unknown }
-    if (Array.isArray(result.servers)) return result.servers as ServerInfo[]
+  let list: ServerInfo[] = []
+  if (Array.isArray(payload)) {
+    list = payload as ServerInfo[]
+  } else if (payload && typeof payload === 'object') {
+    const source = payload as { result?: unknown; servers?: unknown; data?: unknown }
+    if (Array.isArray(source.result)) {
+      list = source.result as ServerInfo[]
+    } else if (source.result && typeof source.result === 'object') {
+      const result = source.result as { servers?: unknown }
+      if (Array.isArray(result.servers)) list = result.servers as ServerInfo[]
+    } else if (Array.isArray(source.servers)) {
+      list = source.servers as ServerInfo[]
+    } else if (Array.isArray(source.data)) {
+      list = source.data as ServerInfo[]
+    }
   }
-  if (Array.isArray(source.servers)) return source.servers as ServerInfo[]
-  if (Array.isArray(source.data)) return source.data as ServerInfo[]
-  return []
+
+  return list.map(normalizeServerInfo)
+}
+
+function normalizeServerInfo(server: ServerInfo): ServerInfo {
+  const host = server.Host
+    ? {
+        ...server.Host,
+        CPU: Array.isArray(server.Host.CPU) ? [...server.Host.CPU] : [],
+        GPU: Array.isArray(server.Host.GPU) ? [...server.Host.GPU] : [],
+      }
+    : server.Host
+  return {
+    ...server,
+    Host: host,
+    State: server.State
+      ? {
+          ...server.State,
+          Temperatures: Array.isArray(server.State.Temperatures) ? [...server.State.Temperatures] : [],
+        }
+      : server.State,
+  }
 }
 
 function renderCards() {
@@ -819,7 +846,8 @@ function updateServerData(incoming: ServerInfo[], now?: number) {
   let structureChanged = false
 
   for (const server of incoming) {
-    incomingById.set(serverId(server), server)
+    const normalized = normalizeServerInfo(server)
+    incomingById.set(serverId(normalized), normalized)
   }
 
   for (const server of state.servers) {

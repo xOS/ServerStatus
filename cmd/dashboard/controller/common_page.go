@@ -528,27 +528,16 @@ func (cp *commonPage) network(c *gin.Context) {
 		}
 	}
 
-	// 确保我们至少有一个服务器
 	if len(servers) == 0 {
 		if singleton.Conf.Debug {
-			log.Printf("network: 未找到任何服务器，创建演示服务器")
+			log.Printf("network: 未找到任何服务器")
 		}
-		demoServer := &model.Server{
-			Common: model.Common{
-				ID: 1,
-			},
-			Name:     "演示服务器",
-			Host:     &model.Host{},
-			State:    &model.HostState{},
-			IsOnline: true,
-		}
-		servers = append(servers, demoServer)
 	}
 
 	// 序列化数据以便在前端使用
 	data := Data{
 		Now:     time.Now().Unix() * 1000,
-		Servers: servers,
+		Servers: cloneServersForFrontend(servers, true),
 	}
 
 	serversBytes, err := utils.Json.Marshal(data)
@@ -571,6 +560,42 @@ type Data struct {
 	Now         int64           `json:"now,omitempty"`
 	Servers     []*model.Server `json:"servers,omitempty"`
 	TrafficData interface{}     `json:"trafficData,omitempty"`
+}
+
+func cloneServersForFrontend(serverList []*model.Server, withPublicNote bool) []*model.Server {
+	servers := make([]*model.Server, 0, len(serverList))
+	for _, server := range serverList {
+		if item := cloneServerForFrontend(server, withPublicNote); item != nil {
+			servers = append(servers, item)
+		}
+	}
+	return servers
+}
+
+func cloneServerForFrontend(server *model.Server, withPublicNote bool) *model.Server {
+	if server == nil {
+		return nil
+	}
+
+	item := *server
+	if !withPublicNote {
+		item.PublicNote = ""
+	}
+
+	if server.Host != nil {
+		host := *server.Host
+		host.CPU = append([]string(nil), server.Host.CPU...)
+		host.GPU = append([]string(nil), server.Host.GPU...)
+		item.Host = &host
+	}
+
+	if server.State != nil {
+		state := *server.State
+		state.Temperatures = append([]model.SensorTemperature(nil), server.State.Temperatures...)
+		item.State = &state
+	}
+
+	return &item
 }
 
 func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte, error) {
@@ -619,28 +644,9 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 
 						// 为所有用户展示所有服务器，或者仅对授权用户显示
 						if authorized || !server.HideForGuest {
-							// 深拷贝服务器对象，避免并发修改
-							safeServer := &model.Server{}
-							*safeServer = *server // 浅拷贝基础字段
-
-							// 安全地拷贝Host字段
-							if server.Host != nil {
-								safeServer.Host = &model.Host{}
-								*safeServer.Host = *server.Host
-							} else {
-								safeServer.Host = &model.Host{}
-								safeServer.Host.Initialize()
+							if safeServer := cloneServerForFrontend(server, withPublicNote); safeServer != nil {
+								serverList = append(serverList, safeServer)
 							}
-
-							// 安全地拷贝State字段
-							if server.State != nil {
-								safeServer.State = &model.HostState{}
-								*safeServer.State = *server.State
-							} else {
-								safeServer.State = &model.HostState{}
-							}
-
-							serverList = append(serverList, safeServer)
 						}
 					}
 				} else {
@@ -654,64 +660,8 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 				log.Printf("getServerStat: 从 ServerList 提取到 %d 台服务器", len(serverList))
 			}
 
-			// 如果服务器列表仍然为空，创建一个默认的演示服务器
-			if singleton.Conf.Debug && (serverList == nil || len(serverList) == 0) {
-				log.Printf("getServerStat: 创建演示服务器数据用于调试")
-				now := time.Now()
-				demoServer := &model.Server{
-					Common: model.Common{
-						ID: 1,
-					},
-					Name:         "演示服务器",
-					Tag:          "演示",
-					DisplayIndex: 1,
-					Host: &model.Host{
-						Platform:        "linux",
-						PlatformVersion: "Ubuntu 20.04",
-						CPU:             []string{"Intel Core i7-10700K"},
-						MemTotal:        16777216,      // 16GB
-						DiskTotal:       1099511627776, // 1TB
-					},
-					State: &model.HostState{
-						CPU:            5.2,
-						MemUsed:        4096000,
-						DiskUsed:       107374182400,
-						NetInTransfer:  1073741824,
-						NetOutTransfer: 536870912,
-						NetInSpeed:     1048576,
-						NetOutSpeed:    524288,
-						Uptime:         86400,
-					},
-					IsOnline:   true,
-					LastActive: now,
-					LastOnline: now,
-				}
-				serverList = append(serverList, demoServer)
-			}
 		}
-
-		var servers []*model.Server
-		for _, server := range serverList {
-			if server == nil {
-				continue
-			}
-
-			item := *server
-			if !withPublicNote {
-				item.PublicNote = ""
-			}
-
-			// 确保Host和State不为nil
-			if item.Host == nil {
-				item.Host = &model.Host{}
-				item.Host.Initialize()
-			}
-			if item.State == nil {
-				item.State = &model.HostState{}
-			}
-
-			servers = append(servers, &item)
-		}
+		servers := cloneServersForFrontend(serverList, withPublicNote)
 
 		// 组装 trafficData，逻辑与 home handler 保持一致
 		// 使用深拷贝确保并发安全

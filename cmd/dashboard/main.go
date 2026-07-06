@@ -219,44 +219,6 @@ func main() {
 		dispatchReportInfoTask()
 	}()
 
-	// 注入假数据模拟 Agent
-	go func() {
-		for {
-			time.Sleep(1 * time.Second)
-			singleton.ServerLock.Lock()
-			for _, server := range singleton.ServerList {
-				if server != nil {
-					server.LastActive = time.Now()
-					server.IsOnline = true
-					if server.State == nil {
-						server.State = &model.HostState{}
-					}
-					server.State.CPU = float64(time.Now().UnixNano() % 100)
-					server.State.MemUsed = uint64(time.Now().UnixNano()%1024) * 1024 * 1024
-					server.State.DiskUsed = uint64(time.Now().UnixNano()%500) * 1024 * 1024 * 1024
-					server.State.NetInSpeed = uint64(time.Now().UnixNano() % 10000000)
-					server.State.NetOutSpeed = uint64(time.Now().UnixNano() % 10000000)
-					server.State.NetInTransfer = uint64(time.Now().UnixNano() % 1000000000)
-					server.State.NetOutTransfer = uint64(time.Now().UnixNano() % 1000000000)
-					server.State.TcpConnCount = uint64(time.Now().UnixNano() % 1000)
-					server.State.UdpConnCount = uint64(time.Now().UnixNano() % 1000)
-					server.State.ProcessCount = uint64(time.Now().UnixNano() % 500)
-					server.State.Load1 = float64(time.Now().UnixNano()%100) / 10.0
-					server.State.Load5 = float64(time.Now().UnixNano()%100) / 10.0
-					server.State.Load15 = float64(time.Now().UnixNano()%100) / 10.0
-					server.State.Uptime = 3600
-					if server.Host == nil {
-						server.Host = &model.Host{
-							Platform:    "linux",
-							CountryCode: "cn",
-						}
-					}
-				}
-			}
-			singleton.ServerLock.Unlock()
-		}
-	}()
-
 	log.Printf("所有服务已启动，HTTP服务器将运行在端口 %d", singleton.Conf.HTTPPort)
 
 	// 优雅关闭处理

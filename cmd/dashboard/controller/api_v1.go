@@ -69,8 +69,8 @@ func (v *apiV1) serve() {
 		IsPage:        false,
 		AbortWhenFail: true,
 	}))
-	mr.GET("/:id", v.monitorHistoriesById)
 	mr.GET("/configs", v.monitorConfigs)
+	mr.GET("/:id", v.monitorHistoriesById)
 
 	sr := v.r.Group("service")
 	sr.Use(mygin.Authorize(mygin.AuthorizeOption{
@@ -142,17 +142,19 @@ func (v *apiV1) serverList(c *gin.Context) {
 	}
 	listCacheMu.Unlock()
 
-	var res interface{}
 	// Check if user is logged in
 	u, ok := c.Get(model.CtxKeyAuthorizedUser)
 	isAdmin := ok && u != nil
 
+	var res []*model.Server
 	singleton.ServerLock.RLock()
+	singleton.SortedServerLock.RLock()
 	if isAdmin {
-		res = singleton.SortedServerList
+		res = cloneServersForFrontend(singleton.SortedServerList, true)
 	} else {
-		res = singleton.SortedServerListForGuest
+		res = cloneServersForFrontend(singleton.SortedServerListForGuest, true)
 	}
+	singleton.SortedServerLock.RUnlock()
 	singleton.ServerLock.RUnlock()
 	payload, err := utils.EncodeJSON(res)
 	if err != nil {
@@ -312,6 +314,7 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 
 			// 获取该服务器的监控配置，展示所有监控器
 			monitors := singleton.ServiceSentinelShared.Monitors()
+			monitorNames := monitorNameMap(monitors)
 			var networkHistories []*model.MonitorHistory
 
 			if monitors != nil {
@@ -381,7 +384,7 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 			}
 
 			// 预编码 JSON，减少后续重复编码
-			payload, err := utils.EncodeJSON(networkHistories)
+			payload, err := utils.EncodeJSON(monitorHistoryPayload(networkHistories, monitorNames))
 			if err != nil {
 				// 回退到空数组
 				payload, _ = utils.EncodeJSON([]any{})
@@ -428,7 +431,7 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 				payload, _ = utils.EncodeJSON([]any{})
 			} else {
 				// 与 Badger 分支一致：预编码 + gzip 按需
-				payload, _ = utils.EncodeJSON(networkHistories)
+				payload, _ = utils.EncodeJSON(monitorHistoryPayload(networkHistories, currentMonitorNameMap()))
 			}
 			c.Status(200)
 			c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -444,6 +447,53 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 			}
 		}
 	}
+}
+
+type networkMonitorHistoryItem struct {
+	CreatedAt   time.Time `json:"created_at"`
+	MonitorID   uint64    `json:"monitor_id"`
+	MonitorName string    `json:"monitor_name,omitempty"`
+	ServerID    uint64    `json:"server_id"`
+	AvgDelay    float32   `json:"avg_delay"`
+	Up          uint64    `json:"up"`
+	Down        uint64    `json:"down"`
+}
+
+func currentMonitorNameMap() map[uint64]string {
+	if singleton.ServiceSentinelShared == nil {
+		return map[uint64]string{}
+	}
+	return monitorNameMap(singleton.ServiceSentinelShared.Monitors())
+}
+
+func monitorNameMap(monitors []*model.Monitor) map[uint64]string {
+	names := make(map[uint64]string, len(monitors))
+	for _, monitor := range monitors {
+		if monitor == nil {
+			continue
+		}
+		names[monitor.ID] = monitor.Name
+	}
+	return names
+}
+
+func monitorHistoryPayload(histories []*model.MonitorHistory, monitorNames map[uint64]string) []networkMonitorHistoryItem {
+	items := make([]networkMonitorHistoryItem, 0, len(histories))
+	for _, history := range histories {
+		if history == nil {
+			continue
+		}
+		items = append(items, networkMonitorHistoryItem{
+			CreatedAt:   history.CreatedAt,
+			MonitorID:   history.MonitorID,
+			MonitorName: monitorNames[history.MonitorID],
+			ServerID:    history.ServerID,
+			AvgDelay:    history.AvgDelay,
+			Up:          history.Up,
+			Down:        history.Down,
+		})
+	}
+	return items
 }
 
 func (v *apiV1) monitorConfigs(c *gin.Context) {

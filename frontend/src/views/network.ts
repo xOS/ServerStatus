@@ -24,6 +24,10 @@ interface ServerItem {
 interface MonitorPoint {
   MonitorID?: number | string
   monitor_id?: number | string
+  MonitorName?: string
+  monitor_name?: string
+  Name?: string
+  name?: string
   CreatedAt?: string
   created_at?: string
   AvgDelay?: number | string
@@ -32,6 +36,15 @@ interface MonitorPoint {
   up?: number | string
   Down?: number | string
   down?: number | string
+}
+
+interface MonitorConfig {
+  ID?: number | string
+  id?: number | string
+  Name?: string
+  name?: string
+  Type?: number | string
+  type?: number | string
 }
 
 type SeriesPoint = {
@@ -132,7 +145,15 @@ export async function initNetwork(container: HTMLDivElement) {
   setChartMessage(chartContainer, '加载服务器列表...')
 
   try {
-    const servers = normalizeServers(await fetchJson<unknown>(apiPath('/server/list'), signal))
+    const [serversPayload, monitorConfigsPayload] = await Promise.all([
+      fetchJson<unknown>(apiPath('/server/list'), signal),
+      fetchJson<unknown>(apiPath('/monitor/configs'), signal).catch((error) => {
+        if (!signal.aborted) console.warn('Failed to load monitor configs', error)
+        return []
+      }),
+    ])
+    const servers = normalizeServers(serversPayload)
+    const monitorNames = normalizeMonitorNames(monitorConfigsPayload)
     if (servers.length === 0) {
       buttonsContainer.textContent = ''
       subtitle.textContent = '暂无服务器数据'
@@ -194,7 +215,7 @@ export async function initNetwork(container: HTMLDivElement) {
         let history = historyCache.get(cacheKey)
         if (!history) {
           const payload = await fetchJson<unknown>(`${apiPath(`/monitor/${encodeURIComponent(id)}`)}?range=${currentRange}`, signal)
-          history = normalizeHistory(payload)
+          history = normalizeHistory(payload, monitorNames)
           historyCache.set(cacheKey, history)
         }
         if (token !== loadToken) return
@@ -309,14 +330,42 @@ function normalizeServers(payload: unknown): ServerItem[] {
   return []
 }
 
-function normalizeHistory(payload: unknown): MonitorPoint[] {
-  if (Array.isArray(payload)) return payload as MonitorPoint[]
-  if (!payload || typeof payload !== 'object') return []
+function normalizeMonitorNames(payload: unknown): Map<string, string> {
+  const names = new Map<string, string>()
+  let configs: MonitorConfig[] = []
+  if (Array.isArray(payload)) {
+    configs = payload as MonitorConfig[]
+  } else if (payload && typeof payload === 'object') {
+    const source = payload as { result?: unknown; data?: unknown; monitors?: unknown }
+    if (Array.isArray(source.result)) configs = source.result as MonitorConfig[]
+    else if (Array.isArray(source.data)) configs = source.data as MonitorConfig[]
+    else if (Array.isArray(source.monitors)) configs = source.monitors as MonitorConfig[]
+  }
 
-  const source = payload as { result?: unknown; data?: unknown }
-  if (Array.isArray(source.result)) return source.result as MonitorPoint[]
-  if (Array.isArray(source.data)) return source.data as MonitorPoint[]
-  return []
+  for (const item of configs) {
+    const id = String(item.ID ?? item.id ?? '').trim()
+    const name = String(item.Name ?? item.name ?? '').trim()
+    if (id && name) names.set(id, name)
+  }
+  return names
+}
+
+function normalizeHistory(payload: unknown, monitorNames: Map<string, string>): MonitorPoint[] {
+  let list: MonitorPoint[] = []
+  if (Array.isArray(payload)) {
+    list = payload as MonitorPoint[]
+  } else if (payload && typeof payload === 'object') {
+    const source = payload as { result?: unknown; data?: unknown }
+    if (Array.isArray(source.result)) list = source.result as MonitorPoint[]
+    else if (Array.isArray(source.data)) list = source.data as MonitorPoint[]
+  }
+
+  return list.map((point) => {
+    const id = monitorPointId(point)
+    const configuredName = monitorNames.get(id)
+    if (!configuredName || monitorPointName(point, id) !== monitorLabel(id)) return point
+    return { ...point, monitor_name: configuredName }
+  })
 }
 
 function buildSeries(history: MonitorPoint[]): Series[] {
@@ -329,8 +378,8 @@ function buildSeries(history: MonitorPoint[]): Series[] {
     const value = optionalNumber(point.AvgDelay ?? point.avg_delay)
     if (value === undefined || value < 0) continue
 
-    const monitorId = String(point.MonitorID ?? point.monitor_id ?? 0)
-    const key = monitorLabel(monitorId)
+    const monitorId = monitorPointId(point)
+    const key = monitorPointName(point, monitorId)
     const list = groups.get(key) || []
     list.push({
       time,
@@ -656,6 +705,15 @@ function finiteNumber(value: unknown, fallback: number) {
 function optionalNumber(value: unknown) {
   const number = Number(value)
   return Number.isFinite(number) ? number : undefined
+}
+
+function monitorPointId(point: MonitorPoint) {
+  return String(point.MonitorID ?? point.monitor_id ?? 0)
+}
+
+function monitorPointName(point: MonitorPoint, monitorId: string) {
+  const name = String(point.MonitorName ?? point.monitor_name ?? point.Name ?? point.name ?? '').trim()
+  return name || monitorLabel(monitorId)
 }
 
 function monitorLabel(value: string) {
