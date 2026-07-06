@@ -5,7 +5,9 @@ function normalizeApiBase(input: string | undefined) {
   return value.length > 1 ? value.replace(/\/+$/, '') : value
 }
 
-export const API_BASE = normalizeApiBase((window as ApiWindow).SERVERSTATUS_API_BASE)
+const envApiBase = import.meta.env.VITE_SERVERSTATUS_API_BASE
+
+export const API_BASE = normalizeApiBase(envApiBase || (window as ApiWindow).SERVERSTATUS_API_BASE)
 export const ADMIN_API_BASE = `${API_BASE}/admin`
 export const AUTH_API_BASE = `${API_BASE}/auth`
 
