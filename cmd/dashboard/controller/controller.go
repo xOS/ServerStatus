@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/go-uuid"
 	"golang.org/x/time/rate"
 
+	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
@@ -46,6 +47,78 @@ var (
 	requestLimitersMu sync.Mutex
 	requestLimiters   = make(map[string]*rateEntry)
 )
+
+type authAPI struct {
+	r gin.IRouter
+}
+
+func (a *authAPI) serve() {
+	guest := a.r.Group("")
+	guest.Use(mygin.Authorize(mygin.AuthorizeOption{
+		GuestOnly: true,
+		IsPage:    true,
+		Msg:       "您已登录",
+		Btn:       "返回首页",
+		Redirect:  "/",
+	}))
+	oauth := &oauth2controller{r: guest}
+	oauth.serve()
+
+	optional := a.r.Group("")
+	optional.Use(mygin.Authorize(mygin.AuthorizeOption{}))
+	optional.GET("/logout", a.logout)
+	optional.POST("/logout", a.logout)
+}
+
+func (a *authAPI) logout(c *gin.Context) {
+	if rawUser, ok := c.Get(model.CtxKeyAuthorizedUser); ok {
+		if user, ok := rawUser.(*model.User); ok {
+			expireUserLoginToken(user)
+		}
+	}
+
+	clearSecureCookie(c, singleton.Conf.Site.CookieName)
+	clearSecureCookie(c, singleton.Conf.Site.CookieName+"-sk")
+
+	if c.Request.Method == http.MethodGet {
+		if oidcLogoutURL := singleton.Conf.Oauth2.OidcLogoutURL; oidcLogoutURL != "" {
+			c.Redirect(http.StatusFound, oidcLogoutURL)
+			return
+		}
+		c.Redirect(http.StatusFound, "/login")
+		return
+	}
+
+	WriteJSON(c, http.StatusOK, model.Response{
+		Code:    http.StatusOK,
+		Message: "success",
+	})
+}
+
+func expireUserLoginToken(user *model.User) {
+	if user == nil || user.ID == 0 {
+		return
+	}
+
+	user.Token = ""
+	user.TokenExpired = time.Now()
+	if singleton.Conf.DatabaseType == "badger" {
+		if db.DB == nil {
+			return
+		}
+		if err := db.DB.SaveModel("user", user.ID, user); err != nil {
+			log.Printf("更新用户登出状态到BadgerDB失败: %v", err)
+		}
+		return
+	}
+
+	if singleton.DB != nil {
+		singleton.DB.Model(user).UpdateColumns(model.User{
+			Token:        "",
+			TokenExpired: time.Now(),
+		})
+	}
+}
 
 // WriteJSON encodes v to JSON once and writes with proper headers, using gzip when accepted.
 func WriteJSON(c *gin.Context, status int, v interface{}) {
