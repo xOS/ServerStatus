@@ -4,16 +4,20 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"
 	"github.com/hashicorp/go-uuid"
+	"golang.org/x/time/rate"
 
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
@@ -21,6 +25,26 @@ import (
 	"github.com/xos/serverstatus/proto"
 	"github.com/xos/serverstatus/service/rpc"
 	"github.com/xos/serverstatus/service/singleton"
+)
+
+const (
+	apiV1Group    = "v1"
+	adminAPIGroup = apiV1Group + "/admin"
+
+	apiV1Prefix       = "/api/v1"
+	authAPIPrefix     = apiV1Prefix + "/auth"
+	oauthLoginPath    = authAPIPrefix + "/oauth2/login"
+	oauthCallbackPath = authAPIPrefix + "/oauth2/callback"
+)
+
+type rateEntry struct {
+	limiter *rate.Limiter
+	seen    time.Time
+}
+
+var (
+	requestLimitersMu sync.Mutex
+	requestLimiters   = make(map[string]*rateEntry)
 )
 
 // WriteJSON encodes v to JSON once and writes with proper headers, using gzip when accepted.
@@ -69,6 +93,229 @@ func handleBrokenPipe(c *gin.Context) {
 		}
 	}()
 	c.Next()
+}
+
+func securityHeaders(c *gin.Context) {
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("X-Frame-Options", "SAMEORIGIN")
+	c.Header("Referrer-Policy", "same-origin")
+	c.Header("Cross-Origin-Resource-Policy", "same-origin")
+	c.Next()
+}
+
+func requestRateLimiter() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		key := clientIP(c) + ":" + limiterClass(c.Request)
+		limit, burst := limiterSpec(c.Request)
+		limiter := getRequestLimiter(key, limit, burst)
+		if !limiter.Allow() {
+			WriteJSON(c, http.StatusTooManyRequests, gin.H{
+				"code":    http.StatusTooManyRequests,
+				"message": "请求过于频繁，请稍后再试",
+			})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+func limiterClass(r *http.Request) string {
+	path := r.URL.Path
+	if strings.HasPrefix(path, authAPIPrefix) || path == "/login" || path == "/debug-login" {
+		return "auth"
+	}
+	if path == apiV1Prefix+"/ws" {
+		return "ws"
+	}
+	if r.Method != http.MethodGet && strings.HasPrefix(path, apiV1Prefix) {
+		return "write"
+	}
+	if strings.HasPrefix(path, apiV1Prefix+"/admin") {
+		return "admin"
+	}
+	if strings.HasPrefix(path, apiV1Prefix) {
+		return "api"
+	}
+	return "page"
+}
+
+func limiterSpec(r *http.Request) (rate.Limit, int) {
+	switch limiterClass(r) {
+	case "auth":
+		return rate.Every(6 * time.Second), 10
+	case "ws":
+		return rate.Every(3 * time.Second), 8
+	case "write":
+		return rate.Every(1 * time.Second), 30
+	case "admin":
+		return rate.Every(300 * time.Millisecond), 80
+	case "api":
+		return rate.Every(100 * time.Millisecond), 180
+	default:
+		return rate.Every(50 * time.Millisecond), 240
+	}
+}
+
+func getRequestLimiter(key string, limit rate.Limit, burst int) *rate.Limiter {
+	now := time.Now()
+	requestLimitersMu.Lock()
+	defer requestLimitersMu.Unlock()
+
+	entry := requestLimiters[key]
+	if entry == nil {
+		entry = &rateEntry{limiter: rate.NewLimiter(limit, burst)}
+		requestLimiters[key] = entry
+	}
+	entry.seen = now
+
+	if len(requestLimiters) > 4096 {
+		cutoff := now.Add(-10 * time.Minute)
+		for cacheKey, cacheEntry := range requestLimiters {
+			if cacheEntry.seen.Before(cutoff) {
+				delete(requestLimiters, cacheKey)
+			}
+		}
+	}
+
+	return entry.limiter
+}
+
+func clientIP(c *gin.Context) string {
+	ip := c.ClientIP()
+	if ip == "" {
+		ip, _, _ = net.SplitHostPort(c.Request.RemoteAddr)
+	}
+	if ip == "" {
+		return "unknown"
+	}
+	return ip
+}
+
+func corsMiddleware(c *gin.Context) {
+	origin := c.GetHeader("Origin")
+	if origin == "" {
+		c.Next()
+		return
+	}
+
+	if isAllowedOrigin(c, origin) {
+		c.Header("Vary", "Origin")
+		c.Header("Access-Control-Allow-Origin", origin)
+		c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+		c.Header("Access-Control-Max-Age", "86400")
+	}
+
+	if c.Request.Method == http.MethodOptions {
+		if !isAllowedOrigin(c, origin) {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+		c.AbortWithStatus(http.StatusNoContent)
+		return
+	}
+
+	c.Next()
+}
+
+func isAllowedOrigin(c *gin.Context, origin string) bool {
+	originURL, err := url.Parse(origin)
+	if err != nil || originURL.Scheme == "" || originURL.Host == "" {
+		return false
+	}
+	if sameRequestHost(c.Request, originURL) {
+		return true
+	}
+
+	for _, allowed := range strings.Split(singleton.Conf.Security.AllowedOrigins, ",") {
+		allowed = strings.TrimSpace(strings.TrimRight(allowed, "/"))
+		if allowed == "" {
+			continue
+		}
+		if allowed == "*" {
+			return singleton.Conf.Debug
+		}
+		if strings.EqualFold(allowed, strings.TrimRight(origin, "/")) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameRequestHost(r *http.Request, originURL *url.URL) bool {
+	if !strings.EqualFold(originURL.Host, r.Host) {
+		return false
+	}
+	proto := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		proto = "https"
+	}
+	return strings.EqualFold(originURL.Scheme, proto)
+}
+
+func isAllowedWebSocketOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	originURL, err := url.Parse(origin)
+	if err != nil || originURL.Scheme == "" || originURL.Host == "" {
+		return false
+	}
+	if sameRequestHost(r, originURL) {
+		return true
+	}
+	for _, allowed := range strings.Split(singleton.Conf.Security.AllowedOrigins, ",") {
+		allowed = strings.TrimSpace(strings.TrimRight(allowed, "/"))
+		if allowed == "" {
+			continue
+		}
+		if allowed == "*" {
+			return singleton.Conf.Debug
+		}
+		if strings.EqualFold(allowed, strings.TrimRight(origin, "/")) {
+			return true
+		}
+	}
+	return false
+}
+
+func setSecureCookie(c *gin.Context, name, value string, maxAge int) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   maxAge,
+		Secure:   requestIsHTTPS(c.Request),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func clearSecureCookie(c *gin.Context, name string) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     name,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   requestIsHTTPS(c.Request),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     name,
+		Value:    "",
+		Path:     "",
+		MaxAge:   -1,
+		Secure:   requestIsHTTPS(c.Request),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func requestIsHTTPS(r *http.Request) bool {
+	return singleton.Conf.TLS || r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // pprofAuthMiddleware pprof 认证中间件
