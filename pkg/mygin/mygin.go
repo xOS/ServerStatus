@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/service/singleton"
@@ -26,7 +25,6 @@ func CommonEnvironment(c *gin.Context, data map[string]interface{}) gin.H {
 	data["MatchedPath"] = c.MustGet("MatchedPath")
 	data["Version"] = singleton.Version
 	data["Conf"] = singleton.Conf
-	data["Themes"] = model.Themes
 	data["CustomCode"] = singleton.Conf.Site.CustomCode
 	data["CustomCodeDashboard"] = singleton.Conf.Site.CustomCodeDashboard
 	// 是否是管理页面
@@ -42,13 +40,13 @@ func CommonEnvironment(c *gin.Context, data map[string]interface{}) gin.H {
 		data["Admin"] = u
 	}
 	data["LANG"] = map[string]string{
-		"Add":          singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Add"}),
-		"Edit":         singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Edit"}),
-		"AlarmRule":    singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "AlarmRule"}),
-		"Notification": singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "NotificationMethod"}),
-		"Server":       singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Server"}),
-		"Monitor":      singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ServicesManagement"}),
-		"Cron":         singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ScheduledTasks"}),
+		"Add":          "添加",
+		"Edit":         "修改",
+		"AlarmRule":    "通知规则",
+		"Notification": "通知方式",
+		"Server":       "主机",
+		"Monitor":      "服务监控",
+		"Cron":         "计划任务",
 	}
 	return data
 }

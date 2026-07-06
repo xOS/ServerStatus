@@ -17,7 +17,6 @@ type AuthorizeOption struct {
 	GuestOnly  bool
 	MemberOnly bool
 	IsPage     bool
-	AllowAPI   bool
 	Msg        string
 	Redirect   string
 	Btn        string
@@ -123,51 +122,49 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 			}
 		}
 
-		// API鉴权
-		if opt.AllowAPI {
-			apiToken := c.GetHeader("Authorization")
-			if apiToken != "" {
-				var u model.User
-				singleton.ApiLock.RLock()
-				if _, ok := singleton.ApiTokenList[apiToken]; ok {
-					if singleton.Conf.DatabaseType == "badger" {
-						// 使用BadgerDB验证
-						if db.DB != nil {
-							userID := singleton.ApiTokenList[apiToken].UserID
-							if userID > 0 {
-								userOps := db.NewUserOps(db.DB)
-								user, err := userOps.GetUserByID(userID)
-								if err == nil && user != nil {
-									u = *user
-									isLogin = true
-								}
-							}
-						} else {
-							// 在调试模式下使用默认API认证
-							if singleton.Conf.Debug && apiToken == "default_api_token" {
-								u = model.User{
-									Common:     model.Common{ID: 1},
-									Login:      "admin",
-									SuperAdmin: true,
-								}
+		// API鉴权：默认支持 Authorization 请求头。
+		apiToken := c.GetHeader("Authorization")
+		if apiToken != "" {
+			var u model.User
+			singleton.ApiLock.RLock()
+			if _, ok := singleton.ApiTokenList[apiToken]; ok {
+				if singleton.Conf.DatabaseType == "badger" {
+					// 使用BadgerDB验证
+					if db.DB != nil {
+						userID := singleton.ApiTokenList[apiToken].UserID
+						if userID > 0 {
+							userOps := db.NewUserOps(db.DB)
+							user, err := userOps.GetUserByID(userID)
+							if err == nil && user != nil {
+								u = *user
 								isLogin = true
 							}
 						}
 					} else {
-						// 使用SQLite验证
-						if singleton.DB != nil {
-							err := singleton.DB.Where("id = ?", singleton.ApiTokenList[apiToken].UserID).First(&u).Error
-							isLogin = err == nil
-						} else {
-							log.Printf("警告：SQLite未初始化，API Token认证将失败")
+						// 在调试模式下使用默认API认证
+						if singleton.Conf.Debug && apiToken == "default_api_token" {
+							u = model.User{
+								Common:     model.Common{ID: 1},
+								Login:      "admin",
+								SuperAdmin: true,
+							}
+							isLogin = true
 						}
 					}
+				} else {
+					// 使用SQLite验证
+					if singleton.DB != nil {
+						err := singleton.DB.Where("id = ?", singleton.ApiTokenList[apiToken].UserID).First(&u).Error
+						isLogin = err == nil
+					} else {
+						log.Printf("警告：SQLite未初始化，API Token认证将失败")
+					}
 				}
-				singleton.ApiLock.RUnlock()
-				if isLogin {
-					c.Set(model.CtxKeyAuthorizedUser, &u)
-					c.Set("isAPI", true)
-				}
+			}
+			singleton.ApiLock.RUnlock()
+			if isLogin {
+				c.Set(model.CtxKeyAuthorizedUser, &u)
+				c.Set("isAPI", true)
 			}
 		}
 

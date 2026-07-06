@@ -43,6 +43,16 @@ func (ma *memberAPI) serve() {
 	mr.GET("/search-server", ma.searchServer)
 	mr.GET("/search-tasks", ma.searchTask)
 	mr.GET("/search-ddns", ma.searchDDNS)
+
+	// REST API for Dashboard Admin Pages (Lists)
+	mr.GET("/server", ma.getServerList)
+	mr.GET("/monitor", ma.getMonitorList)
+	mr.GET("/cron", ma.getCronList)
+	mr.GET("/notification", ma.getNotificationList)
+	mr.GET("/ddns", ma.getDDNSList)
+	mr.GET("/nat", ma.getNATList)
+	mr.GET("/setting", ma.getSettingList)
+
 	mr.POST("/server", ma.addOrEditServer)
 	mr.POST("/monitor", ma.addOrEditMonitor)
 	mr.POST("/traffic", ma.addOrEditAlertRule)
@@ -1850,9 +1860,6 @@ func (ma *memberAPI) logout(c *gin.Context) {
 type settingForm struct {
 	Title                   string
 	Admin                   string
-	Language                string
-	Theme                   string
-	DashboardTheme          string
 	CustomCode              string
 	CustomCodeDashboard     string
 	CustomNameservers       string
@@ -1863,9 +1870,8 @@ type settingForm struct {
 	GRPCPort                uint
 	Cover                   uint8
 
-	EnableIPChangeNotification      string
-	EnablePlainIPInNotification     string
-	DisableSwitchTemplateInFrontend string
+	EnableIPChangeNotification  string
+	EnablePlainIPInNotification string
 }
 
 func (ma *memberAPI) updateSetting(c *gin.Context) {
@@ -1878,51 +1884,14 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 		return
 	}
 
-	if _, yes := model.Themes[sf.Theme]; !yes {
-		WriteJSON(c, http.StatusOK, model.Response{
-			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("前台主题不存在：%s", sf.Theme),
-		})
-		return
-	}
-
-	if _, yes := model.DashboardThemes[sf.DashboardTheme]; !yes {
-		WriteJSON(c, http.StatusOK, model.Response{
-			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("后台主题不存在：%s", sf.DashboardTheme),
-		})
-		return
-	}
-
-	// 只检查本地文件是否存在，不再调用 resource.IsTemplateFileExist
-	if !utils.IsFileExists("resource/template/theme-" + sf.Theme + "/home.html") {
-		WriteJSON(c, http.StatusOK, model.Response{
-			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("前台主题文件异常：%s", sf.Theme),
-		})
-		return
-	}
-
-	if !utils.IsFileExists("resource/template/dashboard-" + sf.DashboardTheme + "/setting.html") {
-		WriteJSON(c, http.StatusOK, model.Response{
-			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("后台主题文件异常：%s", sf.DashboardTheme),
-		})
-		return
-	}
-
-	singleton.Conf.Language = sf.Language
 	singleton.Conf.EnableIPChangeNotification = sf.EnableIPChangeNotification == "on"
 	singleton.Conf.EnablePlainIPInNotification = sf.EnablePlainIPInNotification == "on"
-	singleton.Conf.DisableSwitchTemplateInFrontend = sf.DisableSwitchTemplateInFrontend == "on"
 	singleton.Conf.Cover = sf.Cover
 	singleton.Conf.GRPCHost = sf.GRPCHost
 	singleton.Conf.GRPCPort = sf.GRPCPort
 	singleton.Conf.IgnoredIPNotification = sf.IgnoredIPNotification
 	singleton.Conf.IPChangeNotificationTag = sf.IPChangeNotificationTag
 	singleton.Conf.Site.Brand = sf.Title
-	singleton.Conf.Site.Theme = sf.Theme
-	singleton.Conf.Site.DashboardTheme = sf.DashboardTheme
 	singleton.Conf.Site.CustomCode = sf.CustomCode
 	singleton.Conf.Site.CustomCodeDashboard = sf.CustomCodeDashboard
 	singleton.Conf.DNSServers = sf.CustomNameservers
@@ -1939,8 +1908,6 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 		})
 		return
 	}
-	// 更新系统语言
-	singleton.InitLocalizer()
 	// 更新DNS服务器
 	singleton.OnNameserverUpdate()
 	WriteJSON(c, http.StatusOK, model.Response{
@@ -2082,5 +2049,177 @@ func fixIgnoreFieldFormat(jsonStr string) string {
 		fixedContent := keyRe.ReplaceAllString(content, `"$1"$2`)
 
 		return prefix + fixedContent + suffix
+	})
+}
+func (ma *memberAPI) getServerList(c *gin.Context) {
+	singleton.SortedServerLock.RLock()
+	defer singleton.SortedServerLock.RUnlock()
+
+	type adminServerItem struct {
+		*model.Server
+		Secret          string `json:"Secret"`
+		Note            string `json:"Note"`
+		DDNSProfilesRaw string `json:"DDNSProfilesRaw"`
+		HostIP          string `json:"HostIP"`
+		IPv4            string `json:"IPv4"`
+		IPv6            string `json:"IPv6"`
+	}
+
+	items := make([]adminServerItem, 0, len(singleton.SortedServerList))
+	for _, server := range singleton.SortedServerList {
+		if server == nil {
+			continue
+		}
+		hostIP := ""
+		if server.Host != nil {
+			hostIP = server.Host.IP
+		}
+		ipv4, ipv6 := splitServerIPs(hostIP)
+		items = append(items, adminServerItem{
+			Server:          server,
+			Secret:          server.Secret,
+			Note:            server.Note,
+			DDNSProfilesRaw: server.DDNSProfilesRaw,
+			HostIP:          hostIP,
+			IPv4:            ipv4,
+			IPv6:            ipv6,
+		})
+	}
+
+	WriteJSON(c, http.StatusOK, items)
+}
+
+func splitServerIPs(raw string) (string, string) {
+	var ipv4, ipv6 string
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '/' || r == ',' || r == ';' || r == ' ' || r == '\n' || r == '\t'
+	})
+	for _, part := range parts {
+		ip := strings.TrimSpace(part)
+		if ip == "" {
+			continue
+		}
+		if strings.Contains(ip, ":") {
+			if ipv6 == "" {
+				ipv6 = ip
+			}
+		} else if ipv4 == "" {
+			ipv4 = ip
+		}
+	}
+	return ipv4, ipv6
+}
+
+func (ma *memberAPI) getMonitorList(c *gin.Context) {
+	WriteJSON(c, http.StatusOK, singleton.ServiceSentinelShared.Monitors())
+}
+
+func (ma *memberAPI) getCronList(c *gin.Context) {
+	var crons []model.Cron
+	if singleton.Conf.DatabaseType == "badger" {
+		if db.DB != nil {
+			cronOps := db.NewCronOps(db.DB)
+			cronPtrs, _ := cronOps.GetAllCrons()
+			for _, cp := range cronPtrs {
+				if cp != nil {
+					crons = append(crons, *cp)
+				}
+			}
+		}
+	} else {
+		singleton.DB.Find(&crons)
+	}
+	WriteJSON(c, http.StatusOK, crons)
+}
+
+func (ma *memberAPI) getNotificationList(c *gin.Context) {
+	var nf []model.Notification
+	var ar []model.AlertRule
+	if singleton.Conf.DatabaseType == "badger" {
+		if db.DB != nil {
+			notificationOps := db.NewNotificationOps(db.DB)
+			nfPtrs, _ := notificationOps.GetAllNotifications()
+			for _, p := range nfPtrs {
+				if p != nil {
+					nf = append(nf, *p)
+				}
+			}
+			alertRuleOps := db.NewAlertRuleOps(db.DB)
+			arPtrs, _ := alertRuleOps.GetAllAlertRules()
+			for _, p := range arPtrs {
+				if p != nil {
+					ar = append(ar, *p)
+				}
+			}
+		}
+	} else {
+		singleton.DB.Find(&nf)
+		singleton.DB.Find(&ar)
+	}
+	WriteJSON(c, http.StatusOK, gin.H{
+		"Notifications": nf,
+		"AlertRules":    ar,
+	})
+}
+
+func (ma *memberAPI) getDDNSList(c *gin.Context) {
+	var data []model.DDNSProfile
+	if singleton.Conf.DatabaseType == "badger" {
+		if db.DB != nil {
+			ddnsOps := db.NewDDNSOps(db.DB)
+			dataPtrs, _ := ddnsOps.GetAllDDNSProfiles()
+			for _, p := range dataPtrs {
+				if p != nil {
+					data = append(data, *p)
+				}
+			}
+		}
+	} else {
+		singleton.DB.Find(&data)
+	}
+	WriteJSON(c, http.StatusOK, gin.H{
+		"DDNS":         data,
+		"ProviderMap":  model.ProviderMap,
+		"ProviderList": model.ProviderList,
+	})
+}
+
+func (ma *memberAPI) getNATList(c *gin.Context) {
+	var data []model.NAT
+	if singleton.Conf.DatabaseType == "badger" {
+		if db.DB != nil {
+			natOps := db.NewNATOps(db.DB)
+			dataPtrs, _ := natOps.GetAllNATs()
+			for _, p := range dataPtrs {
+				if p != nil {
+					data = append(data, *p)
+				}
+			}
+		}
+	} else {
+		singleton.DB.Find(&data)
+	}
+	WriteJSON(c, http.StatusOK, data)
+}
+
+func (ma *memberAPI) getSettingList(c *gin.Context) {
+	WriteJSON(c, http.StatusOK, gin.H{
+		"Settings": gin.H{
+			"Title":                       singleton.Conf.Site.Brand,
+			"Admin":                       singleton.Conf.Oauth2.Admin,
+			"CustomCode":                  singleton.Conf.Site.CustomCode,
+			"CustomCodeDashboard":         singleton.Conf.Site.CustomCodeDashboard,
+			"CustomNameservers":           singleton.Conf.DNSServers,
+			"ViewPassword":                singleton.Conf.Site.ViewPassword,
+			"IgnoredIPNotification":       singleton.Conf.IgnoredIPNotification,
+			"IPChangeNotificationTag":     singleton.Conf.IPChangeNotificationTag,
+			"GRPCHost":                    singleton.Conf.GRPCHost,
+			"GRPCPort":                    singleton.Conf.GRPCPort,
+			"ProxyGRPCPort":               singleton.Conf.ProxyGRPCPort,
+			"TLS":                         singleton.Conf.TLS,
+			"Cover":                       singleton.Conf.Cover,
+			"EnableIPChangeNotification":  singleton.Conf.EnableIPChangeNotification,
+			"EnablePlainIPInNotification": singleton.Conf.EnablePlainIPInNotification,
+		},
 	})
 }

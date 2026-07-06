@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -17,7 +16,6 @@ import (
 	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"
 	"github.com/hashicorp/go-uuid"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
@@ -179,7 +177,6 @@ func ServeWeb(port uint) *http.Server {
 		pprofGroup := r.Group("/debug/pprof")
 		pprofGroup.Use(mygin.Authorize(mygin.AuthorizeOption{
 			MemberOnly: true,
-			AllowAPI:   true,
 			IsPage:     false,
 			Msg:        "访问性能分析工具需要登录",
 			Btn:        "点此登录",
@@ -208,13 +205,18 @@ func ServeWeb(port uint) *http.Server {
 		c.Next()
 	})
 	tmpl := template.New("").Funcs(funcMap)
-	var err error
-	// 直接用本地模板目录
-	tmpl, err = tmpl.ParseGlob("resource/template/**/*.html")
-	if err != nil {
-		panic(err)
+	for _, pattern := range []string{
+		"resource/template/common/*.html",
+		"resource/template/component/*.html",
+		"resource/template/dashboard-default/*.html",
+		"resource/template/theme-default/*.html",
+	} {
+		var err error
+		tmpl, err = tmpl.ParseGlob(pattern)
+		if err != nil {
+			panic(err)
+		}
 	}
-	tmpl = loadThirdPartyTemplates(tmpl)
 	r.SetHTMLTemplate(tmpl)
 	r.Use(mygin.RecordPath)
 	// 直接用本地静态资源目录
@@ -263,92 +265,7 @@ func routers(r *gin.Engine) {
 	}
 }
 
-func loadThirdPartyTemplates(tmpl *template.Template) *template.Template {
-	ret := tmpl
-	themes, err := os.ReadDir("resource/template")
-	if err != nil {
-		log.Printf("NG>> Error reading themes folder: %v", err)
-		return ret
-	}
-	for _, theme := range themes {
-		if !theme.IsDir() {
-			continue
-		}
-
-		themeDir := theme.Name()
-		if themeDir == "theme-custom" {
-			// for backward compatibility
-			// note: will remove this in future versions
-			ret = loadTemplates(ret, themeDir)
-			continue
-		}
-
-		if strings.HasPrefix(themeDir, "dashboard-") {
-			// load dashboard templates, ignore desc file
-			ret = loadTemplates(ret, themeDir)
-			continue
-		}
-
-		// 处理公共模板目录
-		if themeDir == "common" || themeDir == "component" {
-			// load common/component templates
-			ret = loadTemplates(ret, themeDir)
-			continue
-		}
-
-		if !strings.HasPrefix(themeDir, "theme-") {
-			log.Printf("NG>> Invalid theme name: %s", themeDir)
-			continue
-		}
-
-		descPath := filepath.Join("resource", "template", themeDir, "theme.json")
-		desc, err := os.ReadFile(filepath.Clean(descPath))
-		if err != nil {
-			log.Printf("NG>> Error opening %s config: %v", themeDir, err)
-			continue
-		}
-
-		themeName, err := utils.GjsonGet(desc, "name")
-		if err != nil {
-			log.Printf("NG>> Error opening %s config: not a valid description file", theme.Name())
-			continue
-		}
-
-		// load templates
-		ret = loadTemplates(ret, themeDir)
-
-		themeKey := strings.TrimPrefix(themeDir, "theme-")
-		model.Themes[themeKey] = themeName.String()
-	}
-
-	return ret
-}
-
-func loadTemplates(tmpl *template.Template, themeDir string) *template.Template {
-	// load templates
-	templatePath := filepath.Join("resource", "template", themeDir, "*.html")
-	t, err := tmpl.ParseGlob(templatePath)
-	if err != nil {
-		log.Printf("NG>> Error parsing templates %s: %v", themeDir, err)
-		return tmpl
-	}
-
-	return t
-}
-
 var funcMap = template.FuncMap{
-	"tr": func(id string, dataAndCount ...interface{}) string {
-		conf := i18n.LocalizeConfig{
-			MessageID: id,
-		}
-		if len(dataAndCount) > 0 {
-			conf.TemplateData = dataAndCount[0]
-		}
-		if len(dataAndCount) > 1 {
-			conf.PluralCount = dataAndCount[1]
-		}
-		return singleton.Localizer.MustLocalize(&conf)
-	},
 	"toValMap": func(val interface{}) map[string]interface{} {
 		return map[string]interface{}{
 			"Value": val,

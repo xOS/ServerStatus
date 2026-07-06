@@ -8,7 +8,6 @@ import (
 	"log"
 	"math"
 	"net/http"
-	"runtime"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -19,7 +18,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/go-uuid"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/singleflight"
 
@@ -28,8 +26,6 @@ import (
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
 	"github.com/xos/serverstatus/pkg/websocketx"
-	"github.com/xos/serverstatus/proto"
-	"github.com/xos/serverstatus/service/rpc"
 	"github.com/xos/serverstatus/service/singleton"
 )
 
@@ -82,9 +78,7 @@ type commonPage struct {
 func (cp *commonPage) serve() {
 	cr := cp.r.Group("")
 	cr.Use(mygin.Authorize(mygin.AuthorizeOption{}))
-	cr.Use(mygin.PreferredTheme)
 	cr.POST("/view-password", cp.issueViewPassword)
-	cr.GET("/terminal/:id", cp.terminal)
 	cr.Use(mygin.ValidateViewPassword(mygin.ValidateViewPasswordOption{
 		IsPage:        true,
 		AbortWhenFail: true,
@@ -95,14 +89,12 @@ func (cp *commonPage) serve() {
 	cr.GET("/network/:id", cp.network)
 	cr.GET("/network", cp.network)
 	cr.GET("/ws", cp.ws)
-	cr.POST("/terminal", cp.createTerminal)
-	cr.GET("/file", cp.createFM)
-	cr.GET("/file/:id", cp.fm)
 
 	// 新增：流量数据API，未登录用户也可访问
 	cr.GET("/api/traffic", cp.apiTraffic)
 	// 新增：单个服务器流量数据API
 	cr.GET("/api/server/:id/traffic", cp.apiServerTraffic)
+
 }
 
 type viewPasswordForm struct {
@@ -114,18 +106,16 @@ func (p *commonPage) issueViewPassword(c *gin.Context) {
 	err := c.ShouldBind(&vpf)
 	var hash []byte
 	if err == nil && vpf.Password != singleton.Conf.Site.ViewPassword {
-		err = errors.New(singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "WrongAccessPassword"}))
+		err = errors.New("访问密码错误")
 	}
 	if err == nil {
 		hash, err = bcrypt.GenerateFromPassword([]byte(vpf.Password), bcrypt.DefaultCost)
 	}
 	if err != nil {
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code: http.StatusOK,
-			Title: singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "AnErrorEccurred",
-			}),
-			Msg: err.Error(),
+			Code:  http.StatusOK,
+			Title: "发生错误",
+			Msg:   err.Error(),
 		}, true)
 		c.Abort()
 		return
@@ -216,7 +206,7 @@ func (p *commonPage) service(c *gin.Context) {
 		}, nil
 	})
 	c.HTML(http.StatusOK, mygin.GetPreferredTheme(c, "/service"), mygin.CommonEnvironment(c, gin.H{
-		"Title":              singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ServicesStatus"}),
+		"Title":              "服务状态",
 		"Services":           res.([]interface{})[0],
 		"CycleTransferStats": res.([]interface{})[1],
 	}))
@@ -1180,13 +1170,11 @@ func (cp *commonPage) home(c *gin.Context) {
 
 	if err != nil {
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code: http.StatusInternalServerError,
-			Title: singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "SystemError",
-			}),
-			Msg:  "服务器状态获取失败",
-			Link: "/",
-			Btn:  "返回首页",
+			Code:  http.StatusInternalServerError,
+			Title: "系统错误",
+			Msg:   "服务器状态获取失败",
+			Link:  "/",
+			Btn:   "返回首页",
 		}, true)
 		return
 	}
@@ -1340,297 +1328,6 @@ func (cp *commonPage) ws(c *gin.Context) {
 
 	// 等待两个goroutine都执行完毕
 	wg.Wait()
-}
-
-func (cp *commonPage) terminal(c *gin.Context) {
-	streamId := c.Param("id")
-	if _, err := rpc.ServerHandlerSingleton.GetStream(streamId); err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusForbidden,
-			Title: "无权访问",
-			Msg:   "终端会话不存在",
-			Link:  "/",
-			Btn:   "返回首页",
-		}, true)
-		return
-	}
-	defer rpc.ServerHandlerSingleton.CloseStream(streamId)
-
-	wsConn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		// WebSocket升级失败时，不能再写入HTTP响应
-		log.Printf("Terminal WebSocket升级失败: %v", err)
-		return
-	}
-	defer wsConn.Close()
-	conn := websocketx.NewConn(wsConn)
-
-	// 使用 context 控制 PING 保活 goroutine 的生命周期
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	defer cancel()
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("WebSocket PING goroutine panic恢复: %v", r)
-			}
-		}()
-
-		// PING 保活
-		ticker := time.NewTicker(time.Second * 10)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				// 确保goroutine正确退出
-				return
-			case <-ticker.C:
-				// 设置写入超时，避免阻塞
-				wsConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
-					// 连接错误，立即退出goroutine
-					return
-				}
-			}
-		}
-	}()
-
-	if err = rpc.ServerHandlerSingleton.UserConnected(streamId, conn); err != nil {
-		return
-	}
-
-	rpc.ServerHandlerSingleton.StartStream(streamId, time.Second*10)
-}
-
-type createTerminalRequest struct {
-	Host     string
-	Protocol string
-	ID       uint64
-}
-
-func (cp *commonPage) createTerminal(c *gin.Context) {
-	if _, authorized := c.Get(model.CtxKeyAuthorizedUser); !authorized {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusForbidden,
-			Title: "无权访问",
-			Msg:   "用户未登录",
-			Link:  "/login",
-			Btn:   "去登录",
-		}, true)
-		return
-	}
-	var createTerminalReq createTerminalRequest
-	if err := c.ShouldBind(&createTerminalReq); err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusForbidden,
-			Title: "请求失败",
-			Msg:   "请求参数有误：" + err.Error(),
-			Link:  "/server",
-			Btn:   "返回重试",
-		}, true)
-		return
-	}
-
-	streamId, err := uuid.GenerateUUID()
-	if err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code: http.StatusInternalServerError,
-			Title: singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "SystemError",
-			}),
-			Msg:  "生成会话ID失败",
-			Link: "/server",
-			Btn:  "返回重试",
-		}, true)
-		return
-	}
-
-	rpc.ServerHandlerSingleton.CreateStream(streamId)
-
-	singleton.ServerLock.RLock()
-	server := singleton.ServerList[createTerminalReq.ID]
-	singleton.ServerLock.RUnlock()
-	if server == nil || server.TaskStream == nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusForbidden,
-			Title: "请求失败",
-			Msg:   "服务器不存在或处于离线状态",
-			Link:  "/server",
-			Btn:   "返回重试",
-		}, true)
-		return
-	}
-
-	terminalData, _ := utils.Json.Marshal(&model.TerminalTask{
-		StreamID: streamId,
-	})
-	if err := server.TaskStream.Send(&proto.Task{
-		Type: model.TaskTypeTerminalGRPC,
-		Data: string(terminalData),
-	}); err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusForbidden,
-			Title: "请求失败",
-			Msg:   "Agent信令下发失败",
-			Link:  "/server",
-			Btn:   "返回重试",
-		}, true)
-		return
-	}
-
-	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/terminal", mygin.CommonEnvironment(c, gin.H{
-		"SessionID":  streamId,
-		"ServerName": server.Name,
-		"ServerID":   server.ID,
-	}))
-}
-
-func (cp *commonPage) fm(c *gin.Context) {
-	streamId := c.Param("id")
-	if _, err := rpc.ServerHandlerSingleton.GetStream(streamId); err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusForbidden,
-			Title: "无权访问",
-			Msg:   "FM会话不存在",
-			Link:  "/",
-			Btn:   "返回首页",
-		}, true)
-		return
-	}
-	defer func() {
-		rpc.ServerHandlerSingleton.CloseStream(streamId)
-		runtime.GC() // 强制GC清理连接内存
-	}()
-
-	wsConn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		// WebSocket升级失败时，不能再写入HTTP响应
-		log.Printf("FM WebSocket升级失败: %v", err)
-		return
-	}
-	defer wsConn.Close()
-
-	// 设置连接限制和超时
-	wsConn.SetReadLimit(1024 * 1024) // 1MB 限制
-	wsConn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	wsConn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-
-	conn := websocketx.NewConn(wsConn)
-
-	// 使用 context 控制 PING 保活 goroutine 的生命周期
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	defer cancel()
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("FM ping goroutine panic恢复: %v", r)
-			}
-		}()
-
-		// PING 保活
-		ticker := time.NewTicker(time.Second * 10)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				// 确保goroutine正确退出
-				return
-			case <-ticker.C:
-				// 设置写入超时，避免阻塞
-				wsConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
-					// 连接错误，立即退出goroutine
-					return
-				}
-			}
-		}
-	}()
-
-	if err = rpc.ServerHandlerSingleton.UserConnected(streamId, conn); err != nil {
-		return
-	}
-
-	rpc.ServerHandlerSingleton.StartStream(streamId, time.Second*10)
-}
-
-func (cp *commonPage) createFM(c *gin.Context) {
-	IdString := c.Query("id")
-	if _, authorized := c.Get(model.CtxKeyAuthorizedUser); !authorized {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusForbidden,
-			Title: "无权访问",
-			Msg:   "用户未登录",
-			Link:  "/login",
-			Btn:   "去登录",
-		}, true)
-		return
-	}
-
-	streamId, err := uuid.GenerateUUID()
-	if err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code: http.StatusInternalServerError,
-			Title: singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-				MessageID: "SystemError",
-			}),
-			Msg:  "生成会话ID失败",
-			Link: "/server",
-			Btn:  "返回重试",
-		}, true)
-		return
-	}
-
-	rpc.ServerHandlerSingleton.CreateStream(streamId)
-
-	serverId, err := strconv.Atoi(IdString)
-	if err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusForbidden,
-			Title: "请求失败",
-			Msg:   "请求参数有误：" + err.Error(),
-			Link:  "/server",
-			Btn:   "返回重试",
-		}, true)
-		return
-	}
-
-	singleton.ServerLock.RLock()
-	server := singleton.ServerList[uint64(serverId)]
-	singleton.ServerLock.RUnlock()
-	if server == nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusForbidden,
-			Title: "请求失败",
-			Msg:   "服务器不存在或处于离线状态",
-			Link:  "/server",
-			Btn:   "返回重试",
-		}, true)
-		return
-	}
-
-	fmData, _ := utils.Json.Marshal(&model.TaskFM{
-		StreamID: streamId,
-	})
-	if err := server.TaskStream.Send(&proto.Task{
-		Type: model.TaskTypeFM,
-		Data: string(fmData),
-	}); err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusForbidden,
-			Title: "请求失败",
-			Msg:   "Agent信令下发失败",
-			Link:  "/server",
-			Btn:   "返回重试",
-		}, true)
-		return
-	}
-
-	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/file", mygin.CommonEnvironment(c, gin.H{
-		"SessionID": streamId,
-	}))
 }
 
 // 新增：/api/traffic handler，返回和首页相同结构的流量数据

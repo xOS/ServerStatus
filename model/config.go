@@ -13,20 +13,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Languages = map[string]string{
-	"zh-CN": "简体中文",
-}
-
-var Themes = map[string]string{
-	"default": "Default",
-	"custom":  "Custom(local)",
-}
-
-var DashboardThemes = map[string]string{
-	"default": "Default",
-	"custom":  "Custom(local)",
-}
-
 const (
 	ConfigTypeGitHub     = "github"
 	ConfigTypeGitee      = "gitee"
@@ -44,13 +30,10 @@ const (
 
 // Config 站点配置
 type Config struct {
-	Debug    bool   // debug模式开关
-	Language string // 系统语言，默认 zh-CN
-	Site     struct {
+	Debug bool // debug模式开关
+	Site  struct {
 		Brand               string // 站点名称
 		CookieName          string // 浏览器 Cookie 名称
-		Theme               string
-		DashboardTheme      string
 		CustomCode          string
 		CustomCodeDashboard string
 		ViewPassword        string // 前台查看密码
@@ -78,8 +61,7 @@ type Config struct {
 	ProxyGRPCPort uint
 	TLS           bool
 
-	EnablePlainIPInNotification     bool // 通知信息IP不打码
-	DisableSwitchTemplateInFrontend bool // 前台禁用切换模板功能
+	EnablePlainIPInNotification bool // 通知信息IP不打码
 
 	// IP变更提醒
 	EnableIPChangeNotification bool
@@ -141,15 +123,6 @@ func (c *Config) Read(path string) error {
 	}
 	if c.Site.CookieName == "" {
 		c.Site.CookieName = "server-dash"
-	}
-	if c.Site.Theme == "" {
-		c.Site.Theme = "default"
-	}
-	if c.Site.DashboardTheme == "" {
-		c.Site.DashboardTheme = "default"
-	}
-	if c.Language == "" {
-		c.Language = "zh-CN"
 	}
 	if c.HTTPPort == 0 {
 		c.HTTPPort = 80

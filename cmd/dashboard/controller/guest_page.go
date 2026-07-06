@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/service/singleton"
@@ -64,8 +63,8 @@ func (gp *guestPage) login(c *gin.Context) {
 		LoginType = singleton.Conf.Oauth2.OidcDisplayName
 		RegistrationLink = singleton.Conf.Oauth2.OidcRegisterURL
 	}
-	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/login", mygin.CommonEnvironment(c, gin.H{
-		"Title":            singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Login"}),
+	c.HTML(http.StatusOK, "dashboard-default/login", mygin.CommonEnvironment(c, gin.H{
+		"Title":            "登录",
 		"LoginType":        LoginType,
 		"RegistrationLink": RegistrationLink,
 	}))

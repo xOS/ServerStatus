@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
@@ -21,8 +20,8 @@ func (mp *memberPage) serve() {
 	mr.Use(mygin.Authorize(mygin.AuthorizeOption{
 		MemberOnly: true,
 		IsPage:     true,
-		Msg:        singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "YouAreNotAuthorized"}),
-		Btn:        singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Login"}),
+		Msg:        "您无权访问",
+		Btn:        "登录",
 		Redirect:   "/login",
 	}))
 	mr.GET("/server", mp.server)
@@ -50,8 +49,8 @@ func (mp *memberPage) api(c *gin.Context) {
 	}
 	log.Printf("API页面: 使用内存中的 %d 个API令牌", len(tokens))
 
-	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/api", mygin.CommonEnvironment(c, gin.H{
-		"title":  singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ApiManagement"}),
+	c.HTML(http.StatusOK, "dashboard-default/api", mygin.CommonEnvironment(c, gin.H{
+		"title":  "API 管理",
 		"Tokens": tokens,
 	}))
 }
@@ -59,15 +58,15 @@ func (mp *memberPage) api(c *gin.Context) {
 func (mp *memberPage) server(c *gin.Context) {
 	singleton.SortedServerLock.RLock()
 	defer singleton.SortedServerLock.RUnlock()
-	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/server", mygin.CommonEnvironment(c, gin.H{
-		"Title":   singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ServersManagement"}),
+	c.HTML(http.StatusOK, "dashboard-default/server", mygin.CommonEnvironment(c, gin.H{
+		"Title":   "服务器管理",
 		"Servers": singleton.SortedServerList,
 	}))
 }
 
 func (mp *memberPage) monitor(c *gin.Context) {
-	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/monitor", mygin.CommonEnvironment(c, gin.H{
-		"Title":    singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ServicesManagement"}),
+	c.HTML(http.StatusOK, "dashboard-default/monitor", mygin.CommonEnvironment(c, gin.H{
+		"Title":    "服务监控",
 		"Monitors": singleton.ServiceSentinelShared.Monitors(),
 	}))
 }
@@ -100,8 +99,8 @@ func (mp *memberPage) cron(c *gin.Context) {
 		singleton.DB.Find(&crons)
 	}
 
-	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/cron", mygin.CommonEnvironment(c, gin.H{
-		"Title": singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "ScheduledTasks"}),
+	c.HTML(http.StatusOK, "dashboard-default/cron", mygin.CommonEnvironment(c, gin.H{
+		"Title": "计划任务",
 		"Crons": crons,
 	}))
 }
@@ -152,8 +151,8 @@ func (mp *memberPage) notification(c *gin.Context) {
 		singleton.DB.Find(&ar)
 	}
 
-	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/notification", mygin.CommonEnvironment(c, gin.H{
-		"Title":         singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Notification"}),
+	c.HTML(http.StatusOK, "dashboard-default/notification", mygin.CommonEnvironment(c, gin.H{
+		"Title":         "通知",
 		"Notifications": nf,
 		"AlertRules":    ar,
 	}))
@@ -192,8 +191,8 @@ func (mp *memberPage) ddns(c *gin.Context) {
 		}
 	}
 
-	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/ddns", mygin.CommonEnvironment(c, gin.H{
-		"Title":        singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "DDNS"}),
+	c.HTML(http.StatusOK, "dashboard-default/ddns", mygin.CommonEnvironment(c, gin.H{
+		"Title":        "DDNS",
 		"DDNS":         data,
 		"ProviderMap":  model.ProviderMap,
 		"ProviderList": model.ProviderList,
@@ -233,16 +232,14 @@ func (mp *memberPage) nat(c *gin.Context) {
 		}
 	}
 
-	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/nat", mygin.CommonEnvironment(c, gin.H{
-		"Title": singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "NAT"}),
+	c.HTML(http.StatusOK, "dashboard-default/nat", mygin.CommonEnvironment(c, gin.H{
+		"Title": "NAT",
 		"NAT":   data,
 	}))
 }
 
 func (mp *memberPage) setting(c *gin.Context) {
-	c.HTML(http.StatusOK, "dashboard-"+singleton.Conf.Site.DashboardTheme+"/setting", mygin.CommonEnvironment(c, gin.H{
-		"Title":           singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "Settings"}),
-		"Languages":       model.Languages,
-		"DashboardThemes": model.DashboardThemes,
+	c.HTML(http.StatusOK, "dashboard-default/setting", mygin.CommonEnvironment(c, gin.H{
+		"Title": "设置",
 	}))
 }
