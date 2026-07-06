@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/ddns"
@@ -162,9 +161,7 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 
 			if cr.PushSuccessful && r.GetSuccessful() {
 				message := fmt.Sprintf("[%s]\n任务名称: %s\n执行设备: %s (ID:%d)\n开始时间: %s\n结束时间: %s\n执行结果: 成功",
-					singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "ScheduledTaskExecutedSuccessfully",
-					}),
+					"任务执行成功",
 					cr.Name,
 					singleton.ServerList[clientID].Name, clientID,
 					startTime.Format("2006-01-02 15:04:05"),
@@ -174,9 +171,7 @@ func (s *ServerHandler) ReportTask(c context.Context, r *pb.TaskResult) (*pb.Rec
 			}
 			if !r.GetSuccessful() {
 				message := fmt.Sprintf("[%s]\n任务名称: %s\n执行设备: %s (ID:%d)\n开始时间: %s\n结束时间: %s\n执行结果: 失败\n错误详情:\n%s",
-					singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-						MessageID: "ScheduledTaskExecutedFailed",
-					}),
+					"任务执行失败",
 					cr.Name,
 					singleton.ServerList[clientID].Name, clientID,
 					startTime.Format("2006-01-02 15:04:05"),
@@ -808,9 +803,7 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 		singleton.SendNotification(singleton.Conf.IPChangeNotificationTag,
 			fmt.Sprintf(
 				"[%s]\n服务器: %s (ID:%d)\nIP变更: %s => %s\n变更时间: %s",
-				singleton.Localizer.MustLocalize(&i18n.LocalizeConfig{
-					MessageID: "IPChanged",
-				}),
+				"IP 变更",
 				serverName, clientID, singleton.IPDesensitize(serverHostIP),
 				singleton.IPDesensitize(host.IP), changeTime,
 			),

@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 )
@@ -720,9 +719,7 @@ func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, 
 
 	// 基础通知信息（移除了#探针通知前缀）
 	message := fmt.Sprintf("[%s]"+"\n"+"%s[%s]"+"\n"+"服务器ID: %d"+"\n"+"通知时间: %s"+"\n",
-		Localizer.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "Incident",
-		}),
+		"事件",
 		server.Name, IPDesensitize(server.Host.IP),
 		server.ID,
 		now.Format("2006-01-02 15:04:05"))
@@ -1082,9 +1079,7 @@ func generateDetailedRecoveryMessage(alert *model.AlertRule, server *model.Serve
 
 	// 基础恢复信息（移除了#探针通知前缀）
 	message := fmt.Sprintf("[%s]"+"\n"+"%s[%s]"+"\n"+"服务器ID: %d"+"\n"+"恢复时间: %s"+"\n",
-		Localizer.MustLocalize(&i18n.LocalizeConfig{
-			MessageID: "Resolved",
-		}),
+		"恢复",
 		server.Name, IPDesensitize(server.Host.IP),
 		server.ID,
 		now.Format("2006-01-02 15:04:05"))

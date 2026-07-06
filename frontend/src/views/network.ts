@@ -1,4 +1,5 @@
 import { injectAppShell, renderChrome } from '../layout'
+import { apiPath } from '../api'
 import { authHeaders } from '../auth'
 
 type RangeKey = '24h' | '72h'
@@ -50,7 +51,7 @@ type NetworkSummary = {
   max: number
   min: number
   avg: number
-  loss: number
+  loss: number | null
   count: number
 }
 
@@ -121,7 +122,7 @@ export async function initNetwork(container: HTMLDivElement) {
   const statsContainer = contentArea.querySelector<HTMLDivElement>('#network-stats')
   if (!buttonsContainer || !chartContainer || !subtitle || !title || !rangeSwitch || !statsContainer) return cleanupNetwork
 
-  fetch('/api/v1/profile', { credentials: 'same-origin', headers: authHeaders(), signal })
+  fetch(apiPath('/profile'), { credentials: 'same-origin', headers: authHeaders(), signal })
     .then((response) => response.json())
     .then((data) => renderChrome(data.data || data))
     .catch((error) => {
@@ -131,7 +132,7 @@ export async function initNetwork(container: HTMLDivElement) {
   setChartMessage(chartContainer, '加载服务器列表...')
 
   try {
-    const servers = normalizeServers(await fetchJson<unknown>('/api/v1/server/list', signal))
+    const servers = normalizeServers(await fetchJson<unknown>(apiPath('/server/list'), signal))
     if (servers.length === 0) {
       buttonsContainer.textContent = ''
       subtitle.textContent = '暂无服务器数据'
@@ -192,8 +193,8 @@ export async function initNetwork(container: HTMLDivElement) {
         const cacheKey = `${id}:${currentRange}`
         let history = historyCache.get(cacheKey)
         if (!history) {
-          const payload = await fetchJson<unknown>(`/api/v1/monitor/${encodeURIComponent(id)}?range=${currentRange}`, signal)
-          history = withDevNetworkHistory(normalizeHistory(payload), id, currentRange)
+          const payload = await fetchJson<unknown>(`${apiPath(`/monitor/${encodeURIComponent(id)}`)}?range=${currentRange}`, signal)
+          history = normalizeHistory(payload)
           historyCache.set(cacheKey, history)
         }
         if (token !== loadToken) return
@@ -245,6 +246,16 @@ export async function initNetwork(container: HTMLDivElement) {
     chartContainer.addEventListener('pointermove', (event) => {
       if (!chartModel) return
       updateChartHover(chartContainer, chartModel, event)
+    }, { signal })
+
+    chartContainer.addEventListener('pointerdown', (event) => {
+      if (!chartModel) return
+      if (event.pointerType !== 'mouse') event.preventDefault()
+      updateChartHover(chartContainer, chartModel, event)
+    }, { signal })
+
+    chartContainer.addEventListener('pointercancel', () => {
+      hideChartHover(chartContainer)
     }, { signal })
 
     chartContainer.addEventListener('pointerleave', () => {
@@ -308,62 +319,6 @@ function normalizeHistory(payload: unknown): MonitorPoint[] {
   return []
 }
 
-function withDevNetworkHistory(history: MonitorPoint[], serverIdValue: string, range: RangeKey): MonitorPoint[] {
-  if (history.length > 0 || !import.meta.env.DEV) return history
-
-  const seed = hashSeed(`${serverIdValue}:${range}`)
-  const now = Date.now()
-  const hours = range === '72h' ? 72 : 24
-  const start = now - hours * 60 * 60 * 1000
-  const step = (range === '72h' ? 30 : 15) * 60 * 1000
-  const totalSteps = Math.floor((hours * 60 * 60 * 1000) / step)
-  const points: MonitorPoint[] = []
-
-  for (let index = 0; index <= totalSteps; index += 1) {
-    const time = new Date(start + index * step).toISOString()
-    const wave = Math.sin((index + seed) / 7) * 6
-    const smallWave = Math.sin((index + seed) / 2.9) * 2.5
-    const spike = index % (19 + (seed % 5)) === 0 ? 12 + (seed % 9) : 0
-    const cnLoss = index % (31 + (seed % 4)) === 0 ? 1 : 0
-    const usLoss = index % (23 + (seed % 5)) === 0 ? 2 : index % 17 === 0 ? 1 : 0
-    const euLoss = index % (19 + (seed % 6)) === 0 ? 2 : index % 29 === 0 ? 1 : 0
-
-    points.push(
-      {
-        MonitorID: 'CN',
-        CreatedAt: time,
-        AvgDelay: Math.max(8, Math.round(34 + (seed % 16) + wave + smallWave + spike)),
-        Up: 20 - cnLoss,
-        Down: cnLoss,
-      },
-      {
-        MonitorID: 'US',
-        CreatedAt: time,
-        AvgDelay: Math.max(18, Math.round(82 + (seed % 23) + wave * 1.7 + smallWave + spike * 1.35)),
-        Up: 20 - usLoss,
-        Down: usLoss,
-      },
-      {
-        MonitorID: 'EU',
-        CreatedAt: time,
-        AvgDelay: Math.max(22, Math.round(128 + (seed % 31) + wave * 2.1 + smallWave * 1.4 + spike * 1.1)),
-        Up: 20 - euLoss,
-        Down: euLoss,
-      },
-    )
-  }
-
-  return points
-}
-
-function hashSeed(value: string) {
-  let hash = 0
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) >>> 0
-  }
-  return hash
-}
-
 function buildSeries(history: MonitorPoint[]): Series[] {
   const groups = new Map<string, SeriesPoint[]>()
 
@@ -386,7 +341,24 @@ function buildSeries(history: MonitorPoint[]): Series[] {
     groups.set(key, list)
   }
 
-  const colors = ['#03a9f4', '#4caf50', '#ff8840', '#9c27b0', '#ff5722']
+  const colors = [
+    '#03a9f4',
+    '#4caf50',
+    '#ff8840',
+    '#9c27b0',
+    '#ff5722',
+    '#2185d0',
+    '#e91e63',
+    '#00b5ad',
+    '#b5cc18',
+    '#fbbd08',
+    '#a333c8',
+    '#db2828',
+    '#767676',
+    '#21ba45',
+    '#6435c9',
+    '#f2711c',
+  ]
   return Array.from(groups.entries()).map(([name, points], index) => ({
     name,
     color: colors[index % colors.length],
@@ -407,7 +379,7 @@ function summarizeSeries(series: Series[]): NetworkSummary | null {
     max: Math.max(...values),
     min: Math.min(...values),
     avg: values.reduce((sum, value) => sum + value, 0) / values.length,
-    loss: totalChecks > 0 ? (down / totalChecks) * 100 : 0,
+    loss: totalChecks > 0 ? (down / totalChecks) * 100 : null,
     count: values.length,
   }
 }
@@ -421,29 +393,32 @@ function renderSummary(container: HTMLElement, summary: NetworkSummary | null, r
 
   container.hidden = false
   container.innerHTML = `
-    <div class="network-stat-item">
-      <span>${RANGE_LABELS[range]}最高</span>
-      <strong>${formatMs(summary.max)}</strong>
-    </div>
-    <div class="network-stat-item">
-      <span>${RANGE_LABELS[range]}最低</span>
-      <strong>${formatMs(summary.min)}</strong>
-    </div>
-    <div class="network-stat-item">
+    <div class="network-stat-item" data-network-stat="avg">
       <span>${RANGE_LABELS[range]}平均</span>
       <strong>${formatMs(summary.avg)}</strong>
     </div>
-    <div class="network-stat-item">
+    <div class="network-stat-item" data-network-stat="max">
+      <span>${RANGE_LABELS[range]}最高</span>
+      <strong>${formatMs(summary.max)}</strong>
+    </div>
+    <div class="network-stat-item" data-network-stat="min">
+      <span>${RANGE_LABELS[range]}最低</span>
+      <strong>${formatMs(summary.min)}</strong>
+    </div>
+    <div class="network-stat-item" data-network-stat="loss">
       <span>${RANGE_LABELS[range]}丢包</span>
-      <strong>${formatPercent(summary.loss)}</strong>
+      <strong>${formatLoss(summary.loss)}</strong>
     </div>
   `
 }
 
 function renderSvgChart(container: HTMLElement, series: Series[], serverNameValue: string, range: RangeKey): ChartModel | null {
   const width = Math.max(container.clientWidth, 320)
-  const height = 420
-  const padding = { top: 24, right: 22, bottom: 42, left: 48 }
+  const compact = width <= 520
+  const height = compact ? 360 : 420
+  const padding = compact
+    ? { top: 18, right: 10, bottom: 36, left: 34 }
+    : { top: 24, right: 22, bottom: 42, left: 48 }
   const plotWidth = width - padding.left - padding.right
   const plotHeight = height - padding.top - padding.bottom
 
@@ -487,7 +462,7 @@ function renderSvgChart(container: HTMLElement, series: Series[], serverNameValu
 
   container.innerHTML = `
     <div class="network-chart-canvas">
-      <svg class="network-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${RANGE_LABELS[range]}网络延迟折线图">
+      <svg class="network-chart-svg" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="${RANGE_LABELS[range]}网络延迟折线图">
         ${grid}
         <line class="network-axis-line" x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}"></line>
         <line class="network-axis-line" x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}"></line>
@@ -667,6 +642,10 @@ function formatMs(value: number) {
 
 function formatPercent(value: number) {
   return `${value < 10 ? value.toFixed(2) : value.toFixed(1)}%`
+}
+
+function formatLoss(value: number | null) {
+  return value === null ? '--' : formatPercent(value)
 }
 
 function finiteNumber(value: unknown, fallback: number) {

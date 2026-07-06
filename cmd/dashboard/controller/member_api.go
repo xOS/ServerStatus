@@ -30,7 +30,7 @@ type memberAPI struct {
 
 func (ma *memberAPI) serve() {
 	// 需要登录的 API
-	mr := ma.r.Group("")
+	mr := ma.r.Group(adminAPIGroup)
 	mr.Use(mygin.Authorize(mygin.AuthorizeOption{
 		MemberOnly: true,
 		IsPage:     false,
@@ -57,7 +57,7 @@ func (ma *memberAPI) serve() {
 	mr.POST("/monitor", ma.addOrEditMonitor)
 	mr.POST("/traffic", ma.addOrEditAlertRule)
 	mr.POST("/cron", ma.addOrEditCron)
-	mr.GET("/cron/:id/manual", ma.manualTrigger)
+	mr.POST("/cron/:id/manual", ma.manualTrigger)
 	mr.POST("/force-update", ma.forceUpdate)
 	mr.POST("/batch-update-server-group", ma.batchUpdateServerGroup)
 	mr.POST("/batch-delete-server", ma.batchDeleteServer)
@@ -67,17 +67,29 @@ func (ma *memberAPI) serve() {
 	mr.POST("/alert-rule", ma.addOrEditAlertRule)
 	mr.GET("/alert-rule/:id", ma.getAlertRule)
 	mr.POST("/setting", ma.updateSetting)
-	mr.DELETE("/:model/:id", ma.delete)
-	mr.POST("/logout", ma.logout)
 	mr.GET("/token", ma.getToken)
 	mr.POST("/token", ma.issueNewToken)
 	mr.DELETE("/token/:token", ma.deleteToken)
+	mr.DELETE("/server/:id", ma.deleteModel("server"))
+	mr.DELETE("/monitor/:id", ma.deleteModel("monitor"))
+	mr.DELETE("/cron/:id", ma.deleteModel("cron"))
+	mr.DELETE("/notification/:id", ma.deleteModel("notification"))
+	mr.DELETE("/nat/:id", ma.deleteModel("nat"))
+	mr.DELETE("/ddns/:id", ma.deleteModel("ddns"))
+	mr.DELETE("/alert-rule/:id", ma.deleteModel("alert-rule"))
 
 	// API
-	v1 := ma.r.Group("v1")
+	v1 := ma.r.Group(apiV1Group)
 	{
 		apiv1 := &apiV1{v1}
 		apiv1.serve()
+	}
+}
+
+func (ma *memberAPI) deleteModel(model string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Params = append(c.Params, gin.Param{Key: "model", Value: model})
+		ma.delete(c)
 	}
 }
 
@@ -1869,9 +1881,12 @@ type settingForm struct {
 	GRPCHost                string
 	GRPCPort                uint
 	Cover                   uint8
+	AllowedOrigins          string
 
 	EnableIPChangeNotification  string
 	EnablePlainIPInNotification string
+	EnableOAuthLogin            string
+	EnableAPIKeyLogin           string
 }
 
 func (ma *memberAPI) updateSetting(c *gin.Context) {
@@ -1886,6 +1901,8 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 
 	singleton.Conf.EnableIPChangeNotification = sf.EnableIPChangeNotification == "on"
 	singleton.Conf.EnablePlainIPInNotification = sf.EnablePlainIPInNotification == "on"
+	singleton.Conf.Login.EnableOAuth = sf.EnableOAuthLogin == "on"
+	singleton.Conf.Login.EnableAPIKey = sf.EnableAPIKeyLogin == "on"
 	singleton.Conf.Cover = sf.Cover
 	singleton.Conf.GRPCHost = sf.GRPCHost
 	singleton.Conf.GRPCPort = sf.GRPCPort
@@ -1895,6 +1912,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 	singleton.Conf.Site.CustomCode = sf.CustomCode
 	singleton.Conf.Site.CustomCodeDashboard = sf.CustomCodeDashboard
 	singleton.Conf.DNSServers = sf.CustomNameservers
+	singleton.Conf.Security.AllowedOrigins = sf.AllowedOrigins
 	singleton.Conf.Site.ViewPassword = sf.ViewPassword
 	singleton.Conf.Oauth2.Admin = sf.Admin
 	// 保证NotificationTag不为空
@@ -2220,6 +2238,9 @@ func (ma *memberAPI) getSettingList(c *gin.Context) {
 			"Cover":                       singleton.Conf.Cover,
 			"EnableIPChangeNotification":  singleton.Conf.EnableIPChangeNotification,
 			"EnablePlainIPInNotification": singleton.Conf.EnablePlainIPInNotification,
+			"EnableOAuthLogin":            singleton.Conf.Login.EnableOAuth,
+			"EnableAPIKeyLogin":           singleton.Conf.Login.EnableAPIKey,
+			"AllowedOrigins":              singleton.Conf.Security.AllowedOrigins,
 		},
 	})
 }

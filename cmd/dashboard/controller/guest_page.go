@@ -31,17 +31,16 @@ func (gp *guestPage) serve() {
 		gr.POST("/debug-login", gp.debugLogin)
 	}
 
-	oauth := &oauth2controller{
-		r: gr,
-	}
-	oauth.serve()
 }
 
 func (gp *guestPage) login(c *gin.Context) {
 	if singleton.Conf.Oauth2.OidcAutoLogin {
-		c.Redirect(http.StatusFound, "/oauth2/login")
+		c.Redirect(http.StatusFound, oauthLoginPath)
 		return
 	}
+	serveSPA(c)
+	return
+
 	LoginType := "GitHub"
 	RegistrationLink := "https://github.com/join"
 	if singleton.Conf.Oauth2.Type == model.ConfigTypeGitee {
@@ -77,6 +76,6 @@ func (gp *guestPage) debugLogin(c *gin.Context) {
 	}
 
 	// 设置 admin token cookie
-	c.SetCookie(singleton.Conf.Site.CookieName, "admin", 3600*24*30, "/", "", false, false)
+	setSecureCookie(c, singleton.Conf.Site.CookieName, "admin", 3600*24*30)
 	WriteJSON(c, http.StatusOK, gin.H{"message": "Debug login successful"})
 }

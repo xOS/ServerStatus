@@ -31,10 +31,12 @@ func (mp *memberPage) serve() {
 	mr.GET("/ddns", mp.ddns)
 	mr.GET("/nat", mp.nat)
 	mr.GET("/setting", mp.setting)
-	mr.GET("/api", mp.api)
 }
 
 func (mp *memberPage) api(c *gin.Context) {
+	c.Redirect(http.StatusFound, "/dashboard/api")
+	return
+
 	var tokens map[string]*model.ApiToken
 
 	// 统一使用内存中的数据，确保删除操作的一致性
@@ -56,6 +58,9 @@ func (mp *memberPage) api(c *gin.Context) {
 }
 
 func (mp *memberPage) server(c *gin.Context) {
+	c.Redirect(http.StatusFound, "/dashboard/server")
+	return
+
 	singleton.SortedServerLock.RLock()
 	defer singleton.SortedServerLock.RUnlock()
 	c.HTML(http.StatusOK, "dashboard-default/server", mygin.CommonEnvironment(c, gin.H{
@@ -65,6 +70,9 @@ func (mp *memberPage) server(c *gin.Context) {
 }
 
 func (mp *memberPage) monitor(c *gin.Context) {
+	c.Redirect(http.StatusFound, "/dashboard/monitor")
+	return
+
 	c.HTML(http.StatusOK, "dashboard-default/monitor", mygin.CommonEnvironment(c, gin.H{
 		"Title":    "服务监控",
 		"Monitors": singleton.ServiceSentinelShared.Monitors(),
@@ -72,6 +80,9 @@ func (mp *memberPage) monitor(c *gin.Context) {
 }
 
 func (mp *memberPage) cron(c *gin.Context) {
+	c.Redirect(http.StatusFound, "/dashboard/cron")
+	return
+
 	var crons []model.Cron
 
 	// 根据数据库类型选择不同的查询方式
@@ -106,6 +117,9 @@ func (mp *memberPage) cron(c *gin.Context) {
 }
 
 func (mp *memberPage) notification(c *gin.Context) {
+	c.Redirect(http.StatusFound, "/dashboard/notification")
+	return
+
 	var nf []model.Notification
 	var ar []model.AlertRule
 
@@ -159,6 +173,9 @@ func (mp *memberPage) notification(c *gin.Context) {
 }
 
 func (mp *memberPage) ddns(c *gin.Context) {
+	c.Redirect(http.StatusFound, "/dashboard/ddns")
+	return
+
 	var data []model.DDNSProfile
 
 	// 根据数据库类型选择不同的查询方式
@@ -200,6 +217,9 @@ func (mp *memberPage) ddns(c *gin.Context) {
 }
 
 func (mp *memberPage) nat(c *gin.Context) {
+	c.Redirect(http.StatusFound, "/dashboard/nat")
+	return
+
 	var data []model.NAT
 
 	// 根据数据库类型选择不同的查询方式
@@ -239,6 +259,9 @@ func (mp *memberPage) nat(c *gin.Context) {
 }
 
 func (mp *memberPage) setting(c *gin.Context) {
+	c.Redirect(http.StatusFound, "/dashboard/setting")
+	return
+
 	c.HTML(http.StatusOK, "dashboard-default/setting", mygin.CommonEnvironment(c, gin.H{
 		"Title": "设置",
 	}))

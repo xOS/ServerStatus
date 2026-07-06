@@ -1,4 +1,5 @@
 import { ProfileResponse } from './home'
+import { authApiPath } from './api'
 
 let _app: HTMLDivElement
 let adminArea: HTMLElement
@@ -23,6 +24,9 @@ export const icon = (name: string, cls: string = '') => {
 
     case 'chevronDown':
       return `<svg ${base}><path d="m6.7 9.2 5.3 5.3 5.3-5.3"/></svg>`
+
+    case 'cancel':
+      return `<svg ${base}><circle cx="12" cy="12" r="8.4"/><path class="svg-accent" d="m8.8 8.8 6.4 6.4M15.2 8.8l-6.4 6.4"/></svg>`
 
     case 'grid':
       return `<svg ${base}><rect x="3.5" y="3.5" width="6.2" height="6.2" rx="1.4"/><rect x="14.3" y="3.5" width="6.2" height="6.2" rx="1.4"/><rect x="14.3" y="14.3" width="6.2" height="6.2" rx="1.4"/><rect x="3.5" y="14.3" width="6.2" height="6.2" rx="1.4"/></svg>`
@@ -192,21 +196,24 @@ export function injectAppShell(container: HTMLDivElement, activeRoute: 'home' | 
 
 export function renderChrome(profile: ProfileResponse | null | any) {
   const admin = profile?.Admin
-  const brand = escapeHtml(profile?.Conf?.Site?.Brand || '服务器')
+  const brandText = String(profile?.Conf?.Site?.Brand || '服务器')
+  const brand = escapeHtml(brandText)
+
+  document.title = brandText
 
   if (admin) {
-    const name = escapeHtml(admin.Name || 'Admin')
+    const name = escapeHtml(shortAdminName(admin.Name || admin.Login || '管理员'))
     const avatar = escapeAttribute(admin.AvatarURL || '/static/logo.svg?v20220602')
     adminArea.innerHTML = `
       <div class="admin-menu">
         <button class="admin-trigger" type="button">
           <img src="${avatar}" alt="">
           <span>${name}</span>
-          ${icon('chevronDown', 'admin-chevron')}
+          <span class="admin-caret" aria-hidden="true"></span>
         </button>
         <div class="admin-dropdown">
-          <a href="/dashboard">${icon('grid', 'dropdown-svg')}<span>管理面板</span></a>
-          <a href="/logout" data-native-link>${icon('logout', 'dropdown-svg')}<span>退出登录</span></a>
+          <a href="/dashboard">${icon('grid', 'dropdown-svg')}<span>管理</span></a>
+          <a class="is-logout" href="${authApiPath('/logout')}" data-native-link>${icon('logout', 'dropdown-svg')}<span>退出</span></a>
         </div>
       </div>
     `
@@ -220,4 +227,9 @@ export function renderChrome(profile: ProfileResponse | null | any) {
     <a href="http://www.nange.cn" target="_blank" rel="noreferrer">春夏</a>
     <span class="custom-code">${profile?.CustomCode || profile?.Conf?.Site?.CustomCode || ''}</span>
   `
+}
+
+function shortAdminName(input: unknown) {
+  const chars = Array.from(String(input || '管理员').trim())
+  return chars.slice(0, 2).join('') || '管理'
 }

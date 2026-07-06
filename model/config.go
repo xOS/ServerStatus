@@ -55,6 +55,13 @@ type Config struct {
 		OidcAutoCreate  bool   // for OIDC Auto Create
 		OidcAutoLogin   bool   // for OIDC Auto Login
 	}
+	Login struct {
+		EnableOAuth  bool // 启用账号授权登录
+		EnableAPIKey bool // 启用 API 请求头授权入口
+	}
+	Security struct {
+		AllowedOrigins string // 允许跨域访问 API 的前端 Origin，多个用逗号分隔
+	}
 	HTTPPort      uint
 	GRPCPort      uint
 	GRPCHost      string
@@ -124,6 +131,9 @@ func (c *Config) Read(path string) error {
 	if c.Site.CookieName == "" {
 		c.Site.CookieName = "server-dash"
 	}
+	if !configKeyExists(c.k, "login.enableoauth", "Login.EnableOAuth", "enableoauthlogin", "EnableOAuthLogin") {
+		c.Login.EnableOAuth = true
+	}
 	if c.HTTPPort == 0 {
 		c.HTTPPort = 80
 	}
@@ -169,6 +179,15 @@ func (c *Config) Read(path string) error {
 
 	c.updateIgnoredIPNotificationID()
 	return nil
+}
+
+func configKeyExists(k *koanf.Koanf, keys ...string) bool {
+	for _, key := range keys {
+		if k.Exists(key) {
+			return true
+		}
+	}
+	return false
 }
 
 // updateIgnoredIPNotificationID 更新用于判断服务器ID是否属于特定服务器的map

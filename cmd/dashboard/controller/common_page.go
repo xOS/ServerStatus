@@ -88,12 +88,12 @@ func (cp *commonPage) serve() {
 	// TODO: 界面直接跳转使用该接口
 	cr.GET("/network/:id", cp.network)
 	cr.GET("/network", cp.network)
-	cr.GET("/ws", cp.ws)
+	cr.GET(apiV1Prefix+"/ws", cp.ws)
 
-	// 新增：流量数据API，未登录用户也可访问
-	cr.GET("/api/traffic", cp.apiTraffic)
-	// 新增：单个服务器流量数据API
-	cr.GET("/api/server/:id/traffic", cp.apiServerTraffic)
+	// 新增：流量数据 API，未登录用户也可访问
+	cr.GET(apiV1Prefix+"/traffic", cp.apiTraffic)
+	// 新增：单个服务器流量数据 API
+	cr.GET(apiV1Prefix+"/server/:id/traffic", cp.apiServerTraffic)
 
 }
 
@@ -120,11 +120,14 @@ func (p *commonPage) issueViewPassword(c *gin.Context) {
 		c.Abort()
 		return
 	}
-	c.SetCookie(singleton.Conf.Site.CookieName+"-vp", string(hash), 60*60*24, "", "", false, false)
+	setSecureCookie(c, singleton.Conf.Site.CookieName+"-vp", string(hash), 60*60*24)
 	c.Redirect(http.StatusFound, c.Request.Referer())
 }
 
 func (p *commonPage) service(c *gin.Context) {
+	c.Redirect(http.StatusFound, "/")
+	return
+
 	res, _, _ := p.requestGroup.Do("servicePage", func() (interface{}, error) {
 		// 使用深拷贝确保并发安全
 		singleton.AlertsLock.RLock()
@@ -213,6 +216,9 @@ func (p *commonPage) service(c *gin.Context) {
 }
 
 func (cp *commonPage) network(c *gin.Context) {
+	serveSPA(c)
+	return
+
 	if singleton.Conf.Debug {
 		log.Printf("network: 进入网络页面处理函数")
 	}
@@ -950,6 +956,9 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 }
 
 func (cp *commonPage) home(c *gin.Context) {
+	serveSPA(c)
+	return
+
 	// 添加函数级别的panic恢复
 	defer func() {
 		if r := recover(); r != nil {
@@ -1189,8 +1198,7 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  8192,
 	WriteBufferSize: 8192,
 	CheckOrigin: func(r *http.Request) bool {
-		// 允许所有来源的WebSocket连接，避免跨域问题
-		return true
+		return isAllowedWebSocketOrigin(r)
 	},
 	Error: func(w http.ResponseWriter, r *http.Request, status int, reason error) {
 		// 自定义错误处理，避免写入响应头冲突
@@ -1200,7 +1208,7 @@ var upgrader = websocket.Upgrader{
 
 func (cp *commonPage) ws(c *gin.Context) {
 	upgrader := websocket.Upgrader{
-		CheckOrigin:      func(r *http.Request) bool { return true },
+		CheckOrigin:      isAllowedWebSocketOrigin,
 		ReadBufferSize:   8192,
 		WriteBufferSize:  8192,
 		HandshakeTimeout: 10 * time.Second,
@@ -1330,7 +1338,7 @@ func (cp *commonPage) ws(c *gin.Context) {
 	wg.Wait()
 }
 
-// 新增：/api/traffic handler，返回和首页相同结构的流量数据
+// apiTraffic 返回和首页相同结构的流量数据。
 func (cp *commonPage) apiTraffic(c *gin.Context) {
 	// 支持用户登录或view password验证
 	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
@@ -1490,7 +1498,7 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 	})
 }
 
-// 新增：/api/server/:id/traffic handler，返回单个服务器的流量数据
+// apiServerTraffic 返回单个服务器的流量数据。
 func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 	// 支持用户登录或view password验证
 	_, isMember := c.Get(model.CtxKeyAuthorizedUser)

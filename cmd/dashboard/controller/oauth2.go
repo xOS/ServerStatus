@@ -129,10 +129,18 @@ func (oa *oauth2controller) getRedirectURL(c *gin.Context) string {
 	if forwardedProto := c.Request.Header.Get("X-Forwarded-Proto"); forwardedProto == "https" || strings.HasPrefix(referer, "https://") {
 		scheme = "https://"
 	}
-	return scheme + c.Request.Host + "/oauth2/callback"
+	return scheme + c.Request.Host + oauthCallbackPath
 }
 
 func (oa *oauth2controller) login(c *gin.Context) {
+	if !singleton.Conf.Login.EnableOAuth {
+		mygin.ShowErrorPage(c, mygin.ErrInfo{
+			Code:  http.StatusForbidden,
+			Title: "登录受限",
+			Msg:   "账号授权登录已关闭",
+		}, true)
+		return
+	}
 	randomString, err := utils.GenerateRandomString(32)
 	if err != nil {
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
@@ -153,10 +161,8 @@ func (oa *oauth2controller) login(c *gin.Context) {
 	state, stateKey := randomString[:16], randomString[16:]
 	singleton.Cache.Set(fmt.Sprintf("%s%s", model.CacheKeyOauth2State, stateKey), state, cache.DefaultExpiration)
 	url := oa.getCommonOauth2Config(c).AuthCodeURL(state, oauth2.AccessTypeOnline)
-	c.SetCookie(singleton.Conf.Site.CookieName+"-sk", stateKey, 60*5, "", "", false, false)
-	c.HTML(http.StatusOK, "dashboard-default/redirect", mygin.CommonEnvironment(c, gin.H{
-		"URL": url,
-	}))
+	setSecureCookie(c, singleton.Conf.Site.CookieName+"-sk", stateKey, 60*5)
+	c.Redirect(http.StatusFound, url)
 }
 
 func (oa *oauth2controller) callback(c *gin.Context) {
@@ -378,10 +384,8 @@ func (oa *oauth2controller) callback(c *gin.Context) {
 		}
 	}
 
-	c.SetCookie(singleton.Conf.Site.CookieName, user.Token, 60*60*24, "", "", false, false)
-	c.HTML(http.StatusOK, "dashboard-default/redirect", mygin.CommonEnvironment(c, gin.H{
-		"URL": "/",
-	}))
+	setSecureCookie(c, singleton.Conf.Site.CookieName, user.Token, 60*60*24)
+	c.Redirect(http.StatusFound, "/")
 }
 
 func removeDuplicates(elements []string) []string {

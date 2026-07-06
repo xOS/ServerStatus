@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nicksnyder/go-i18n/v2/i18n"
-
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	pb "github.com/xos/serverstatus/proto"
@@ -109,6 +107,8 @@ type indexStore struct {
 type pingStore struct {
 	count int
 	ping  float32
+	up    uint64
+	down  uint64
 }
 
 func (ss *ServiceSentinel) refreshMonthlyServiceStatus() {
@@ -516,12 +516,25 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 			ts = &pingStore{}
 		}
 		ts.count++
+		if mh.Successful {
+			ts.up++
+		} else {
+			ts.down++
+		}
 		ts.ping = (ts.ping*float32(ts.count-1) + mh.Delay) / float32(ts.count)
-		if ts.count == Conf.AvgPingCount {
+		avgPingCount := Conf.AvgPingCount
+		if avgPingCount <= 0 {
+			avgPingCount = 1
+		}
+		if ts.count >= avgPingCount {
 			if ts.ping > float32(Conf.MaxTCPPingValue) {
 				ts.ping = float32(Conf.MaxTCPPingValue)
 			}
+			upCount := ts.up
+			downCount := ts.down
 			ts.count = 0
+			ts.up = 0
+			ts.down = 0
 
 			// 根据数据库类型选择不同的保存方式
 			if Conf.DatabaseType == "badger" {
@@ -531,8 +544,8 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 					ServerID:  r.Reporter,
 					AvgDelay:  ts.ping,
 					Data:      mh.Data,
-					Up:        0,
-					Down:      0,
+					Up:        upCount,
+					Down:      downCount,
 					CreatedAt: time.Now(),
 					UpdatedAt: time.Now(),
 				}
@@ -567,6 +580,8 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 					"avg_delay":  ts.ping,
 					"data":       mh.Data,
 					"server_id":  r.Reporter,
+					"up":         upCount,
+					"down":       downCount,
 				}
 
 				// 使用异步插入避免数据库锁冲突
@@ -579,28 +594,28 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 		}
 		monitorTcpMap[r.Reporter] = ts
 	}
-	
+
 	// 优化：先收集需要的数据，减少锁持有时间
 	type updateData struct {
-		todayStats      *_TodayStatsOfMonitor
-		currentStatus   []*pb.TaskResult
-		currentIndex    int
-		shouldSave      bool
-		avgDelay        float32
-		upCount         uint64
-		downCount       uint64
-		lastSaveTime    time.Time
-		stateCode       uint
-		monitorInfo     *model.Monitor
-		lastStatusCode  uint
+		todayStats     *_TodayStatsOfMonitor
+		currentStatus  []*pb.TaskResult
+		currentIndex   int
+		shouldSave     bool
+		avgDelay       float32
+		upCount        uint64
+		downCount      uint64
+		lastSaveTime   time.Time
+		stateCode      uint
+		monitorInfo    *model.Monitor
+		lastStatusCode uint
 	}
-	
+
 	var update updateData
 	currentTime := time.Now()
-	
+
 	// 第一阶段：快速更新内存状态（持锁）
 	ss.serviceResponseDataStoreLock.Lock()
-	
+
 	// 写入当天状态
 	if ss.serviceStatusToday[mh.GetId()] == nil {
 		ss.serviceStatusToday[mh.GetId()] = &_TodayStatsOfMonitor{
@@ -627,7 +642,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 			lastSaveTime: time.Time{}, // 初始化为零值
 		}
 	}
-	
+
 	// 写入当前数据
 	if ss.serviceCurrentStatusIndex[mh.GetId()].t.Before(currentTime) {
 		ss.serviceCurrentStatusIndex[mh.GetId()].t = currentTime.Add(30 * time.Second)
@@ -678,7 +693,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 	update.upCount = ss.serviceResponseDataStoreCurrentUp[mh.GetId()]
 	update.downCount = ss.serviceResponseDataStoreCurrentDown[mh.GetId()]
 	update.lastSaveTime = ss.serviceCurrentStatusIndex[mh.GetId()].lastSaveTime
-	
+
 	// 检查是否需要保存数据
 	now := time.Now()
 	shouldSave := false
@@ -691,16 +706,16 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 		shouldSave = true
 	}
 	update.shouldSave = shouldSave
-	
+
 	// 计算在线率
 	var upPercent uint64 = 0
 	if update.downCount+update.upCount > 0 {
 		upPercent = update.upCount * 100 / (update.downCount + update.upCount)
 	}
 	update.stateCode = uint(GetStatusCode(upPercent))
-	
+
 	ss.serviceResponseDataStoreLock.Unlock()
-	
+
 	// 第二阶段：异步保存数据（不持锁）
 	if update.shouldSave {
 		// 确保有数据才保存
@@ -840,7 +855,6 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 		ss.monitorsLock.Unlock()
 	}
 
-
 }
 
 const (
@@ -867,13 +881,13 @@ func GetStatusCode[T float32 | uint64](percent T) int {
 func StatusCodeToString(statusCode int) string {
 	switch statusCode {
 	case StatusNoData:
-		return Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "StatusNoData"})
+		return "无数据"
 	case StatusGood:
-		return Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "StatusGood"})
+		return "正常"
 	case StatusLowAvailability:
-		return Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "StatusLowAvailability"})
+		return "低可用"
 	case StatusDown:
-		return Localizer.MustLocalize(&i18n.LocalizeConfig{MessageID: "StatusDown"})
+		return "故障"
 	default:
 		return ""
 	}
@@ -891,8 +905,6 @@ func (ss *ServiceSentinel) cleanupOldData() {
 		return
 	}
 	ss.lastCleanupTime = now
-
-
 
 	// 清理ping数据，限制每个监控项的ping存储
 	for monitorID, pingMap := range ss.serviceResponsePing {

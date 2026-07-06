@@ -24,7 +24,7 @@ router.addRoute({
 })
 
 router.addRoute({
-  path: '/network',
+  path: /^\/network/,
   render: (container) => {
     return initNetwork(container as HTMLDivElement)
   }

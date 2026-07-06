@@ -48,12 +48,12 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 				// 使用BadgerDB验证
 				if db.DB != nil {
 					var users []*model.User
-					// 安全地查询用户，如果出错则创建一个默认管理员账户
+					// 安全地查询用户，查询失败时不允许生产环境兜底登录。
 					err := db.DB.FindAll("user", &users)
 					if err != nil {
-						log.Printf("从 BadgerDB 查询用户失败: %v，将使用默认凭据", err)
-						// 使用默认管理员账户进行测试
-						if token == "admin" {
+						log.Printf("从 BadgerDB 查询用户失败: %v", err)
+						// Debug 模式下允许本地调试 cookie；生产环境绝不接受默认管理员 token。
+						if singleton.Conf.Debug && token == "admin" {
 							u = model.User{
 								Common:     model.Common{ID: 1},
 								Login:      "admin",
@@ -74,8 +74,8 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 							}
 						}
 
-						// 如果没有找到有效用户，但token是admin，则使用默认管理员账户
-						if !isLogin && token == "admin" {
+						// Debug 模式下允许本地调试 cookie；生产环境绝不接受默认管理员 token。
+						if singleton.Conf.Debug && !isLogin && token == "admin" {
 							u = model.User{
 								Common:     model.Common{ID: 1},
 								Login:      "admin",
@@ -86,8 +86,8 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 					}
 				} else {
 					log.Printf("警告：BadgerDB未初始化，用户认证将失败")
-					// 使用默认管理员账户
-					if token == "admin" {
+					// Debug 模式下允许本地调试 cookie；生产环境绝不接受默认管理员 token。
+					if singleton.Conf.Debug && token == "admin" {
 						u = model.User{
 							Common:     model.Common{ID: 1},
 							Login:      "admin",
@@ -122,9 +122,9 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 			}
 		}
 
-		// API鉴权：默认支持 Authorization 请求头。
+		// API 鉴权仅在 API 路径生效，避免 Authorization 被当作网页登录入口。
 		apiToken := c.GetHeader("Authorization")
-		if apiToken != "" {
+		if apiToken != "" && isAPIAuthorizationPath(c.Request.URL.Path) {
 			var u model.User
 			singleton.ApiLock.RLock()
 			if _, ok := singleton.ApiTokenList[apiToken]; ok {
@@ -172,7 +172,7 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 		if singleton.Conf.Debug && !isLogin && opt.MemberOnly {
 			// 对于首页和基础服务，在调试模式下可以跳过验证
 			path := c.Request.URL.Path
-			if path == "/" || path == "/service" || path == "/ws" || path == "/network" {
+			if path == "/" || path == "/service" || path == "/network" || path == "/api/v1/ws" {
 				// 创建一个临时管理员用户
 				u := &model.User{
 					Common:     model.Common{ID: 1},
@@ -196,4 +196,8 @@ func Authorize(opt AuthorizeOption) func(*gin.Context) {
 			return
 		}
 	}
+}
+
+func isAPIAuthorizationPath(path string) bool {
+	return path == "/api/v1" || strings.HasPrefix(path, "/api/v1/") || strings.HasPrefix(path, "/debug/pprof")
 }

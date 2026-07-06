@@ -1,4 +1,5 @@
 import { injectAppShell, renderChrome, icon } from './layout'
+import { apiPath, apiWebSocketUrl } from './api'
 import { authHeaders } from './auth'
 import './style.css'
 
@@ -7,12 +8,17 @@ type ServerId = string
 export interface ProfileResponse {
   Admin?: {
     Name?: string
+    Login?: string
     AvatarURL?: string
   }
   Conf?: {
     Site?: {
       Brand?: string
       CustomCode?: string
+    }
+    Login?: {
+      EnableOAuth?: boolean
+      EnableAPIKey?: boolean
     }
   }
   CustomCode?: string
@@ -205,6 +211,7 @@ export function initHome(container: HTMLDivElement) {
   cleanupHome()
   const token = ++activeHomeToken
   app = container
+  state.tabsSignature = ''
 
   const { contentArea } = injectAppShell(container, 'home')
   
@@ -365,7 +372,7 @@ function cleanupHome() {
 
 async function loadProfile() {
   try {
-    state.profile = await fetchJson<ProfileResponse>('/api/v1/profile')
+    state.profile = await fetchJson<ProfileResponse>(apiPath('/profile'))
   } catch (error) {
     console.warn('Failed to load profile', error)
   }
@@ -373,8 +380,8 @@ async function loadProfile() {
 
 async function loadServers() {
   try {
-    const payload = await fetchJson<unknown>('/api/v1/server/list')
-    const list = withDevOfflineServer(normalizeServerList(payload))
+    const payload = await fetchJson<unknown>(apiPath('/server/list'))
+    const list = normalizeServerList(payload)
     state.servers = list
     state.serverById.clear()
     for (const server of list) {
@@ -409,64 +416,6 @@ function normalizeServerList(payload: unknown): ServerInfo[] {
   if (Array.isArray(source.servers)) return source.servers as ServerInfo[]
   if (Array.isArray(source.data)) return source.data as ServerInfo[]
   return []
-}
-
-function withDevOfflineServer(list: ServerInfo[]) {
-  if (!import.meta.env.DEV || list.some((server) => serverId(server) === '__offline-preview__')) {
-    return list
-  }
-
-  const source = list.find((server) => server.Host) || null
-  const sourceHost = source?.Host || {}
-  const sourceState = source?.State || {}
-  const gib = 1024 ** 3
-
-  const offline: ServerInfo = {
-    ID: '__offline-preview__',
-    Name: '离线示例',
-    Tag: source?.Tag || '默认',
-    Host: {
-      OS: sourceHost.OS || 'linux',
-      Platform: sourceHost.Platform || 'ubuntu',
-      PlatformVersion: sourceHost.PlatformVersion || '22.04',
-      CPU: Array.isArray(sourceHost.CPU) && sourceHost.CPU.length > 0
-        ? sourceHost.CPU
-        : ['AMD EPYC Preview CPU'],
-      MemTotal: sourceHost.MemTotal || 8 * gib,
-      DiskTotal: sourceHost.DiskTotal || 80 * gib,
-      SwapTotal: sourceHost.SwapTotal || 2 * gib,
-      Arch: sourceHost.Arch || 'x86_64',
-      Virtualization: sourceHost.Virtualization || 'kvm',
-      BootTime: Math.floor(Date.now() / 1000) - 21 * 86400,
-      CountryCode: sourceHost.CountryCode || 'cn',
-      Version: sourceHost.Version || 'dev-preview',
-      GPU: sourceHost.GPU || [],
-    },
-    State: {
-      CPU: 0,
-      MemUsed: 0,
-      SwapUsed: 0,
-      DiskUsed: 0,
-      NetInTransfer: 0,
-      NetOutTransfer: 0,
-      NetInSpeed: 0,
-      NetOutSpeed: 0,
-      Uptime: sourceState.Uptime || 0,
-      Load1: 0,
-      Load5: 0,
-      Load15: 0,
-      TcpConnCount: 0,
-      UdpConnCount: 0,
-      ProcessCount: 0,
-      Temperatures: [],
-    },
-    LastActive: new Date(Date.now() - 2 * 86400 * 1000).toISOString(),
-    IsOnline: false,
-    is_online: false,
-    live: false,
-  }
-
-  return [...list, offline]
 }
 
 function renderCards() {
@@ -675,13 +624,16 @@ function setProgress(
   cache: Map<string, string>,
   labelText = `${value}%`,
 ) {
-  const width = `${clamp(value, 0, 100)}%`
+  const safeValue = clamp(value, 0, 100)
+  const width = `${safeValue}%`
   const tone = live ? progressTone(value) : 'offline'
-  const signature = `${width}|${tone}|${labelText}`
+  const trackWidth = bar.parentElement?.clientWidth || 0
+  const isMinimum = safeValue <= 0 || (trackWidth > 0 && (trackWidth * safeValue) / 100 <= 24)
+  const signature = `${width}|${tone}|${labelText}|${isMinimum ? 'min' : 'bar'}`
   if (cache.get(key) === signature) return
   cache.set(key, signature)
   bar.style.width = width
-  bar.className = `progress-fill is-${tone}`
+  bar.className = `progress-fill is-${tone}${isMinimum ? ' is-minimum' : ''}`
   label.textContent = labelText
 }
 
@@ -785,8 +737,7 @@ function renderEmptyState() {
 function connectWebSocket() {
   if (state.ws && state.ws.readyState <= WebSocket.OPEN) return
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const ws = new WebSocket(`${protocol}//${window.location.host}/ws`)
+  const ws = new WebSocket(apiWebSocketUrl('/ws'))
   state.ws = ws
 
   ws.addEventListener('open', () => {

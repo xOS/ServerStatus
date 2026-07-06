@@ -47,7 +47,7 @@ func (v *apiV1) serve() {
 		Redirect:   "/login",
 	}))
 	r.POST("/server/register", v.RegisterServer)
-	
+
 	// 公开的 Server API
 	publicServer := v.r.Group("server")
 	publicServer.Use(mygin.Authorize(mygin.AuthorizeOption{
@@ -94,18 +94,36 @@ func (v *apiV1) serve() {
 
 // profile 返回前端 SPA 初始化所需的全局配置与用户信息
 func (v *apiV1) profile(c *gin.Context) {
-	data := gin.H{}
-	data["Version"] = singleton.Version
-	data["Conf"] = singleton.Conf
-	data["CustomCode"] = singleton.Conf.Site.CustomCode
-	data["CustomCodeDashboard"] = singleton.Conf.Site.CustomCodeDashboard
-	
+	data := gin.H{
+		"Version":             singleton.Version,
+		"CustomCode":          singleton.Conf.Site.CustomCode,
+		"CustomCodeDashboard": singleton.Conf.Site.CustomCodeDashboard,
+		"Conf": gin.H{
+			"Site": gin.H{
+				"Brand":      singleton.Conf.Site.Brand,
+				"CustomCode": singleton.Conf.Site.CustomCode,
+			},
+			"Login": gin.H{
+				"EnableOAuth":  singleton.Conf.Login.EnableOAuth,
+				"EnableAPIKey": singleton.Conf.Login.EnableAPIKey,
+			},
+		},
+	}
+
 	// 如果用户已登录，返回用户信息
 	u, ok := c.Get(model.CtxKeyAuthorizedUser)
 	if ok {
-		data["Admin"] = u
+		if user, ok := u.(*model.User); ok && user != nil {
+			data["Admin"] = gin.H{
+				"ID":         user.ID,
+				"Login":      user.Login,
+				"Name":       user.Name,
+				"AvatarURL":  user.AvatarURL,
+				"SuperAdmin": user.SuperAdmin,
+			}
+		}
 	}
-	
+
 	WriteJSON(c, 200, data)
 }
 
@@ -128,7 +146,7 @@ func (v *apiV1) serverList(c *gin.Context) {
 	// Check if user is logged in
 	u, ok := c.Get(model.CtxKeyAuthorizedUser)
 	isAdmin := ok && u != nil
-	
+
 	singleton.ServerLock.RLock()
 	if isAdmin {
 		res = singleton.SortedServerList

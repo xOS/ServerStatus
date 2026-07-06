@@ -2,7 +2,6 @@ package controller
 
 import (
 	"fmt"
-	"html/template"
 	"log"
 	"math"
 	"net/http"
@@ -12,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"code.cloudfoundry.org/bytefmt"
 	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"
 	"github.com/hashicorp/go-uuid"
@@ -44,6 +42,15 @@ func WriteJSONPayload(c *gin.Context, status int, payload []byte) {
 	}
 }
 
+func serveSPA(c *gin.Context) {
+	const indexPath = "frontend/dist/index.html"
+	if _, err := os.Stat(indexPath); err == nil {
+		c.File(indexPath)
+		return
+	}
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ServerStatus</title></head><body><div id="app">新版前端尚未构建，请在 frontend 目录执行 npm run build。</div></body></html>`))
+}
+
 // handleBrokenPipe 中间件处理broken pipe错误
 func handleBrokenPipe(c *gin.Context) {
 	defer func() {
@@ -61,23 +68,6 @@ func handleBrokenPipe(c *gin.Context) {
 			c.Abort()
 		}
 	}()
-	c.Next()
-}
-
-// corsMiddleware 处理CORS预检请求
-func corsMiddleware(c *gin.Context) {
-	// 处理OPTIONS预检请求
-	if c.Request.Method == "OPTIONS" {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-		c.Header("Access-Control-Max-Age", "86400")
-		c.AbortWithStatus(http.StatusOK)
-		return
-	}
-
-	// 为其他请求添加CORS头
-	c.Header("Access-Control-Allow-Origin", "*")
 	c.Next()
 }
 
@@ -108,6 +98,7 @@ func ServeWeb(port uint) *http.Server {
 
 	// 创建自定义的Gin引擎，过滤网络连接错误
 	r := gin.New()
+	_ = r.SetTrustedProxies(nil)
 
 	// 全局并发限制器：限制同时在处理的请求数量，避免低配机被打满
 	// 容量可通过环境变量 NG_MAX_INFLIGHT 配置，默认 64
@@ -189,6 +180,8 @@ func ServeWeb(port uint) *http.Server {
 	// 首先添加全局panic恢复中间件
 	r.Use(globalPanicRecovery())
 	r.Use(natGateway)
+	r.Use(securityHeaders)
+	r.Use(requestRateLimiter())
 	r.Use(handleBrokenPipe) // 添加broken pipe错误处理中间件
 	r.Use(corsMiddleware)   // 添加CORS中间件处理OPTIONS请求
 	// 全局请求体大小限制（默认2MiB，可通过环境变量 NG_MAX_BODY_BYTES 调整）
@@ -204,26 +197,29 @@ func ServeWeb(port uint) *http.Server {
 		}
 		c.Next()
 	})
-	tmpl := template.New("").Funcs(funcMap)
-	for _, pattern := range []string{
-		"resource/template/common/*.html",
-		"resource/template/component/*.html",
-		"resource/template/dashboard-default/*.html",
-		"resource/template/theme-default/*.html",
-	} {
-		var err error
-		tmpl, err = tmpl.ParseGlob(pattern)
-		if err != nil {
-			panic(err)
-		}
-	}
-	r.SetHTMLTemplate(tmpl)
 	r.Use(mygin.RecordPath)
 	// 直接用本地静态资源目录
 	r.Static("/static", "resource/static")
+	if _, err := os.Stat("frontend/dist/assets"); err == nil {
+		r.Static("/assets", "frontend/dist/assets")
+	}
+	if _, err := os.Stat("frontend/dist/favicon.svg"); err == nil {
+		r.StaticFile("/favicon.svg", "frontend/dist/favicon.svg")
+	}
 
 	routers(r)
 	page404 := func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, apiV1Prefix) {
+			WriteJSON(c, http.StatusNotFound, gin.H{
+				"code":    http.StatusNotFound,
+				"message": "not found",
+			})
+			return
+		}
+		if shouldServeSPA(c) {
+			serveSPA(c)
+			return
+		}
 		mygin.ShowErrorPage(c, mygin.ErrInfo{
 			Code:  http.StatusNotFound,
 			Title: "该页面不存在",
@@ -247,6 +243,21 @@ func ServeWeb(port uint) *http.Server {
 	return srv
 }
 
+func shouldServeSPA(c *gin.Context) bool {
+	if c.Request.Method != http.MethodGet {
+		return false
+	}
+	path := c.Request.URL.Path
+	if strings.HasPrefix(path, "/api") ||
+		strings.HasPrefix(path, "/ws") ||
+		strings.HasPrefix(path, "/static") ||
+		strings.HasPrefix(path, "/assets") ||
+		strings.HasPrefix(path, "/oauth2") {
+		return false
+	}
+	return !strings.Contains(path, ".")
+}
+
 func routers(r *gin.Engine) {
 	// 通用页面
 	cp := commonPage{r: r}
@@ -254,6 +265,9 @@ func routers(r *gin.Engine) {
 	// 游客页面
 	gp := guestPage{r}
 	gp.serve()
+	// 认证 API
+	auth := &authAPI{r.Group(authAPIPrefix)}
+	auth.serve()
 	// 会员页面
 	mp := &memberPage{r}
 	mp.serve()
@@ -263,144 +277,6 @@ func routers(r *gin.Engine) {
 		ma := &memberAPI{api}
 		ma.serve()
 	}
-}
-
-var funcMap = template.FuncMap{
-	"toValMap": func(val interface{}) map[string]interface{} {
-		return map[string]interface{}{
-			"Value": val,
-		}
-	},
-	"tf": func(t time.Time) string {
-		return t.In(singleton.Loc).Format("01/02/2006 15:04:05")
-	},
-	"len": func(slice []interface{}) string {
-		return strconv.Itoa(len(slice))
-	},
-	"safe": func(s string) template.HTML {
-		return template.HTML(s) // #nosec
-	},
-	"tag": func(s string) template.HTML {
-		return template.HTML(`<` + s + `>`) // #nosec
-	},
-	"stf": func(s uint64) string {
-		return time.Unix(int64(s), 0).In(singleton.Loc).Format("01/02/2006 15:04")
-	},
-	"sf": func(duration uint64) string {
-		return time.Duration(time.Duration(duration) * time.Second).String()
-	},
-	"sft": func(future time.Time) string {
-		return time.Until(future).Round(time.Second).String()
-	},
-	"bf": func(b uint64) string {
-		return bytefmt.ByteSize(b)
-	},
-	"ts": func(s string) string {
-		return strings.TrimSpace(s)
-	},
-	"float32f": func(f float32) string {
-		return fmt.Sprintf("%.3f", f)
-	},
-	"divU64": func(a, b uint64) float32 {
-		if b == 0 {
-			if a > 0 {
-				return 100
-			}
-			return 0
-		}
-		if a == 0 {
-			// 这是从未在线的情况
-			return 0.00001 / float32(b) * 100
-		}
-		return float32(a) / float32(b) * 100
-	},
-	"div": func(a, b int) float32 {
-		if b == 0 {
-			if a > 0 {
-				return 100
-			}
-			return 0
-		}
-		if a == 0 {
-			// 这是从未在线的情况
-			return 0.00001 / float32(b) * 100
-		}
-		return float32(a) / float32(b) * 100
-	},
-	"addU64": func(a, b uint64) uint64 {
-		return a + b
-	},
-	"add": func(a, b int) int {
-		return a + b
-	},
-	"TransLeftPercent": func(a, b float64) (n float64) {
-		if b <= 0 {
-			return 0
-		}
-		n = (a / b) * 100
-		if n > 100 {
-			n = 100
-		}
-		if n < 0 {
-			n = 0
-		}
-		return math.Round(n*100) / 100
-	},
-	"TransUsedPercent": func(used, total float64) (n float64) {
-		n = (used / total) * 100
-		if n > 100 {
-			n = 100
-		}
-		if n < 0 {
-			n = 0
-		}
-		return math.Round(n*100) / 100
-	},
-	"TransLeft": func(a, b uint64) string {
-		if a < b {
-			return "0B"
-		}
-		return bytefmt.ByteSize(a - b)
-	},
-	"TransClassName": func(a float64) string {
-		if a == 0 {
-			return "offline"
-		}
-		if a > 50 {
-			return "fine"
-		}
-		if a > 20 {
-			return "warning"
-		}
-		if a > 0 {
-			return "error"
-		}
-		return "offline"
-	},
-	"UintToFloat": func(a uint64) (n float64) {
-		n, _ = strconv.ParseFloat((strconv.FormatUint(a, 10)), 64)
-		return
-	},
-	"dayBefore": func(i int) string {
-		year, month, day := time.Now().Date()
-		today := time.Date(year, month, day, 0, 0, 0, 0, singleton.Loc)
-		return today.AddDate(0, 0, i-29).Format("01/02")
-	},
-	"className": func(percent float32) string {
-		if percent == 0 {
-			return ""
-		}
-		if percent > 95 {
-			return "good"
-		}
-		if percent > 80 {
-			return "warning"
-		}
-		return "danger"
-	},
-	"statusName": func(val float32) string {
-		return singleton.StatusCodeToString(singleton.GetStatusCode(val))
-	},
 }
 
 // 全局panic恢复中间件

@@ -5,7 +5,6 @@ go 1.25.0
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20240425163905-bcdc1ad063ea
 	code.gitea.io/sdk/gitea v0.18.0
-	github.com/BurntSushi/toml v1.3.2
 	github.com/coreos/go-oidc/v3 v3.11.0
 	github.com/gin-contrib/pprof v1.5.3
 	github.com/gin-gonic/gin v1.10.0
@@ -21,7 +20,6 @@ require (
 	github.com/libdns/libdns v1.0.0
 	github.com/miekg/dns v1.1.65
 	github.com/nezhahq/libdns-tencentcloud v0.0.0-20250501081622-bd293105845a
-	github.com/nicksnyder/go-i18n/v2 v2.4.0
 	github.com/ory/graceful v0.1.3
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/patrickmn/go-cache v2.1.0+incompatible
@@ -33,7 +31,6 @@ require (
 	golang.org/x/net v0.56.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.21.0
-	golang.org/x/text v0.38.0
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
@@ -53,6 +50,7 @@ require (
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 )
 
 require (
@@ -70,7 +68,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.26.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -99,7 +97,7 @@ require (
 	golang.org/x/arch v0.16.0 // indirect
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/time v0.11.0 // indirect
+	golang.org/x/time v0.11.0
 	golang.org/x/tools v0.45.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260618152121-87f3d3e198d3 // indirect
 )

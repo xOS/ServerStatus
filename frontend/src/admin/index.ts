@@ -1,3 +1,4 @@
+import { adminApiPath, apiPath, authApiPath } from '../api'
 import { authHeaders, clearStoredAuthToken, getStoredAuthToken, setStoredAuthToken } from '../auth'
 import { icon } from '../layout'
 
@@ -97,6 +98,7 @@ const entityRows = new Map<AdminKey, Row[]>()
 let settingsCache: Row | null = null
 let adminBrandName = 'ServerStatus'
 let adminVersion = ''
+let apiKeyLoginAllowed = false
 
 const yesNo = (value: unknown) => toBool(value) ? '<span class="admin-badge is-green">是</span>' : '<span class="admin-badge">否</span>'
 const enabled = (value: unknown) => toBool(value) ? '<span class="admin-badge is-green">启用</span>' : '<span class="admin-badge">停用</span>'
@@ -105,7 +107,7 @@ const entityConfigs: Partial<Record<AdminKey, EntityConfig>> = {
   server: {
     key: 'server',
     title: '服务器管理',
-    endpoint: '/api/server',
+    endpoint: adminApiPath('/server'),
     deleteModel: 'server',
     description: '管理 Agent 接入、展示排序、分组、DDNS 关联和可见性。',
     addLabel: '添加服务器',
@@ -116,10 +118,10 @@ const entityConfigs: Partial<Record<AdminKey, EntityConfig>> = {
       { label: '分组', render: (row) => badge(value(row, 'Tag') || '默认') },
       { label: 'IP', render: (row) => serverIpMarkup(row) },
       { label: '系统', render: (row) => serverSystemMarkup(row) },
-      { label: '版本', render: (row) => escapeHtml(value(row, 'Host.Version') || '-') },
+      { label: '探针版本', render: (row) => escapeHtml(value(row, 'Host.Version') || '-') },
       { label: '状态', render: (row) => toBool(get(row, 'is_online')) ? '<span class="admin-badge is-green">在线</span>' : '<span class="admin-badge is-red">离线</span>' },
       { label: '密钥', render: (row) => secretMarkup(row) },
-      { label: '安装', render: (row) => installButtons(row) },
+      { label: '安装脚本', render: (row) => installButtons(row) },
       { label: '备注', render: (row) => notesMarkup(row) },
       { label: '游客隐藏', render: (row) => yesNo(get(row, 'HideForGuest')) },
       { label: 'DDNS', render: (row) => ddnsProfilesMarkup(row) },
@@ -141,7 +143,7 @@ const entityConfigs: Partial<Record<AdminKey, EntityConfig>> = {
   monitor: {
     key: 'monitor',
     title: '监控管理',
-    endpoint: '/api/monitor',
+    endpoint: adminApiPath('/monitor'),
     deleteModel: 'monitor',
     description: '配置 ICMP/TCP 网络监控、通知和触发任务。',
     addLabel: '添加监控',
@@ -181,7 +183,7 @@ const entityConfigs: Partial<Record<AdminKey, EntityConfig>> = {
   cron: {
     key: 'cron',
     title: '计划任务',
-    endpoint: '/api/cron',
+    endpoint: adminApiPath('/cron'),
     deleteModel: 'cron',
     description: '配置定时任务和被报警规则调用的触发任务。',
     addLabel: '添加任务',
@@ -213,7 +215,7 @@ const entityConfigs: Partial<Record<AdminKey, EntityConfig>> = {
   rule: {
     key: 'rule',
     title: '报警规则',
-    endpoint: '/api/notification',
+    endpoint: adminApiPath('/notification'),
     deleteModel: 'alert-rule',
     description: '管理资源、离线、流量等报警规则。',
     addLabel: '添加规则',
@@ -242,7 +244,7 @@ const entityConfigs: Partial<Record<AdminKey, EntityConfig>> = {
   notification: {
     key: 'notification',
     title: '通知方式',
-    endpoint: '/api/notification',
+    endpoint: adminApiPath('/notification'),
     deleteModel: 'notification',
     description: '配置 Webhook 通知渠道和请求模板。',
     addLabel: '添加通知',
@@ -273,7 +275,7 @@ const entityConfigs: Partial<Record<AdminKey, EntityConfig>> = {
   nat: {
     key: 'nat',
     title: 'NAT 管理',
-    endpoint: '/api/nat',
+    endpoint: adminApiPath('/nat'),
     deleteModel: 'nat',
     description: '管理内网服务映射域名。',
     addLabel: '添加 NAT',
@@ -297,7 +299,7 @@ const entityConfigs: Partial<Record<AdminKey, EntityConfig>> = {
   ddns: {
     key: 'ddns',
     title: 'DDNS 配置',
-    endpoint: '/api/ddns',
+    endpoint: adminApiPath('/ddns'),
     deleteModel: 'ddns',
     description: '管理 DDNS Provider、域名和解析凭据。',
     addLabel: '添加 DDNS',
@@ -340,12 +342,19 @@ export function initAdmin(container: HTMLDivElement) {
 
   app.innerHTML = `
     <div class="admin-shell">
-      <aside class="admin-sidebar">
+      <header class="admin-header">
         <a class="admin-brand" href="/" data-route-home>
           <img src="/static/logo.svg?v20220602" alt="">
           <span id="admin-brand-title">${escapeHtml(adminBrandName)}</span>
           <small>管理后台</small>
         </a>
+        <div class="admin-header-actions">
+          <button class="admin-button is-ghost" type="button" data-open-auth data-top-action="auth" hidden>${icon('shield', 'admin-button-svg')}<span>授权</span></button>
+          <a class="admin-button is-ghost" href="/" data-route-home data-top-action="home">${icon('home', 'admin-button-svg')}<span>前台</span></a>
+          <button class="admin-button is-ghost" type="button" data-admin-logout data-top-action="logout">${icon('logout', 'admin-button-svg')}<span>退出</span></button>
+        </div>
+      </header>
+      <aside class="admin-sidebar">
         <nav class="admin-nav">
           ${navItems.map((item) => `
             <a href="${item.href}" data-admin-nav="${item.key}">
@@ -356,24 +365,14 @@ export function initAdmin(container: HTMLDivElement) {
         </nav>
       </aside>
       <main class="admin-main">
-        <header class="admin-topbar">
-          <div>
-            <strong id="admin-page-title">仪表盘</strong>
-            <span id="admin-page-subtitle">轻量后台控制台</span>
-          </div>
-          <div class="admin-topbar-actions">
-            <button class="admin-button is-ghost" type="button" data-open-auth data-top-action="auth">${icon('shield', 'admin-button-svg')}<span>授权</span></button>
-            <a class="admin-button is-ghost" href="/" data-route-home data-top-action="home">${icon('home', 'admin-button-svg')}<span>前台</span></a>
-            <button class="admin-button is-ghost" type="button" data-admin-logout data-top-action="logout">${icon('logout', 'admin-button-svg')}<span>退出</span></button>
-          </div>
-        </header>
         <section class="admin-content" id="admin-content"></section>
-        <footer class="admin-footer">
-          <span id="admin-footer-brand">${escapeHtml(adminBrandName)} 管理后台</span>
-          <span class="admin-footer-dot"></span>
-          <span id="admin-footer-version">轻量原生前端</span>
-        </footer>
       </main>
+      <footer class="admin-footer">
+        <b>&copy; 2026 <a href="/" id="admin-footer-brand">${escapeHtml(adminBrandName)}</a></b>
+        <span class="footer-separator">|</span>
+        <a href="http://www.nange.cn" target="_blank" rel="noreferrer">春夏</a>
+        <span class="custom-code" id="admin-footer-custom-code"></span>
+      </footer>
       <dialog class="admin-dialog" id="admin-dialog"></dialog>
       <div class="admin-toast" id="admin-toast" hidden></div>
     </div>
@@ -389,34 +388,36 @@ export function initAdmin(container: HTMLDivElement) {
 
 export function initLogin(container: HTMLDivElement) {
   cleanupAdmin()
-  adminAbortController = new AbortController()
+  const controller = new AbortController()
+  adminAbortController = controller
   app = container
-  app.innerHTML = `
+
+  const renderLogin = (allowOAuth = true) => {
+    apiKeyLoginAllowed = false
+    app.innerHTML = `
     <main class="login-shell">
       <section class="login-panel">
         <img src="/static/logo.svg?v20220602" alt="">
         <h1>登录</h1>
-        <p>使用 OAuth 登录，或在本地保存 API Key 访问解耦后台。</p>
+        <p>仅允许白名单账号授权登录。</p>
         <div class="login-actions">
-          <a class="admin-button is-primary" href="/oauth2/login" data-native-link>${icon('login', 'admin-button-svg')}<span>OAuth 登录</span></a>
+          ${allowOAuth ? `<a class="admin-button is-primary" href="${authApiPath('/oauth2/login')}" data-native-link>${icon('login', 'admin-button-svg')}<span>账号登录</span></a>` : ''}
           <a class="admin-button is-ghost" href="/">${icon('home', 'admin-button-svg')}<span>返回前台</span></a>
         </div>
-        <form class="login-token-form" id="login-token-form">
-          <label>Authorization</label>
-          <input name="token" type="password" autocomplete="off" placeholder="输入 API Key">
-          <button class="admin-button" type="submit">${icon('key', 'admin-button-svg')}<span>保存并进入后台</span></button>
-        </form>
       </section>
     </main>
   `
+  }
 
-  app.querySelector<HTMLFormElement>('#login-token-form')?.addEventListener('submit', (event) => {
-    event.preventDefault()
-    const form = event.currentTarget as HTMLFormElement
-    const token = String(new FormData(form).get('token') || '').trim()
-    if (token) setStoredAuthToken(token)
-    window.dispatchEvent(new CustomEvent('app-navigate', { detail: '/dashboard' }))
-  }, { signal: adminAbortController.signal })
+  renderLogin()
+  const signal = controller.signal
+  fetch(apiPath('/profile'), { credentials: 'same-origin', headers: authHeaders(), signal })
+    .then((response) => response.json())
+    .then((profile) => {
+      const row = objectFrom(profile?.data || profile)
+      renderLogin(loginOAuthAllowed(row))
+    })
+    .catch(() => null)
 
   return cleanupAdmin
 }
@@ -457,7 +458,7 @@ function bindAdminEvents() {
 
     const refreshButton = target.closest<HTMLElement>('[data-refresh-admin]')
     if (refreshButton) {
-      renderAdminRoute()
+      void refreshAdminTarget(refreshButton.dataset.refreshAdmin || currentAdminKey())
       return
     }
 
@@ -600,8 +601,6 @@ function bindAdminEvents() {
 
 async function renderAdminRoute() {
   const key = currentAdminKey()
-  const item = navItems.find((nav) => nav.key === key) || navItems[0]
-  setHeader(item.label, key === 'dashboard' ? '轻量后台控制台' : '数据来自后端 REST API')
   setActiveNav(key)
 
   if (key === 'dashboard') {
@@ -625,18 +624,39 @@ async function renderAdminRoute() {
   await renderEntityPage(config)
 }
 
+async function refreshAdminTarget(target: string) {
+  if (target === 'dashboard') {
+    await renderDashboard()
+    return
+  }
+  if (target === 'api') {
+    await renderApiTokens()
+    return
+  }
+  if (target === 'setting') {
+    await renderSettings()
+    return
+  }
+  const config = entityConfigs[target as AdminKey]
+  if (config) {
+    await renderEntityPage(config)
+    return
+  }
+  await renderAdminRoute()
+}
+
 async function renderDashboard() {
   contentArea.innerHTML = loadingPanel('加载后台概览...')
   try {
     const [servers, monitors, crons, notifications, ddns, nat, tokens, profile] = await Promise.all([
-      apiFetch<unknown>('/api/server'),
-      apiFetch<unknown>('/api/monitor'),
-      apiFetch<unknown>('/api/cron'),
-      apiFetch<unknown>('/api/notification'),
-      apiFetch<unknown>('/api/ddns'),
-      apiFetch<unknown>('/api/nat'),
-      apiFetch<unknown>('/api/token'),
-      apiFetch<unknown>('/api/v1/profile'),
+      apiFetch<unknown>(adminApiPath('/server')),
+      apiFetch<unknown>(adminApiPath('/monitor')),
+      apiFetch<unknown>(adminApiPath('/cron')),
+      apiFetch<unknown>(adminApiPath('/notification')),
+      apiFetch<unknown>(adminApiPath('/ddns')),
+      apiFetch<unknown>(adminApiPath('/nat')),
+      apiFetch<unknown>(adminApiPath('/token')),
+      apiFetch<unknown>(apiPath('/profile')),
     ])
 
     const serverRows = arrayPayload(servers)
@@ -669,7 +689,7 @@ async function renderDashboard() {
             <h2>运行状态</h2>
             <p>后台数据通过 REST API 实时读取，点击下方条目可进入对应管理页面。</p>
           </div>
-          <button class="admin-button is-ghost" type="button" data-refresh-admin data-toolbar-action="refresh">${icon('refresh', 'admin-button-svg')}<span>刷新</span></button>
+          <button class="admin-button is-ghost" type="button" data-refresh-admin="dashboard" data-toolbar-action="refresh">${icon('refresh', 'admin-button-svg')}<span>刷新</span></button>
         </div>
         <div class="admin-status-grid">
           ${statusMeter('服务器在线率', `${onlineRate}%`, onlineRate, `${online} 在线 / ${offline} 离线`, '/dashboard/server')}
@@ -688,7 +708,7 @@ async function renderDashboard() {
 
 async function loadAdminProfile() {
   try {
-    const profile = await apiFetch<unknown>('/api/v1/profile')
+    const profile = await apiFetch<unknown>(apiPath('/profile'))
     updateAdminBrand(objectFrom(profile))
   } catch {
     updateAdminBrand({})
@@ -698,14 +718,23 @@ async function loadAdminProfile() {
 function updateAdminBrand(profile: Row) {
   const brand = value(profile, 'Conf.Site.Brand') || adminBrandName
   const version = value(profile, 'Version')
+  apiKeyLoginAllowed = false
   adminBrandName = brand
   adminVersion = version
   const title = document.getElementById('admin-brand-title')
   const footerBrand = document.getElementById('admin-footer-brand')
-  const footerVersion = document.getElementById('admin-footer-version')
+  const footerCustomCode = document.getElementById('admin-footer-custom-code')
   if (title) title.textContent = brand
-  if (footerBrand) footerBrand.textContent = `${brand} 管理后台`
-  if (footerVersion) footerVersion.textContent = version ? `版本 ${version}` : '轻量原生前端'
+  if (footerBrand) footerBrand.textContent = brand
+  if (footerCustomCode) footerCustomCode.innerHTML = value(profile, 'CustomCode') || value(profile, 'Conf.Site.CustomCode') || ''
+  document.querySelectorAll<HTMLElement>('[data-open-auth]').forEach((button) => {
+    button.hidden = true
+  })
+}
+
+function loginOAuthAllowed(profile: Row) {
+  const input = get(profile, 'Conf.Login.EnableOAuth')
+  return input === undefined || toBool(input)
 }
 
 async function renderEntityPage(config: EntityConfig) {
@@ -724,7 +753,7 @@ async function renderEntityPage(config: EntityConfig) {
           </div>
           <div class="admin-toolbar">
             ${config.key === 'server' ? serverBatchToolbar(rows.length) : ''}
-            <button class="admin-button is-ghost" type="button" data-refresh-admin data-toolbar-action="refresh">${icon('refresh', 'admin-button-svg')}<span>刷新</span></button>
+            <button class="admin-button is-ghost" type="button" data-refresh-admin="${config.key}" data-toolbar-action="refresh">${icon('refresh', 'admin-button-svg')}<span>刷新</span></button>
             <button class="admin-button is-ghost" type="button" data-add-entity="${config.key}" data-toolbar-action="add">${icon('edit', 'admin-button-svg')}<span>${escapeHtml(config.addLabel)}</span></button>
           </div>
         </div>
@@ -748,7 +777,7 @@ async function loadAdminLookups() {
   }))
 
   if (!settingsCache) {
-    const result = await Promise.allSettled([apiFetch<Row>('/api/setting')])
+    const result = await Promise.allSettled([apiFetch<Row>(adminApiPath('/setting'))])
     const payload = result[0].status === 'fulfilled' ? result[0].value : null
     settingsCache = payload ? objectFrom(get(payload, 'Settings')) : null
   }
@@ -769,7 +798,7 @@ async function loadDisplayLookups(key: AdminKey) {
 async function renderApiTokens() {
   contentArea.innerHTML = loadingPanel('加载 API Token...')
   try {
-    const payload = await apiFetch<unknown>('/api/token')
+    const payload = await apiFetch<unknown>(adminApiPath('/token'))
     const rows = arrayFromObject(payload, 'result')
     contentArea.innerHTML = `
       <section class="admin-panel">
@@ -780,7 +809,7 @@ async function renderApiTokens() {
           </div>
           <div class="admin-toolbar">
             <button class="admin-button is-ghost" type="button" data-open-token-dialog data-toolbar-action="token">${icon('key', 'admin-button-svg')}<span>生成</span></button>
-            <button class="admin-button is-ghost" type="button" data-refresh-admin data-toolbar-action="refresh">${icon('refresh', 'admin-button-svg')}<span>刷新</span></button>
+            <button class="admin-button is-ghost" type="button" data-refresh-admin="api" data-toolbar-action="refresh">${icon('refresh', 'admin-button-svg')}<span>刷新</span></button>
           </div>
         </div>
         <div class="admin-table-wrap">
@@ -810,7 +839,7 @@ async function renderApiTokens() {
 async function renderSettings() {
   contentArea.innerHTML = loadingPanel('加载系统设置...')
   try {
-    const payload = await apiFetch<Row>('/api/setting')
+    const payload = await apiFetch<Row>(adminApiPath('/setting'))
     const settings = objectFrom(get(payload, 'Settings'))
     settingsCache = settings
 
@@ -825,19 +854,22 @@ async function renderSettings() {
         <form class="admin-form-grid" data-setting-form>
           ${inputMarkup('Title', '站点名称', settings.Title)}
           ${inputMarkup('Admin', '管理员账号', settings.Admin)}
+          ${checkboxMarkup('EnableOAuthLogin', '启用账号授权登录', settings.EnableOAuthLogin)}
+          ${checkboxMarkup('EnableAPIKeyLogin', '允许 API 请求头授权', settings.EnableAPIKeyLogin)}
           ${inputMarkup('GRPCHost', 'gRPC Host', settings.GRPCHost)}
           ${inputMarkup('GRPCPort', 'gRPC 端口', settings.GRPCPort, 'number')}
           ${selectMarkup('Cover', 'IP 变更通知范围', [['0', '忽略指定服务器'], ['1', '仅指定服务器']], settings.Cover)}
           ${inputMarkup('IPChangeNotificationTag', 'IP 变更通知组', settings.IPChangeNotificationTag)}
           ${textareaMarkup('IgnoredIPNotification', '忽略服务器 ID', settings.IgnoredIPNotification, 2)}
           ${textareaMarkup('CustomNameservers', '自定义 DNS', settings.CustomNameservers, 2)}
+          ${textareaMarkup('AllowedOrigins', 'API 跨域白名单', settings.AllowedOrigins, 2)}
           ${inputMarkup('ViewPassword', '查看密码', settings.ViewPassword)}
           ${checkboxMarkup('EnableIPChangeNotification', '启用 IP 变更通知', settings.EnableIPChangeNotification)}
           ${checkboxMarkup('EnablePlainIPInNotification', '通知中显示明文 IP', settings.EnablePlainIPInNotification)}
           ${textareaMarkup('CustomCode', '前台自定义代码', settings.CustomCode, 5)}
           ${textareaMarkup('CustomCodeDashboard', '后台自定义代码', settings.CustomCodeDashboard, 5)}
           <div class="admin-form-actions">
-            <button class="admin-button is-primary" type="submit">${icon('settings', 'admin-button-svg')}<span>保存设置</span></button>
+            <button class="admin-button is-ghost" type="submit" data-form-action="save">${icon('settings', 'admin-button-svg')}<span>保存设置</span></button>
           </div>
         </form>
       </section>
@@ -973,8 +1005,8 @@ async function openEntityEditor(key: AdminKey, id = '') {
       ${key === 'server' ? serverDetailPanel(row) : ''}
       ${key === 'server' ? serverInstallPanel(row) : ''}
       <footer>
-        <button class="admin-button is-ghost" type="button" data-dialog-cancel>取消</button>
-        <button class="admin-button is-primary" type="submit">${icon('edit', 'admin-button-svg')}<span>保存</span></button>
+        <button class="admin-button is-ghost" type="button" data-dialog-cancel data-form-action="cancel">${icon('cancel', 'admin-button-svg')}<span>取消</span></button>
+        <button class="admin-button is-ghost" type="submit" data-form-action="save">${icon('edit', 'admin-button-svg')}<span>保存</span></button>
       </footer>
     </form>
   `
@@ -982,6 +1014,7 @@ async function openEntityEditor(key: AdminKey, id = '') {
 }
 
 function openAuthDialog() {
+  if (!apiKeyLoginAllowed) return
   dialog.innerHTML = `
     <form class="admin-dialog-body is-small" data-auth-form>
       <header>
@@ -993,8 +1026,8 @@ function openAuthDialog() {
         <input name="token" type="password" autocomplete="off" value="${escapeAttribute(getStoredAuthToken())}">
       </label>
       <footer>
-        <button class="admin-button is-ghost" type="button" data-clear-auth>清除</button>
-        <button class="admin-button is-primary" type="submit">${icon('shield', 'admin-button-svg')}<span>保存</span></button>
+        <button class="admin-button is-ghost" type="button" data-clear-auth data-form-action="clear">${icon('trash', 'admin-button-svg')}<span>清除</span></button>
+        <button class="admin-button is-ghost" type="submit" data-form-action="save">${icon('shield', 'admin-button-svg')}<span>保存</span></button>
       </footer>
     </form>
   `
@@ -1019,8 +1052,8 @@ function openTokenDialog() {
         <input name="Note" type="text" autocomplete="off" placeholder="例如：自动化脚本">
       </label>
       <footer>
-        <button class="admin-button is-ghost" type="button" data-dialog-cancel>取消</button>
-        <button class="admin-button is-ghost" type="submit" data-toolbar-action="token">${icon('key', 'admin-button-svg')}<span>生成</span></button>
+        <button class="admin-button is-ghost" type="button" data-dialog-cancel data-form-action="cancel">${icon('cancel', 'admin-button-svg')}<span>取消</span></button>
+        <button class="admin-button is-ghost" type="submit" data-form-action="generate">${icon('key', 'admin-button-svg')}<span>生成</span></button>
       </footer>
     </form>
   `
@@ -1044,8 +1077,8 @@ function confirmAction(options: ConfirmActionOptions): Promise<boolean> {
       </header>
       <p class="admin-confirm-message">${escapeHtml(options.message)}</p>
       <footer>
-        <button class="admin-button is-ghost" type="button" data-dialog-cancel>取消</button>
-        <button class="admin-button ${options.danger ? 'is-danger' : 'is-primary'}" type="button" data-confirm-action>
+        <button class="admin-button is-ghost" type="button" data-dialog-cancel data-form-action="cancel">${icon('cancel', 'admin-button-svg')}<span>取消</span></button>
+        <button class="admin-button is-ghost" type="button" data-confirm-action data-form-action="${options.danger ? 'danger' : 'confirm'}">
           ${icon(options.danger ? 'trash' : 'play', 'admin-button-svg')}<span>${escapeHtml(options.confirmLabel)}</span>
         </button>
       </footer>
@@ -1124,7 +1157,7 @@ async function deleteEntity(key: AdminKey, id: string) {
   if (!confirmed) return
 
   try {
-    await apiFetch<ApiResponse>(`/api/${config.deleteModel}/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    await apiFetch<ApiResponse>(adminApiPath(`/${config.deleteModel}/${encodeURIComponent(id)}`), { method: 'DELETE' })
     toast('删除成功')
     await renderEntityPage(config)
   } catch (error) {
@@ -1153,8 +1186,8 @@ async function openBatchGroupDialog() {
         ${adminSelectMarkup('group', options.map((group) => ({ value: group, label: group })), options[0] || 'default')}
       </label>
       <footer>
-        <button class="admin-button is-ghost" type="button" data-dialog-cancel>取消</button>
-        <button class="admin-button is-primary" type="submit">${icon('group', 'admin-button-svg')}<span>保存</span></button>
+        <button class="admin-button is-ghost" type="button" data-dialog-cancel data-form-action="cancel">${icon('cancel', 'admin-button-svg')}<span>取消</span></button>
+        <button class="admin-button is-ghost" type="submit" data-form-action="save">${icon('group', 'admin-button-svg')}<span>保存</span></button>
       </footer>
     </form>
   `
@@ -1177,7 +1210,7 @@ async function batchUpdateServerGroup(form: HTMLFormElement) {
 
   setFormBusy(form, true, '保存中...')
   try {
-    await apiFetch<ApiResponse>('/api/batch-update-server-group', {
+    await apiFetch<ApiResponse>(adminApiPath('/batch-update-server-group'), {
       method: 'POST',
       json: { servers: ids, group },
     })
@@ -1207,7 +1240,7 @@ async function batchDeleteServers() {
   if (!confirmed) return
 
   try {
-    await apiFetch<ApiResponse>('/api/batch-delete-server', { method: 'POST', json: ids })
+    await apiFetch<ApiResponse>(adminApiPath('/batch-delete-server'), { method: 'POST', json: ids })
     toast('服务器已删除')
     await renderEntityPage(config)
   } catch (error) {
@@ -1229,7 +1262,7 @@ async function forceUpdateServers() {
   if (!confirmed) return
 
   try {
-    const response = await apiFetch<ApiResponse>('/api/force-update', { method: 'POST', json: ids })
+    const response = await apiFetch<ApiResponse>(adminApiPath('/force-update'), { method: 'POST', json: ids })
     toast(plainTextFromHtml(response.message || '更新指令已下发'))
   } catch (error) {
     toast(errorMessage(error), true)
@@ -1245,7 +1278,7 @@ async function manualCron(id: string) {
   })
   if (!confirmed) return
   try {
-    await apiFetch<ApiResponse>(`/api/cron/${encodeURIComponent(id)}/manual`)
+    await apiFetch<ApiResponse>(adminApiPath(`/cron/${encodeURIComponent(id)}/manual`), { method: 'POST' })
     toast('任务已触发')
   } catch (error) {
     toast(errorMessage(error), true)
@@ -1258,7 +1291,7 @@ async function issueApiToken(form: HTMLFormElement) {
     const payload = new URLSearchParams()
     const note = new FormData(form).get('Note')
     payload.set('Note', String(note || ''))
-    await apiFetch<ApiResponse>('/api/token', { method: 'POST', body: payload })
+    await apiFetch<ApiResponse>(adminApiPath('/token'), { method: 'POST', body: payload })
     form.reset()
     if (dialog.open) dialog.close()
     toast('Token 已生成')
@@ -1280,7 +1313,7 @@ async function deleteApiToken(token: string) {
   })
   if (!confirmed) return
   try {
-    await apiFetch<ApiResponse>(`/api/token/${encodeURIComponent(token)}`, { method: 'DELETE' })
+    await apiFetch<ApiResponse>(adminApiPath(`/token/${encodeURIComponent(token)}`), { method: 'DELETE' })
     toast('Token 已删除')
     await renderApiTokens()
   } catch (error) {
@@ -1289,7 +1322,7 @@ async function deleteApiToken(token: string) {
 }
 
 async function submitSettings(form: HTMLFormElement) {
-  const checkboxNames = ['EnableIPChangeNotification', 'EnablePlainIPInNotification']
+  const checkboxNames = ['EnableIPChangeNotification', 'EnablePlainIPInNotification', 'EnableOAuthLogin', 'EnableAPIKeyLogin']
   const payload = new URLSearchParams()
   const data = new FormData(form)
   for (const [key, value] of data.entries()) {
@@ -1302,7 +1335,7 @@ async function submitSettings(form: HTMLFormElement) {
 
   setFormBusy(form, true, '保存中...')
   try {
-    await apiFetch<ApiResponse>('/api/setting', { method: 'POST', body: payload })
+    await apiFetch<ApiResponse>(adminApiPath('/setting'), { method: 'POST', body: payload })
     toast('设置已保存')
     await renderSettings()
   } catch (error) {
@@ -1315,7 +1348,7 @@ async function submitSettings(form: HTMLFormElement) {
 async function logout() {
   clearStoredAuthToken()
   try {
-    await apiFetch<ApiResponse>('/api/logout', { method: 'POST' })
+    await apiFetch<ApiResponse>(authApiPath('/logout'), { method: 'POST' })
   } catch {
     // The local token is cleared even if cookie logout is not available.
   }
@@ -1794,7 +1827,7 @@ async function copyInstallScript(button: HTMLElement) {
 
 async function loadAdminSettings() {
   if (settingsCache) return settingsCache
-  const payload = await apiFetch<Row>('/api/setting')
+  const payload = await apiFetch<Row>(adminApiPath('/setting'))
   settingsCache = objectFrom(get(payload, 'Settings'))
   return settingsCache
 }
@@ -2142,13 +2175,6 @@ function currentAdminKey(): AdminKey {
   return 'dashboard'
 }
 
-function setHeader(title: string, subtitle: string) {
-  const titleEl = document.getElementById('admin-page-title')
-  const subtitleEl = document.getElementById('admin-page-subtitle')
-  if (titleEl) titleEl.textContent = title
-  if (subtitleEl) subtitleEl.textContent = subtitle
-}
-
 function setActiveNav(key: AdminKey) {
   app.querySelectorAll<HTMLElement>('[data-admin-nav]').forEach((link) => {
     link.classList.toggle('active', link.dataset.adminNav === key)
@@ -2165,11 +2191,8 @@ function handlePageError(error: unknown) {
     contentArea.innerHTML = `
       <section class="admin-panel admin-auth-panel">
         <h2>需要授权</h2>
-        <p>请输入 API Key，后续请求会通过 Authorization 请求头访问后台接口。</p>
-        <form class="admin-inline-form" data-auth-form>
-          <input name="token" type="password" autocomplete="off" placeholder="Authorization">
-          <button class="admin-button is-primary" type="submit">${icon('shield', 'admin-button-svg')}<span>保存并重试</span></button>
-        </form>
+        <p>请使用白名单账号授权登录。</p>
+        <a class="admin-button is-primary" href="/login">${icon('login', 'admin-button-svg')}<span>去登录</span></a>
       </section>
     `
     return
