@@ -25,6 +25,8 @@ func (gp *guestPage) serve() {
 	}))
 
 	gr.GET("/login", gp.login)
+	legacyOauth := &oauth2controller{r: gr}
+	legacyOauth.serve()
 
 	// 调试模式下的简单登录
 	if singleton.Conf.Debug {

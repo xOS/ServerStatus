@@ -135,7 +135,7 @@ export async function initNetwork(container: HTMLDivElement) {
   const statsContainer = contentArea.querySelector<HTMLDivElement>('#network-stats')
   if (!buttonsContainer || !chartContainer || !subtitle || !title || !rangeSwitch || !statsContainer) return cleanupNetwork
 
-  fetch(apiPath('/profile'), { credentials: 'same-origin', headers: authHeaders(), signal })
+  fetch(apiPath('/profile'), { credentials: 'include', headers: authHeaders(), signal })
     .then((response) => response.json())
     .then((data) => renderChrome(data.data || data))
     .catch((error) => {
@@ -310,7 +310,7 @@ function cleanupNetwork() {
 }
 
 async function fetchJson<T>(url: string, signal: AbortSignal): Promise<T> {
-  const response = await fetch(url, { credentials: 'same-origin', headers: authHeaders(), signal })
+  const response = await fetch(url, { credentials: 'include', headers: authHeaders(), signal })
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
   return response.json() as Promise<T>
 }

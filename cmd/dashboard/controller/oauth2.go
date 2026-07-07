@@ -40,7 +40,11 @@ func (oa *oauth2controller) serve() {
 	oa.r.GET("/oauth2/callback", oa.callback)
 }
 
-func (oa *oauth2controller) getCommonOauth2Config(c *gin.Context) *oauth2.Config {
+func (oa *oauth2controller) getCommonOauth2Config(c *gin.Context, redirectURL string) *oauth2.Config {
+	if redirectURL == "" {
+		redirectURL = oa.getRedirectURL(c)
+	}
+
 	if singleton.Conf.Oauth2.Type == model.ConfigTypeGitee {
 		return &oauth2.Config{
 			ClientID:     singleton.Conf.Oauth2.ClientID,
@@ -50,7 +54,7 @@ func (oa *oauth2controller) getCommonOauth2Config(c *gin.Context) *oauth2.Config
 				AuthURL:  "https://gitee.com/oauth/authorize",
 				TokenURL: "https://gitee.com/oauth/token",
 			},
-			RedirectURL: oa.getRedirectURL(c),
+			RedirectURL: redirectURL,
 		}
 	} else if singleton.Conf.Oauth2.Type == model.ConfigTypeGitlab {
 		return &oauth2.Config{
@@ -58,7 +62,7 @@ func (oa *oauth2controller) getCommonOauth2Config(c *gin.Context) *oauth2.Config
 			ClientSecret: singleton.Conf.Oauth2.ClientSecret,
 			Scopes:       []string{"read_user", "read_api"},
 			Endpoint:     GitlabOauth2.Endpoint,
-			RedirectURL:  oa.getRedirectURL(c),
+			RedirectURL:  redirectURL,
 		}
 	} else if singleton.Conf.Oauth2.Type == model.ConfigTypeJihulab {
 		return &oauth2.Config{
@@ -69,7 +73,7 @@ func (oa *oauth2controller) getCommonOauth2Config(c *gin.Context) *oauth2.Config
 				AuthURL:  "https://jihulab.com/oauth/authorize",
 				TokenURL: "https://jihulab.com/oauth/token",
 			},
-			RedirectURL: oa.getRedirectURL(c),
+			RedirectURL: redirectURL,
 		}
 	} else if singleton.Conf.Oauth2.Type == model.ConfigTypeGitea {
 		return &oauth2.Config{
@@ -79,7 +83,7 @@ func (oa *oauth2controller) getCommonOauth2Config(c *gin.Context) *oauth2.Config
 				AuthURL:  fmt.Sprintf("%s/login/oauth/authorize", singleton.Conf.Oauth2.Endpoint),
 				TokenURL: fmt.Sprintf("%s/login/oauth/access_token", singleton.Conf.Oauth2.Endpoint),
 			},
-			RedirectURL: oa.getRedirectURL(c),
+			RedirectURL: redirectURL,
 		}
 	} else if singleton.Conf.Oauth2.Type == model.ConfigTypeCloudflare {
 		return &oauth2.Config{
@@ -90,7 +94,7 @@ func (oa *oauth2controller) getCommonOauth2Config(c *gin.Context) *oauth2.Config
 				AuthURL:  fmt.Sprintf("%s/cdn-cgi/access/sso/oidc/%s/authorization", singleton.Conf.Oauth2.Endpoint, singleton.Conf.Oauth2.ClientID),
 				TokenURL: fmt.Sprintf("%s/cdn-cgi/access/sso/oidc/%s/token", singleton.Conf.Oauth2.Endpoint, singleton.Conf.Oauth2.ClientID),
 			},
-			RedirectURL: oa.getRedirectURL(c),
+			RedirectURL: redirectURL,
 		}
 	} else if singleton.Conf.Oauth2.Type == model.ConfigTypeOidc {
 		var err error
@@ -111,7 +115,7 @@ func (oa *oauth2controller) getCommonOauth2Config(c *gin.Context) *oauth2.Config
 			ClientSecret: singleton.Conf.Oauth2.ClientSecret,
 			Scopes:       uniqueScopes,
 			Endpoint:     oa.oidcProvider.Endpoint(),
-			RedirectURL:  oa.getRedirectURL(c),
+			RedirectURL:  redirectURL,
 		}
 	} else {
 		return &oauth2.Config{
@@ -119,17 +123,118 @@ func (oa *oauth2controller) getCommonOauth2Config(c *gin.Context) *oauth2.Config
 			ClientSecret: singleton.Conf.Oauth2.ClientSecret,
 			Scopes:       []string{},
 			Endpoint:     GitHubOauth2.Endpoint,
+			RedirectURL:  redirectURL,
 		}
 	}
 }
 
 func (oa *oauth2controller) getRedirectURL(c *gin.Context) string {
-	scheme := "http://"
-	referer := c.Request.Referer()
-	if forwardedProto := c.Request.Header.Get("X-Forwarded-Proto"); forwardedProto == "https" || strings.HasPrefix(referer, "https://") {
-		scheme = "https://"
+	if authBase := oa.getPublicAuthBase(c); authBase != "" {
+		return authBase + "/oauth2/callback"
 	}
-	return scheme + c.Request.Host + oauthCallbackPath
+	return externalRequestOrigin(c) + callbackPathFromRequest(c)
+}
+
+func (oa *oauth2controller) getPublicAuthBase(c *gin.Context) string {
+	raw := strings.TrimSpace(c.Query("auth_base"))
+	if raw == "" {
+		raw = strings.TrimSpace(c.Query("public_auth_base"))
+	}
+	if raw == "" {
+		return ""
+	}
+	raw = strings.TrimRight(raw, "/")
+	if strings.HasPrefix(raw, "/") && !strings.HasPrefix(raw, "//") {
+		return externalRequestOrigin(c) + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return ""
+	}
+	if !isAllowedOriginForRequest(c.Request, u.Scheme+"://"+u.Host) {
+		return ""
+	}
+	return strings.TrimRight(u.String(), "/")
+}
+
+func externalRequestOrigin(c *gin.Context) string {
+	return requestExternalScheme(c) + "://" + requestExternalHost(c)
+}
+
+func requestExternalScheme(c *gin.Context) string {
+	if forwardedProto := firstHeaderValue(c.Request.Header.Get("X-Forwarded-Proto")); forwardedProto != "" {
+		return forwardedProto
+	}
+	if requestIsHTTPS(c.Request) || strings.HasPrefix(c.Request.Referer(), "https://") {
+		return "https"
+	}
+	return "http"
+}
+
+func requestExternalHost(c *gin.Context) string {
+	if forwardedHost := firstHeaderValue(c.Request.Header.Get("X-Forwarded-Host")); forwardedHost != "" {
+		return forwardedHost
+	}
+	return c.Request.Host
+}
+
+func callbackPathFromRequest(c *gin.Context) string {
+	path := externalRequestPath(c)
+	if strings.HasSuffix(path, "/oauth2/login") {
+		return strings.TrimSuffix(path, "/oauth2/login") + "/oauth2/callback"
+	}
+	if strings.HasSuffix(path, "/oauth2/callback") {
+		return path
+	}
+	return oauthCallbackPath
+}
+
+func externalRequestPath(c *gin.Context) string {
+	for _, header := range []string{"X-Forwarded-Uri", "X-Original-URI", "X-Original-URL", "X-Rewrite-URL"} {
+		value := firstHeaderValue(c.Request.Header.Get(header))
+		if value == "" {
+			continue
+		}
+		if u, err := url.Parse(value); err == nil && u.Path != "" {
+			return u.Path
+		}
+	}
+	return c.Request.URL.Path
+}
+
+func firstHeaderValue(value string) string {
+	if idx := strings.IndexByte(value, ','); idx >= 0 {
+		value = value[:idx]
+	}
+	return strings.TrimSpace(value)
+}
+
+func (oa *oauth2controller) getReturnURL(c *gin.Context) string {
+	raw := strings.TrimSpace(c.Query("return_to"))
+	if isAllowedOAuthReturnURL(c, raw) {
+		return raw
+	}
+	return "/"
+}
+
+func isAllowedOAuthReturnURL(c *gin.Context, raw string) bool {
+	if raw == "" {
+		return false
+	}
+	if strings.HasPrefix(raw, "/") && !strings.HasPrefix(raw, "//") {
+		return true
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	return isAllowedOriginForRequest(c.Request, u.Scheme+"://"+u.Host)
 }
 
 func (oa *oauth2controller) login(c *gin.Context) {
@@ -159,8 +264,16 @@ func (oa *oauth2controller) login(c *gin.Context) {
 		return
 	}
 	state, stateKey := randomString[:16], randomString[16:]
+	redirectURL := oa.getRedirectURL(c)
+	returnURL := oa.getReturnURL(c)
 	singleton.Cache.Set(fmt.Sprintf("%s%s", model.CacheKeyOauth2State, stateKey), state, cache.DefaultExpiration)
-	url := oa.getCommonOauth2Config(c).AuthCodeURL(state, oauth2.AccessTypeOnline)
+	singleton.Cache.Set(fmt.Sprintf("%s%s", model.CacheKeyOauth2Redirect, stateKey), redirectURL, cache.DefaultExpiration)
+	singleton.Cache.Set(fmt.Sprintf("%s%s", model.CacheKeyOauth2Return, stateKey), returnURL, cache.DefaultExpiration)
+	oauth2Config := oa.getCommonOauth2Config(c, redirectURL)
+	if oauth2Config == nil {
+		return
+	}
+	url := oauth2Config.AuthCodeURL(state, oauth2.AccessTypeOnline)
 	setSecureCookie(c, singleton.Conf.Site.CookieName+"-sk", stateKey, 60*5)
 	c.Redirect(http.StatusFound, url)
 }
@@ -168,14 +281,29 @@ func (oa *oauth2controller) login(c *gin.Context) {
 func (oa *oauth2controller) callback(c *gin.Context) {
 	var err error
 	// 验证登录跳转时的 State
+	redirectURL := ""
+	returnURL := "/"
 	stateKey, err := c.Cookie(singleton.Conf.Site.CookieName + "-sk")
 	if err == nil {
 		state, ok := singleton.Cache.Get(fmt.Sprintf("%s%s", model.CacheKeyOauth2State, stateKey))
 		if !ok || state.(string) != c.Query("state") {
 			err = errors.New("非法的登录方式")
 		}
+		if value, ok := singleton.Cache.Get(fmt.Sprintf("%s%s", model.CacheKeyOauth2Redirect, stateKey)); ok {
+			if cachedRedirectURL, ok := value.(string); ok {
+				redirectURL = cachedRedirectURL
+			}
+		}
+		if value, ok := singleton.Cache.Get(fmt.Sprintf("%s%s", model.CacheKeyOauth2Return, stateKey)); ok {
+			if cachedReturnURL, ok := value.(string); ok && cachedReturnURL != "" {
+				returnURL = cachedReturnURL
+			}
+		}
 	}
-	oauth2Config := oa.getCommonOauth2Config(c)
+	oauth2Config := oa.getCommonOauth2Config(c, redirectURL)
+	if oauth2Config == nil {
+		return
+	}
 	ctx := context.Background()
 	var otk *oauth2.Token
 	if err == nil {
@@ -385,7 +513,7 @@ func (oa *oauth2controller) callback(c *gin.Context) {
 	}
 
 	setSecureCookie(c, singleton.Conf.Site.CookieName, user.Token, 60*60*24)
-	c.Redirect(http.StatusFound, "/")
+	c.Redirect(http.StatusFound, returnURL)
 }
 
 func removeDuplicates(elements []string) []string {

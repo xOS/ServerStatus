@@ -276,6 +276,7 @@ func corsMiddleware(c *gin.Context) {
 	if allowed {
 		c.Header("Vary", "Origin")
 		c.Header("Access-Control-Allow-Origin", origin)
+		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 		c.Header("Access-Control-Max-Age", "86400")
@@ -381,7 +382,7 @@ func setSecureCookie(c *gin.Context, name, value string, maxAge int) {
 		MaxAge:   maxAge,
 		Secure:   requestIsHTTPS(c.Request),
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: requestCookieSameSite(c.Request),
 	})
 }
 
@@ -393,7 +394,7 @@ func clearSecureCookie(c *gin.Context, name string) {
 		MaxAge:   -1,
 		Secure:   requestIsHTTPS(c.Request),
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: requestCookieSameSite(c.Request),
 	})
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     name,
@@ -402,12 +403,19 @@ func clearSecureCookie(c *gin.Context, name string) {
 		MaxAge:   -1,
 		Secure:   requestIsHTTPS(c.Request),
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: requestCookieSameSite(c.Request),
 	})
 }
 
 func requestIsHTTPS(r *http.Request) bool {
 	return singleton.Conf.TLS || r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func requestCookieSameSite(r *http.Request) http.SameSite {
+	if requestIsHTTPS(r) {
+		return http.SameSiteNoneMode
+	}
+	return http.SameSiteLaxMode
 }
 
 // pprofAuthMiddleware pprof 认证中间件

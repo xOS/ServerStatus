@@ -1,4 +1,4 @@
-import { adminApiPath, apiPath, authApiPath } from '../api'
+import { AUTH_API_BASE, adminApiPath, apiPath, authApiPath } from '../api'
 import { authHeaders, clearStoredAuthToken, getStoredAuthToken, setStoredAuthToken } from '../auth'
 import { icon } from '../layout'
 
@@ -401,7 +401,7 @@ export function initLogin(container: HTMLDivElement) {
         <h1>登录</h1>
         <p>仅允许白名单账号授权登录。</p>
         <div class="login-actions">
-          ${allowOAuth ? `<a class="admin-button is-primary" href="${authApiPath('/oauth2/login')}" data-native-link>${icon('login', 'admin-button-svg')}<span>账号登录</span></a>` : ''}
+          ${allowOAuth ? `<a class="admin-button is-primary" href="${escapeAttribute(oauthLoginUrl())}" data-native-link>${icon('login', 'admin-button-svg')}<span>账号登录</span></a>` : ''}
           <a class="admin-button is-ghost" href="/">${icon('home', 'admin-button-svg')}<span>返回前台</span></a>
         </div>
       </section>
@@ -411,7 +411,7 @@ export function initLogin(container: HTMLDivElement) {
 
   renderLogin()
   const signal = controller.signal
-  fetch(apiPath('/profile'), { credentials: 'same-origin', headers: authHeaders(), signal })
+  fetch(apiPath('/profile'), { credentials: 'include', headers: authHeaders(), signal })
     .then((response) => response.json())
     .then((profile) => {
       const row = objectFrom(profile?.data || profile)
@@ -420,6 +420,13 @@ export function initLogin(container: HTMLDivElement) {
     .catch(() => null)
 
   return cleanupAdmin
+}
+
+function oauthLoginUrl() {
+  const url = new URL(authApiPath('/oauth2/login'), window.location.href)
+  url.searchParams.set('auth_base', new URL(AUTH_API_BASE, window.location.href).toString().replace(/\/+$/, ''))
+  url.searchParams.set('return_to', new URL('/', window.location.href).toString())
+  return url.toString()
 }
 
 function cleanupAdmin() {
@@ -1363,7 +1370,7 @@ async function apiFetch<T>(url: string, options: ApiFetchOptions = {}): Promise<
     method: options.method || 'GET',
     body,
     headers,
-    credentials: 'same-origin',
+    credentials: 'include',
   })
   const payload = await response.json().catch(() => ({})) as ApiResponse
   if (!response.ok || payload.code === 403) {

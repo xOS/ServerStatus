@@ -9,6 +9,8 @@ import (
 const CtxKeyAuthorizedUser = "ckau"
 const CtxKeyViewPasswordVerified = "ckvpv"
 const CacheKeyOauth2State = "p:a:state"
+const CacheKeyOauth2Redirect = "p:a:redirect"
+const CacheKeyOauth2Return = "p:a:return"
 
 type Common struct {
 	ID        uint64         `gorm:"primaryKey"`
