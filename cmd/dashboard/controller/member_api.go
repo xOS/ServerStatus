@@ -45,6 +45,7 @@ func (ma *memberAPI) serve() {
 	mr.GET("/search-ddns", ma.searchDDNS)
 
 	// REST API for Dashboard Admin Pages (Lists)
+	mr.GET("/overview", ma.getOverview)
 	mr.GET("/server", ma.getServerList)
 	mr.GET("/monitor", ma.getMonitorList)
 	mr.GET("/cron", ma.getCronList)
@@ -2126,6 +2127,73 @@ func splitServerIPs(raw string) (string, string) {
 		}
 	}
 	return ipv4, ipv6
+}
+
+func (ma *memberAPI) getOverview(c *gin.Context) {
+	serverTotal := 0
+	serverOnline := 0
+	singleton.ServerLock.RLock()
+	for _, server := range singleton.ServerList {
+		if server == nil {
+			continue
+		}
+		serverTotal++
+		if server.IsOnline {
+			serverOnline++
+		}
+	}
+	singleton.ServerLock.RUnlock()
+
+	monitorTotal := 0
+	if singleton.ServiceSentinelShared != nil {
+		monitorTotal = len(singleton.ServiceSentinelShared.Monitors())
+	}
+
+	singleton.CronLock.RLock()
+	cronTotal := len(singleton.Crons)
+	singleton.CronLock.RUnlock()
+
+	singleton.AlertsLock.RLock()
+	alertRuleTotal := len(singleton.Alerts)
+	singleton.AlertsLock.RUnlock()
+
+	singleton.ApiLock.RLock()
+	tokenTotal := len(singleton.ApiTokenList)
+	singleton.ApiLock.RUnlock()
+
+	offlineTotal := serverTotal - serverOnline
+	if offlineTotal < 0 {
+		offlineTotal = 0
+	}
+
+	WriteJSON(c, http.StatusOK, gin.H{
+		"servers": gin.H{
+			"total":   serverTotal,
+			"online":  serverOnline,
+			"offline": offlineTotal,
+		},
+		"monitors": gin.H{
+			"total": monitorTotal,
+		},
+		"crons": gin.H{
+			"total": cronTotal,
+		},
+		"notifications": gin.H{
+			"total": singleton.NotificationCount(),
+		},
+		"alert_rules": gin.H{
+			"total": alertRuleTotal,
+		},
+		"ddns": gin.H{
+			"total": singleton.DDNSCount(),
+		},
+		"nat": gin.H{
+			"total": singleton.NATCount(),
+		},
+		"tokens": gin.H{
+			"total": tokenTotal,
+		},
+	})
 }
 
 func (ma *memberAPI) getMonitorList(c *gin.Context) {

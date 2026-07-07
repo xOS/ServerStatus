@@ -28,6 +28,12 @@ func InitNotification() {
 	NotificationIDToTag = make(map[uint64]string)
 }
 
+func NotificationCount() int {
+	notificationsLock.RLock()
+	defer notificationsLock.RUnlock()
+	return len(NotificationIDToTag)
+}
+
 // loadNotifications 从 DB 初始化通知方式相关参数
 func loadNotifications() {
 	InitNotification()
@@ -247,8 +253,6 @@ func (_NotificationMuteLabel) ServiceStateChanged(serviceId uint64) *string {
 	label := fmt.Sprintf("bf::ssc-%d", serviceId)
 	return &label
 }
-
-
 
 func (_NotificationMuteLabel) DDNSChanged(serverId uint64, domain string) *string {
 	label := fmt.Sprintf("bf::ddns-%d-%s", serverId, domain)

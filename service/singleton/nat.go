@@ -15,6 +15,12 @@ func initNAT() {
 	OnNATUpdate()
 }
 
+func NATCount() int {
+	natCacheRwLock.RLock()
+	defer natCacheRwLock.RUnlock()
+	return len(natCache)
+}
+
 func OnNATUpdate() {
 	natCacheRwLock.Lock()
 	defer natCacheRwLock.Unlock()

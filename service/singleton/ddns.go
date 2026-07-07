@@ -36,6 +36,12 @@ func initDDNS() {
 	log.Printf("DDNS初始化完成，加载了 %d 个配置", configCount)
 }
 
+func DDNSCount() int {
+	ddnsCacheLock.RLock()
+	defer ddnsCacheLock.RUnlock()
+	return len(ddnsCache)
+}
+
 func OnDDNSUpdate() {
 	var ddns []*model.DDNSProfile
 

@@ -654,40 +654,33 @@ async function refreshAdminTarget(target: string) {
 async function renderDashboard() {
   contentArea.innerHTML = loadingPanel('加载后台概览...')
   try {
-    const [servers, monitors, crons, notifications, ddns, nat, tokens, profile] = await Promise.all([
-      apiFetch<unknown>(adminApiPath('/server')),
-      apiFetch<unknown>(adminApiPath('/monitor')),
-      apiFetch<unknown>(adminApiPath('/cron')),
-      apiFetch<unknown>(adminApiPath('/notification')),
-      apiFetch<unknown>(adminApiPath('/ddns')),
-      apiFetch<unknown>(adminApiPath('/nat')),
-      apiFetch<unknown>(adminApiPath('/token')),
+    const [overview, profile] = await Promise.all([
+      apiFetch<unknown>(adminApiPath('/overview')),
       apiFetch<unknown>(apiPath('/profile')),
     ])
 
-    const serverRows = arrayPayload(servers)
-    const online = serverRows.filter((row) => toBool(get(row, 'is_online'))).length
-    const total = serverRows.length
-    const offline = Math.max(total - online, 0)
-    const monitorRows = arrayPayload(monitors)
-    const cronRows = arrayPayload(crons)
-    const notificationRows = arrayFromObject(notifications, 'Notifications')
-    const alertRuleRows = arrayFromObject(notifications, 'AlertRules')
-    const ddnsRows = arrayFromObject(ddns, 'DDNS')
-    const natRows = arrayPayload(nat)
-    const tokenRows = arrayFromObject(tokens, 'result')
+    const total = countValue(overview, 'servers.total')
+    const online = countValue(overview, 'servers.online')
+    const offline = countValue(overview, 'servers.offline', Math.max(total - online, 0))
+    const monitorTotal = countValue(overview, 'monitors.total')
+    const cronTotal = countValue(overview, 'crons.total')
+    const notificationTotal = countValue(overview, 'notifications.total')
+    const alertRuleTotal = countValue(overview, 'alert_rules.total')
+    const ddnsTotal = countValue(overview, 'ddns.total')
+    const natTotal = countValue(overview, 'nat.total')
+    const tokenTotal = countValue(overview, 'tokens.total')
     const onlineRate = total > 0 ? Math.round((online / total) * 100) : 0
     const profileRow = objectFrom(profile)
     updateAdminBrand(profileRow)
     contentArea.innerHTML = `
       <div class="admin-overview">
         ${statCard('服务器', String(total), `${online} 在线`, 'server', '/dashboard/server')}
-        ${statCard('监控', String(monitorRows.length), 'ICMP / TCP', 'monitor', '/dashboard/monitor')}
-        ${statCard('计划任务', String(cronRows.length), '定时与触发', 'calendar', '/dashboard/cron')}
-        ${statCard('通知', String(notificationRows.length), `${alertRuleRows.length} 条规则`, 'bell', '/dashboard/notification')}
-        ${statCard('DDNS', String(ddnsRows.length), '解析配置', 'ddns', '/dashboard/ddns')}
-        ${statCard('NAT', String(natRows.length), '内网映射', 'nat', '/dashboard/nat')}
-        ${statCard('API Token', String(tokenRows.length), '请求头授权', 'key', '/dashboard/api')}
+        ${statCard('监控', String(monitorTotal), 'ICMP / TCP', 'monitor', '/dashboard/monitor')}
+        ${statCard('计划任务', String(cronTotal), '定时与触发', 'calendar', '/dashboard/cron')}
+        ${statCard('通知', String(notificationTotal), `${alertRuleTotal} 条规则`, 'bell', '/dashboard/notification')}
+        ${statCard('DDNS', String(ddnsTotal), '解析配置', 'ddns', '/dashboard/ddns')}
+        ${statCard('NAT', String(natTotal), '内网映射', 'nat', '/dashboard/nat')}
+        ${statCard('API Token', String(tokenTotal), '请求头授权', 'key', '/dashboard/api')}
       </div>
       <section class="admin-panel">
         <div class="admin-panel-head">
@@ -700,9 +693,9 @@ async function renderDashboard() {
         <div class="admin-status-grid">
           ${statusMeter('服务器在线率', `${onlineRate}%`, onlineRate, `${online} 在线 / ${offline} 离线`, '/dashboard/server')}
           ${statusItem('离线服务器', String(offline), `${total} 台总数`, 'server', '/dashboard/server')}
-          ${statusItem('监控任务', String(monitorRows.length), '网络探测配置', 'monitor', '/dashboard/monitor')}
-          ${statusItem('通知规则', String(alertRuleRows.length), '事件触发规则', 'alert', '/dashboard/rule')}
-          ${statusItem('授权 Token', String(tokenRows.length), 'Authorization 请求头', 'key', '/dashboard/api')}
+          ${statusItem('监控任务', String(monitorTotal), '网络探测配置', 'monitor', '/dashboard/monitor')}
+          ${statusItem('通知规则', String(alertRuleTotal), '事件触发规则', 'alert', '/dashboard/rule')}
+          ${statusItem('授权 Token', String(tokenTotal), 'Authorization 请求头', 'key', '/dashboard/api')}
           ${statusItem('刷新时间', currentTimeLabel(), '本页数据读取时间', 'activity', '/dashboard')}
         </div>
       </section>
@@ -2290,6 +2283,11 @@ function arrayFromObject(payload: unknown, key: string): Row[] {
 
 function objectFrom(payload: unknown): Row {
   return isRow(payload) ? payload : {}
+}
+
+function countValue(row: unknown, path: string, fallback = 0) {
+  const number = Number(get(row, path))
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : fallback
 }
 
 function isRow(input: unknown): input is Row {

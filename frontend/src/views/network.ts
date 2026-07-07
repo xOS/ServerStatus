@@ -68,7 +68,7 @@ type Series = {
 
 type NetworkSummary = {
   max: number
-  min: number
+  min: number | null
   avg: number
   loss: number | null
   count: number
@@ -151,21 +151,13 @@ export async function initNetwork(container: HTMLDivElement) {
   setChartMessage(chartContainer, '加载服务器列表...')
 
   try {
-    const [serversPayload, monitorConfigsPayload] = await Promise.all([
-      fetchJson<unknown>(apiPath('/server/list'), signal),
-      fetchJson<unknown>(apiPath('/monitor/configs'), signal).catch((error) => {
-        if (!signal.aborted) console.warn('Failed to load monitor configs', error)
-        return []
-      }),
-    ])
-    const monitoredIds = normalizeMonitoredServerIds(monitorConfigsPayload)
-    const servers = filterMonitoredServers(normalizeServers(serversPayload), monitoredIds)
-    const monitorNames = normalizeMonitorNames(monitorConfigsPayload)
+    let servers = normalizeServers(await fetchJson<unknown>(apiPath('/server/list'), signal))
+    const monitorNames = new Map<string, string>()
     if (servers.length === 0) {
       buttonsContainer.textContent = ''
-      subtitle.textContent = '暂无参与检测的服务器'
+      subtitle.textContent = '暂无服务器'
       statsContainer.hidden = true
-      setChartMessage(chartContainer, '暂无参与检测的服务器')
+      setChartMessage(chartContainer, '暂无服务器')
       return cleanupNetwork
     }
 
@@ -177,17 +169,20 @@ export async function initNetwork(container: HTMLDivElement) {
     let loadToken = 0
     const historyCache = new Map<string, MonitorPoint[]>()
 
-    buttonsContainer.innerHTML = servers.map((server) => `
-      <button class="network-btn" type="button" data-id="${escapeAttribute(serverId(server))}">
-        ${serverFlagMarkup(server)}
-        <span>${escapeHtml(serverName(server))}</span>
-      </button>
-    `).join('')
-
     const updateActiveButton = () => {
       for (const button of buttonsContainer.querySelectorAll<HTMLButtonElement>('.network-btn')) {
         button.classList.toggle('active', button.dataset.id === currentServerId)
       }
+    }
+
+    const renderServerButtons = () => {
+      buttonsContainer.innerHTML = servers.map((server) => `
+        <button class="network-btn" type="button" data-id="${escapeAttribute(serverId(server))}">
+          ${serverFlagMarkup(server)}
+          <span>${escapeHtml(serverName(server))}</span>
+        </button>
+      `).join('')
+      updateActiveButton()
     }
 
     const updateActiveRange = () => {
@@ -254,6 +249,37 @@ export async function initNetwork(container: HTMLDivElement) {
       }
     }
 
+    const applyMonitorConfigs = (payload: unknown) => {
+      if (signal.aborted) return
+
+      monitorNames.clear()
+      for (const [id, name] of normalizeMonitorNames(payload)) {
+        monitorNames.set(id, name)
+      }
+
+      const monitoredIds = normalizeMonitoredServerIds(payload)
+      const filteredServers = filterMonitoredServers(servers, monitoredIds)
+      if (filteredServers.length === 0) {
+        servers = []
+        buttonsContainer.textContent = ''
+        subtitle.textContent = '暂无参与检测的服务器'
+        statsContainer.hidden = true
+        currentSeries = []
+        chartModel = null
+        setChartMessage(chartContainer, '暂无参与检测的服务器')
+        return
+      }
+
+      if (filteredServers.length === servers.length) return
+
+      servers = filteredServers
+      renderServerButtons()
+      if (!servers.some((server) => serverId(server) === currentServerId)) {
+        currentServerId = serverId(servers[0])
+        void loadChartData(currentServerId)
+      }
+    }
+
     buttonsContainer.addEventListener('click', (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>('.network-btn')
       if (!button || !button.dataset.id || button.dataset.id === currentServerId) return
@@ -297,9 +323,14 @@ export async function initNetwork(container: HTMLDivElement) {
     })
     window.addEventListener('resize', resizeHandler, { signal })
 
-    updateActiveButton()
+    renderServerButtons()
     updateActiveRange()
     void loadChartData(currentServerId)
+    fetchJson<unknown>(apiPath('/monitor/configs'), signal)
+      .then(applyMonitorConfigs)
+      .catch((error) => {
+        if (!signal.aborted) console.warn('Failed to load monitor configs', error)
+      })
   } catch (error) {
     if (!signal.aborted) {
       console.warn('Failed to load network servers', error)
@@ -461,6 +492,7 @@ function summarizeSeries(series: Series[]): NetworkSummary | null {
   const points = series.flatMap((item) => item.points)
   const values = points.map((point) => point.value).filter((value) => Number.isFinite(value))
   if (values.length === 0) return null
+  const positiveValues = values.filter((value) => value > 0)
 
   const up = points.reduce((sum, point) => sum + point.up, 0)
   const down = points.reduce((sum, point) => sum + point.down, 0)
@@ -468,7 +500,7 @@ function summarizeSeries(series: Series[]): NetworkSummary | null {
 
   return {
     max: Math.max(...values),
-    min: Math.min(...values),
+    min: positiveValues.length > 0 ? Math.min(...positiveValues) : null,
     avg: values.reduce((sum, value) => sum + value, 0) / values.length,
     loss: totalChecks > 0 ? (down / totalChecks) * 100 : null,
     count: values.length,
@@ -494,7 +526,7 @@ function renderSummary(container: HTMLElement, summary: NetworkSummary | null, r
     </div>
     <div class="network-stat-item" data-network-stat="min">
       <span>${RANGE_LABELS[range]}最低</span>
-      <strong>${formatMs(summary.min)}</strong>
+      <strong>${summary.min === null ? '-' : formatMs(summary.min)}</strong>
     </div>
     <div class="network-stat-item" data-network-stat="loss">
       <span>${RANGE_LABELS[range]}丢包</span>

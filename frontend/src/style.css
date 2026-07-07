@@ -770,22 +770,22 @@ i.fl-tux {
   position: absolute;
   top: 0;
   left: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
   min-width: 0;
   max-width: 100%;
   height: 100%;
-  overflow: visible;
-  border-radius: 999px;
+  border-radius: 4px;
   transition: width 0.3s ease;
 }
 
-.progress-fill small {
+.progress-fill.is-full {
+  border-radius: 999px;
+}
+
+.progress-label {
   position: absolute;
-  left: var(--progress-label-left, 50%);
-  right: auto;
-  transform: translateX(-50%);
+  top: 50%;
+  left: 7px;
+  transform: translateY(-50%);
   z-index: 1;
   min-width: max-content;
   padding: 0;
@@ -794,22 +794,8 @@ i.fl-tux {
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
-  text-align: right;
-}
-
-.progress-fill.is-minimum {
-  justify-content: center;
-  width: 24px !important;
-  min-width: 24px;
-  max-width: 24px;
-  border-radius: 50%;
-}
-
-.progress-fill.is-minimum small {
-  --progress-label-left: 50%;
-  right: auto;
-  transform: translateX(-50%);
-  font-size: 12px;
+  text-align: left;
+  pointer-events: none;
 }
 
 .progress-fill.is-fine {
