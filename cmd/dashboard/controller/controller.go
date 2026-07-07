@@ -303,11 +303,19 @@ func isAllowedOriginForRequest(r *http.Request, origin string) bool {
 	if err != nil || originURL.Scheme == "" || originURL.Host == "" {
 		return false
 	}
+	if originURL.Scheme != "http" && originURL.Scheme != "https" {
+		return false
+	}
 	if sameRequestHost(r, originURL) {
 		return true
 	}
 
-	for _, allowed := range strings.Split(singleton.Conf.Security.AllowedOrigins, ",") {
+	allowedOrigins := strings.TrimSpace(singleton.Conf.Security.AllowedOrigins)
+	if allowedOrigins == "" {
+		return true
+	}
+
+	for _, allowed := range strings.Split(allowedOrigins, ",") {
 		if allowedOriginMatches(allowed, originURL) {
 			return true
 		}
@@ -321,7 +329,7 @@ func allowedOriginMatches(allowed string, originURL *url.URL) bool {
 		return false
 	}
 	if allowed == "*" {
-		return singleton.Conf.Debug
+		return true
 	}
 	if strings.Contains(allowed, "://") {
 		allowedURL, err := url.Parse(allowed)
