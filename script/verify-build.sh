@@ -30,15 +30,11 @@ check_files() {
     local required_items=(
         "Dockerfile"
         "script/entrypoint.sh"
-        "resource/"
-        "resource/static/"
-        "resource/template/"
-        "resource/l10n/"
-        "resource/static/main.css"
-        "resource/static/main.js"
-        "resource/static/favicon.ico"
-        "resource/template/theme-default/"
-        "resource/template/dashboard-default/"
+        "frontend/dist/"
+        "frontend/dist/index.html"
+        "frontend/dist/assets/"
+        "frontend/dist/static/logo.svg"
+        "frontend/dist/favicon.svg"
     )
     
     local missing_items=()
@@ -109,8 +105,8 @@ check_docker() {
 validate_dockerfile() {
     log_info "验证 Dockerfile..."
     
-    if ! grep -q "COPY resource/" Dockerfile; then
-        log_error "Dockerfile 中缺少静态资源复制指令"
+    if ! grep -q "COPY frontend/dist/" Dockerfile; then
+        log_error "Dockerfile 中缺少新版前端构建产物复制指令"
         return 1
     fi
     

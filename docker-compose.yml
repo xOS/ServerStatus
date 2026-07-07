@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  serverstatus:
+    image: ghcr.io/xos/server-dash:latest
+    container_name: serverstatus-dashboard
+    restart: unless-stopped
+    
+    ports:
+      - "80:80"      # Web 界面端口
+      - "2222:2222"  # Agent 连接端口
+    
+    volumes:
+      - ./data:/dashboard/data
+      - /etc/localtime:/etc/localtime:ro
+    
+    environment:
+      - TZ=Asia/Shanghai
+      - GIN_MODE=release
+    
+    # 健康检查
+    healthcheck:
+      test: ["/dashboard/app", "--health-check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    
+    # 安全配置
+    security_opt:
+      - no-new-privileges:true
+    # 注意：由于应用需要写入数据目录，暂时不使用只读文件系统
+    # read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    
+    # 网络配置
+    networks:
+      - serverstatus-net
+
+networks:
+  serverstatus-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

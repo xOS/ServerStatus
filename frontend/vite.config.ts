@@ -21,10 +21,6 @@ export default defineConfig({
       '/ws': {
         target: 'ws://127.0.0.1:5656',
         ws: true
-      },
-      '/static': {
-        target: 'http://127.0.0.1:5656',
-        changeOrigin: true
       }
     }
   }

@@ -1,11 +1,9 @@
 package controller
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/service/singleton"
 )
@@ -25,8 +23,6 @@ func (gp *guestPage) serve() {
 	}))
 
 	gr.GET("/login", gp.login)
-	legacyOauth := &oauth2controller{r: gr}
-	legacyOauth.serve()
 
 	// 调试模式下的简单登录
 	if singleton.Conf.Debug {
@@ -41,34 +37,6 @@ func (gp *guestPage) login(c *gin.Context) {
 		return
 	}
 	serveSPA(c)
-	return
-
-	LoginType := "GitHub"
-	RegistrationLink := "https://github.com/join"
-	if singleton.Conf.Oauth2.Type == model.ConfigTypeGitee {
-		LoginType = "Gitee"
-		RegistrationLink = "https://gitee.com/signup"
-	} else if singleton.Conf.Oauth2.Type == model.ConfigTypeGitlab {
-		LoginType = "Gitlab"
-		RegistrationLink = "https://gitlab.com/users/sign_up"
-	} else if singleton.Conf.Oauth2.Type == model.ConfigTypeJihulab {
-		LoginType = "Jihulab"
-		RegistrationLink = "https://jihulab.com/users/sign_up"
-	} else if singleton.Conf.Oauth2.Type == model.ConfigTypeGitea {
-		LoginType = "Gitea"
-		RegistrationLink = fmt.Sprintf("%s/user/sign_up", singleton.Conf.Oauth2.Endpoint)
-	} else if singleton.Conf.Oauth2.Type == model.ConfigTypeCloudflare {
-		LoginType = "Cloudflare"
-		RegistrationLink = "https://dash.cloudflare.com/sign-up/teams"
-	} else if singleton.Conf.Oauth2.Type == model.ConfigTypeOidc {
-		LoginType = singleton.Conf.Oauth2.OidcDisplayName
-		RegistrationLink = singleton.Conf.Oauth2.OidcRegisterURL
-	}
-	c.HTML(http.StatusOK, "dashboard-default/login", mygin.CommonEnvironment(c, gin.H{
-		"Title":            "登录",
-		"LoginType":        LoginType,
-		"RegistrationLink": RegistrationLink,
-	}))
 }
 
 func (gp *guestPage) debugLogin(c *gin.Context) {

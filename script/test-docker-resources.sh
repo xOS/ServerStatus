@@ -58,13 +58,10 @@ test_static_resources() {
     
     # 定义需要检查的文件列表
     local required_files=(
-        "/dashboard/resource/static/main.css"
-        "/dashboard/resource/static/main.js"
-        "/dashboard/resource/static/favicon.ico"
-        "/dashboard/resource/static/logo.svg"
-        "/dashboard/resource/template/theme-default"
-        "/dashboard/resource/template/dashboard-default"
-        "/dashboard/resource/l10n/zh-CN.toml"
+        "/dashboard/frontend/dist/index.html"
+        "/dashboard/frontend/dist/assets"
+        "/dashboard/frontend/dist/static/logo.svg"
+        "/dashboard/frontend/dist/favicon.svg"
     )
     
     local missing_files=()

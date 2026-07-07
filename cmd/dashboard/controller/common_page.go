@@ -1252,6 +1252,16 @@ func (cp *commonPage) ws(c *gin.Context) {
 		pingTicker := time.NewTicker(25 * time.Second)
 		defer pingTicker.Stop()
 
+		if stat, err := cp.getServerStat(c, false); err == nil {
+			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err = safeConn.WriteMessage(websocket.TextMessage, stat); err != nil {
+				log.Printf("发送首帧数据失败 %s: %v", connID, err)
+				return
+			}
+		} else {
+			log.Printf("获取首帧服务器状态失败 %s: %v", connID, err)
+		}
+
 		for {
 			select {
 			// 这是最关键的一步：如果context被取消，说明“读”goroutine已退出，

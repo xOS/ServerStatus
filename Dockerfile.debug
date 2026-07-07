@@ -61,8 +61,8 @@ COPY --from=certs /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=binary-prep /prep/entrypoint.sh /entrypoint.sh
 COPY --from=binary-prep /prep/app /dashboard/app
 
-# 复制静态资源文件
-COPY resource/ /dashboard/resource/
+# 复制新版前端构建产物
+COPY frontend/dist/ /dashboard/frontend/dist/
 
 # 调试：验证最终镜像中的文件
 RUN echo "=== 最终镜像调试信息 ===" && \

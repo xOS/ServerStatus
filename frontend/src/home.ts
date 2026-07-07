@@ -99,6 +99,12 @@ interface WebSocketFrame {
   type?: string
 }
 
+interface BootstrapPayload {
+  profile?: ProfileResponse
+  servers?: unknown
+  now?: number
+}
+
 interface CardRefs {
   root: HTMLElement
   content: HTMLElement
@@ -174,6 +180,15 @@ const LABELS = {
 
 type LabelKey = keyof typeof LABELS['zh-CN']
 
+const SERVER_SNAPSHOT_KEY = 'serverstatus:home:snapshot:v1'
+const SERVER_SNAPSHOT_MAX_AGE = 5 * 60 * 1000
+
+interface ServerSnapshot {
+  savedAt: number
+  apiBase: string
+  servers: ServerInfo[]
+}
+
 const state = {
   profile: null as ProfileResponse | null,
   servers: [] as ServerInfo[],
@@ -189,6 +204,7 @@ const state = {
   reconnectTimer: 0,
   reconnectDelay: 3000,
   tooltipServerId: '' as ServerId,
+  snapshotAllowed: false,
 }
 
 let app: HTMLDivElement
@@ -256,16 +272,45 @@ const cpuObserver = 'IntersectionObserver' in window
 
 async function init(token: number) {
   bindEvents()
+  resetServerState()
+  restoreServerSnapshot()
   renderChrome(state.profile)
+  if (state.servers.length > 0) {
+    renderCards()
+    renderTabs()
+    applyFilter()
+  }
   renderEmptyState()
-
-  await Promise.allSettled([loadProfile(), loadServers()])
-  if (token !== activeHomeToken) return
-  renderChrome(state.profile)
-  renderCards()
-  renderTabs()
-  applyFilter()
   connectWebSocket()
+
+  void loadBootstrap().then(() => {
+    if (token !== activeHomeToken) return
+    renderChrome(state.profile)
+    renderCards()
+    renderTabs()
+    applyFilter()
+  }).catch(() => {
+    if (token !== activeHomeToken) return
+    void loadProfile().then(() => {
+      if (token !== activeHomeToken) return
+      renderChrome(state.profile)
+    })
+    void loadServers().then(() => {
+      if (token !== activeHomeToken) return
+      renderCards()
+      renderTabs()
+      applyFilter()
+    })
+  })
+}
+
+function resetServerState() {
+  state.servers = []
+  state.serverById.clear()
+  state.cards.clear()
+  state.trafficById.clear()
+  state.visibleIds.clear()
+  state.snapshotAllowed = false
 }
 
 function bindEvents() {
@@ -379,20 +424,64 @@ async function loadProfile() {
   }
 }
 
+async function loadBootstrap() {
+  const payload = await fetchJson<BootstrapPayload>(apiPath('/bootstrap'))
+  if (payload.profile) state.profile = payload.profile
+  state.snapshotAllowed = !state.profile?.Admin
+  applyServerPayload(payload.servers, payload.now)
+}
+
 async function loadServers() {
   try {
     const payload = await fetchJson<unknown>(apiPath('/server/list'))
-    const list = normalizeServerList(payload)
-    state.servers = list
-    state.serverById.clear()
-    for (const server of list) {
-      server.live = isServerLive(server)
-      state.serverById.set(serverId(server), server)
-    }
+    applyServerPayload(payload)
   } catch (error) {
     console.warn('Failed to load servers', error)
     state.servers = []
     state.serverById.clear()
+  }
+}
+
+function applyServerPayload(payload: unknown, now?: number) {
+  const list = normalizeServerList(payload)
+  state.servers = list
+  state.serverById.clear()
+  for (const server of list) {
+    server.live = isServerLive(server, now)
+    state.serverById.set(serverId(server), server)
+  }
+  storeServerSnapshot(list)
+}
+
+function restoreServerSnapshot() {
+  let snapshot: ServerSnapshot | null = null
+  try {
+    snapshot = JSON.parse(sessionStorage.getItem(SERVER_SNAPSHOT_KEY) || 'null') as ServerSnapshot | null
+  } catch {
+    return
+  }
+
+  if (!snapshot || snapshot.apiBase !== apiPath('') || Date.now() - snapshot.savedAt > SERVER_SNAPSHOT_MAX_AGE) return
+  const list = normalizeServerList(snapshot.servers)
+  if (list.length === 0) return
+  state.servers = list
+  state.serverById.clear()
+  for (const server of list) {
+    server.live = isServerLive(server)
+    state.serverById.set(serverId(server), server)
+  }
+}
+
+function storeServerSnapshot(list: ServerInfo[]) {
+  if (!state.snapshotAllowed || state.profile?.Admin) return
+  try {
+    sessionStorage.setItem(SERVER_SNAPSHOT_KEY, JSON.stringify({
+      savedAt: Date.now(),
+      apiBase: apiPath(''),
+      servers: list,
+    } satisfies ServerSnapshot))
+  } catch {
+    // Snapshot is only a first-paint optimization.
   }
 }
 

@@ -375,47 +375,60 @@ func isAllowedWebSocketOrigin(r *http.Request) bool {
 }
 
 func setSecureCookie(c *gin.Context, name, value string, maxAge int) {
+	if requestIsHTTPS(c.Request) {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     name,
+			Value:    value,
+			Path:     "/",
+			MaxAge:   maxAge,
+			Secure:   true,
+			HttpOnly: true,
+			SameSite: http.SameSiteNoneMode,
+		})
+		return
+	}
+	// #nosec G124 -- 本地 HTTP 调试不能使用 Secure Cookie；HTTPS 请求走上方 Secure+SameSite=None 分支。
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Path:     "/",
 		MaxAge:   maxAge,
-		Secure:   requestIsHTTPS(c.Request),
 		HttpOnly: true,
-		SameSite: requestCookieSameSite(c.Request),
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
 func clearSecureCookie(c *gin.Context, name string) {
+	expireSecureCookie(c, name, "/")
+	expireSecureCookie(c, name, "")
+}
+
+func expireSecureCookie(c *gin.Context, name, path string) {
+	if requestIsHTTPS(c.Request) {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     path,
+			MaxAge:   -1,
+			Secure:   true,
+			HttpOnly: true,
+			SameSite: http.SameSiteNoneMode,
+		})
+		return
+	}
+	// #nosec G124 -- 本地 HTTP 调试不能使用 Secure Cookie；HTTPS 请求走上方 Secure+SameSite=None 分支。
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     name,
 		Value:    "",
-		Path:     "/",
+		Path:     path,
 		MaxAge:   -1,
-		Secure:   requestIsHTTPS(c.Request),
 		HttpOnly: true,
-		SameSite: requestCookieSameSite(c.Request),
-	})
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     name,
-		Value:    "",
-		Path:     "",
-		MaxAge:   -1,
-		Secure:   requestIsHTTPS(c.Request),
-		HttpOnly: true,
-		SameSite: requestCookieSameSite(c.Request),
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
 func requestIsHTTPS(r *http.Request) bool {
 	return singleton.Conf.TLS || r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
-}
-
-func requestCookieSameSite(r *http.Request) http.SameSite {
-	if requestIsHTTPS(r) {
-		return http.SameSiteNoneMode
-	}
-	return http.SameSiteLaxMode
 }
 
 // pprofAuthMiddleware pprof 认证中间件
@@ -545,8 +558,7 @@ func ServeWeb(port uint) *http.Server {
 		c.Next()
 	})
 	r.Use(mygin.RecordPath)
-	// 直接用本地静态资源目录
-	r.Static("/static", "resource/static")
+	r.Static("/static", "frontend/dist/static")
 	if _, err := os.Stat("frontend/dist/assets"); err == nil {
 		r.Static("/assets", "frontend/dist/assets")
 	}
@@ -598,8 +610,7 @@ func shouldServeSPA(c *gin.Context) bool {
 	if strings.HasPrefix(path, "/api") ||
 		strings.HasPrefix(path, "/ws") ||
 		strings.HasPrefix(path, "/static") ||
-		strings.HasPrefix(path, "/assets") ||
-		strings.HasPrefix(path, "/oauth2") {
+		strings.HasPrefix(path, "/assets") {
 		return false
 	}
 	return !strings.Contains(path, ".")

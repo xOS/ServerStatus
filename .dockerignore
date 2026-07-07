@@ -36,7 +36,7 @@ tests/
 # 构建缓存
 .cache/
 
-# Node.js (如果有前端构建)
+# Node.js
 node_modules/
 npm-debug.log*
 yarn-debug.log*
@@ -55,8 +55,8 @@ data/
 *.db
 *.db-*
 
-# 保留静态资源文件（重要：应用运行时需要）
-# resource/ 目录不应该被排除
+# 保留前端构建产物（Docker 镜像运行时需要）
+# frontend/dist/ 不应该被排除
 
 # 配置文件（敏感信息）
 config/config.yaml

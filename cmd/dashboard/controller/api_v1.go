@@ -56,6 +56,14 @@ func (v *apiV1) serve() {
 	}))
 	publicServer.GET("/list", v.serverList)
 	publicServer.GET("/details", v.serverDetails)
+
+	br := v.r.Group("bootstrap")
+	br.Use(mygin.Authorize(mygin.AuthorizeOption{
+		MemberOnly: false,
+		IsPage:     false,
+	}))
+	br.GET("", v.bootstrap)
+
 	// 不强制认证的 API
 	mr := v.r.Group("monitor")
 	mr.Use(mygin.Authorize(mygin.AuthorizeOption{
@@ -94,6 +102,18 @@ func (v *apiV1) serve() {
 
 // profile 返回前端 SPA 初始化所需的全局配置与用户信息
 func (v *apiV1) profile(c *gin.Context) {
+	WriteJSON(c, 200, profilePayload(c))
+}
+
+func (v *apiV1) bootstrap(c *gin.Context) {
+	WriteJSON(c, 200, gin.H{
+		"profile": profilePayload(c),
+		"servers": frontendServerList(c, c.Query("tag")),
+		"now":     time.Now().UnixMilli(),
+	})
+}
+
+func profilePayload(c *gin.Context) gin.H {
 	data := gin.H{
 		"Version":             singleton.Version,
 		"CustomCode":          singleton.Conf.Site.CustomCode,
@@ -124,7 +144,7 @@ func (v *apiV1) profile(c *gin.Context) {
 		}
 	}
 
-	WriteJSON(c, 200, data)
+	return data
 }
 
 // serverList 获取服务器列表 不传入Query参数则获取全部
@@ -132,7 +152,7 @@ func (v *apiV1) profile(c *gin.Context) {
 // query: tag (服务器分组)
 func (v *apiV1) serverList(c *gin.Context) {
 	tag := c.Query("tag")
-	cacheKey := "serverList:tag=" + tag
+	cacheKey := "serverList:role=" + frontendRole(c) + ":tag=" + tag
 	listCacheMu.Lock()
 	if ce, ok := listCache[cacheKey]; ok && time.Since(ce.ts) <= 500*time.Millisecond {
 		payload := ce.data
@@ -142,20 +162,7 @@ func (v *apiV1) serverList(c *gin.Context) {
 	}
 	listCacheMu.Unlock()
 
-	// Check if user is logged in
-	u, ok := c.Get(model.CtxKeyAuthorizedUser)
-	isAdmin := ok && u != nil
-
-	var res []*model.Server
-	singleton.ServerLock.RLock()
-	singleton.SortedServerLock.RLock()
-	if isAdmin {
-		res = cloneServersForFrontend(singleton.SortedServerList, true)
-	} else {
-		res = cloneServersForFrontend(singleton.SortedServerListForGuest, true)
-	}
-	singleton.SortedServerLock.RUnlock()
-	singleton.ServerLock.RUnlock()
+	res := frontendServerList(c, tag)
 	payload, err := utils.EncodeJSON(res)
 	if err != nil {
 		payload, _ = utils.EncodeJSON([]any{})
@@ -167,6 +174,39 @@ func (v *apiV1) serverList(c *gin.Context) {
 	}{ts: time.Now(), data: payload}
 	listCacheMu.Unlock()
 	WriteJSONPayload(c, 200, payload)
+}
+
+func frontendRole(c *gin.Context) string {
+	if u, ok := c.Get(model.CtxKeyAuthorizedUser); ok && u != nil {
+		return "admin"
+	}
+	return "guest"
+}
+
+func frontendServerList(c *gin.Context, tag string) []*model.Server {
+	var res []*model.Server
+	singleton.ServerLock.RLock()
+	singleton.SortedServerLock.RLock()
+	if frontendRole(c) == "admin" {
+		res = cloneServersForFrontend(singleton.SortedServerList, true)
+	} else {
+		res = cloneServersForFrontend(singleton.SortedServerListForGuest, true)
+	}
+	singleton.SortedServerLock.RUnlock()
+	singleton.ServerLock.RUnlock()
+
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return res
+	}
+
+	filtered := make([]*model.Server, 0, len(res))
+	for _, server := range res {
+		if server != nil && server.Tag == tag {
+			filtered = append(filtered, server)
+		}
+	}
+	return filtered
 }
 
 // serverDetails 获取服务器信息 不传入Query参数则获取全部

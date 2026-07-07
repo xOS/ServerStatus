@@ -6,8 +6,8 @@
   --glass-border: rgba(255, 255, 255, 0.72);
   --line-border: rgba(34, 36, 38, 0.15);
   --shadow-soft: 0 6px 18px rgba(15, 23, 42, 0.08);
-  --chrome-inset: 10px;
-  --module-gap: 30px;
+  --chrome-inset: 8px;
+  --module-gap: 20px;
   --nav-height: clamp(44px, 1.4vw + 36px, 48px);
   --footer-height: 42px;
   --front-card-width: 286px;
@@ -3061,6 +3061,8 @@ i.fl-tux {
   }
 
   :root {
+    --chrome-inset: 6px;
+    --module-gap: 12px;
     --front-shell-gutter: 28px;
   }
 

@@ -56,8 +56,8 @@ COPY --from=certs /bin/busybox.static /bin/ls
 COPY --from=script-prep /prep/entrypoint.sh /entrypoint.sh
 COPY --from=binary-prep /prep/app /dashboard/app
 
-# 复制静态资源文件（重要：应用依赖这些文件）
-COPY resource/ /dashboard/resource/
+# 复制新版前端构建产物
+COPY frontend/dist/ /dashboard/frontend/dist/
 
 # 设置工作目录和环境变量
 WORKDIR /dashboard
