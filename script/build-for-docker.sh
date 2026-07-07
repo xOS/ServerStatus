@@ -50,7 +50,7 @@ BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
 log_info "版本信息: ${VERSION} (${COMMIT})"
 
 # 构建标志
-LDFLAGS="-s -w -X github.com/xOS/ServerStatus/service/singleton.Version=${VERSION}"
+LDFLAGS="-s -w -X github.com/xos/serverstatus/service/singleton.Version=${VERSION}"
 
 # 构建各个平台的二进制文件
 for platform in "${PLATFORMS[@]}"; do
