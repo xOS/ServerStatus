@@ -744,12 +744,11 @@ function setProgress(
   const safeValue = clamp(value, 0, 100)
   const width = `${safeValue}%`
   const tone = live ? progressTone(value) : 'offline'
-  const isFull = safeValue >= 99.5
-  const signature = `${width}|${tone}|${labelText}|${isFull ? 'full' : 'partial'}`
+  const signature = `${width}|${tone}|${labelText}`
   if (cache.get(key) === signature) return
   cache.set(key, signature)
   bar.style.width = width
-  bar.className = `progress-fill is-${tone}${isFull ? ' is-full' : ''}`
+  bar.className = `progress-fill is-${tone}`
   label.textContent = labelText
 }
 

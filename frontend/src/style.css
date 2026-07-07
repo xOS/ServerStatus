@@ -773,12 +773,8 @@ i.fl-tux {
   min-width: 0;
   max-width: 100%;
   height: 100%;
-  border-radius: 4px;
-  transition: width 0.3s ease;
-}
-
-.progress-fill.is-full {
   border-radius: 999px;
+  transition: width 0.3s ease;
 }
 
 .progress-label {
