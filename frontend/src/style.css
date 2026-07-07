@@ -802,7 +802,7 @@ i.fl-tux {
 .progress-fill small {
   position: absolute;
   top: 50%;
-  right: var(--progress-label-right, 7px);
+  right: var(--progress-label-right, 5px);
   transform: translateY(-50%);
   min-width: max-content;
   font-size: 12px;
