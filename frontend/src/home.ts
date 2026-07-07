@@ -15,6 +15,10 @@ export interface ProfileResponse {
     Site?: {
       Brand?: string
       CustomCode?: string
+      CustomCodeDashboard?: string
+      FooterYear?: string
+      FooterName?: string
+      FooterURL?: string
     }
     Login?: {
       EnableOAuth?: boolean

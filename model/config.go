@@ -36,6 +36,9 @@ type Config struct {
 		CookieName          string // 浏览器 Cookie 名称
 		CustomCode          string
 		CustomCodeDashboard string
+		FooterYear          string // 页脚年份
+		FooterName          string // 页脚作者名称
+		FooterURL           string // 页脚作者链接
 		ViewPassword        string // 前台查看密码
 	}
 	Oauth2 struct {

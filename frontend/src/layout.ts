@@ -1,4 +1,4 @@
-import { ProfileResponse } from './home'
+import type { ProfileResponse } from './home'
 import { authApiPath } from './api'
 
 let _app: HTMLDivElement
@@ -7,7 +7,7 @@ let footerContent: HTMLElement
 
 // Reusable escape helpers
 const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-const escapeAttribute = (s: string) => s.replace(/"/g, '&quot;')
+const escapeAttribute = (s: string) => escapeHtml(s)
 
 export const icon = (name: string, cls: string = '') => {
   const c = `class="svg-icon${cls ? ` ${cls}` : ''}"`
@@ -198,6 +198,7 @@ export function renderChrome(profile: ProfileResponse | null | any) {
   const admin = profile?.Admin
   const brandText = String(profile?.Conf?.Site?.Brand || '服务器')
   const brand = escapeHtml(brandText)
+  const footer = footerOptions(profile)
 
   document.title = brandText
 
@@ -222,11 +223,20 @@ export function renderChrome(profile: ProfileResponse | null | any) {
   }
 
   footerContent.innerHTML = `
-    <b>&copy; 2026 <a href="/">${brand}</a></b>
+    <b>&copy; ${escapeHtml(footer.year)} <a href="/">${brand}</a></b>
     <span class="footer-separator">|</span>
-    <a href="http://www.nange.cn" target="_blank" rel="noreferrer">春夏</a>
+    <a href="${escapeAttribute(footer.url)}" target="_blank" rel="noreferrer">${escapeHtml(footer.name)}</a>
     <span class="custom-code">${profile?.CustomCode || profile?.Conf?.Site?.CustomCode || ''}</span>
   `
+}
+
+export function footerOptions(profile: ProfileResponse | null | any) {
+  const site = profile?.Conf?.Site || {}
+  return {
+    year: String(site.FooterYear || '2026'),
+    name: String(site.FooterName || '春夏'),
+    url: String(site.FooterURL || 'http://www.nange.cn'),
+  }
 }
 
 function shortAdminName(input: unknown) {

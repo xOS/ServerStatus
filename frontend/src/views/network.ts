@@ -53,6 +53,16 @@ interface MonitorConfigsPayload {
   serverIds?: unknown
 }
 
+interface MonitorHistoryPayload {
+  history: MonitorPoint[]
+  summary: NetworkSummary | null
+}
+
+interface MonitorHistoryCacheEntry {
+  payload: MonitorHistoryPayload
+  cachedAt: number
+}
+
 type SeriesPoint = {
   time: number
   value: number
@@ -102,6 +112,9 @@ const RANGE_LABELS: Record<RangeKey, string> = {
 }
 
 const RANGE_ORDER: RangeKey[] = ['24h', '72h']
+const HISTORY_CACHE_TTL_MS = 180_000
+const HISTORY_CACHE_LIMIT = 80
+const HISTORY_PREFETCH_CONCURRENCY = 2
 
 let resizeHandler: (() => void) | undefined
 let abortController: AbortController | undefined
@@ -154,13 +167,27 @@ export async function initNetwork(container: HTMLDivElement) {
   setChartMessage(chartContainer, '加载服务器列表...')
 
   try {
-    let servers = normalizeServers(await fetchJson<unknown>(apiPath('/server/list'), signal))
+    const [serverPayload, monitorConfigPayload] = await Promise.all([
+      fetchJson<unknown>(apiPath('/server/list'), signal),
+      fetchJson<unknown>(apiPath('/monitor/configs'), signal).catch((error) => {
+        if (!signal.aborted) console.warn('Failed to load monitor configs', error)
+        return null
+      }),
+    ])
+    let servers = normalizeServers(serverPayload)
     const monitorNames = new Map<string, string>()
+    if (monitorConfigPayload !== null) {
+      for (const [id, name] of normalizeMonitorNames(monitorConfigPayload)) {
+        monitorNames.set(id, name)
+      }
+      const monitoredIds = normalizeMonitoredServerIds(monitorConfigPayload)
+      servers = filterMonitoredServers(servers, monitoredIds)
+    }
     if (servers.length === 0) {
       buttonsContainer.textContent = ''
-      subtitle.textContent = '暂无服务器'
+      subtitle.textContent = monitorConfigPayload === null ? '暂无服务器' : '暂无参与检测的服务器'
       statsContainer.hidden = true
-      setChartMessage(chartContainer, '暂无服务器')
+      setChartMessage(chartContainer, monitorConfigPayload === null ? '暂无服务器' : '暂无参与检测的服务器')
       return cleanupNetwork
     }
 
@@ -170,7 +197,10 @@ export async function initNetwork(container: HTMLDivElement) {
     let currentServerName = serverName(servers[0])
     let chartModel: ChartModel | null = null
     let loadToken = 0
-    const historyCache = new Map<string, MonitorPoint[]>()
+    let prefetchTimer: number | undefined
+    let prefetchRun = 0
+    const historyCache = new Map<string, MonitorHistoryCacheEntry>()
+    const historyRequests = new Map<string, Promise<MonitorHistoryPayload>>()
 
     const updateActiveButton = () => {
       for (const button of buttonsContainer.querySelectorAll<HTMLButtonElement>('.network-btn')) {
@@ -203,44 +233,137 @@ export async function initNetwork(container: HTMLDivElement) {
       chartModel = renderSvgChart(chartContainer, currentSeries, currentServerName, currentRange)
     }
 
-    const loadChartData = async (id: string) => {
+    const cacheKeyFor = (id: string, range: RangeKey) => `${id}:${range}`
+
+    const isFreshCache = (entry: MonitorHistoryCacheEntry) => {
+      return Date.now() - entry.cachedAt <= HISTORY_CACHE_TTL_MS
+    }
+
+    const putHistoryCache = (key: string, payload: MonitorHistoryPayload) => {
+      historyCache.set(key, { payload, cachedAt: Date.now() })
+      while (historyCache.size > HISTORY_CACHE_LIMIT) {
+        const oldestKey = historyCache.keys().next().value
+        if (!oldestKey) break
+        historyCache.delete(oldestKey)
+      }
+    }
+
+    const fetchHistoryPayload = (id: string, range: RangeKey, force = false) => {
+      const cacheKey = cacheKeyFor(id, range)
+      const cached = historyCache.get(cacheKey)
+      if (!force && cached && isFreshCache(cached)) return Promise.resolve(cached.payload)
+
+      const pending = historyRequests.get(cacheKey)
+      if (!force && pending) return pending
+
+      const request = fetchJson<unknown>(`${apiPath(`/monitor/${encodeURIComponent(id)}`)}?range=${range}`, signal)
+        .then((payload) => {
+          const normalized = normalizeHistoryPayload(payload, monitorNames, range)
+          putHistoryCache(cacheKey, normalized)
+          return normalized
+        })
+        .finally(() => {
+          if (historyRequests.get(cacheKey) === request) {
+            historyRequests.delete(cacheKey)
+          }
+        })
+
+      historyRequests.set(cacheKey, request)
+      return request
+    }
+
+    const renderHistoryPayload = (payload: MonitorHistoryPayload) => {
+      const history = payload.history
+
+      if (history.length === 0) {
+        currentSeries = []
+        chartModel = null
+        statsContainer.hidden = true
+        setChartMessage(chartContainer, '该服务器暂无网络监控数据')
+        return
+      }
+
+      currentSeries = buildSeries(history)
+      if (currentSeries.length === 0) {
+        chartModel = null
+        statsContainer.hidden = true
+        setChartMessage(chartContainer, '该服务器暂无网络监控数据')
+        return
+      }
+
+      renderSummary(statsContainer, payload.summary || summarizeSeries(currentSeries), currentRange)
+      renderCurrentChart()
+    }
+
+    const orderedPrefetchIds = () => {
+      const ids = servers.map(serverId).filter(Boolean)
+      const currentIndex = ids.indexOf(currentServerId)
+      if (currentIndex < 0) return ids.filter((id) => id !== currentServerId)
+      return [
+        ...ids.slice(currentIndex + 1),
+        ...ids.slice(0, currentIndex),
+      ].filter((id) => id !== currentServerId)
+    }
+
+    const prefetchHistory = async (runId: number, range: RangeKey) => {
+      const jobs: Array<{ id: string; range: RangeKey }> = orderedPrefetchIds().map((id) => ({ id, range }))
+      const alternateRange = RANGE_ORDER.find((item) => item !== range)
+      if (alternateRange) jobs.push({ id: currentServerId, range: alternateRange })
+
+      let index = 0
+      const workers = Array.from({ length: Math.min(HISTORY_PREFETCH_CONCURRENCY, jobs.length) }, async () => {
+        while (!signal.aborted && runId === prefetchRun) {
+          const job = jobs[index++]
+          if (!job) break
+
+          const cached = historyCache.get(cacheKeyFor(job.id, job.range))
+          if (cached && isFreshCache(cached)) continue
+
+          try {
+            await fetchHistoryPayload(job.id, job.range)
+          } catch (error) {
+            if (!signal.aborted) console.warn('Failed to prefetch network history', error)
+          }
+        }
+      })
+      await Promise.all(workers)
+    }
+
+    const scheduleHistoryPrefetch = (range: RangeKey) => {
+      window.clearTimeout(prefetchTimer)
+      const runId = ++prefetchRun
+      prefetchTimer = window.setTimeout(() => {
+        void prefetchHistory(runId, range)
+      }, 160)
+    }
+
+    const loadChartData = async (id: string, force = false) => {
       const token = ++loadToken
+      const range = currentRange
       const server = servers.find((item) => serverId(item) === id)
       currentServerName = server ? serverName(server) : `#${id}`
       subtitle.innerHTML = server
         ? `${serverFlagMarkup(server)}<span>${escapeHtml(currentServerName)}</span>`
         : `<span>#${escapeHtml(id)}</span>`
       hideChartHover(chartContainer)
+
+      const cacheKey = cacheKeyFor(id, range)
+      const cached = !force ? historyCache.get(cacheKey) : undefined
+      if (cached && isFreshCache(cached)) {
+        renderHistoryPayload(cached.payload)
+        scheduleHistoryPrefetch(range)
+        return
+      }
+
       statsContainer.hidden = true
       chartModel = null
       setChartMessage(chartContainer, '加载监控数据...')
 
       try {
-        const cacheKey = `${id}:${currentRange}`
-        let history = historyCache.get(cacheKey)
-        if (!history) {
-          const payload = await fetchJson<unknown>(`${apiPath(`/monitor/${encodeURIComponent(id)}`)}?range=${currentRange}`, signal)
-          history = normalizeHistory(payload, monitorNames)
-          historyCache.set(cacheKey, history)
-        }
-        if (token !== loadToken) return
-
-        if (history.length === 0) {
-          currentSeries = []
-          statsContainer.hidden = true
-          setChartMessage(chartContainer, '该服务器暂无网络监控数据')
-          return
-        }
-
-        currentSeries = buildSeries(history)
-        if (currentSeries.length === 0) {
-          statsContainer.hidden = true
-          setChartMessage(chartContainer, '该服务器暂无网络监控数据')
-          return
-        }
-
-        renderSummary(statsContainer, summarizeSeries(currentSeries), currentRange)
-        renderCurrentChart()
+        const payload = await fetchHistoryPayload(id, range, force)
+        if (token !== loadToken || id !== currentServerId || range !== currentRange) return
+        renderHistoryPayload(payload)
+        scheduleHistoryPrefetch(range)
       } catch (error) {
         if (!signal.aborted) {
           console.warn('Failed to load network history', error)
@@ -259,6 +382,7 @@ export async function initNetwork(container: HTMLDivElement) {
       for (const [id, name] of normalizeMonitorNames(payload)) {
         monitorNames.set(id, name)
       }
+      historyCache.clear()
 
       const monitoredIds = normalizeMonitoredServerIds(payload)
       const filteredServers = filterMonitoredServers(servers, monitoredIds)
@@ -279,7 +403,7 @@ export async function initNetwork(container: HTMLDivElement) {
       renderServerButtons()
       if (!servers.some((server) => serverId(server) === currentServerId)) {
         currentServerId = serverId(servers[0])
-        void loadChartData(currentServerId)
+        void loadChartData(currentServerId, true)
       }
     }
 
@@ -329,11 +453,13 @@ export async function initNetwork(container: HTMLDivElement) {
     renderServerButtons()
     updateActiveRange()
     void loadChartData(currentServerId)
-    fetchJson<unknown>(apiPath('/monitor/configs'), signal)
-      .then(applyMonitorConfigs)
-      .catch((error) => {
-        if (!signal.aborted) console.warn('Failed to load monitor configs', error)
-      })
+    if (monitorConfigPayload === null) {
+      fetchJson<unknown>(apiPath('/monitor/configs'), signal)
+        .then(applyMonitorConfigs)
+        .catch((error) => {
+          if (!signal.aborted) console.warn('Failed to load monitor configs', error)
+        })
+    }
   } catch (error) {
     if (!signal.aborted) {
       console.warn('Failed to load network servers', error)
@@ -426,6 +552,20 @@ function filterMonitoredServers(servers: ServerItem[], monitoredIds: Set<string>
   return servers.filter((server) => monitoredIds.has(serverId(server)))
 }
 
+function normalizeHistoryPayload(payload: unknown, monitorNames: Map<string, string>, range: RangeKey): MonitorHistoryPayload {
+  let listSource: unknown = payload
+  let summary: NetworkSummary | null = null
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+    const source = payload as { data?: unknown; result?: unknown; summary?: unknown }
+    if (source.summary !== undefined) summary = normalizeSummary(source.summary)
+    listSource = source.data ?? source.result ?? payload
+  }
+  return {
+    history: filterHistoryByRange(normalizeHistory(listSource, monitorNames), range),
+    summary,
+  }
+}
+
 function normalizeHistory(payload: unknown, monitorNames: Map<string, string>): MonitorPoint[] {
   let list: MonitorPoint[] = []
   if (Array.isArray(payload)) {
@@ -441,6 +581,30 @@ function normalizeHistory(payload: unknown, monitorNames: Map<string, string>): 
     const configuredName = monitorNames.get(id)
     if (!configuredName || monitorPointName(point, id) !== monitorLabel(id)) return point
     return { ...point, monitor_name: configuredName }
+  })
+}
+
+function normalizeSummary(payload: unknown): NetworkSummary | null {
+  if (!payload || typeof payload !== 'object') return null
+  const source = payload as Record<string, unknown>
+  const count = Math.max(0, finiteNumber(source.count, 0))
+  return {
+    max: nullableNumber(source.max),
+    min: nullableNumber(source.min),
+    avg: nullableNumber(source.avg),
+    p95: nullableNumber(source.p95),
+    loss: nullableNumber(source.loss),
+    count,
+    latencyCount: Math.max(0, finiteNumber(source.latency_count ?? source.latencyCount, 0)),
+  }
+}
+
+function filterHistoryByRange(history: MonitorPoint[], range: RangeKey): MonitorPoint[] {
+  const duration = range === '24h' ? 24 * 60 * 60 * 1000 : 72 * 60 * 60 * 1000
+  const cutoff = Date.now() - duration
+  return history.filter((point) => {
+    const time = Date.parse(point.CreatedAt || point.created_at || '')
+    return Number.isFinite(time) && time >= cutoff
   })
 }
 
@@ -817,6 +981,12 @@ function finiteNumber(value: unknown, fallback: number) {
 function optionalNumber(value: unknown) {
   const number = Number(value)
   return Number.isFinite(number) ? number : undefined
+}
+
+function nullableNumber(value: unknown) {
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
 }
 
 function monitorPointId(point: MonitorPoint) {

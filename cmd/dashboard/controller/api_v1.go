@@ -35,6 +35,11 @@ var (
 		ts   time.Time
 		data []byte
 	}{}
+	monitorConfigCacheMu sync.Mutex
+	monitorConfigCache   struct {
+		ts   time.Time
+		data []byte
+	}
 )
 
 func (v *apiV1) serve() {
@@ -121,8 +126,12 @@ func profilePayload(c *gin.Context) gin.H {
 		"CustomCodeDashboard": singleton.Conf.Site.CustomCodeDashboard,
 		"Conf": gin.H{
 			"Site": gin.H{
-				"Brand":      singleton.Conf.Site.Brand,
-				"CustomCode": singleton.Conf.Site.CustomCode,
+				"Brand":               singleton.Conf.Site.Brand,
+				"CustomCode":          singleton.Conf.Site.CustomCode,
+				"CustomCodeDashboard": singleton.Conf.Site.CustomCodeDashboard,
+				"FooterYear":          singleton.Conf.Site.FooterYear,
+				"FooterName":          singleton.Conf.Site.FooterName,
+				"FooterURL":           singleton.Conf.Site.FooterURL,
 			},
 			"Login": gin.H{
 				"EnableOAuth":  singleton.Conf.Login.EnableOAuth,
@@ -374,23 +383,23 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 				// 限制并发，避免在低配机上压爆 CPU
 				sem := make(chan struct{}, 4)
 
-				// 并发查询所有ICMP/TCP监控器
+				// 并发查询当前服务器实际参与的 ICMP/TCP 监控器
 				for _, monitor := range monitors {
-					if monitor.Type == model.TaskTypeICMPPing || monitor.Type == model.TaskTypeTCPPing {
+					if monitorAppliesToServer(monitor, server.ID) && (monitor.Type == model.TaskTypeICMPPing || monitor.Type == model.TaskTypeTCPPing) {
 						activeQueries++
-						go func(monitorID uint64) {
+						go func(monitorID uint64, monitorDuration uint64) {
 							sem <- struct{}{}
 							defer func() { <-sem }()
-							// 使用反向限量，优先拿最近的数据，最多取 6000 条/监控器，足够覆盖 72h
+							// 使用反向限量，优先拿最近的数据；limit 按监控周期动态计算，避免 72h 被截断导致统计失真
 							allHistories, err := monitorOps.GetMonitorHistoriesByServerAndMonitorRangeReverseLimit(
-								server.ID, monitorID, startTime, endTime, 6000,
+								server.ID, monitorID, startTime, endTime, networkHistoryQueryLimit(duration, monitorDuration),
 							)
 
 							resultChan <- monitorResult{
 								histories: allHistories,
 								err:       err,
 							}
-						}(monitor.ID)
+						}(monitor.ID, monitor.Duration)
 					}
 				}
 
@@ -410,23 +419,14 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 				return networkHistories[i].CreatedAt.After(networkHistories[j].CreatedAt)
 			})
 
-			// 下采样：当点数超过 5000 时，按等间隔抽取，减少前端渲染负荷
-			const maxPoints = 5000
-			if len(networkHistories) > maxPoints {
-				step := float64(len(networkHistories)) / float64(maxPoints)
-				sampled := make([]*model.MonitorHistory, 0, maxPoints)
-				for i := 0; i < maxPoints; i++ {
-					idx := int(float64(i) * step)
-					if idx >= len(networkHistories) {
-						idx = len(networkHistories) - 1
-					}
-					sampled = append(sampled, networkHistories[idx])
-				}
-				networkHistories = sampled
-			}
+			summary := monitorHistorySummary(networkHistories)
+			chartHistories := sampleMonitorHistories(networkHistories, 5000)
 
 			// 预编码 JSON，减少后续重复编码
-			payload, err := utils.EncodeJSON(monitorHistoryPayload(networkHistories, monitorNames))
+			payload, err := utils.EncodeJSON(networkMonitorHistoryResponse{
+				Data:    monitorHistoryPayload(chartHistories, monitorNames),
+				Summary: summary,
+			})
 			if err != nil {
 				// 回退到空数组
 				payload, _ = utils.EncodeJSON([]any{})
@@ -441,7 +441,7 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 			}{ts: time.Now(), data: payload, dur: duration}
 			monitorCacheMu.Unlock()
 
-			log.Printf("API /monitor/%d 返回 %d 条记录（范围: %v，所有监控器）", server.ID, len(networkHistories), duration)
+			log.Printf("API /monitor/%d 返回 %d/%d 条记录（范围: %v，所有监控器）", server.ID, len(chartHistories), len(networkHistories), duration)
 			c.Status(200)
 			c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 			if _, gz, _ := utils.GzipIfAccepted(c.Writer, c.Request, payload); !gz {
@@ -472,8 +472,12 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 			if err != nil {
 				payload, _ = utils.EncodeJSON([]any{})
 			} else {
-				// 与 Badger 分支一致：预编码 + gzip 按需
-				payload, _ = utils.EncodeJSON(monitorHistoryPayload(networkHistories, currentMonitorNameMap()))
+				summary := monitorHistorySummary(networkHistories)
+				chartHistories := sampleMonitorHistories(networkHistories, 5000)
+				payload, _ = utils.EncodeJSON(networkMonitorHistoryResponse{
+					Data:    monitorHistoryPayload(chartHistories, currentMonitorNameMap()),
+					Summary: summary,
+				})
 			}
 			c.Status(200)
 			c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -491,6 +495,11 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 	}
 }
 
+type networkMonitorHistoryResponse struct {
+	Data    []networkMonitorHistoryItem `json:"data"`
+	Summary networkMonitorSummary       `json:"summary"`
+}
+
 type networkMonitorHistoryItem struct {
 	CreatedAt   time.Time `json:"created_at"`
 	MonitorID   uint64    `json:"monitor_id"`
@@ -499,6 +508,111 @@ type networkMonitorHistoryItem struct {
 	AvgDelay    float32   `json:"avg_delay"`
 	Up          uint64    `json:"up"`
 	Down        uint64    `json:"down"`
+}
+
+type networkMonitorSummary struct {
+	Max          *float64 `json:"max"`
+	Min          *float64 `json:"min"`
+	Avg          *float64 `json:"avg"`
+	P95          *float64 `json:"p95"`
+	Loss         *float64 `json:"loss"`
+	Count        int      `json:"count"`
+	LatencyCount int      `json:"latency_count"`
+}
+
+func networkHistoryQueryLimit(duration time.Duration, monitorDuration uint64) int {
+	interval := time.Duration(monitorDuration) * time.Second
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	limit := int(duration/interval) + 512
+	if limit < 6000 {
+		return 6000
+	}
+	if limit > 60000 {
+		return 60000
+	}
+	return limit
+}
+
+func sampleMonitorHistories(histories []*model.MonitorHistory, maxPoints int) []*model.MonitorHistory {
+	if maxPoints <= 0 || len(histories) <= maxPoints {
+		return histories
+	}
+	step := float64(len(histories)) / float64(maxPoints)
+	sampled := make([]*model.MonitorHistory, 0, maxPoints)
+	for i := 0; i < maxPoints; i++ {
+		idx := int(float64(i) * step)
+		if idx >= len(histories) {
+			idx = len(histories) - 1
+		}
+		sampled = append(sampled, histories[idx])
+	}
+	return sampled
+}
+
+func monitorHistorySummary(histories []*model.MonitorHistory) networkMonitorSummary {
+	summary := networkMonitorSummary{Count: len(histories)}
+	values := make([]float64, 0, len(histories))
+	var up, down uint64
+
+	for _, history := range histories {
+		if history == nil {
+			continue
+		}
+		up += history.Up
+		down += history.Down
+		if history.AvgDelay > 0 && (history.Up > 0 || history.Down == 0) {
+			values = append(values, float64(history.AvgDelay))
+		}
+	}
+
+	total := up + down
+	if total > 0 {
+		loss := float64(down) / float64(total) * 100
+		summary.Loss = &loss
+	}
+	summary.LatencyCount = len(values)
+	if len(values) == 0 {
+		return summary
+	}
+
+	sort.Float64s(values)
+	min := values[0]
+	max := values[len(values)-1]
+	sum := 0.0
+	for _, value := range values {
+		sum += value
+	}
+	avg := sum / float64(len(values))
+	p95 := percentileFloat64(values, 0.95)
+	summary.Min = &min
+	summary.Max = &max
+	summary.Avg = &avg
+	summary.P95 = &p95
+	return summary
+}
+
+func percentileFloat64(sortedValues []float64, ratio float64) float64 {
+	if len(sortedValues) == 0 {
+		return 0
+	}
+	if ratio < 0 {
+		ratio = 0
+	} else if ratio > 1 {
+		ratio = 1
+	}
+	index := float64(len(sortedValues)-1) * ratio
+	lower := int(index)
+	upper := lower
+	if float64(lower) < index {
+		upper++
+	}
+	if lower == upper {
+		return sortedValues[lower]
+	}
+	weight := index - float64(lower)
+	return sortedValues[lower]*(1-weight) + sortedValues[upper]*weight
 }
 
 func currentMonitorNameMap() map[uint64]string {
@@ -517,6 +631,19 @@ func monitorNameMap(monitors []*model.Monitor) map[uint64]string {
 		names[monitor.ID] = monitor.Name
 	}
 	return names
+}
+
+func monitorAppliesToServer(monitor *model.Monitor, serverID uint64) bool {
+	if monitor == nil {
+		return false
+	}
+	if monitor.SkipServers == nil {
+		_ = monitor.InitSkipServers()
+	}
+	if monitor.Cover == model.MonitorCoverAll {
+		return !monitor.SkipServers[serverID]
+	}
+	return monitor.Cover == model.MonitorCoverIgnoreAll && monitor.SkipServers[serverID]
 }
 
 func monitorHistoryPayload(histories []*model.MonitorHistory, monitorNames map[uint64]string) []networkMonitorHistoryItem {
@@ -539,19 +666,43 @@ func monitorHistoryPayload(histories []*model.MonitorHistory, monitorNames map[u
 }
 
 func (v *apiV1) monitorConfigs(c *gin.Context) {
-	// 获取监控配置列表
+	monitorConfigCacheMu.Lock()
+	if len(monitorConfigCache.data) > 0 && time.Since(monitorConfigCache.ts) <= 2*time.Second {
+		payload := monitorConfigCache.data
+		monitorConfigCacheMu.Unlock()
+		WriteJSONPayload(c, 200, payload)
+		return
+	}
+	monitorConfigCacheMu.Unlock()
+
+	var payload []byte
+	var err error
 	if singleton.ServiceSentinelShared != nil {
 		monitors := singleton.ServiceSentinelShared.Monitors()
-		WriteJSON(c, 200, gin.H{
+		payload, err = utils.EncodeJSON(gin.H{
 			"monitors":   monitors,
 			"server_ids": monitoredServerIDs(monitors),
 		})
 	} else {
-		WriteJSON(c, 200, gin.H{
+		payload, err = utils.EncodeJSON(gin.H{
 			"monitors":   []interface{}{},
 			"server_ids": []uint64{},
 		})
 	}
+	if err != nil {
+		payload, _ = utils.EncodeJSON(gin.H{
+			"monitors":   []interface{}{},
+			"server_ids": []uint64{},
+		})
+	}
+
+	monitorConfigCacheMu.Lock()
+	monitorConfigCache = struct {
+		ts   time.Time
+		data []byte
+	}{ts: time.Now(), data: payload}
+	monitorConfigCacheMu.Unlock()
+	WriteJSONPayload(c, 200, payload)
 }
 
 func monitoredServerIDs(monitors []*model.Monitor) []uint64 {

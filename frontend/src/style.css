@@ -46,6 +46,8 @@ body {
   background: var(--body-bg);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
   text-rendering: optimizeLegibility;
 }
 
@@ -665,6 +667,8 @@ i.fl-tux {
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
 }
 
 .cpu-track {
@@ -675,11 +679,17 @@ i.fl-tux {
   white-space: nowrap;
   flex: 1 1 auto;
   padding-right: 4px;
+  font-size: 12px;
+  line-height: 1;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
 }
 
 .cpu-copy {
   display: inline-block;
   flex: 0 0 auto;
+  font-size: inherit;
+  line-height: inherit;
   white-space: pre;
 }
 
@@ -2853,6 +2863,9 @@ i.fl-tux {
   position: relative;
   min-height: 440px;
   overflow: visible;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .network-chart-message {
@@ -2868,12 +2881,18 @@ i.fl-tux {
   display: block;
   width: 100%;
   height: 420px;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .network-chart-canvas {
   position: relative;
   cursor: crosshair;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .network-plot-bg {
@@ -2953,6 +2972,9 @@ i.fl-tux {
   font-size: 12px;
   line-height: 1.45;
   pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   backdrop-filter: saturate(145%) blur(12px);
   -webkit-backdrop-filter: saturate(145%) blur(12px);
 }
@@ -3019,6 +3041,9 @@ i.fl-tux {
   margin: 2px 14px 0 54px;
   gap: 8px 12px;
   pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .network-legend-item {
@@ -3083,6 +3108,7 @@ i.fl-tux {
   :root {
     --chrome-inset: 6px;
     --module-gap: 12px;
+    --footer-height: 36px;
     --front-shell-gutter: 28px;
   }
 
@@ -3156,6 +3182,13 @@ i.fl-tux {
 
   .bottom-footer-inner {
     flex-wrap: wrap;
+    min-height: var(--footer-height);
+    padding: 7px 12px;
+    border-radius: 10px;
+  }
+
+  .bottom-footer {
+    bottom: 2px;
   }
 
   .admin-shell {
@@ -3335,8 +3368,12 @@ i.fl-tux {
   }
 
   .admin-footer {
-    padding: 10px 15px;
+    bottom: 2px;
+    min-height: var(--footer-height);
+    margin-bottom: 2px;
+    padding: 7px 12px;
     flex-wrap: wrap;
+    border-radius: 10px;
   }
 
   .admin-panel {

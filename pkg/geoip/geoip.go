@@ -18,10 +18,12 @@ var geoDBFS embed.FS
 
 // IPInfo 用于 IPInfo 格式的 MMDB（扁平结构）
 type IPInfo struct {
-	Country       string `maxminddb:"country_code"`   // 国家代码，如 US、CN
-	CountryName   string `maxminddb:"country"`        // 国家名称，如 United States、China
-	Continent     string `maxminddb:"continent_code"` // 洲代码，如 NA、AS
-	ContinentName string `maxminddb:"continent"`      // 洲名称，如 North America、Asia
+	Country       string `maxminddb:"country"`        // IPinfo 国家代码，如 US、CN
+	CountryCode   string `maxminddb:"country_code"`   // 兼容部分扁平数据库的国家代码字段
+	CountryName   string `maxminddb:"country_name"`   // 国家名称，如 United States、China
+	Continent     string `maxminddb:"continent"`      // IPinfo 洲代码，如 NA、AS
+	ContinentCode string `maxminddb:"continent_code"` // 兼容部分扁平数据库的洲代码字段
+	ContinentName string `maxminddb:"continent_name"` // 洲名称，如 North America、Asia
 }
 
 // maxmindRecord 用于 MaxMind GeoLite2-Country 格式的 MMDB（嵌套结构）
@@ -30,6 +32,10 @@ type maxmindRecord struct {
 		ISOCode string            `maxminddb:"iso_code"`
 		Names   map[string]string `maxminddb:"names"`
 	} `maxminddb:"country"`
+	RegisteredCountry struct {
+		ISOCode string            `maxminddb:"iso_code"`
+		Names   map[string]string `maxminddb:"names"`
+	} `maxminddb:"registered_country"`
 	Continent struct {
 		Code  string            `maxminddb:"code"`
 		Names map[string]string `maxminddb:"names"`
@@ -254,11 +260,11 @@ func lookupIPInfo(ip net.IP, record *IPInfo) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if record.Country != "" {
-		return strings.ToLower(record.Country), nil
+	if code := twoLetterCode(record.Country, record.CountryCode); code != "" {
+		return code, nil
 	}
-	if record.Continent != "" {
-		return strings.ToLower(record.Continent), nil
+	if code := twoLetterCode(record.Continent, record.ContinentCode); code != "" {
+		return code, nil
 	}
 	return "", fmt.Errorf("IP not found")
 }
@@ -276,11 +282,29 @@ func lookupMaxMind(ip net.IP, record *IPInfo) (string, error) {
 	record.Continent = mmRecord.Continent.Code
 	record.ContinentName = mmRecord.Continent.Names["en"]
 
-	if record.Country != "" {
-		return strings.ToLower(record.Country), nil
+	if record.Country == "" {
+		record.Country = mmRecord.RegisteredCountry.ISOCode
+		record.CountryName = mmRecord.RegisteredCountry.Names["en"]
 	}
-	if record.Continent != "" {
-		return strings.ToLower(record.Continent), nil
+
+	if code := twoLetterCode(record.Country, record.CountryCode); code != "" {
+		return code, nil
+	}
+	if code := twoLetterCode(record.Continent, record.ContinentCode); code != "" {
+		return code, nil
 	}
 	return "", fmt.Errorf("IP not found")
+}
+
+func twoLetterCode(values ...string) string {
+	for _, value := range values {
+		code := strings.ToLower(strings.TrimSpace(value))
+		if len(code) != 2 {
+			continue
+		}
+		if code[0] >= 'a' && code[0] <= 'z' && code[1] >= 'a' && code[1] <= 'z' {
+			return code
+		}
+	}
+	return ""
 }

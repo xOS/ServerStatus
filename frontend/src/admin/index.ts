@@ -1,6 +1,6 @@
 import { AUTH_API_BASE, adminApiPath, apiPath, authApiPath } from '../api'
 import { authHeaders, clearStoredAuthToken, getStoredAuthToken, setStoredAuthToken } from '../auth'
-import { icon } from '../layout'
+import { footerOptions, icon } from '../layout'
 
 type AdminKey = 'dashboard' | 'server' | 'monitor' | 'cron' | 'rule' | 'notification' | 'nat' | 'ddns' | 'api' | 'setting'
 type Row = Record<string, unknown>
@@ -367,9 +367,9 @@ export function initAdmin(container: HTMLDivElement) {
         <section class="admin-content" id="admin-content"></section>
       </main>
       <footer class="admin-footer">
-        <b>&copy; 2026 <a href="/" id="admin-footer-brand">${escapeHtml(adminBrandName)}</a></b>
+        <b>&copy; <span id="admin-footer-year">2026</span> <a href="/" id="admin-footer-brand">${escapeHtml(adminBrandName)}</a></b>
         <span class="footer-separator">|</span>
-        <a href="http://www.nange.cn" target="_blank" rel="noreferrer">春夏</a>
+        <a href="http://www.nange.cn" target="_blank" rel="noreferrer" id="admin-footer-author">春夏</a>
         <span class="custom-code" id="admin-footer-custom-code"></span>
       </footer>
       <dialog class="admin-dialog" id="admin-dialog"></dialog>
@@ -720,12 +720,20 @@ function updateAdminBrand(profile: Row) {
   apiKeyLoginAllowed = false
   adminBrandName = brand
   document.title = brand
+  const footer = footerOptions(profile)
   const title = document.getElementById('admin-brand-title')
   const footerBrand = document.getElementById('admin-footer-brand')
+  const footerYear = document.getElementById('admin-footer-year')
+  const footerAuthor = document.getElementById('admin-footer-author') as HTMLAnchorElement | null
   const footerCustomCode = document.getElementById('admin-footer-custom-code')
   if (title) title.textContent = brand
   if (footerBrand) footerBrand.textContent = brand
-  if (footerCustomCode) footerCustomCode.innerHTML = value(profile, 'CustomCode') || value(profile, 'Conf.Site.CustomCode') || ''
+  if (footerYear) footerYear.textContent = footer.year
+  if (footerAuthor) {
+    footerAuthor.textContent = footer.name
+    footerAuthor.href = footer.url
+  }
+  if (footerCustomCode) footerCustomCode.innerHTML = value(profile, 'CustomCodeDashboard') || value(profile, 'Conf.Site.CustomCodeDashboard') || ''
   document.querySelectorAll<HTMLElement>('[data-open-auth]').forEach((button) => {
     button.hidden = true
   })
@@ -853,6 +861,9 @@ async function renderSettings() {
         <form class="admin-form-grid" data-setting-form>
           ${inputMarkup('Title', '站点名称', settings.Title)}
           ${inputMarkup('Admin', '管理员账号', settings.Admin)}
+          ${inputMarkup('FooterYear', '页脚年份', settings.FooterYear || '2026')}
+          ${inputMarkup('FooterName', '页脚作者名称', settings.FooterName || '春夏')}
+          ${inputMarkup('FooterURL', '页脚作者链接', settings.FooterURL || 'http://www.nange.cn')}
           ${checkboxMarkup('EnableOAuthLogin', '启用账号授权登录', settings.EnableOAuthLogin)}
           ${checkboxMarkup('EnableAPIKeyLogin', '允许 API 请求头授权', settings.EnableAPIKeyLogin)}
           ${inputMarkup('GRPCHost', 'gRPC Host', settings.GRPCHost)}
@@ -1336,6 +1347,7 @@ async function submitSettings(form: HTMLFormElement) {
   try {
     await apiFetch<ApiResponse>(adminApiPath('/setting'), { method: 'POST', body: payload })
     toast('设置已保存')
+    await loadAdminProfile()
     await renderSettings()
   } catch (error) {
     toast(errorMessage(error), true)

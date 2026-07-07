@@ -1875,6 +1875,9 @@ type settingForm struct {
 	Admin                   string
 	CustomCode              string
 	CustomCodeDashboard     string
+	FooterYear              string
+	FooterName              string
+	FooterURL               string
 	CustomNameservers       string
 	ViewPassword            string
 	IgnoredIPNotification   string
@@ -1912,6 +1915,9 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 	singleton.Conf.Site.Brand = sf.Title
 	singleton.Conf.Site.CustomCode = sf.CustomCode
 	singleton.Conf.Site.CustomCodeDashboard = sf.CustomCodeDashboard
+	singleton.Conf.Site.FooterYear = sf.FooterYear
+	singleton.Conf.Site.FooterName = sf.FooterName
+	singleton.Conf.Site.FooterURL = sf.FooterURL
 	singleton.Conf.DNSServers = sf.CustomNameservers
 	singleton.Conf.Security.AllowedOrigins = sf.AllowedOrigins
 	singleton.Conf.Site.ViewPassword = sf.ViewPassword
@@ -2295,6 +2301,9 @@ func (ma *memberAPI) getSettingList(c *gin.Context) {
 			"Admin":                       singleton.Conf.Oauth2.Admin,
 			"CustomCode":                  singleton.Conf.Site.CustomCode,
 			"CustomCodeDashboard":         singleton.Conf.Site.CustomCodeDashboard,
+			"FooterYear":                  singleton.Conf.Site.FooterYear,
+			"FooterName":                  singleton.Conf.Site.FooterName,
+			"FooterURL":                   singleton.Conf.Site.FooterURL,
 			"CustomNameservers":           singleton.Conf.DNSServers,
 			"ViewPassword":                singleton.Conf.Site.ViewPassword,
 			"IgnoredIPNotification":       singleton.Conf.IgnoredIPNotification,
