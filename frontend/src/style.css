@@ -3370,7 +3370,7 @@ i.fl-tux {
   .admin-footer {
     bottom: 5px;
     min-height: var(--footer-height);
-    margin-bottom: 3px;
+    margin-bottom: 5px;
     padding: 7px 12px;
     flex-wrap: wrap;
     border-radius: 10px;
