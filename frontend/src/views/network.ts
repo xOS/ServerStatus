@@ -47,6 +47,12 @@ interface MonitorConfig {
   type?: number | string
 }
 
+interface MonitorConfigsPayload {
+  monitors?: unknown
+  server_ids?: unknown
+  serverIds?: unknown
+}
+
 type SeriesPoint = {
   time: number
   value: number
@@ -152,13 +158,14 @@ export async function initNetwork(container: HTMLDivElement) {
         return []
       }),
     ])
-    const servers = normalizeServers(serversPayload)
+    const monitoredIds = normalizeMonitoredServerIds(monitorConfigsPayload)
+    const servers = filterMonitoredServers(normalizeServers(serversPayload), monitoredIds)
     const monitorNames = normalizeMonitorNames(monitorConfigsPayload)
     if (servers.length === 0) {
       buttonsContainer.textContent = ''
-      subtitle.textContent = '暂无服务器数据'
+      subtitle.textContent = '暂无参与检测的服务器'
       statsContainer.hidden = true
-      setChartMessage(chartContainer, '暂无服务器数据')
+      setChartMessage(chartContainer, '暂无参与检测的服务器')
       return cleanupNetwork
     }
 
@@ -252,7 +259,7 @@ export async function initNetwork(container: HTMLDivElement) {
       if (!button || !button.dataset.id || button.dataset.id === currentServerId) return
       currentServerId = button.dataset.id
       updateActiveButton()
-      loadChartData(currentServerId)
+      void loadChartData(currentServerId)
     }, { signal })
 
     rangeSwitch.addEventListener('click', (event) => {
@@ -261,7 +268,7 @@ export async function initNetwork(container: HTMLDivElement) {
       if (!button || !isRangeKey(range) || range === currentRange) return
       currentRange = range
       updateActiveRange()
-      loadChartData(currentServerId)
+      void loadChartData(currentServerId)
     }, { signal })
 
     chartContainer.addEventListener('pointermove', (event) => {
@@ -292,7 +299,7 @@ export async function initNetwork(container: HTMLDivElement) {
 
     updateActiveButton()
     updateActiveRange()
-    await loadChartData(currentServerId)
+    void loadChartData(currentServerId)
   } catch (error) {
     if (!signal.aborted) {
       console.warn('Failed to load network servers', error)
@@ -332,15 +339,7 @@ function normalizeServers(payload: unknown): ServerItem[] {
 
 function normalizeMonitorNames(payload: unknown): Map<string, string> {
   const names = new Map<string, string>()
-  let configs: MonitorConfig[] = []
-  if (Array.isArray(payload)) {
-    configs = payload as MonitorConfig[]
-  } else if (payload && typeof payload === 'object') {
-    const source = payload as { result?: unknown; data?: unknown; monitors?: unknown }
-    if (Array.isArray(source.result)) configs = source.result as MonitorConfig[]
-    else if (Array.isArray(source.data)) configs = source.data as MonitorConfig[]
-    else if (Array.isArray(source.monitors)) configs = source.monitors as MonitorConfig[]
-  }
+  const configs = normalizeMonitorConfigs(payload)
 
   for (const item of configs) {
     const id = String(item.ID ?? item.id ?? '').trim()
@@ -348,6 +347,49 @@ function normalizeMonitorNames(payload: unknown): Map<string, string> {
     if (id && name) names.set(id, name)
   }
   return names
+}
+
+function normalizeMonitorConfigs(payload: unknown): MonitorConfig[] {
+  if (Array.isArray(payload)) return payload as MonitorConfig[]
+  if (!payload || typeof payload !== 'object') return []
+
+  const source = payload as MonitorConfigsPayload & { result?: unknown; data?: unknown }
+  if (Array.isArray(source.result)) return source.result as MonitorConfig[]
+  if (Array.isArray(source.data)) return source.data as MonitorConfig[]
+  if (Array.isArray(source.monitors)) return source.monitors as MonitorConfig[]
+  if (source.result && typeof source.result === 'object') {
+    const result = source.result as MonitorConfigsPayload
+    if (Array.isArray(result.monitors)) return result.monitors as MonitorConfig[]
+  }
+  if (source.data && typeof source.data === 'object') {
+    const data = source.data as MonitorConfigsPayload
+    if (Array.isArray(data.monitors)) return data.monitors as MonitorConfig[]
+  }
+  return []
+}
+
+function normalizeMonitoredServerIds(payload: unknown): Set<string> | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
+
+  const source = payload as MonitorConfigsPayload & { result?: unknown; data?: unknown }
+  const ids = source.server_ids ?? source.serverIds
+  if (Array.isArray(ids)) return new Set(ids.map((id) => String(id)))
+  if (source.result && typeof source.result === 'object') {
+    const result = source.result as MonitorConfigsPayload
+    const resultIds = result.server_ids ?? result.serverIds
+    if (Array.isArray(resultIds)) return new Set(resultIds.map((id) => String(id)))
+  }
+  if (source.data && typeof source.data === 'object') {
+    const data = source.data as MonitorConfigsPayload
+    const dataIds = data.server_ids ?? data.serverIds
+    if (Array.isArray(dataIds)) return new Set(dataIds.map((id) => String(id)))
+  }
+  return null
+}
+
+function filterMonitoredServers(servers: ServerItem[], monitoredIds: Set<string> | null) {
+  if (!monitoredIds) return servers
+  return servers.filter((server) => monitoredIds.has(serverId(server)))
 }
 
 function normalizeHistory(payload: unknown, monitorNames: Map<string, string>): MonitorPoint[] {

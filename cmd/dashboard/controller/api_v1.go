@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"log"
 	"sort"
 	"strconv"
@@ -23,7 +24,7 @@ type apiV1 struct {
 // monitor API 短时缓存（包级别）
 var (
 	monitorCacheMu sync.Mutex
-	monitorCache   = map[uint64]struct {
+	monitorCache   = map[string]struct {
 		ts   time.Time
 		data []byte // pre-encoded JSON payload
 		dur  time.Duration
@@ -337,9 +338,10 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 			startTime := endTime.Add(-duration)
 
 			// 命中短时缓存则直接返回（预编码 JSON）
+			monitorCacheKey := fmt.Sprintf("%d:%s", server.ID, rangeParam)
 			monitorCacheMu.Lock()
-			if ce, ok := monitorCache[server.ID]; ok {
-				if time.Since(ce.ts) <= 500*time.Millisecond && ce.dur == duration {
+			if ce, ok := monitorCache[monitorCacheKey]; ok {
+				if time.Since(ce.ts) <= 30*time.Second && ce.dur == duration {
 					payload := ce.data
 					monitorCacheMu.Unlock()
 					c.Status(200)
@@ -432,7 +434,7 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 
 			// 写入短时缓存
 			monitorCacheMu.Lock()
-			monitorCache[server.ID] = struct {
+			monitorCache[monitorCacheKey] = struct {
 				ts   time.Time
 				data []byte
 				dur  time.Duration
@@ -540,10 +542,53 @@ func (v *apiV1) monitorConfigs(c *gin.Context) {
 	// 获取监控配置列表
 	if singleton.ServiceSentinelShared != nil {
 		monitors := singleton.ServiceSentinelShared.Monitors()
-		WriteJSON(c, 200, monitors)
+		WriteJSON(c, 200, gin.H{
+			"monitors":   monitors,
+			"server_ids": monitoredServerIDs(monitors),
+		})
 	} else {
-		WriteJSON(c, 200, []interface{}{})
+		WriteJSON(c, 200, gin.H{
+			"monitors":   []interface{}{},
+			"server_ids": []uint64{},
+		})
 	}
+}
+
+func monitoredServerIDs(monitors []*model.Monitor) []uint64 {
+	ids := make(map[uint64]struct{})
+	singleton.ServerLock.RLock()
+	serverIDs := make([]uint64, 0, len(singleton.ServerList))
+	for id := range singleton.ServerList {
+		serverIDs = append(serverIDs, id)
+	}
+	singleton.ServerLock.RUnlock()
+
+	for _, monitor := range monitors {
+		if monitor == nil || (monitor.Type != model.TaskTypeICMPPing && monitor.Type != model.TaskTypeTCPPing) {
+			continue
+		}
+		if monitor.SkipServers == nil {
+			_ = monitor.InitSkipServers()
+		}
+		for _, serverID := range serverIDs {
+			if monitor.Cover == model.MonitorCoverAll {
+				if !monitor.SkipServers[serverID] {
+					ids[serverID] = struct{}{}
+				}
+				continue
+			}
+			if monitor.Cover == model.MonitorCoverIgnoreAll && monitor.SkipServers[serverID] {
+				ids[serverID] = struct{}{}
+			}
+		}
+	}
+
+	result := make([]uint64, 0, len(ids))
+	for id := range ids {
+		result = append(result, id)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
 }
 
 func (v *apiV1) serviceStatus(c *gin.Context) {

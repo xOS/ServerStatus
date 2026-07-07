@@ -97,7 +97,6 @@ let adminAbortController: AbortController | undefined
 const entityRows = new Map<AdminKey, Row[]>()
 let settingsCache: Row | null = null
 let adminBrandName = 'ServerStatus'
-let adminVersion = ''
 let apiKeyLoginAllowed = false
 
 const yesNo = (value: unknown) => toBool(value) ? '<span class="admin-badge is-green">是</span>' : '<span class="admin-badge">否</span>'
@@ -700,7 +699,7 @@ async function renderDashboard() {
         </div>
         <div class="admin-status-grid">
           ${statusMeter('服务器在线率', `${onlineRate}%`, onlineRate, `${online} 在线 / ${offline} 离线`, '/dashboard/server')}
-          ${statusItem('后台版本', adminVersion || value(profileRow, 'Version') || '-', '当前运行版本', 'settings', '/dashboard/setting')}
+          ${statusItem('离线服务器', String(offline), `${total} 台总数`, 'server', '/dashboard/server')}
           ${statusItem('监控任务', String(monitorRows.length), '网络探测配置', 'monitor', '/dashboard/monitor')}
           ${statusItem('通知规则', String(alertRuleRows.length), '事件触发规则', 'alert', '/dashboard/rule')}
           ${statusItem('授权 Token', String(tokenRows.length), 'Authorization 请求头', 'key', '/dashboard/api')}
@@ -724,10 +723,8 @@ async function loadAdminProfile() {
 
 function updateAdminBrand(profile: Row) {
   const brand = value(profile, 'Conf.Site.Brand') || adminBrandName
-  const version = value(profile, 'Version')
   apiKeyLoginAllowed = false
   adminBrandName = brand
-  adminVersion = version
   const title = document.getElementById('admin-brand-title')
   const footerBrand = document.getElementById('admin-footer-brand')
   const footerCustomCode = document.getElementById('admin-footer-custom-code')

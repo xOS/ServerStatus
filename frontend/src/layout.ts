@@ -165,8 +165,8 @@ export function injectAppShell(container: HTMLDivElement, activeRoute: 'home' | 
             <a class="nav-logo" href="/" aria-label="Server Status">
               <img src="/static/logo.svg?v20220602" alt="">
             </a>
+            <a class="nav-link ${activeRoute === 'home' ? 'active' : ''}" href="/" data-route="home">${icon('server', 'nav-svg')}<span>服务器</span></a>
             <a class="nav-link ${activeRoute === 'network' ? 'active' : ''}" href="/network" data-route="network">${icon('circleDot', 'nav-svg')}<span>网络</span></a>
-            <a class="nav-link" href="http://status.nange.cn/" target="_blank" rel="noreferrer" data-route="service">${icon('server', 'nav-svg')}<span>服务</span></a>
           </div>
           <div class="nav-right" id="admin-area"></div>
         </div>

@@ -368,6 +368,7 @@ function bindEvents() {
   resizeHandler = throttleFrame(() => {
     updateTabSlider()
     refreshCpuOverflow()
+    refreshProgressLabels()
   })
   window.addEventListener('resize', resizeHandler)
 }
@@ -748,8 +749,34 @@ function setProgress(
   if (cache.get(key) === signature) return
   cache.set(key, signature)
   bar.style.width = width
+  bar.style.minWidth = !isMinimum && safeValue > 0 ? '1px' : ''
   bar.className = `progress-fill is-${tone}${isMinimum ? ' is-minimum' : ''}`
   label.textContent = labelText
+  queueProgressLabelMeasure(bar, label, isMinimum)
+}
+
+function queueProgressLabelMeasure(bar: HTMLElement, label: HTMLElement, isMinimum: boolean) {
+  requestAnimationFrame(() => {
+    if (isMinimum) {
+      label.style.removeProperty('--progress-label-left')
+      return
+    }
+
+    const track = bar.parentElement
+    if (!track) return
+
+    const fillWidth = bar.clientWidth
+    const labelWidth = label.scrollWidth
+    const leftInset = 6
+    const centeredLeft = (fillWidth - labelWidth) / 2
+
+    if (centeredLeft < leftInset) {
+      label.style.setProperty('--progress-label-left', `${leftInset + labelWidth / 2}px`)
+      return
+    }
+
+    label.style.setProperty('--progress-label-left', `${fillWidth / 2}px`)
+  })
 }
 
 function renderTabs() {
@@ -1069,6 +1096,15 @@ function queueCpuMeasure(refs: CardRefs) {
 function refreshCpuOverflow() {
   for (const refs of state.cards.values()) {
     queueCpuMeasure(refs)
+  }
+}
+
+function refreshProgressLabels() {
+  for (const refs of state.cards.values()) {
+    queueProgressLabelMeasure(refs.cpuBar, refs.cpuLabel, refs.cpuBar.classList.contains('is-minimum'))
+    queueProgressLabelMeasure(refs.memBar, refs.memLabel, refs.memBar.classList.contains('is-minimum'))
+    queueProgressLabelMeasure(refs.diskBar, refs.diskLabel, refs.diskBar.classList.contains('is-minimum'))
+    queueProgressLabelMeasure(refs.trafficBar, refs.trafficLabel, refs.trafficBar.classList.contains('is-minimum'))
   }
 }
 
