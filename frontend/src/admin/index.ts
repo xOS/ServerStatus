@@ -414,6 +414,7 @@ export function initLogin(container: HTMLDivElement) {
     .then((response) => response.json())
     .then((profile) => {
       const row = objectFrom(profile?.data || profile)
+      updateAdminBrand(row)
       renderLogin(loginOAuthAllowed(row))
     })
     .catch(() => null)
@@ -718,6 +719,7 @@ function updateAdminBrand(profile: Row) {
   const brand = value(profile, 'Conf.Site.Brand') || adminBrandName
   apiKeyLoginAllowed = false
   adminBrandName = brand
+  document.title = brand
   const title = document.getElementById('admin-brand-title')
   const footerBrand = document.getElementById('admin-footer-brand')
   const footerCustomCode = document.getElementById('admin-footer-custom-code')
