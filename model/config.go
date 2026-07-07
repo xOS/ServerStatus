@@ -60,7 +60,7 @@ type Config struct {
 		EnableAPIKey bool // 启用 API 请求头授权入口
 	}
 	Security struct {
-		AllowedOrigins string // 允许跨域访问 API 的前端 Origin，多个用逗号分隔
+		AllowedOrigins string // 允许跨域访问 API 的前端 Origin 或域名，多个用逗号分隔，支持 *.example.com
 	}
 	HTTPPort      uint
 	GRPCPort      uint

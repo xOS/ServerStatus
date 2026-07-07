@@ -272,7 +272,8 @@ func corsMiddleware(c *gin.Context) {
 		return
 	}
 
-	if isAllowedOrigin(c, origin) {
+	allowed := isAllowedOrigin(c, origin)
+	if allowed {
 		c.Header("Vary", "Origin")
 		c.Header("Access-Control-Allow-Origin", origin)
 		c.Header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
@@ -281,7 +282,7 @@ func corsMiddleware(c *gin.Context) {
 	}
 
 	if c.Request.Method == http.MethodOptions {
-		if !isAllowedOrigin(c, origin) {
+		if !allowed {
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}
@@ -293,27 +294,64 @@ func corsMiddleware(c *gin.Context) {
 }
 
 func isAllowedOrigin(c *gin.Context, origin string) bool {
+	return isAllowedOriginForRequest(c.Request, origin)
+}
+
+func isAllowedOriginForRequest(r *http.Request, origin string) bool {
 	originURL, err := url.Parse(origin)
 	if err != nil || originURL.Scheme == "" || originURL.Host == "" {
 		return false
 	}
-	if sameRequestHost(c.Request, originURL) {
+	if sameRequestHost(r, originURL) {
 		return true
 	}
 
 	for _, allowed := range strings.Split(singleton.Conf.Security.AllowedOrigins, ",") {
-		allowed = strings.TrimSpace(strings.TrimRight(allowed, "/"))
-		if allowed == "" {
-			continue
-		}
-		if allowed == "*" {
-			return singleton.Conf.Debug
-		}
-		if strings.EqualFold(allowed, strings.TrimRight(origin, "/")) {
+		if allowedOriginMatches(allowed, originURL) {
 			return true
 		}
 	}
 	return false
+}
+
+func allowedOriginMatches(allowed string, originURL *url.URL) bool {
+	allowed = strings.TrimSpace(strings.TrimRight(allowed, "/"))
+	if allowed == "" {
+		return false
+	}
+	if allowed == "*" {
+		return singleton.Conf.Debug
+	}
+	if strings.Contains(allowed, "://") {
+		allowedURL, err := url.Parse(allowed)
+		if err != nil || allowedURL.Scheme == "" || allowedURL.Host == "" {
+			return false
+		}
+		return strings.EqualFold(allowedURL.Scheme, originURL.Scheme) &&
+			strings.EqualFold(allowedURL.Host, originURL.Host)
+	}
+	if strings.Contains(allowed, "/") {
+		return false
+	}
+
+	allowedHost := strings.ToLower(strings.Trim(allowed, "[]"))
+	originHost := strings.ToLower(originURL.Hostname())
+	originHostPort := strings.ToLower(originURL.Host)
+	if allowedHost == "" || originHost == "" {
+		return false
+	}
+
+	if strings.HasPrefix(allowedHost, "*.") {
+		suffix := strings.TrimPrefix(allowedHost, "*.")
+		if suffix == "" || strings.Contains(suffix, ":") {
+			return false
+		}
+		return originHost != suffix && strings.HasSuffix(originHost, "."+suffix)
+	}
+	if strings.Contains(allowedHost, ":") {
+		return strings.EqualFold(allowedHost, originHostPort)
+	}
+	return strings.EqualFold(allowedHost, originHost)
 }
 
 func sameRequestHost(r *http.Request, originURL *url.URL) bool {
@@ -332,26 +370,7 @@ func isAllowedWebSocketOrigin(r *http.Request) bool {
 	if origin == "" {
 		return true
 	}
-	originURL, err := url.Parse(origin)
-	if err != nil || originURL.Scheme == "" || originURL.Host == "" {
-		return false
-	}
-	if sameRequestHost(r, originURL) {
-		return true
-	}
-	for _, allowed := range strings.Split(singleton.Conf.Security.AllowedOrigins, ",") {
-		allowed = strings.TrimSpace(strings.TrimRight(allowed, "/"))
-		if allowed == "" {
-			continue
-		}
-		if allowed == "*" {
-			return singleton.Conf.Debug
-		}
-		if strings.EqualFold(allowed, strings.TrimRight(origin, "/")) {
-			return true
-		}
-	}
-	return false
+	return isAllowedOriginForRequest(r, origin)
 }
 
 func setSecureCookie(c *gin.Context, name, value string, maxAge int) {

@@ -25,21 +25,21 @@ VITE_SERVERSTATUS_API_BASE=https://SERVER_IP:1001/api/v1
 
 Use `http://SERVER_IP:1001/api/v1` only when the frontend is also served over HTTP. Vercel and Cloudflare Pages serve the frontend over HTTPS, so the backend endpoint must also be HTTPS, otherwise browsers will block the request as mixed content.
 
-Add the deployed frontend origin to the backend config, then restart the backend:
+Add the deployed frontend origin or hostname to the backend config, then restart the backend:
 
 ```yaml
 security:
   allowedorigins: "https://ops.aapls.com"
 ```
 
-For multiple frontend origins, separate them with commas:
+Both full Origin and hostname shorthand are supported. Full Origin matches the scheme and host exactly; hostname shorthand matches by hostname and supports wildcard subdomains:
 
 ```yaml
 security:
-  allowedorigins: "https://ops.aapls.com,https://server-status-eta.vercel.app,https://example.pages.dev"
+  allowedorigins: "ops.aapls.com,*.vercel.app,https://example.pages.dev"
 ```
 
-Use the exact browser Origin. For example, `https://ops.aapls.com/` is visited in the address bar, but the CORS Origin is `https://ops.aapls.com` without a trailing slash or path.
+For multiple frontend origins, separate them with commas. `https://ops.aapls.com` only allows that exact Origin; `ops.aapls.com` allows the same hostname regardless of `http`/`https`; `*.vercel.app` allows Vercel preview subdomains.
 
 The same whitelist is used for HTTP API CORS and `/api/v1/ws` WebSocket Origin checks.
 
