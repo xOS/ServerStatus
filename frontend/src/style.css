@@ -3188,7 +3188,7 @@ i.fl-tux {
   }
 
   .bottom-footer {
-    bottom: 2px;
+    bottom: 5px;
   }
 
   .admin-shell {
@@ -3368,9 +3368,9 @@ i.fl-tux {
   }
 
   .admin-footer {
-    bottom: 2px;
+    bottom: 5px;
     min-height: var(--footer-height);
-    margin-bottom: 2px;
+    margin-bottom: 5px;
     padding: 7px 12px;
     flex-wrap: wrap;
     border-radius: 10px;
