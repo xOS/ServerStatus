@@ -739,12 +739,13 @@ function setProgress(
   live: boolean,
   key: string,
   cache: Map<string, string>,
-  labelText = `${value}%`,
+  labelText?: string,
 ) {
   const safeValue = clamp(value, 0, 100)
-  const width = `${safeValue}%`
+  const width = `${formatProgressWidth(safeValue)}%`
   const tone = live && safeValue > 0 ? progressTone(value) : 'offline'
-  const signature = `${width}|${tone}|${labelText}`
+  const displayText = labelText ?? formatProgressLabel(safeValue)
+  const signature = `${width}|${tone}|${displayText}`
   if (cache.get(key) === signature) return
   cache.set(key, signature)
   const track = bar.parentElement
@@ -754,7 +755,7 @@ function setProgress(
   bar.style.width = width
   bar.style.minWidth = '24px'
   bar.className = 'progress-fill bar'
-  label.textContent = labelText
+  label.textContent = displayText
   queueProgressLabelMeasure(bar, label)
 }
 
@@ -1003,7 +1004,7 @@ function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficVi
       state.trafficById.set(String(item.server_id), {
         max: item.max_formatted || formatByteSize(maxBytes),
         used: item.used_formatted || formatByteSize(usedBytes),
-        percent: Math.max(0, percent),
+        percent: clamp(percent, 0, 100),
         serverName: item.server_name || '',
         cycleName: item.cycle_name || '',
       })
@@ -1015,7 +1016,7 @@ function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficVi
     state.trafficById.set(String(id), {
       max: value.max || '0B',
       used: value.used || '0B',
-      percent: Math.max(0, finiteNumber(value.percent, 0)),
+      percent: clamp(finiteNumber(value.percent, 0), 0, 100),
       serverName: value.serverName || '',
       cycleName: value.cycleName || '',
     })
@@ -1232,9 +1233,7 @@ function trafficFor(server: ServerInfo): TrafficView {
 }
 
 function trafficLabel(traffic: TrafficView) {
-  const value = traffic.percent
-  if (value < 0) return '0%'
-  return `${value.toFixed(1)}%`
+  return formatProgressLabel(traffic.percent)
 }
 
 function trafficTooltip(server: ServerInfo) {
@@ -1308,7 +1307,19 @@ function percent(live: boolean, used?: number, total?: number) {
   const usedValue = toNumber(used)
   const totalValue = toNumber(total)
   if (usedValue <= 0 || totalValue <= 0) return 0
-  return Math.round(clamp((usedValue / totalValue) * 100, 0, 100))
+  return clamp((usedValue / totalValue) * 100, 0, 100)
+}
+
+function formatProgressWidth(value: number) {
+  return trimNumber(clamp(value, 0, 100), 4)
+}
+
+function formatProgressLabel(value: number) {
+  const safeValue = clamp(finiteNumber(value, 0), 0, 100)
+  if (safeValue <= 0) return '0%'
+  if (safeValue < 0.1) return '<0.1%'
+  if (safeValue < 10) return `${trimNumber(safeValue, 1)}%`
+  return `${Math.round(safeValue)}%`
 }
 
 function progressTone(value: number) {
@@ -1487,6 +1498,10 @@ function firstTemperature(items?: Array<{ Temperature?: number }>) {
 
 function toFixed2(value?: number) {
   return finiteNumber(value, 0).toFixed(2)
+}
+
+function trimNumber(value: number, digits: number) {
+  return Number(value.toFixed(digits)).toString()
 }
 
 function t(key: LabelKey) {
