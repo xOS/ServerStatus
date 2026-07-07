@@ -743,8 +743,7 @@ function setProgress(
   const safeValue = clamp(value, 0, 100)
   const width = `${safeValue}%`
   const tone = live ? progressTone(value) : 'offline'
-  const trackWidth = bar.parentElement?.clientWidth || 0
-  const isMinimum = safeValue <= 0 || (trackWidth > 0 && (trackWidth * safeValue) / 100 <= 24)
+  const isMinimum = safeValue <= 0
   const signature = `${width}|${tone}|${labelText}|${isMinimum ? 'min' : 'bar'}`
   if (cache.get(key) === signature) return
   cache.set(key, signature)

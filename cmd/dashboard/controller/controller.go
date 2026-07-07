@@ -376,6 +376,7 @@ func isAllowedWebSocketOrigin(r *http.Request) bool {
 
 func setSecureCookie(c *gin.Context, name, value string, maxAge int) {
 	if requestIsHTTPS(c.Request) {
+		// #nosec G124 -- HTTPS 请求明确设置 Secure、HttpOnly、SameSite=None，用于跨域授权 Cookie。
 		http.SetCookie(c.Writer, &http.Cookie{
 			Name:     name,
 			Value:    value,
@@ -405,6 +406,7 @@ func clearSecureCookie(c *gin.Context, name string) {
 
 func expireSecureCookie(c *gin.Context, name, path string) {
 	if requestIsHTTPS(c.Request) {
+		// #nosec G124 -- HTTPS 请求明确设置 Secure、HttpOnly、SameSite=None，用于清理跨域授权 Cookie。
 		http.SetCookie(c.Writer, &http.Cookie{
 			Name:     name,
 			Value:    "",
