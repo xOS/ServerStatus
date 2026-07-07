@@ -368,6 +368,7 @@ function bindEvents() {
   resizeHandler = throttleFrame(() => {
     updateTabSlider()
     refreshCpuOverflow()
+    refreshProgressLabels()
   })
   window.addEventListener('resize', resizeHandler)
 }
@@ -751,9 +752,30 @@ function setProgress(
     track.className = `progress-track ui progress ${tone}`
   }
   bar.style.width = width
-  bar.style.minWidth = 'unset'
+  bar.style.minWidth = safeValue > 0 ? '24px' : '0'
   bar.className = 'progress-fill bar'
   label.textContent = labelText
+  queueProgressLabelMeasure(bar, label)
+}
+
+function queueProgressLabelMeasure(bar: HTMLElement, label: HTMLElement) {
+  requestAnimationFrame(() => {
+    const fillWidth = bar.clientWidth
+    if (fillWidth <= 0) {
+      label.style.removeProperty('--progress-label-right')
+      return
+    }
+
+    const edgeInset = 7
+    const labelWidth = label.scrollWidth
+    const defaultLeft = fillWidth - edgeInset - labelWidth
+    if (defaultLeft >= edgeInset) {
+      label.style.removeProperty('--progress-label-right')
+      return
+    }
+
+    label.style.setProperty('--progress-label-right', `${fillWidth - edgeInset - labelWidth}px`)
+  })
 }
 
 function renderTabs() {
@@ -1073,6 +1095,15 @@ function queueCpuMeasure(refs: CardRefs) {
 function refreshCpuOverflow() {
   for (const refs of state.cards.values()) {
     queueCpuMeasure(refs)
+  }
+}
+
+function refreshProgressLabels() {
+  for (const refs of state.cards.values()) {
+    queueProgressLabelMeasure(refs.cpuBar, refs.cpuLabel)
+    queueProgressLabelMeasure(refs.memBar, refs.memLabel)
+    queueProgressLabelMeasure(refs.diskBar, refs.diskLabel)
+    queueProgressLabelMeasure(refs.trafficBar, refs.trafficLabel)
   }
 }
 
