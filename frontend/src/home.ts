@@ -676,9 +676,8 @@ function progressRow(label: string, key: string) {
     <div class="metric-row">
       <div class="metric-label">${label}</div>
       <div class="metric-progress">
-        <div class="progress-track">
-          <div class="progress-fill" data-ref="${key}Bar"></div>
-          <small class="progress-label" data-ref="${key}Label"></small>
+        <div class="progress-track ui progress">
+          <div class="progress-fill bar" data-ref="${key}Bar"><small data-ref="${key}Label"></small></div>
         </div>
       </div>
     </div>
@@ -747,8 +746,13 @@ function setProgress(
   const signature = `${width}|${tone}|${labelText}`
   if (cache.get(key) === signature) return
   cache.set(key, signature)
+  const track = bar.parentElement
+  if (track) {
+    track.className = `progress-track ui progress ${tone}`
+  }
   bar.style.width = width
-  bar.className = `progress-fill is-${tone}`
+  bar.style.minWidth = 'unset'
+  bar.className = 'progress-fill bar'
   label.textContent = labelText
 }
 
