@@ -2715,10 +2715,8 @@ i.fl-tux {
   padding: 14px;
   border: 1px solid var(--glass-border);
   border-radius: 12px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.58)),
-    var(--glass-bg-card);
-  box-shadow: var(--shadow-soft);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
   backdrop-filter: saturate(155%) blur(14px);
   -webkit-backdrop-filter: saturate(155%) blur(14px);
 }
@@ -2767,9 +2765,7 @@ i.fl-tux {
   padding: 3px;
   border: 1px solid var(--glass-border);
   border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.5)),
-    var(--glass-bg-soft);
+  background: rgba(255, 255, 255, 0.66);
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
   backdrop-filter: saturate(150%) blur(12px);
   -webkit-backdrop-filter: saturate(150%) blur(12px);
@@ -2799,7 +2795,7 @@ i.fl-tux {
 
 .network-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   margin: 0 0 10px;
 }
@@ -2815,6 +2811,10 @@ i.fl-tux {
 
 .network-stat-item[data-network-stat="avg"] {
   border-color: rgba(3, 169, 244, 0.18);
+}
+
+.network-stat-item[data-network-stat="p95"] {
+  border-color: rgba(255, 136, 64, 0.18);
 }
 
 .network-stat-item[data-network-stat="max"] {
@@ -2876,31 +2876,60 @@ i.fl-tux {
   touch-action: none;
 }
 
-.network-grid-line {
-  stroke: rgba(34, 36, 38, 0.1);
+.network-plot-bg {
+  fill: rgba(255, 255, 255, 0.58);
+  stroke: rgba(34, 36, 38, 0.08);
   stroke-width: 1;
 }
 
+.network-grid-line {
+  stroke: rgba(34, 36, 38, 0.085);
+  stroke-width: 1;
+}
+
+.network-grid-line.is-vertical {
+  stroke: rgba(34, 36, 38, 0.055);
+}
+
 .network-axis-line {
-  stroke: rgba(34, 36, 38, 0.22);
+  stroke: rgba(34, 36, 38, 0.2);
   stroke-width: 1;
 }
 
 .network-axis-label {
-  fill: rgba(0, 0, 0, 0.45);
+  fill: rgba(0, 0, 0, 0.42);
   font-size: 11px;
   font-weight: 600;
 }
 
+.network-time-label {
+  fill: rgba(0, 0, 0, 0.48);
+}
+
 .network-line {
   fill: none;
-  stroke-width: 2.4;
+  stroke-width: 2.25;
   stroke-linecap: round;
   stroke-linejoin: round;
+  filter: drop-shadow(0 1px 1px rgba(15, 23, 42, 0.16));
+}
+
+.network-line-shadow {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.1;
+}
+
+.network-line-end {
+  stroke: #fff;
+  stroke-width: 2;
+  filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.18));
 }
 
 .network-hover-line {
-  stroke: rgba(0, 0, 0, 0.25);
+  stroke: rgba(15, 23, 42, 0.24);
   stroke-width: 1;
   stroke-dasharray: 4 4;
 }
@@ -2914,13 +2943,13 @@ i.fl-tux {
 .network-hover-tooltip {
   position: absolute;
   z-index: 4;
-  width: 220px;
-  padding: 9px 10px;
+  width: 232px;
+  padding: 10px 11px;
   border: 1px solid var(--glass-border);
-  border-radius: 8px;
+  border-radius: 10px;
   color: #333;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.11);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.13);
   font-size: 12px;
   line-height: 1.45;
   pointer-events: none;
@@ -2944,7 +2973,9 @@ i.fl-tux {
 }
 
 .network-hover-list {
-  margin-top: 6px;
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
 }
 
 .network-hover-row {
@@ -2952,7 +2983,8 @@ i.fl-tux {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: 20px;
+  min-height: 22px;
+  padding: 2px 0;
 }
 
 .network-hover-row span {
@@ -3096,9 +3128,7 @@ i.fl-tux {
   .network-stat-item {
     padding: 9px 10px;
     border-radius: 10px;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0.54)),
-      rgba(255, 255, 255, 0.66);
+    background: rgba(255, 255, 255, 0.66);
   }
 
   .network-stat-item strong {

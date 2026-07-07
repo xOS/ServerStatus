@@ -718,7 +718,7 @@ function updateCard(server: ServerInfo, refs: CardRefs) {
   setProgress(refs.diskBar, refs.diskLabel, percent(live, stateInfo.DiskUsed, host.DiskTotal), live, 'disk-progress', refs.cache)
 
   const traffic = trafficFor(server)
-  setProgress(refs.trafficBar, refs.trafficLabel, traffic.percent, true, 'traffic-progress', refs.cache, trafficLabel(traffic))
+  setProgress(refs.trafficBar, refs.trafficLabel, traffic.percent, live, 'traffic-progress', refs.cache, trafficLabel(traffic))
 
   setText(refs.netInSpeed, formatByteSize(stateInfo.NetInSpeed), 'net-in-speed', refs.cache)
   setText(refs.netOutSpeed, formatByteSize(stateInfo.NetOutSpeed), 'net-out-speed', refs.cache)
@@ -743,7 +743,7 @@ function setProgress(
 ) {
   const safeValue = clamp(value, 0, 100)
   const width = `${formatProgressWidth(safeValue)}%`
-  const tone = live && safeValue > 0 ? progressTone(value) : 'offline'
+  const tone = live ? progressTone(safeValue) : 'offline'
   const displayText = labelText ?? formatProgressLabel(safeValue)
   const signature = `${width}|${tone}|${displayText}`
   if (cache.get(key) === signature) return
@@ -954,6 +954,7 @@ function applyFrame(frame: WebSocketFrame) {
 
   renderTabs()
   applyFilter()
+  refreshTooltipContent()
 }
 
 function updateServerData(incoming: ServerInfo[], now?: number) {
@@ -1121,9 +1122,14 @@ function measureCpuOverflow(refs: CardRefs) {
 function showTooltip(id: ServerId, event: PointerEvent) {
   const server = state.serverById.get(id)
   if (!server || !server.Host || !tooltip) return
-  tooltip.innerHTML = tooltipContent(server)
   tooltip.hidden = false
+  refreshTooltipContent(server)
   positionTooltip(event)
+}
+
+function refreshTooltipContent(server = state.serverById.get(state.tooltipServerId)) {
+  if (!tooltip || !state.tooltipServerId || !server || !server.Host) return
+  tooltip.innerHTML = tooltipContent(server)
 }
 
 function hideTooltip() {

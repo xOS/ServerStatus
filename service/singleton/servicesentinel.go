@@ -111,6 +111,23 @@ type pingStore struct {
 	down  uint64
 }
 
+func (ts *pingStore) addResult(mh *pb.TaskResult) {
+	ts.count++
+	if mh.GetSuccessful() {
+		ts.up++
+		ts.ping = (ts.ping*float32(ts.up-1) + mh.GetDelay()) / float32(ts.up)
+		return
+	}
+	ts.down++
+}
+
+func (ts *pingStore) reset() {
+	ts.count = 0
+	ts.ping = 0
+	ts.up = 0
+	ts.down = 0
+}
+
 func (ss *ServiceSentinel) refreshMonthlyServiceStatus() {
 	// 刷新数据防止无人访问
 	ss.LoadStats()
@@ -331,18 +348,29 @@ func (ss *ServiceSentinel) loadMonitorHistory() {
 		}
 	}
 
-	var delayCount = make(map[int]int)
+	type delayCountKey struct {
+		monitorID uint64
+		dayIndex  int
+	}
+	var delayCount = make(map[delayCountKey]int)
 	for i := 0; i < len(mhs); i++ {
 		dayIndex := 28 - (int(today.Sub(mhs[i].CreatedAt).Hours()) / 24)
 		if dayIndex < 0 {
 			continue
 		}
-		ServiceSentinelShared.monthlyStatus[mhs[i].MonitorID].Delay[dayIndex] = (ServiceSentinelShared.monthlyStatus[mhs[i].MonitorID].Delay[dayIndex]*float32(delayCount[dayIndex]) + mhs[i].AvgDelay) / float32(delayCount[dayIndex]+1)
-		delayCount[dayIndex]++
-		ServiceSentinelShared.monthlyStatus[mhs[i].MonitorID].Up[dayIndex] += int(mhs[i].Up)
-		ServiceSentinelShared.monthlyStatus[mhs[i].MonitorID].TotalUp += mhs[i].Up
-		ServiceSentinelShared.monthlyStatus[mhs[i].MonitorID].Down[dayIndex] += int(mhs[i].Down)
-		ServiceSentinelShared.monthlyStatus[mhs[i].MonitorID].TotalDown += mhs[i].Down
+		monthlyStatus := ServiceSentinelShared.monthlyStatus[mhs[i].MonitorID]
+		if monthlyStatus == nil {
+			continue
+		}
+		if mhs[i].Up > 0 && mhs[i].AvgDelay > 0 {
+			countKey := delayCountKey{monitorID: mhs[i].MonitorID, dayIndex: dayIndex}
+			monthlyStatus.Delay[dayIndex] = (monthlyStatus.Delay[dayIndex]*float32(delayCount[countKey]) + mhs[i].AvgDelay) / float32(delayCount[countKey]+1)
+			delayCount[countKey]++
+		}
+		monthlyStatus.Up[dayIndex] += int(mhs[i].Up)
+		monthlyStatus.TotalUp += mhs[i].Up
+		monthlyStatus.Down[dayIndex] += int(mhs[i].Down)
+		monthlyStatus.TotalDown += mhs[i].Down
 	}
 }
 
@@ -515,13 +543,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 		if !ok {
 			ts = &pingStore{}
 		}
-		ts.count++
-		if mh.Successful {
-			ts.up++
-		} else {
-			ts.down++
-		}
-		ts.ping = (ts.ping*float32(ts.count-1) + mh.Delay) / float32(ts.count)
+		ts.addResult(mh)
 		avgPingCount := Conf.AvgPingCount
 		if avgPingCount <= 0 {
 			avgPingCount = 1
@@ -532,9 +554,8 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 			}
 			upCount := ts.up
 			downCount := ts.down
-			ts.count = 0
-			ts.up = 0
-			ts.down = 0
+			avgDelay := ts.ping
+			ts.reset()
 
 			// 根据数据库类型选择不同的保存方式
 			if Conf.DatabaseType == "badger" {
@@ -542,7 +563,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 				history := &model.MonitorHistory{
 					MonitorID: mh.GetId(),
 					ServerID:  r.Reporter,
-					AvgDelay:  ts.ping,
+					AvgDelay:  avgDelay,
 					Data:      mh.Data,
 					Up:        upCount,
 					Down:      downCount,
@@ -577,7 +598,7 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 				// SQLite模式：使用原有的异步队列
 				monitorData := map[string]interface{}{
 					"monitor_id": mh.GetId(),
-					"avg_delay":  ts.ping,
+					"avg_delay":  avgDelay,
 					"data":       mh.Data,
 					"server_id":  r.Reporter,
 					"up":         upCount,

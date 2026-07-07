@@ -56,6 +56,7 @@ interface MonitorConfigsPayload {
 type SeriesPoint = {
   time: number
   value: number
+  hasLatency: boolean
   up: number
   down: number
 }
@@ -67,11 +68,13 @@ type Series = {
 }
 
 type NetworkSummary = {
-  max: number
+  max: number | null
   min: number | null
-  avg: number
+  avg: number | null
+  p95: number | null
   loss: number | null
   count: number
+  latencyCount: number
 }
 
 type ChartModel = {
@@ -449,16 +452,20 @@ function buildSeries(history: MonitorPoint[]): Series[] {
     if (!Number.isFinite(time)) continue
 
     const value = optionalNumber(point.AvgDelay ?? point.avg_delay)
-    if (value === undefined || value < 0) continue
+    if (value !== undefined && value < 0) continue
 
     const monitorId = monitorPointId(point)
     const key = monitorPointName(point, monitorId)
     const list = groups.get(key) || []
+    const up = Math.max(0, finiteNumber(point.Up ?? point.up, 0))
+    const down = Math.max(0, finiteNumber(point.Down ?? point.down, 0))
+    const hasLatency = value !== undefined && value > 0 && (up > 0 || down === 0)
     list.push({
       time,
-      value,
-      up: Math.max(0, finiteNumber(point.Up ?? point.up, 0)),
-      down: Math.max(0, finiteNumber(point.Down ?? point.down, 0)),
+      value: hasLatency ? value : 0,
+      hasLatency,
+      up,
+      down,
     })
     groups.set(key, list)
   }
@@ -490,20 +497,23 @@ function buildSeries(history: MonitorPoint[]): Series[] {
 
 function summarizeSeries(series: Series[]): NetworkSummary | null {
   const points = series.flatMap((item) => item.points)
-  const values = points.map((point) => point.value).filter((value) => Number.isFinite(value))
-  if (values.length === 0) return null
-  const positiveValues = values.filter((value) => value > 0)
+  if (points.length === 0) return null
+  const values = points
+    .filter((point) => point.hasLatency && Number.isFinite(point.value))
+    .map((point) => point.value)
 
   const up = points.reduce((sum, point) => sum + point.up, 0)
   const down = points.reduce((sum, point) => sum + point.down, 0)
   const totalChecks = up + down
 
   return {
-    max: Math.max(...values),
-    min: positiveValues.length > 0 ? Math.min(...positiveValues) : null,
-    avg: values.reduce((sum, value) => sum + value, 0) / values.length,
+    max: values.length > 0 ? Math.max(...values) : null,
+    min: values.length > 0 ? Math.min(...values) : null,
+    avg: values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null,
+    p95: percentile(values, 0.95),
     loss: totalChecks > 0 ? (down / totalChecks) * 100 : null,
-    count: values.length,
+    count: points.length,
+    latencyCount: values.length,
   }
 }
 
@@ -518,15 +528,19 @@ function renderSummary(container: HTMLElement, summary: NetworkSummary | null, r
   container.innerHTML = `
     <div class="network-stat-item" data-network-stat="avg">
       <span>${RANGE_LABELS[range]}平均</span>
-      <strong>${formatMs(summary.avg)}</strong>
+      <strong>${formatNullableMs(summary.avg)}</strong>
+    </div>
+    <div class="network-stat-item" data-network-stat="p95">
+      <span>${RANGE_LABELS[range]}P95</span>
+      <strong>${formatNullableMs(summary.p95)}</strong>
     </div>
     <div class="network-stat-item" data-network-stat="max">
       <span>${RANGE_LABELS[range]}最高</span>
-      <strong>${formatMs(summary.max)}</strong>
+      <strong>${formatNullableMs(summary.max)}</strong>
     </div>
     <div class="network-stat-item" data-network-stat="min">
       <span>${RANGE_LABELS[range]}最低</span>
-      <strong>${summary.min === null ? '-' : formatMs(summary.min)}</strong>
+      <strong>${formatNullableMs(summary.min)}</strong>
     </div>
     <div class="network-stat-item" data-network-stat="loss">
       <span>${RANGE_LABELS[range]}丢包</span>
@@ -536,6 +550,9 @@ function renderSummary(container: HTMLElement, summary: NetworkSummary | null, r
 }
 
 function renderSvgChart(container: HTMLElement, series: Series[], serverNameValue: string, range: RangeKey): ChartModel | null {
+  const latencySeries = series
+    .map((item) => ({ ...item, points: item.points.filter((point) => point.hasLatency) }))
+    .filter((item) => item.points.length > 0)
   const width = Math.max(container.clientWidth, 320)
   const compact = width <= 520
   const height = compact ? 360 : 420
@@ -545,9 +562,9 @@ function renderSvgChart(container: HTMLElement, series: Series[], serverNameValu
   const plotWidth = width - padding.left - padding.right
   const plotHeight = height - padding.top - padding.bottom
 
-  const allPoints = series.flatMap((item) => item.points)
+  const allPoints = latencySeries.flatMap((item) => item.points)
   if (allPoints.length === 0) {
-    setChartMessage(container, '该服务器暂无网络监控数据')
+    setChartMessage(container, '该服务器暂无有效延迟数据')
     return null
   }
 
@@ -561,15 +578,23 @@ function renderSvgChart(container: HTMLElement, series: Series[], serverNameValu
   const x = (time: number) => padding.left + ((time - minTime) / timeSpan) * plotWidth
   const y = (value: number) => padding.top + plotHeight - (value / maxValue) * plotHeight
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => Math.round(maxValue * ratio))
+  const xTicks = buildTimeTicks(minTime, maxTime, compact ? 3 : 5)
 
-  const paths = series.map((item) => {
+  const paths = latencySeries.map((item) => {
     const d = item.points
       .map((point, index) => `${index === 0 ? 'M' : 'L'} ${x(point.time).toFixed(1)} ${y(point.value).toFixed(1)}`)
       .join(' ')
-    return `<path class="network-line" d="${d}" stroke="${item.color}"></path>`
+    const latest = item.points[item.points.length - 1]
+    const latestX = x(latest.time).toFixed(1)
+    const latestY = y(latest.value).toFixed(1)
+    return `
+      <path class="network-line-shadow" d="${d}" stroke="${item.color}"></path>
+      <path class="network-line" d="${d}" stroke="${item.color}"></path>
+      <circle class="network-line-end" cx="${latestX}" cy="${latestY}" r="3.5" fill="${item.color}"></circle>
+    `
   }).join('')
 
-  const legend = series.map((item) => `
+  const legend = latencySeries.map((item) => `
     <span class="network-legend-item">
       <span class="network-legend-swatch" style="background:${item.color}"></span>${escapeHtml(item.name)}
     </span>
@@ -579,18 +604,27 @@ function renderSvgChart(container: HTMLElement, series: Series[], serverNameValu
     const yy = y(tick)
     return `
       <line class="network-grid-line" x1="${padding.left}" y1="${yy.toFixed(1)}" x2="${(width - padding.right).toFixed(1)}" y2="${yy.toFixed(1)}"></line>
-      <text class="network-axis-label" x="${padding.left - 10}" y="${(yy + 4).toFixed(1)}" text-anchor="end">${tick}</text>
+      <text class="network-axis-label" x="${padding.left - 10}" y="${(yy + 4).toFixed(1)}" text-anchor="end">${tick}ms</text>
+    `
+  }).join('')
+
+  const timeGrid = xTicks.map((tick, index) => {
+    const xx = x(tick)
+    const textAnchor = index === 0 ? 'start' : index === xTicks.length - 1 ? 'end' : 'middle'
+    return `
+      <line class="network-grid-line is-vertical" x1="${xx.toFixed(1)}" y1="${padding.top}" x2="${xx.toFixed(1)}" y2="${height - padding.bottom}"></line>
+      <text class="network-axis-label network-time-label" x="${xx.toFixed(1)}" y="${height - 14}" text-anchor="${textAnchor}">${formatTime(tick, showDateLabel)}</text>
     `
   }).join('')
 
   container.innerHTML = `
     <div class="network-chart-canvas">
       <svg class="network-chart-svg" style="height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="${RANGE_LABELS[range]}网络延迟折线图">
+        <rect class="network-plot-bg" x="${padding.left}" y="${padding.top}" width="${plotWidth}" height="${plotHeight}" rx="10"></rect>
         ${grid}
+        ${timeGrid}
         <line class="network-axis-line" x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}"></line>
         <line class="network-axis-line" x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}"></line>
-        <text class="network-axis-label" x="${padding.left}" y="${height - 14}" text-anchor="start">${formatTime(minTime, showDateLabel)}</text>
-        <text class="network-axis-label" x="${width - padding.right}" y="${height - 14}" text-anchor="end">${formatTime(maxTime, showDateLabel)}</text>
         ${paths}
         <g class="network-hover-layer"></g>
       </svg>
@@ -607,7 +641,7 @@ function renderSvgChart(container: HTMLElement, series: Series[], serverNameValu
     maxTime,
     timeSpan,
     maxValue,
-    series,
+    series: latencySeries,
     serverName: serverNameValue,
     range,
   }
@@ -763,6 +797,10 @@ function formatMs(value: number) {
   return `${Math.round(value)} ms`
 }
 
+function formatNullableMs(value: number | null) {
+  return value === null ? '-' : formatMs(value)
+}
+
 function formatPercent(value: number) {
   return `${value < 10 ? value.toFixed(2) : value.toFixed(1)}%`
 }
@@ -810,6 +848,26 @@ function niceCeil(value: number) {
   const normalized = value / base
   const rounded = normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
   return rounded * base
+}
+
+function percentile(values: number[], ratio: number) {
+  if (values.length === 0) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const index = (sorted.length - 1) * clamp(ratio, 0, 1)
+  const lower = Math.floor(index)
+  const upper = Math.ceil(index)
+  if (lower === upper) return sorted[lower]
+  const weight = index - lower
+  return sorted[lower] * (1 - weight) + sorted[upper] * weight
+}
+
+function buildTimeTicks(minTime: number, maxTime: number, count: number) {
+  if (count <= 1 || maxTime <= minTime) return [minTime]
+  const ticks: number[] = []
+  for (let index = 0; index < count; index++) {
+    ticks.push(minTime + ((maxTime - minTime) * index) / (count - 1))
+  }
+  return ticks
 }
 
 function clamp(value: number, min: number, max: number) {
