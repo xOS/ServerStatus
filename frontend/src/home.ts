@@ -743,7 +743,7 @@ function setProgress(
 ) {
   const safeValue = clamp(value, 0, 100)
   const width = `${safeValue}%`
-  const tone = live ? progressTone(value) : 'offline'
+  const tone = live && safeValue > 0 ? progressTone(value) : 'offline'
   const signature = `${width}|${tone}|${labelText}`
   if (cache.get(key) === signature) return
   cache.set(key, signature)
@@ -752,7 +752,7 @@ function setProgress(
     track.className = `progress-track ui progress ${tone}`
   }
   bar.style.width = width
-  bar.style.minWidth = safeValue > 0 ? '24px' : '0'
+  bar.style.minWidth = '24px'
   bar.className = 'progress-fill bar'
   label.textContent = labelText
   queueProgressLabelMeasure(bar, label)

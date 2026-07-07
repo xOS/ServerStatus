@@ -10,10 +10,10 @@ site:
     viewpassword: ""
 oauth2:
     type: github
-    admin: 
+    admin:
     admingroups: ""
-    clientid: 
-    clientsecret: 
+    clientid:
+    clientsecret:
     endpoint: ""
     oidcdisplayname: OIDC
     oidcissuer: ""
@@ -44,3 +44,5 @@ dnsservers: ""
 databasetype: badger
 databaselocation: data/sqlite.db
 geoipdb: data/ipinfo_lite.mmdb
+security:
+    allowedorigins: ""
