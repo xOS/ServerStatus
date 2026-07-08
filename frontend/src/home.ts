@@ -701,7 +701,8 @@ function progressRow(label: string, key: string) {
       <div class="metric-label">${label}</div>
       <div class="metric-progress">
         <div class="progress-track ui progress">
-          <div class="progress-fill bar" data-ref="${key}Bar"><small data-ref="${key}Label"></small></div>
+          <div class="progress-fill bar" data-ref="${key}Bar"></div>
+          <small class="progress-label" data-ref="${key}Label"></small>
         </div>
       </div>
     </div>
@@ -805,19 +806,11 @@ function queueProgressLabelMeasure(bar: HTMLElement, label: HTMLElement) {
       label.style.removeProperty('max-width')
     }
 
-    label.style.removeProperty('left')
+    const maxLeft = Math.max(edgeInset, trackWidth - edgeInset - labelWidth)
+    const preferredLeft = fillWidth - edgeInset - labelWidth
+    label.style.removeProperty('--progress-label-right')
     label.style.removeProperty('right')
-
-    const minRight = fillWidth - trackWidth + edgeInset
-    const maxRight = fillWidth - edgeInset - labelWidth
-    const right = clamp(edgeInset, minRight, maxRight)
-
-    if (right === edgeInset) {
-      label.style.removeProperty('--progress-label-right')
-      return
-    }
-
-    label.style.setProperty('--progress-label-right', `${right}px`)
+    label.style.setProperty('left', `${clamp(preferredLeft, edgeInset, maxLeft)}px`)
   })
 }
 

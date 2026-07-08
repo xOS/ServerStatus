@@ -808,16 +808,18 @@ i.fl-tux {
   background-color: slategrey;
 }
 
-.progress-fill small {
+.progress-label {
   position: absolute;
   display: block;
   top: 50%;
-  right: var(--progress-label-right, 5px);
+  left: 5px;
   transform: translateY(-50%);
   width: max-content;
   overflow: hidden;
   text-overflow: clip;
+  color: rgba(255, 255, 255, 0.7);
   font-size: 12px;
+  font-weight: 700;
   line-height: 1;
   white-space: nowrap;
   text-align: right;
