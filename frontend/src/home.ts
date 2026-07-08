@@ -80,11 +80,26 @@ interface TrafficWireItem {
   server_id?: number | string
   server_name?: string
   max_bytes?: number
+  total_bytes?: number
   used_bytes?: number
+  max?: string
+  total?: string
+  used?: string
   max_formatted?: string
   used_formatted?: string
   used_percent?: number
   percent?: number
+  cycle_name?: string
+}
+
+interface TrafficRecordView {
+  max?: string
+  total?: string
+  used?: string
+  percent?: number
+  serverName?: string
+  server_name?: string
+  cycleName?: string
   cycle_name?: string
 }
 
@@ -99,7 +114,7 @@ interface TrafficView {
 interface WebSocketFrame {
   now?: number
   servers?: ServerInfo[]
-  trafficData?: TrafficWireItem[] | Record<string, TrafficView>
+  trafficData?: TrafficWireItem[] | Record<string, TrafficRecordView>
   type?: string
 }
 
@@ -999,17 +1014,17 @@ function updateServerData(incoming: ServerInfo[], now?: number) {
   return structureChanged
 }
 
-function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficView>) {
+function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficRecordView>) {
   if (Array.isArray(payload)) {
     for (const item of payload) {
       if (item.server_id === undefined || item.server_id === null) continue
-      const maxBytes = toNumber(item.max_bytes)
+      const maxBytes = toNumber(item.max_bytes ?? item.total_bytes)
       const usedBytes = toNumber(item.used_bytes)
-      const percent = finiteNumber(item.used_percent ?? item.percent, maxBytes > 0 ? (usedBytes / maxBytes) * 100 : 0)
+      const percent = trafficPercent(item.used_percent ?? item.percent, usedBytes, maxBytes)
       state.trafficById.set(String(item.server_id), {
-        max: item.max_formatted || formatByteSize(maxBytes),
-        used: item.used_formatted || formatByteSize(usedBytes),
-        percent: clamp(percent, 0, 100),
+        max: item.max_formatted || item.max || item.total || formatByteSize(maxBytes),
+        used: item.used_formatted || item.used || formatByteSize(usedBytes),
+        percent,
         serverName: item.server_name || '',
         cycleName: item.cycle_name || '',
       })
@@ -1019,11 +1034,11 @@ function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficVi
 
   for (const [id, value] of Object.entries(payload)) {
     state.trafficById.set(String(id), {
-      max: value.max || '0B',
+      max: value.max || value.total || '0B',
       used: value.used || '0B',
-      percent: clamp(finiteNumber(value.percent, 0), 0, 100),
-      serverName: value.serverName || '',
-      cycleName: value.cycleName || '',
+      percent: trafficPercent(value.percent, 0, 0),
+      serverName: value.serverName || value.server_name || '',
+      cycleName: value.cycleName || value.cycle_name || '',
     })
   }
 }
@@ -1243,7 +1258,7 @@ function trafficFor(server: ServerInfo): TrafficView {
 }
 
 function trafficLabel(traffic: TrafficView) {
-  return formatProgressLabel(traffic.percent)
+  return formatTrafficProgressLabel(traffic.percent)
 }
 
 function trafficTooltip(server: ServerInfo) {
@@ -1326,16 +1341,22 @@ function formatProgressWidth(value: number) {
 
 function formatProgressLabel(value: number) {
   const safeValue = clamp(finiteNumber(value, 0), 0, 100)
-  if (safeValue <= 0) return '0%'
-  if (safeValue < 0.1) return '<0.1%'
-  if (safeValue < 10) return `${trimNumber(safeValue, 1)}%`
-  return `${Math.round(safeValue)}%`
+  return `${Math.trunc(safeValue)}%`
+}
+
+function formatTrafficProgressLabel(value: number) {
+  return `${Math.max(0, finiteNumber(value, 0)).toFixed(2)}%`
 }
 
 function progressTone(value: number) {
   if (value < 60) return 'fine'
   if (value < 90) return 'warning'
   return 'error'
+}
+
+function trafficPercent(value: unknown, usedBytes: number, maxBytes: number) {
+  const fallback = maxBytes > 0 ? (usedBytes / maxBytes) * 100 : 0
+  return Math.max(0, finiteNumber(value, fallback))
 }
 
 function badgeInlineStyle(stat: GroupStat) {

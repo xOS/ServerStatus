@@ -20,7 +20,7 @@
   --orange: #f2711c;
   --warning: #ff9800;
   --red: #f44336;
-  --progress-error: #e41e10;
+  --progress-error: #f44336;
   --violet: #6435c9;
   --btn-bg: var(--glass-bg-card);
   --btn-bg-hover: rgba(255, 255, 255, 0.72);
@@ -782,8 +782,9 @@ i.fl-tux {
   width: 0%;
   height: 100%;
   overflow: visible;
+  min-width: 1.75em !important;
   max-width: 100% !important;
-  padding-right: 0;
+  padding-right: 0.4em;
   border-radius: 15px;
   background: slategrey;
   color: rgba(255, 255, 255, 0.7);
@@ -794,7 +795,7 @@ i.fl-tux {
 }
 
 .progress-track.fine .bar {
-  background-color: #03a9f4 !important;
+  background-color: #4caf50 !important;
 }
 
 .progress-track.warning .bar {
@@ -802,7 +803,7 @@ i.fl-tux {
 }
 
 .progress-track.error .bar {
-  background-color: #e41e10 !important;
+  background-color: #f44336 !important;
 }
 
 .progress-track.offline .bar {
