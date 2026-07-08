@@ -788,29 +788,28 @@ function queueProgressLabelMeasure(bar: HTMLElement, label: HTMLElement) {
     const trackWidth = bar.parentElement?.clientWidth || fillWidth
     if (fillWidth <= 0) {
       label.style.removeProperty('--progress-label-right')
+      label.style.removeProperty('left')
+      label.style.removeProperty('right')
       label.style.removeProperty('max-width')
       return
     }
 
     const edgeInset = 5
-    const labelWidth = label.scrollWidth
-    const minRight = fillWidth - trackWidth + edgeInset
-    const maxRight = fillWidth - edgeInset - labelWidth
+    const availableWidth = Math.max(0, trackWidth - edgeInset * 2)
+    const naturalLabelWidth = label.scrollWidth
+    const labelWidth = Math.min(naturalLabelWidth, availableWidth)
 
-    if (labelWidth > trackWidth - edgeInset * 2) {
-      label.style.setProperty('max-width', `${Math.max(0, trackWidth - edgeInset * 2)}px`)
-      label.style.setProperty('--progress-label-right', `${minRight}px`)
-      return
+    if (naturalLabelWidth > availableWidth) {
+      label.style.setProperty('max-width', `${availableWidth}px`)
+    } else {
+      label.style.removeProperty('max-width')
     }
 
-    label.style.removeProperty('max-width')
-    const right = clamp(edgeInset, minRight, maxRight)
-    if (right === edgeInset) {
-      label.style.removeProperty('--progress-label-right')
-      return
-    }
-
-    label.style.setProperty('--progress-label-right', `${right}px`)
+    const maxLeft = Math.max(edgeInset, trackWidth - edgeInset - labelWidth)
+    const preferredLeft = fillWidth - edgeInset - labelWidth
+    label.style.removeProperty('--progress-label-right')
+    label.style.setProperty('right', 'auto')
+    label.style.setProperty('left', `${clamp(preferredLeft, edgeInset, maxLeft)}px`)
   })
 }
 
