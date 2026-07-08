@@ -137,7 +137,7 @@ export const icon = (name: string, cls: string = '') => {
 
     case 'udp':
       return `<svg ${base}><path d="M5 11.2a10 10 0 0 1 14 0"/><path d="M8.4 14.7a5.1 5.1 0 0 1 7.2 0"/><circle class="svg-accent" cx="12" cy="18.4" r="1.55" fill="currentColor" stroke="none"/></svg>`
-      
+
     case 'windows':
       return `<svg ${c} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M3.4 5.6 10.7 4.6v6.55H3.4V5.6Z"/><path d="M12.2 4.38 20.6 3.2v7.95h-8.4V4.38Z"/><path d="M3.4 12.85h7.3v6.55l-7.3-1.02v-5.53Z"/><path d="M12.2 12.85h8.4v7.95l-8.4-1.18v-6.77Z"/></svg>`
 
@@ -149,10 +149,10 @@ export const icon = (name: string, cls: string = '') => {
 
     case 'chinaSource':
       return `<svg ${base}><path d="M5.1 4.3v15.4"/><path d="M5.1 5.2h13.4l-1.7 4.05 1.7 4.05H5.1V5.2Z"/><path class="svg-accent" d="m9.3 7.45.56 1.12 1.24.18-.9.88.21 1.24-1.11-.58-1.1.58.21-1.24-.9-.88 1.24-.18.55-1.12Z" fill="currentColor" stroke="none"/><path class="svg-soft" d="M12.8 8.1h2.35M12.8 10.7h1.9"/></svg>`
-      
+
     case 'apple':
       return `<svg ${c} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M16.5 12.2c-.02-2.15 1.75-3.18 1.83-3.23-1-1.47-2.56-1.67-3.12-1.69-1.33-.13-2.6.78-3.27.78-.68 0-1.72-.76-2.83-.74-1.46.02-2.8.85-3.55 2.16-1.51 2.62-.39 6.5 1.09 8.62.72 1.04 1.58 2.21 2.71 2.17 1.09-.04 1.5-.7 2.81-.7 1.31 0 1.68.7 2.83.68 1.17-.02 1.91-1.06 2.62-2.1.83-1.21 1.17-2.39 1.19-2.45-.03-.01-2.28-.87-2.31-3.5ZM14.34 5.88c.59-.71.99-1.7.88-2.68-.85.03-1.88.57-2.49 1.28-.55.64-1.03 1.64-.9 2.61.94.07 1.91-.48 2.51-1.21Z"/></svg>`
-      
+
     case 'tux':
       return `<svg ${base}><path d="M7.4 17.8c.65-1.1 1.45-2.1 2.15-3.35.45-.8.58-1.9.58-2.92"/><path d="M16.6 17.8c-.65-1.1-1.45-2.1-2.15-3.35-.45-.8-.58-1.9-.58-2.92"/><ellipse cx="12" cy="8.1" rx="4.15" ry="5.35"/><path class="svg-accent" d="M9.2 18.6c.7 1.05 1.65 1.7 2.8 1.7s2.1-.65 2.8-1.7"/><circle class="svg-accent" cx="10.55" cy="7.35" r=".55" fill="currentColor" stroke="none"/><circle class="svg-accent" cx="13.45" cy="7.35" r=".55" fill="currentColor" stroke="none"/></svg>`
 
@@ -169,10 +169,10 @@ export function injectAppShell(container: HTMLDivElement, activeRoute: 'home' | 
       <nav class="top-nav" aria-label="Primary">
         <div class="top-nav-inner">
           <div class="nav-left">
-            <a class="nav-logo" href="/" aria-label="Server Status">
+            <a class="nav-logo" href="/" aria-label="服务器">
               <img src="${escapeAttribute(DEFAULT_LOGO_URL)}" alt="">
             </a>
-            <a class="nav-link ${activeRoute === 'home' ? 'active' : ''}" href="/" data-route="home">${icon('server', 'nav-svg')}<span>服务器</span></a>
+            <a class="nav-link ${activeRoute === 'home' ? 'active' : ''}" href="/" data-route="home">${icon('server', 'nav-svg')}<span>主机</span></a>
             <a class="nav-link ${activeRoute === 'network' ? 'active' : ''}" href="/network" data-route="network">${icon('circleDot', 'nav-svg')}<span>网络</span></a>
           </div>
           <div class="nav-right" id="admin-area"></div>
@@ -195,7 +195,7 @@ export function injectAppShell(container: HTMLDivElement, activeRoute: 'home' | 
 
   adminArea = _app.querySelector('#admin-area')!
   footerContent = _app.querySelector('#footer-content')!
-  
+
   return {
     contentArea: _app.querySelector('#page-content')!
   }
