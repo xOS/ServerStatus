@@ -1028,53 +1028,57 @@ function applyFrame(frame: WebSocketFrame) {
 }
 
 function updateServerData(incoming: ServerInfo[], now?: number) {
-  const incomingById = new Map<ServerId, ServerInfo>()
-  let structureChanged = false
+  const previousIds = state.servers.map(serverId)
+  const previousById = new Map<ServerId, ServerInfo>()
+  for (const server of state.servers) {
+    previousById.set(serverId(server), server)
+  }
 
+  const nextServers: ServerInfo[] = []
+  const nextById = new Map<ServerId, ServerInfo>()
   for (const server of incoming) {
     const normalized = normalizeServerInfo(server)
-    incomingById.set(serverId(normalized), normalized)
+    const id = serverId(normalized)
+    const existing = previousById.get(id)
+    const merged: ServerInfo = existing
+      ? {
+          ...existing,
+          ...normalized,
+          Host: normalized.Host || existing.Host || null,
+          State: normalized.State || existing.State || {},
+          LastActive: normalized.LastActive || existing.LastActive,
+        }
+      : normalized
+    merged.live = isServerLive(normalized, now)
+    nextServers.push(merged)
+    nextById.set(id, merged)
   }
 
-  for (const server of state.servers) {
-    const id = serverId(server)
-    const liveData = incomingById.get(id)
-
-    if (!liveData) {
-      server.live = false
-      continue
-    }
-
-    const live = isServerLive(liveData, now)
-    server.live = live
-    server.State = liveData.State || server.State || {}
-    server.Host = liveData.Host || server.Host || null
-    server.LastActive = liveData.LastActive || server.LastActive
-    server.Name = liveData.Name || server.Name
-    server.Tag = liveData.Tag ?? server.Tag
-    incomingById.delete(id)
+  for (const id of Array.from(state.trafficById.keys())) {
+    if (!nextById.has(id)) state.trafficById.delete(id)
   }
 
-  for (const [id, server] of incomingById) {
-    server.live = isServerLive(server, now)
-    state.servers.push(server)
-    state.serverById.set(id, server)
-    structureChanged = true
-  }
+  state.servers = nextServers
+  state.serverById = nextById
+  storeServerSnapshot(nextServers)
 
-  return structureChanged
+  const nextIds = nextServers.map(serverId)
+  return previousIds.length !== nextIds.length || previousIds.some((id, index) => id !== nextIds[index])
 }
 
 function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficRecordView>) {
+  const nextTrafficIds = new Set<ServerId>()
   if (Array.isArray(payload)) {
     for (const item of payload) {
       if (item.server_id === undefined || item.server_id === null) continue
+      const id = String(item.server_id)
+      nextTrafficIds.add(id)
       const maxText = item.max_formatted || item.max || item.total || ''
       const usedText = item.used_formatted || item.used || ''
       const maxBytes = trafficBytes(item.max_bytes ?? item.total_bytes, maxText)
       const usedBytes = trafficBytes(item.used_bytes, usedText)
       const percent = trafficPercent(item.used_percent ?? item.percent, usedBytes, maxBytes)
-      state.trafficById.set(String(item.server_id), {
+      state.trafficById.set(id, {
         max: maxText || formatByteSize(maxBytes),
         used: usedText || formatByteSize(usedBytes),
         percent,
@@ -1082,10 +1086,12 @@ function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficRe
         cycleName: item.cycle_name || '',
       })
     }
+    pruneTrafficData(nextTrafficIds)
     return
   }
 
   for (const [id, value] of Object.entries(payload)) {
+    nextTrafficIds.add(String(id))
     const maxText = value.max || value.total || ''
     const usedText = value.used || ''
     const maxBytes = trafficBytes(value.max_bytes ?? value.total_bytes, maxText)
@@ -1097,6 +1103,15 @@ function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficRe
       serverName: value.serverName || value.server_name || '',
       cycleName: value.cycleName || value.cycle_name || '',
     })
+  }
+  pruneTrafficData(nextTrafficIds)
+}
+
+function pruneTrafficData(nextTrafficIds: Set<ServerId>) {
+  for (const id of Array.from(state.trafficById.keys())) {
+    if (!nextTrafficIds.has(id)) {
+      state.trafficById.delete(id)
+    }
   }
 }
 

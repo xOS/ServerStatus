@@ -116,6 +116,7 @@ const RANGE_ORDER: RangeKey[] = ['24h', '72h']
 const HISTORY_CACHE_TTL_MS = 180_000
 const HISTORY_CACHE_LIMIT = 80
 const HISTORY_PREFETCH_CONCURRENCY = 2
+const NETWORK_CONFIG_REFRESH_MS = 10_000
 const INVALID_LATENCY_VALUES = [0, 450]
 const NETWORK_COLORS = [
   '#03a9f4',
@@ -196,29 +197,25 @@ export async function initNetwork(container: HTMLDivElement) {
     ])
     let servers = normalizeServers(serverPayload)
     const monitorNames = new Map<string, string>()
+    let activeMonitoredIds: Set<string> | null = null
     if (monitorConfigPayload !== null) {
       for (const [id, name] of normalizeMonitorNames(monitorConfigPayload)) {
         monitorNames.set(id, name)
       }
-      const monitoredIds = normalizeMonitoredServerIds(monitorConfigPayload)
-      servers = filterMonitoredServers(servers, monitoredIds)
-    }
-    if (servers.length === 0) {
-      buttonsContainer.textContent = ''
-      subtitle.textContent = monitorConfigPayload === null ? '暂无服务器' : '暂无参与检测的服务器'
-      statsContainer.hidden = true
-      setChartMessage(chartContainer, monitorConfigPayload === null ? '暂无服务器' : '暂无参与检测的服务器')
-      return cleanupNetwork
+      activeMonitoredIds = normalizeMonitoredServerIds(monitorConfigPayload)
+      servers = filterMonitoredServers(servers, activeMonitoredIds)
     }
 
-    let currentServerId = serverId(servers[0])
+    let currentServerId = servers[0] ? serverId(servers[0]) : ''
     let currentRange: RangeKey = '24h'
     let currentSeries: Series[] = []
-    let currentServerName = serverName(servers[0])
+    let currentServerName = servers[0] ? serverName(servers[0]) : ''
     let chartModel: ChartModel | null = null
     let loadToken = 0
     let prefetchTimer: number | undefined
     let prefetchRun = 0
+    let configRefreshTimer: number | undefined
+    let configRefreshInFlight = false
     const historyCache = new Map<string, MonitorHistoryCacheEntry>()
     const historyRequests = new Map<string, Promise<MonitorHistoryPayload>>()
 
@@ -251,6 +248,15 @@ export async function initNetwork(container: HTMLDivElement) {
         return
       }
       chartModel = renderSvgChart(chartContainer, currentSeries, currentServerName, currentRange)
+    }
+
+    const renderNoNetworkServers = () => {
+      buttonsContainer.textContent = ''
+      subtitle.textContent = activeMonitoredIds === null ? '暂无服务器' : '暂无参与检测的服务器'
+      statsContainer.hidden = true
+      currentSeries = []
+      chartModel = null
+      setChartMessage(chartContainer, activeMonitoredIds === null ? '暂无服务器' : '暂无参与检测的服务器')
     }
 
     const cacheKeyFor = (id: string, range: RangeKey) => `${id}:${range}`
@@ -358,6 +364,10 @@ export async function initNetwork(container: HTMLDivElement) {
     }
 
     const loadChartData = async (id: string, force = false) => {
+      if (!id) {
+        renderNoNetworkServers()
+        return
+      }
       const token = ++loadToken
       const range = currentRange
       const server = servers.find((item) => serverId(item) === id)
@@ -395,36 +405,84 @@ export async function initNetwork(container: HTMLDivElement) {
       }
     }
 
-    const applyMonitorConfigs = (payload: unknown) => {
+    const applyNetworkConfig = (serverListPayload: unknown, monitorConfig: unknown | null, forceReload = false) => {
       if (signal.aborted) return
 
-      monitorNames.clear()
-      for (const [id, name] of normalizeMonitorNames(payload)) {
-        monitorNames.set(id, name)
-      }
-      historyCache.clear()
+      const previousButtonsSignature = serverButtonsSignature(servers)
+      const previousMonitorConfigSignature = monitorConfigSignature(monitorNames, activeMonitoredIds)
 
-      const monitoredIds = normalizeMonitoredServerIds(payload)
-      const filteredServers = filterMonitoredServers(servers, monitoredIds)
-      if (filteredServers.length === 0) {
-        servers = []
-        buttonsContainer.textContent = ''
-        subtitle.textContent = '暂无参与检测的服务器'
-        statsContainer.hidden = true
-        currentSeries = []
-        chartModel = null
-        setChartMessage(chartContainer, '暂无参与检测的服务器')
+      if (monitorConfig !== null) {
+        monitorNames.clear()
+        for (const [id, name] of normalizeMonitorNames(monitorConfig)) {
+          monitorNames.set(id, name)
+        }
+        activeMonitoredIds = normalizeMonitoredServerIds(monitorConfig)
+      }
+
+      const nextServers = filterMonitoredServers(normalizeServers(serverListPayload), activeMonitoredIds)
+      const nextButtonsSignature = serverButtonsSignature(nextServers)
+      const monitorConfigChanged = previousMonitorConfigSignature !== monitorConfigSignature(monitorNames, activeMonitoredIds)
+      const buttonsChanged = previousButtonsSignature !== nextButtonsSignature
+
+      servers = nextServers
+      if (monitorConfigChanged) historyCache.clear()
+
+      if (servers.length === 0) {
+        currentServerId = ''
+        renderNoNetworkServers()
         return
       }
 
-      if (filteredServers.length === servers.length) return
+      if (buttonsChanged) renderServerButtons()
 
-      servers = filteredServers
-      renderServerButtons()
-      if (!servers.some((server) => serverId(server) === currentServerId)) {
+      const currentServer = servers.find((server) => serverId(server) === currentServerId)
+      if (!currentServer) {
         currentServerId = serverId(servers[0])
+        updateActiveButton()
         void loadChartData(currentServerId, true)
+        return
       }
+
+      const nextServerName = serverName(currentServer)
+      const serverNameChanged = nextServerName !== currentServerName
+      currentServerName = nextServerName
+      subtitle.innerHTML = `${serverFlagMarkup(currentServer)}<span>${escapeHtml(currentServerName)}</span>`
+
+      if (forceReload || monitorConfigChanged) {
+        void loadChartData(currentServerId, true)
+      } else if (serverNameChanged && currentSeries.length > 0) {
+        renderCurrentChart()
+      }
+    }
+
+    const refreshNetworkConfig = async (forceReload = false) => {
+      if (signal.aborted || configRefreshInFlight) return
+      configRefreshInFlight = true
+      try {
+        const [nextServerPayload, nextMonitorConfigPayload] = await Promise.all([
+          fetchJson<unknown>(apiPath('/server/list'), signal),
+          fetchJson<unknown>(apiPath('/monitor/configs'), signal).catch((error) => {
+            if (!signal.aborted) console.warn('Failed to refresh monitor configs', error)
+            return null
+          }),
+        ])
+        applyNetworkConfig(nextServerPayload, nextMonitorConfigPayload, forceReload)
+      } catch (error) {
+        if (!signal.aborted) console.warn('Failed to refresh network config', error)
+      } finally {
+        configRefreshInFlight = false
+      }
+    }
+
+    const scheduleNetworkConfigRefresh = () => {
+      window.clearTimeout(configRefreshTimer)
+      if (signal.aborted) return
+      configRefreshTimer = window.setTimeout(() => {
+        if (!document.hidden) {
+          void refreshNetworkConfig()
+        }
+        scheduleNetworkConfigRefresh()
+      }, NETWORK_CONFIG_REFRESH_MS)
     }
 
     buttonsContainer.addEventListener('click', (event) => {
@@ -469,17 +527,22 @@ export async function initNetwork(container: HTMLDivElement) {
       }
     })
     window.addEventListener('resize', resizeHandler, { signal })
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) void refreshNetworkConfig()
+    }, { signal })
+    signal.addEventListener('abort', () => {
+      window.clearTimeout(prefetchTimer)
+      window.clearTimeout(configRefreshTimer)
+    }, { once: true })
 
-    renderServerButtons()
     updateActiveRange()
-    void loadChartData(currentServerId)
-    if (monitorConfigPayload === null) {
-      fetchJson<unknown>(apiPath('/monitor/configs'), signal)
-        .then(applyMonitorConfigs)
-        .catch((error) => {
-          if (!signal.aborted) console.warn('Failed to load monitor configs', error)
-        })
+    if (servers.length === 0) {
+      renderNoNetworkServers()
+    } else {
+      renderServerButtons()
+      void loadChartData(currentServerId)
     }
+    scheduleNetworkConfigRefresh()
   } catch (error) {
     if (!signal.aborted) {
       console.warn('Failed to load network servers', error)
@@ -570,6 +633,26 @@ function normalizeMonitoredServerIds(payload: unknown): Set<string> | null {
 function filterMonitoredServers(servers: ServerItem[], monitoredIds: Set<string> | null) {
   if (!monitoredIds) return servers
   return servers.filter((server) => monitoredIds.has(serverId(server)))
+}
+
+function serverButtonsSignature(servers: ServerItem[]) {
+  return servers
+    .map((server) => `${serverId(server)}|${serverName(server)}|${serverCountry(server)}`)
+    .join('\n')
+}
+
+function monitorNamesSignature(names: Map<string, string>) {
+  return Array.from(names.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([id, name]) => `${id}|${name}`)
+    .join('\n')
+}
+
+function monitorConfigSignature(names: Map<string, string>, monitoredIds: Set<string> | null) {
+  const ids = monitoredIds
+    ? Array.from(monitoredIds).sort().join(',')
+    : '*'
+  return `${monitorNamesSignature(names)}\nids:${ids}`
 }
 
 function normalizeHistoryPayload(payload: unknown, monitorNames: Map<string, string>, range: RangeKey): MonitorHistoryPayload {
