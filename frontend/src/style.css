@@ -183,11 +183,16 @@ button {
   padding: clamp(4px, 0.45vw + 2px, 6px) clamp(4px, 0.5vw + 2px, 8px);
   border-radius: 8px;
   flex: 0 0 auto;
+  min-width: 38px;
 }
 
 .nav-logo img {
   display: block;
+  width: clamp(27px, 1.5vw + 18px, 30px);
   height: clamp(27px, 1.5vw + 18px, 30px);
+  object-fit: contain;
+  transform-origin: center;
+  animation: nav-logo-blink 1.8s ease-in-out infinite;
 }
 
 .nav-link {
@@ -3176,6 +3181,22 @@ i.fl-tux {
   }
 }
 
+@keyframes nav-logo-blink {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  45% {
+    opacity: 0.72;
+    transform: scale(0.98);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
 @media (min-width: 1390px) {
   .server-card {
     flex-basis: var(--front-card-width);
@@ -3212,6 +3233,19 @@ i.fl-tux {
 
   .nav-left {
     gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .nav-logo {
+    width: 38px;
+    min-width: 38px;
+    padding-inline: 4px;
+  }
+
+  .nav-logo img {
+    width: 28px;
+    height: 28px;
   }
 
   .nav-link {
