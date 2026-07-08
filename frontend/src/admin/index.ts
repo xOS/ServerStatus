@@ -343,7 +343,7 @@ export function initAdmin(container: HTMLDivElement) {
     <div class="admin-shell">
       <header class="admin-header">
         <a class="admin-brand" href="/" data-route-home>
-          <img src="/static/logo.svg?v20220602" alt="">
+          <img src="/static/logo.svg?v20260708" alt="">
           <span id="admin-brand-title">${escapeHtml(adminBrandName)}</span>
           <small>管理后台</small>
         </a>
@@ -396,7 +396,7 @@ export function initLogin(container: HTMLDivElement) {
     app.innerHTML = `
     <main class="login-shell">
       <section class="login-panel">
-        <img src="/static/logo.svg?v20220602" alt="">
+        <img src="/static/logo.svg?v20260708" alt="">
         <h1>登录</h1>
         <p>仅允许白名单账号授权登录。</p>
         <div class="login-actions">

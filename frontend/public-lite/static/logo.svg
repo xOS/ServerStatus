@@ -4,19 +4,47 @@
       <stop offset="0%" stop-color="#f8f8f8"/>
       <stop offset="100%" stop-color="#e0e0e0"/>
     </linearGradient>
+    <style>
+      .status-light {
+        animation: status-light-blink 1.65s steps(2, end) infinite;
+      }
+      .status-light:nth-of-type(4n) {
+        animation-delay: 0.2s;
+      }
+      .status-light:nth-of-type(4n + 1) {
+        animation-delay: 0.45s;
+      }
+      .status-light:nth-of-type(4n + 2) {
+        animation-delay: 0.75s;
+      }
+      .status-light:nth-of-type(4n + 3) {
+        animation-delay: 1.05s;
+      }
+      @keyframes status-light-blink {
+        0%,
+        38%,
+        100% {
+          opacity: 1;
+        }
+        39%,
+        58% {
+          opacity: 0.32;
+        }
+      }
+    </style>
   </defs>
   <rect x="5" y="10" width="90" height="22" rx="6" fill="url(#panelGradient)" stroke="#ccc" stroke-width="1.5"/>
   <rect x="5" y="38" width="90" height="22" rx="6" fill="url(#panelGradient)" stroke="#ccc" stroke-width="1.5"/>
   <rect x="5" y="66" width="90" height="22" rx="6" fill="url(#panelGradient)" stroke="#ccc" stroke-width="1.5"/>
-  <circle cx="15" cy="21" r="4" fill="#00ff00"/>
-  <circle cx="27" cy="21" r="4" fill="#ff8000"/>
-  <circle cx="39" cy="21" r="4" fill="#ff4000"/>
-  <circle cx="15" cy="49" r="4" fill="#ffff00"/>
-  <circle cx="27" cy="49" r="4" fill="#00ffff"/>
-  <circle cx="39" cy="49" r="4" fill="#ff69b4"/>
-  <circle cx="15" cy="77" r="4" fill="#fff" stroke="#999" stroke-width="0.8"/>
-  <circle cx="27" cy="77" r="4" fill="#ff4080"/>
-  <circle cx="39" cy="77" r="4" fill="#80ff00"/>
+  <circle class="status-light" cx="15" cy="21" r="4" fill="#00ff00"/>
+  <circle class="status-light" cx="27" cy="21" r="4" fill="#ff8000"/>
+  <circle class="status-light" cx="39" cy="21" r="4" fill="#ff4000"/>
+  <circle class="status-light" cx="15" cy="49" r="4" fill="#ffff00"/>
+  <circle class="status-light" cx="27" cy="49" r="4" fill="#00ffff"/>
+  <circle class="status-light" cx="39" cy="49" r="4" fill="#ff69b4"/>
+  <circle class="status-light" cx="15" cy="77" r="4" fill="#fff" stroke="#999" stroke-width="0.8"/>
+  <circle class="status-light" cx="27" cy="77" r="4" fill="#ff4080"/>
+  <circle class="status-light" cx="39" cy="77" r="4" fill="#80ff00"/>
   <g fill="#999" opacity="0.6">
     <rect x="50" y="14" width="3" height="3"/><rect x="55" y="14" width="3" height="3"/><rect x="60" y="14" width="3" height="3"/><rect x="65" y="14" width="3" height="3"/><rect x="70" y="14" width="3" height="3"/><rect x="75" y="14" width="3" height="3"/><rect x="80" y="14" width="3" height="3"/><rect x="85" y="14" width="3" height="3"/>
     <rect x="50" y="19" width="3" height="3"/><rect x="55" y="19" width="3" height="3"/><rect x="60" y="19" width="3" height="3"/><rect x="65" y="19" width="3" height="3"/><rect x="70" y="19" width="3" height="3"/><rect x="75" y="19" width="3" height="3"/><rect x="80" y="19" width="3" height="3"/><rect x="85" y="19" width="3" height="3"/>

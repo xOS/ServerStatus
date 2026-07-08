@@ -191,8 +191,6 @@ button {
   width: clamp(27px, 1.5vw + 18px, 30px);
   height: clamp(27px, 1.5vw + 18px, 30px);
   object-fit: contain;
-  transform-origin: center;
-  animation: nav-logo-blink 1.8s ease-in-out infinite;
 }
 
 .nav-link {
@@ -3178,22 +3176,6 @@ i.fl-tux {
 @keyframes spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-@keyframes nav-logo-blink {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  45% {
-    opacity: 0.72;
-    transform: scale(0.98);
-  }
-  70% {
-    opacity: 1;
-    transform: scale(1.02);
   }
 }
 
