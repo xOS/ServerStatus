@@ -2,14 +2,24 @@ package geoip
 
 import (
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestLookupIPInfoLiteCountry(t *testing.T) {
 	dbPath := filepath.Join("..", "..", "data", "ipinfo_lite.mmdb")
-	if err := Init(dbPath); err != nil {
-		t.Fatalf("Init(%q) failed: %v", dbPath, err)
+	if info, err := os.Stat(dbPath); err == nil && !info.IsDir() && info.Size() >= 128 {
+		if err := Init(dbPath); err != nil {
+			t.Fatalf("Init(%q) failed: %v", dbPath, err)
+		}
+	} else {
+		if err := Init(""); err != nil {
+			t.Fatalf("Init embedded GeoIP failed: %v", err)
+		}
+		if !IsAvailable() {
+			t.Skipf("GeoIP database fixture is not available: %s", dbPath)
+		}
 	}
 
 	record := &IPInfo{}
