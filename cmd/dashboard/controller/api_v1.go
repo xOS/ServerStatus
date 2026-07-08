@@ -40,6 +40,7 @@ var (
 		ts   time.Time
 		data []byte
 	}
+	invalidNetworkLatencyValues = [...]float64{0, 450}
 )
 
 func (v *apiV1) serve() {
@@ -461,10 +462,11 @@ func (v *apiV1) monitorHistoriesById(c *gin.Context) {
 			var networkHistories []*model.MonitorHistory
 
 			// 使用range参数决定时间范围（与Badger保持一致）
-			startTime := time.Now().Add(-duration)
+			endTime := time.Now()
+			startTime := endTime.Add(-duration)
 
-			err := singleton.DB.Where("server_id = ? AND created_at > ? AND monitor_id IN (SELECT id FROM monitors WHERE type IN (?, ?))",
-				server.ID, startTime, model.TaskTypeICMPPing, model.TaskTypeTCPPing).
+			err := singleton.DB.Where("server_id = ? AND created_at >= ? AND created_at < ? AND monitor_id IN (SELECT id FROM monitors WHERE type IN (?, ?))",
+				server.ID, startTime, endTime, model.TaskTypeICMPPing, model.TaskTypeTCPPing).
 				Order("created_at DESC").
 				Find(&networkHistories).Error
 
@@ -539,10 +541,71 @@ func sampleMonitorHistories(histories []*model.MonitorHistory, maxPoints int) []
 	if maxPoints <= 0 || len(histories) <= maxPoints {
 		return histories
 	}
-	step := float64(len(histories)) / float64(maxPoints)
+
+	groups := make(map[uint64][]*model.MonitorHistory)
+	order := make([]uint64, 0)
+	for _, history := range histories {
+		if history == nil {
+			continue
+		}
+		if _, ok := groups[history.MonitorID]; !ok {
+			order = append(order, history.MonitorID)
+		}
+		groups[history.MonitorID] = append(groups[history.MonitorID], history)
+	}
+	if len(order) == 0 {
+		return []*model.MonitorHistory{}
+	}
+
+	if len(order) >= maxPoints {
+		sampled := make([]*model.MonitorHistory, 0, maxPoints)
+		for _, monitorID := range order {
+			group := groups[monitorID]
+			if len(group) > 0 {
+				sampled = append(sampled, group[0])
+			}
+		}
+		sort.Slice(sampled, func(i, j int) bool {
+			return sampled[i].CreatedAt.After(sampled[j].CreatedAt)
+		})
+		if len(sampled) > maxPoints {
+			return sampled[:maxPoints]
+		}
+		return sampled
+	}
+
+	perGroupLimit := maxPoints / len(order)
+	remainder := maxPoints % len(order)
 	sampled := make([]*model.MonitorHistory, 0, maxPoints)
-	for i := 0; i < maxPoints; i++ {
-		idx := int(float64(i) * step)
+	for index, monitorID := range order {
+		limit := perGroupLimit
+		if index < remainder {
+			limit++
+		}
+		sampled = append(sampled, sampleMonitorHistoryGroup(groups[monitorID], limit)...)
+	}
+
+	sort.Slice(sampled, func(i, j int) bool {
+		return sampled[i].CreatedAt.After(sampled[j].CreatedAt)
+	})
+	return sampled
+}
+
+func sampleMonitorHistoryGroup(histories []*model.MonitorHistory, limit int) []*model.MonitorHistory {
+	if limit <= 0 || len(histories) == 0 {
+		return []*model.MonitorHistory{}
+	}
+	if len(histories) <= limit {
+		return histories
+	}
+	if limit == 1 {
+		return histories[:1]
+	}
+
+	step := float64(len(histories)-1) / float64(limit-1)
+	sampled := make([]*model.MonitorHistory, 0, limit)
+	for i := 0; i < limit; i++ {
+		idx := int(float64(i)*step + 0.5)
 		if idx >= len(histories) {
 			idx = len(histories) - 1
 		}
@@ -562,7 +625,7 @@ func monitorHistorySummary(histories []*model.MonitorHistory) networkMonitorSumm
 		}
 		up += history.Up
 		down += history.Down
-		if history.AvgDelay > 0 && (history.Up > 0 || history.Down == 0) {
+		if isValidNetworkLatency(history) {
 			values = append(values, float64(history.AvgDelay))
 		}
 	}
@@ -591,6 +654,33 @@ func monitorHistorySummary(histories []*model.MonitorHistory) networkMonitorSumm
 	summary.Avg = &avg
 	summary.P95 = &p95
 	return summary
+}
+
+func isValidNetworkLatency(history *model.MonitorHistory) bool {
+	if history == nil {
+		return false
+	}
+	value := float64(history.AvgDelay)
+	if value < 0 || isInvalidNetworkLatency(value) {
+		return false
+	}
+	if history.Up > 0 {
+		return true
+	}
+	return history.Up == 0 && history.Down == 0
+}
+
+func isInvalidNetworkLatency(value float64) bool {
+	for _, invalid := range invalidNetworkLatencyValues {
+		diff := value - invalid
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff < 0.0001 {
+			return true
+		}
+	}
+	return false
 }
 
 func percentileFloat64(sortedValues []float64, ratio float64) float64 {

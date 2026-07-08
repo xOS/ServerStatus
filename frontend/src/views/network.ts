@@ -72,6 +72,7 @@ type SeriesPoint = {
 }
 
 type Series = {
+  id: string
   name: string
   color: string
   points: SeriesPoint[]
@@ -115,6 +116,25 @@ const RANGE_ORDER: RangeKey[] = ['24h', '72h']
 const HISTORY_CACHE_TTL_MS = 180_000
 const HISTORY_CACHE_LIMIT = 80
 const HISTORY_PREFETCH_CONCURRENCY = 2
+const INVALID_LATENCY_VALUES = [0, 450]
+const NETWORK_COLORS = [
+  '#03a9f4',
+  '#4caf50',
+  '#ff8840',
+  '#9c27b0',
+  '#ff5722',
+  '#2185d0',
+  '#e91e63',
+  '#00b5ad',
+  '#b5cc18',
+  '#fbbd08',
+  '#a333c8',
+  '#db2828',
+  '#767676',
+  '#21ba45',
+  '#6435c9',
+  '#f2711c',
+]
 
 let resizeHandler: (() => void) | undefined
 let abortController: AbortController | undefined
@@ -601,15 +621,81 @@ function normalizeSummary(payload: unknown): NetworkSummary | null {
 
 function filterHistoryByRange(history: MonitorPoint[], range: RangeKey): MonitorPoint[] {
   const duration = range === '24h' ? 24 * 60 * 60 * 1000 : 72 * 60 * 60 * 1000
-  const cutoff = Date.now() - duration
-  return history.filter((point) => {
-    const time = Date.parse(point.CreatedAt || point.created_at || '')
-    return Number.isFinite(time) && time >= cutoff
-  })
+  const timestamped = history
+    .map((point) => ({
+      point,
+      time: Date.parse(point.CreatedAt || point.created_at || ''),
+    }))
+    .filter((item) => Number.isFinite(item.time))
+
+  if (timestamped.length === 0) return []
+
+  const maxTime = Math.max(...timestamped.map((item) => item.time))
+  const cutoff = maxTime - duration - 60_000
+  return timestamped.filter((item) => item.time >= cutoff).map((item) => item.point)
+}
+
+function isValidLatency(value: number | undefined, up: number, down: number) {
+  if (value === undefined || !Number.isFinite(value) || value < 0) return false
+  if (INVALID_LATENCY_VALUES.some((invalid) => Math.abs(value - invalid) < 0.0001)) return false
+  if (up > 0) return true
+  return up === 0 && down === 0
+}
+
+function colorForSeriesKey(key: string) {
+  let hash = 0
+  for (let index = 0; index < key.length; index++) {
+    hash = ((hash << 5) - hash + key.charCodeAt(index)) | 0
+  }
+  return NETWORK_COLORS[Math.abs(hash) % NETWORK_COLORS.length]
+}
+
+function displaySeriesNames(series: Series[]): Series[] {
+  const counts = new Map<string, number>()
+  for (const item of series) {
+    counts.set(item.name, (counts.get(item.name) || 0) + 1)
+  }
+  return series.map((item) => ({
+    ...item,
+    name: (counts.get(item.name) || 0) > 1 ? `${item.name} #${item.id}` : item.name,
+  }))
+}
+
+function monitorSeriesKey(point: MonitorPoint) {
+  const id = monitorPointId(point)
+  if (id && id !== '0') return id
+  return `name:${monitorPointName(point, id)}`
+}
+
+function monitorSeriesLabel(point: MonitorPoint, key: string) {
+  const id = monitorPointId(point)
+  return monitorPointName(point, id && id !== '0' ? id : key)
+}
+
+function sortSeriesByLatestPoint(a: Series, b: Series) {
+  const aLatest = a.points[a.points.length - 1]?.time || 0
+  const bLatest = b.points[b.points.length - 1]?.time || 0
+  if (aLatest !== bLatest) return bLatest - aLatest
+  return a.name.localeCompare(b.name)
+}
+
+function sortPointsByTime(a: SeriesPoint, b: SeriesPoint) {
+  return a.time - b.time
+}
+
+function ensureSeriesGroup(groups: Map<string, { name: string; points: SeriesPoint[] }>, key: string, name: string) {
+  let group = groups.get(key)
+  if (!group) {
+    group = { name, points: [] }
+    groups.set(key, group)
+  } else if (group.name === monitorLabel(key) && name !== group.name) {
+    group.name = name
+  }
+  return group
 }
 
 function buildSeries(history: MonitorPoint[]): Series[] {
-  const groups = new Map<string, SeriesPoint[]>()
+  const groups = new Map<string, { name: string; points: SeriesPoint[] }>()
 
   for (const point of history) {
     const time = Date.parse(point.CreatedAt || point.created_at || '')
@@ -618,45 +704,28 @@ function buildSeries(history: MonitorPoint[]): Series[] {
     const value = optionalNumber(point.AvgDelay ?? point.avg_delay)
     if (value !== undefined && value < 0) continue
 
-    const monitorId = monitorPointId(point)
-    const key = monitorPointName(point, monitorId)
-    const list = groups.get(key) || []
+    const key = monitorSeriesKey(point)
+    const name = monitorSeriesLabel(point, key)
+    const group = ensureSeriesGroup(groups, key, name)
     const up = Math.max(0, finiteNumber(point.Up ?? point.up, 0))
     const down = Math.max(0, finiteNumber(point.Down ?? point.down, 0))
-    const hasLatency = value !== undefined && value > 0 && (up > 0 || down === 0)
-    list.push({
+    const hasLatency = isValidLatency(value, up, down)
+    group.points.push({
       time,
-      value: hasLatency ? value : 0,
+      value: hasLatency && value !== undefined ? value : 0,
       hasLatency,
       up,
       down,
     })
-    groups.set(key, list)
   }
 
-  const colors = [
-    '#03a9f4',
-    '#4caf50',
-    '#ff8840',
-    '#9c27b0',
-    '#ff5722',
-    '#2185d0',
-    '#e91e63',
-    '#00b5ad',
-    '#b5cc18',
-    '#fbbd08',
-    '#a333c8',
-    '#db2828',
-    '#767676',
-    '#21ba45',
-    '#6435c9',
-    '#f2711c',
-  ]
-  return Array.from(groups.entries()).map(([name, points], index) => ({
-    name,
-    color: colors[index % colors.length],
-    points: points.sort((a, b) => a.time - b.time),
+  const series = Array.from(groups.entries()).map(([id, group]) => ({
+    id,
+    name: group.name,
+    color: colorForSeriesKey(id),
+    points: group.points.sort(sortPointsByTime),
   }))
+  return displaySeriesNames(series.sort(sortSeriesByLatestPoint))
 }
 
 function summarizeSeries(series: Series[]): NetworkSummary | null {

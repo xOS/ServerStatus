@@ -826,6 +826,22 @@ i.fl-tux {
   transition: left 300ms ease-out;
 }
 
+.home-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  margin: 1em 0;
+  padding: 1em 1.5em;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  color: rgba(0, 0, 0, 0.58);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .server-card-loading {
   padding: 2em 1em;
   color: rgba(0, 0, 0, 0.87);

@@ -440,19 +440,7 @@ func (cp *commonPage) network(c *gin.Context) {
 				sort.Slice(networkHistories, func(i, j int) bool {
 					return networkHistories[i].CreatedAt.After(networkHistories[j].CreatedAt)
 				})
-				const maxPoints = 1500
-				if len(networkHistories) > maxPoints {
-					step := float64(len(networkHistories)) / float64(maxPoints)
-					sampled := make([]*model.MonitorHistory, 0, maxPoints)
-					for i := 0; i < maxPoints; i++ {
-						idx := int(float64(i) * step)
-						if idx >= len(networkHistories) {
-							idx = len(networkHistories) - 1
-						}
-						sampled = append(sampled, networkHistories[idx])
-					}
-					networkHistories = sampled
-				}
+				networkHistories = sampleMonitorHistories(networkHistories, 1500)
 				if b, err := utils.Json.Marshal(networkHistories); err == nil {
 					monitorInfos = b
 				}

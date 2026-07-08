@@ -228,6 +228,7 @@ const state = {
   reconnectDelay: 3000,
   tooltipServerId: '' as ServerId,
   snapshotAllowed: false,
+  initialLoading: false,
 }
 
 let app: HTMLDivElement
@@ -235,6 +236,7 @@ let tabs: HTMLElement | null = null
 let tabsContent: HTMLElement | null = null
 let tabSlider: HTMLElement | null = null
 let cards: HTMLElement | null = null
+let homeLoading: HTMLElement | null = null
 let emptyState: HTMLElement | null = null
 let emptyTitle: HTMLElement | null = null
 let emptyText: HTMLElement | null = null
@@ -262,6 +264,10 @@ export function initHome(container: HTMLDivElement) {
         <div class="tab-slider" id="tab-slider"></div>
       </div>
     </div>
+    <section class="home-loading" id="home-loading" aria-live="polite">
+      <span class="spinner"></span>
+      <span>加载中...</span>
+    </section>
     <section class="status-cards" id="cards" aria-live="polite"></section>
     <section class="empty-state" id="empty-state" hidden>
       <div class="empty-state-header" id="empty-title">没有服务器</div>
@@ -275,6 +281,7 @@ export function initHome(container: HTMLDivElement) {
   tabsContent = requiredElement('tabs-content')
   tabSlider = requiredElement('tab-slider')
   cards = requiredElement('cards')
+  homeLoading = requiredElement('home-loading')
   emptyState = requiredElement('empty-state')
   emptyTitle = requiredElement('empty-title')
   emptyText = requiredElement('empty-text')
@@ -297,7 +304,9 @@ async function init(token: number) {
   bindEvents()
   resetServerState()
   restoreServerSnapshot()
+  state.initialLoading = state.servers.length === 0
   renderChrome(state.profile)
+  renderHomeLoading()
   if (state.servers.length > 0) {
     renderCards()
     renderTabs()
@@ -308,6 +317,8 @@ async function init(token: number) {
 
   void loadBootstrap().then(() => {
     if (token !== activeHomeToken) return
+    state.initialLoading = false
+    renderHomeLoading()
     renderChrome(state.profile)
     renderCards()
     renderTabs()
@@ -320,6 +331,8 @@ async function init(token: number) {
     })
     void loadServers().then(() => {
       if (token !== activeHomeToken) return
+      state.initialLoading = false
+      renderHomeLoading()
       renderCards()
       renderTabs()
       applyFilter()
@@ -334,6 +347,7 @@ function resetServerState() {
   state.trafficById.clear()
   state.visibleIds.clear()
   state.snapshotAllowed = false
+  state.initialLoading = true
 }
 
 function bindEvents() {
@@ -434,6 +448,7 @@ function cleanupHome() {
   tabsContent = null
   tabSlider = null
   cards = null
+  homeLoading = null
   emptyState = null
   emptyTitle = null
   emptyText = null
@@ -888,6 +903,12 @@ function applyFilter() {
 function renderEmptyState() {
   if (!emptyState || !cards || !emptyTitle || !emptyText) return
 
+  if (state.initialLoading) {
+    emptyState.hidden = true
+    cards.hidden = true
+    return
+  }
+
   const hasServers = state.servers.length > 0
   const hasVisible = state.visibleIds.size > 0
 
@@ -909,6 +930,15 @@ function renderEmptyState() {
   } else {
     emptyTitle.textContent = `没有该分组的服务器 "${state.activeTag}"`
     emptyText.textContent = ''
+  }
+}
+
+function renderHomeLoading() {
+  if (!homeLoading) return
+  homeLoading.hidden = !state.initialLoading
+  if (state.initialLoading) {
+    if (emptyState) emptyState.hidden = true
+    if (cards) cards.hidden = true
   }
 }
 
@@ -978,6 +1008,10 @@ function applyFrame(frame: WebSocketFrame) {
 
   if (Array.isArray(frame.servers)) {
     cardStructureChanged = updateServerData(frame.servers, frame.now)
+    if (state.initialLoading && state.servers.length > 0) {
+      state.initialLoading = false
+      renderHomeLoading()
+    }
   }
 
   if (frame.trafficData) {
