@@ -1,412 +1,260 @@
 # Docker 部署指南
 
-本文档提供了 ServerStatus 的 Docker 部署方案，包括单容器部署、Docker Compose 部署和 Kubernetes 部署。
+本文档只覆盖 Docker 相关内容。完整部署、反向代理、前后端分离和 Agent 接入见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
 
-## 快速开始
+## 当前 Docker 结构
 
-### 使用 Docker Compose（推荐）
+| 文件 | 用途 |
+| --- | --- |
+| [docker-compose.yml](./docker-compose.yml) | 默认生产部署，使用 `ghcr.io/xos/server-dash:latest` |
+| [Dockerfile](./Dockerfile) | scratch 运行镜像，包含 entrypoint 和前端构建产物 |
+| [Dockerfile.minimal](./Dockerfile.minimal) | distroless 运行镜像示例 |
+| `Dockerfile.debug` | Docker 构建排障镜像 |
+| [script/docker-deploy.sh](./script/docker-deploy.sh) | Compose 管理脚本 |
+| [script/build-for-docker.sh](./script/build-for-docker.sh) | 构建 Docker 所需后端二进制 |
 
-1. 克隆项目并进入目录：
+默认容器端口：
+
+- `80`：Web / API / 前端静态资源。
+- `2222`：Agent gRPC 连接。
+
+默认持久化目录：
+
+- 容器内：`/dashboard/data`
+- 默认 Compose：宿主机 `./data`
+
+## 快速启动
+
 ```bash
 git clone https://github.com/xOS/ServerStatus.git
 cd ServerStatus
-```
-
-2. 使用便捷脚本启动：
-```bash
-./script/docker-deploy.sh start
-```
-
-3. 访问 Web 界面：
-- 地址：http://localhost:80
-- 默认账户：admin/admin123
-
-### 使用 Docker 命令
-
-```bash
-# 创建数据目录
-mkdir -p ./data
-
-# 运行容器
-docker run -d \
-  --name serverstatus \
-  --restart unless-stopped \
-  -p 80:80 \
-  -p 2222:2222 \
-  -v ./data:/dashboard/data \
-  -e TZ=Asia/Shanghai \
-  ghcr.io/xos/server-dash:latest
-```
-
-## 部署方案
-
-### 1. Docker Compose 部署
-
-#### 生产环境
-使用 `docker-compose.yml` 文件：
-
-```bash
-# 启动服务
 docker compose up -d
+```
 
-# 查看日志
+访问：
+
+- Web：`http://localhost/`
+- Agent：`localhost:2222`
+
+查看状态：
+
+```bash
+docker compose ps
 docker compose logs -f
-
-# 停止服务
-docker compose down
 ```
 
-#### 开发环境
-使用 `docker-compose.dev.yml` 文件：
+## 使用管理脚本
 
 ```bash
-# 构建并启动开发环境
-docker compose -f docker-compose.dev.yml up -d --build
-
-# 查看日志
-docker compose -f docker-compose.dev.yml logs -f
-```
-
-### 2. 便捷脚本部署
-
-使用提供的 `script/docker-deploy.sh` 脚本：
-
-```bash
-# 启动服务
 ./script/docker-deploy.sh start
-
-# 查看日志
 ./script/docker-deploy.sh logs
-
-# 更新服务
-./script/docker-deploy.sh update
-
-# 重启服务
-./script/docker-deploy.sh restart
-
-# 查看状态
 ./script/docker-deploy.sh status
-
-# 停止服务
+./script/docker-deploy.sh restart
+./script/docker-deploy.sh update
 ./script/docker-deploy.sh stop
 ```
 
-### 3. Kubernetes 部署
+脚本会在缺少 `data/config.yaml` 时创建基础配置。首次部署后应检查并修改配置文件中的站点、登录、跨域和数据库相关配置。
+
+## 单容器部署
 
 ```bash
-# 应用配置
-kubectl apply -f k8s/
-
-# 查看状态
-kubectl get pods -l app=serverstatus
-
-# 查看日志
-kubectl logs -l app=serverstatus -f
+mkdir -p ./data
+docker run -d \
+  --name serverstatus-dashboard \
+  --restart unless-stopped \
+  -p 80:80 \
+  -p 2222:2222 \
+  -v "$(pwd)/data:/dashboard/data" \
+  -v /etc/localtime:/etc/localtime:ro \
+  -e TZ=Asia/Shanghai \
+  -e GIN_MODE=release \
+  ghcr.io/xos/server-dash:latest
 ```
 
-## 配置说明
+更新：
 
-### 环境变量
+```bash
+docker pull ghcr.io/xos/server-dash:latest
+docker stop serverstatus-dashboard
+docker rm serverstatus-dashboard
+# 重新执行 docker run
+```
 
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `TZ` | `Asia/Shanghai` | 时区设置 |
-| `GIN_MODE` | `release` | 运行模式 (release/debug) |
-| `LOG_LEVEL` | `info` | 日志级别 |
+## 本地构建镜像
 
-### 数据持久化
+[Dockerfile](./Dockerfile) 不在镜像构建过程中编译 Go 和前端，它要求构建上下文中已经存在：
 
-- **数据目录**：`/dashboard/data`
-- **配置文件**：`/dashboard/data/config.yaml`
-- **数据库文件**：`/dashboard/data/sqlite.db`
+- `dist/server-dash-linux-<arch>` 后端二进制。
+- `frontend/dist` 前端构建产物。
 
-### 静态资源
+完整流程：
 
-- **静态文件目录**：`/dashboard/resource/static/`
-- **模板文件目录**：`/dashboard/resource/template/`
-- **国际化文件**：`/dashboard/resource/l10n/`
+```bash
+# 前端
+cd frontend
+npm ci
+npm run build
+cd ..
 
-注意：这些静态资源文件已内置在 Docker 镜像中，无需额外挂载。
+# 后端多架构二进制
+./script/build-for-docker.sh
 
-### 端口说明
+# 镜像
+docker build -t serverstatus:local .
+```
 
-- **80**：Web 界面端口
-- **2222**：Agent 连接端口
+运行本地镜像：
 
-## 高级配置
+```bash
+mkdir -p ./data
+docker run -d \
+  --name serverstatus-dashboard \
+  --restart unless-stopped \
+  -p 80:80 \
+  -p 2222:2222 \
+  -v "$(pwd)/data:/dashboard/data" \
+  serverstatus:local
+```
 
-### 1. 自定义配置文件
+## 使用 Compose 构建本地镜像
 
-创建 `data/config.yaml` 文件：
+当前仓库跟踪的 [docker-compose.yml](./docker-compose.yml) 默认拉取远程镜像。如需使用本地构建镜像，可先构建：
+
+```bash
+docker build -t serverstatus:local .
+```
+
+然后将 Compose 中的镜像名临时改为：
 
 ```yaml
-debug: false
-httpport: 80
-grpcport: 2222
-
-database:
-  type: sqlite
-  dsn: data/sqlite.db
-
-jwt_secret: "your-random-secret-key"
-
-admin:
-  username: admin
-  password: your-secure-password
-
-# 其他配置...
+image: serverstatus:local
 ```
 
-### 2. 使用外部数据库
-
-修改 `docker-compose.yml` 添加数据库服务：
-
-```yaml
-services:
-  serverstatus:
-    # ... 其他配置
-    environment:
-      - DATABASE_TYPE=mysql
-      - DATABASE_DSN=user:password@tcp(mysql:3306)/serverstatus
-    depends_on:
-      - mysql
-
-  mysql:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: serverstatus
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
-    volumes:
-      - mysql_data:/var/lib/mysql
-
-volumes:
-  mysql_data:
-```
-
-### 3. 反向代理配置
-
-#### Nginx 配置示例
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    
-    location / {
-        proxy_pass http://localhost:80;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-    
-    # Agent 连接端口
-    location /grpc {
-        grpc_pass grpc://localhost:2222;
-    }
-}
-```
-
-#### Traefik 配置示例
-
-```yaml
-version: '3.8'
-
-services:
-  serverstatus:
-    image: ghcr.io/xos/server-dash:latest
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.serverstatus.rule=Host(`your-domain.com`)"
-      - "traefik.http.routers.serverstatus.entrypoints=websecure"
-      - "traefik.http.routers.serverstatus.tls.certresolver=letsencrypt"
-      - "traefik.http.services.serverstatus.loadbalancer.server.port=80"
-    networks:
-      - traefik
-
-networks:
-  traefik:
-    external: true
-```
-
-## 监控和日志
-
-### 健康检查
-
-容器内置健康检查，可以通过以下方式查看：
+再启动：
 
 ```bash
-# 查看容器健康状态
-docker ps
-
-# 手动执行健康检查
-docker exec serverstatus /dashboard/app --health-check
-```
-
-### 日志管理
-
-```bash
-# 查看实时日志
-docker compose logs -f
-
-# 查看最近 100 行日志
-docker compose logs --tail=100
-
-# 查看特定时间的日志
-docker compose logs --since="2024-01-01T00:00:00"
-```
-
-### 资源监控
-
-```bash
-# 查看资源使用情况
-docker stats serverstatus
-
-# 查看容器详细信息
-docker inspect serverstatus
-```
-
-## 故障排除
-
-### 常见问题
-
-1. **容器启动失败**
-   ```bash
-   # 查看详细日志
-   docker logs serverstatus
-   
-   # 检查配置文件
-   docker exec serverstatus cat /dashboard/data/config.yaml
-   ```
-
-2. **端口冲突**
-   ```bash
-   # 修改端口映射
-   docker run -p 8080:80 -p 2223:2222 ...
-   ```
-
-3. **数据丢失**
-   ```bash
-   # 确保数据目录正确挂载
-   docker inspect serverstatus | grep Mounts -A 10
-   ```
-
-4. **权限问题**
-   ```bash
-   # 检查数据目录权限
-   ls -la ./data
-   
-   # 修复权限
-   sudo chown -R 1000:1000 ./data
-   ```
-
-5. **静态资源缺失**
-   ```bash
-   # 检查静态资源是否存在
-   docker exec serverstatus ls -la /dashboard/resource/
-   
-   # 测试静态资源
-   ./script/test-docker-resources.sh
-   
-   # 如果静态资源缺失，重新拉取镜像
-   docker pull ghcr.io/xos/server-dash:latest
-   ```
-
-6. **页面样式异常**
-   ```bash
-   # 检查静态文件服务
-   curl -I http://localhost:80/static/main.css
-   
-   # 检查容器中的静态文件
-   docker exec serverstatus ls -la /dashboard/resource/static/
-   ```
-
-### 调试模式
-
-启用调试模式获取更多日志信息：
-
-```bash
-# 设置调试环境变量
-docker run -e GIN_MODE=debug -e LOG_LEVEL=debug ...
-```
-
-## 安全建议
-
-1. **更改默认密码**：首次登录后立即更改管理员密码
-2. **使用 HTTPS**：在生产环境中配置 SSL/TLS
-3. **限制网络访问**：使用防火墙限制不必要的端口访问
-4. **定期更新**：保持镜像和依赖的最新版本
-5. **备份数据**：定期备份数据目录
-
-## 性能优化
-
-1. **资源限制**：根据实际需求设置内存和 CPU 限制
-2. **数据库优化**：对于大量数据，考虑使用 MySQL 或 PostgreSQL
-3. **缓存配置**：启用适当的缓存机制
-4. **网络优化**：使用 CDN 加速静态资源
-
-## 测试和验证
-
-### 静态资源测试
-
-使用提供的测试脚本验证 Docker 镜像：
-
-```bash
-# 完整测试（静态资源 + 容器启动）
-./script/test-docker-resources.sh
-
-# 只测试静态资源
-./script/test-docker-resources.sh --resources-only
-
-# 只测试容器启动
-./script/test-docker-resources.sh --startup-only
-
-# 测试自定义镜像
-./script/test-docker-resources.sh my-custom-image:latest
-```
-
-### 手动验证
-
-```bash
-# 检查静态资源文件
-docker run --rm ghcr.io/xos/server-dash:latest sh -c "ls -la /dashboard/resource/"
-
-# 检查配置文件生成
-docker run --rm -v $(pwd)/test-data:/dashboard/data ghcr.io/xos/server-dash:latest sh -c "ls -la /dashboard/data/"
-
-# 测试健康检查
-docker exec serverstatus /dashboard/app --health-check
-```
-
-## 更新和维护
-
-### 更新到最新版本
-
-```bash
-# 使用脚本更新
-./script/docker-deploy.sh update
-
-# 或手动更新
-docker compose pull
 docker compose up -d
 ```
 
-### 备份和恢复
+## 配置与环境变量
 
-```bash
-# 备份数据
-tar -czf serverstatus-backup-$(date +%Y%m%d).tar.gz data/
+配置文件位于挂载目录：
 
-# 恢复数据
-tar -xzf serverstatus-backup-20240101.tar.gz
+```text
+./data/config.yaml
 ```
 
-## 支持
+常用环境变量：
 
-如果遇到问题，请：
+| 变量 | 说明 |
+| --- | --- |
+| `TZ` | 容器时区，默认 `Asia/Shanghai` |
+| `GIN_MODE` | Gin 模式，生产建议 `release` |
+| `NG_HTTPPORT` | 覆盖 Web 端口配置 |
+| `NG_GRPCPORT` | 覆盖 Agent/gRPC 端口配置 |
+| `NG_DATABASETYPE` | 覆盖数据库类型，`sqlite` 或 `badger` |
+| `NG_DATABASELOCATION` | 覆盖数据库路径 |
+| `NG_SECURITY_ALLOWEDORIGINS` | 前后端分离时允许的前端 Origin |
+| `NG_MAX_INFLIGHT` | HTTP 同时处理请求上限，默认 `64` |
+| `NG_MAX_BODY_BYTES` | HTTP 请求体大小上限，默认 `2MiB` |
 
-1. 查看本文档的故障排除部分
-2. 检查 [GitHub Issues](https://github.com/xOS/ServerStatus/issues)
-3. 提交新的 Issue 并提供详细的错误信息和日志
+示例：
+
+```yaml
+services:
+  serverstatus:
+    image: ghcr.io/xos/server-dash:latest
+    environment:
+      - TZ=Asia/Shanghai
+      - GIN_MODE=release
+      - NG_SECURITY_ALLOWEDORIGINS=https://ops.example.com
+```
+
+## 数据持久化
+
+必须挂载 `/dashboard/data`，否则配置和数据库会随容器删除而丢失。
+
+备份：
+
+```bash
+docker compose stop
+tar -czf serverstatus-data-$(date +%Y%m%d).tar.gz data/
+docker compose start
+```
+
+恢复：
+
+```bash
+docker compose down
+rm -rf data
+tar -xzf serverstatus-data-YYYYMMDD.tar.gz
+docker compose up -d
+```
+
+## 健康检查
+
+Compose 和 Dockerfile 使用：
+
+```bash
+/dashboard/app --health-check
+```
+
+查看健康状态：
+
+```bash
+docker ps
+docker inspect serverstatus-dashboard --format '{{json .State.Health}}'
+```
+
+## 反向代理注意事项
+
+- Web/API 代理到容器 `80`。
+- `/api/v1/ws` 必须保留 WebSocket Upgrade 头。
+- Agent/gRPC 端口建议直接暴露 `2222/tcp`；如使用 Nginx 代理，需要单独配置 `grpc_pass` 和 HTTP/2。
+- 前后端分离部署时，需要设置 `security.allowedorigins` 或 `NG_SECURITY_ALLOWEDORIGINS`。
+
+## 常见问题
+
+### 页面提示前端尚未构建
+
+镜像或运行目录缺少 `frontend/dist/index.html`。本地构建镜像前执行：
+
+```bash
+cd frontend
+npm ci
+npm run build
+cd ..
+```
+
+### 镜像构建失败，找不到二进制
+
+先执行：
+
+```bash
+./script/build-for-docker.sh
+```
+
+确认存在：
+
+```bash
+ls -lh dist/
+```
+
+### 容器启动后数据丢失
+
+检查挂载：
+
+```bash
+docker inspect serverstatus-dashboard | grep -A 20 Mounts
+```
+
+确认宿主机目录挂载到 `/dashboard/data`。
+
+### Agent 连不上
+
+检查：
+
+- 容器是否映射 `2222:2222`。
+- 防火墙是否放通宿主机 `2222/tcp`。
+- Agent 使用的地址、端口、TLS 和密钥是否与后台生成命令一致。

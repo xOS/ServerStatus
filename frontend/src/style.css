@@ -545,7 +545,6 @@ button {
   height: 1em;
   margin-right: 0.25rem;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
   flex: 0 0 auto;
 }
 

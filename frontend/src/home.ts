@@ -805,11 +805,19 @@ function queueProgressLabelMeasure(bar: HTMLElement, label: HTMLElement) {
       label.style.removeProperty('max-width')
     }
 
-    const maxLeft = Math.max(edgeInset, trackWidth - edgeInset - labelWidth)
-    const preferredLeft = fillWidth - edgeInset - labelWidth
-    label.style.removeProperty('--progress-label-right')
-    label.style.setProperty('right', 'auto')
-    label.style.setProperty('left', `${clamp(preferredLeft, edgeInset, maxLeft)}px`)
+    label.style.removeProperty('left')
+    label.style.removeProperty('right')
+
+    const minRight = fillWidth - trackWidth + edgeInset
+    const maxRight = fillWidth - edgeInset - labelWidth
+    const right = clamp(edgeInset, minRight, maxRight)
+
+    if (right === edgeInset) {
+      label.style.removeProperty('--progress-label-right')
+      return
+    }
+
+    label.style.setProperty('--progress-label-right', `${right}px`)
   })
 }
 

@@ -1,247 +1,168 @@
-# ServerStatus 探针安装脚本更新说明
+# Script 目录说明
 
-## 主要改进
+本目录包含 Dashboard、Agent、Docker 构建和部署相关脚本。部署总览见 [../DEPLOYMENT.md](../DEPLOYMENT.md)，Docker 专项见 [../DOCKER.md](../DOCKER.md)。
 
-本次更新将探针的配置管理从命令行参数模式改为配置文件模式，提供更灵活和易于管理的配置方式。
+## 主要脚本
 
-## 新功能特性
+| 文件 | 用途 |
+| --- | --- |
+| `server-status.sh` | 主安装脚本，支持 Dashboard 和 Agent 安装/管理 |
+| `docker-deploy.sh` | Docker Compose 启停、日志、更新、状态查看 |
+| `build-for-docker.sh` | 构建 Docker 镜像所需的多架构 Dashboard 二进制到 `dist/` |
+| `entrypoint.sh` | scratch Docker 镜像入口脚本，负责创建数据目录和默认配置 |
+| `entrypoint-simple.sh` | 简化入口脚本 |
+| `run-with-prebuilt.sh` | 使用预构建产物运行 |
+| `verify-build.sh` | 构建产物验证 |
+| `debug-docker-build.sh` | Docker 构建调试 |
+| `test-entrypoint.sh` | entrypoint 行为测试 |
+| `test-docker-resources.sh` | Docker 资源限制测试 |
+| `fix-permissions.sh` | 修复部署目录权限 |
+| `proto.sh` | protobuf 生成辅助脚本 |
 
-### 1. 配置文件驱动
-- 所有探针参数现在通过 `config.yml` 配置文件管理
-- 安装时自动下载配置文件模板
-- 配置文件与探针程序位于同一目录 (`/opt/server-status/agent/`)
+## 配置模板
 
-### 2. 增强的安装命令
+| 文件 | 用途 |
+| --- | --- |
+| `config.yml` | Agent 配置模板 |
+| `dash-config.yaml` | Dashboard 配置模板 |
+| `docker-compose.yaml` | 脚本内使用的 Compose 示例 |
+
+## 服务文件
+
+| 文件 | 用途 |
+| --- | --- |
+| `server-agent.service` | Linux systemd Agent 服务 |
+| `server-dash.service` | Linux systemd Dashboard 服务 |
+| `server-agent.openrc` | Alpine OpenRC Agent 服务 |
+| `com.serverstatus.agent.plist` | macOS launchd Agent 服务 |
+
+## Agent 安装
+
+后台添加服务器后会生成安装命令，格式与主脚本一致：
+
 ```bash
-# 基本安装（交互式配置）
-./server-status.sh install_agent
-
-# 一键安装（命令行参数）
-./server-status.sh install_agent grpc.nange.cn 443 V7Liw9sgiqPGpLGVW6 --tls
-
-# 支持的安装选项
 ./server-status.sh install_agent <host> <port> <secret> [options]
 ```
 
-### 3. 支持的配置选项
-- `--tls` - 启用TLS加密传输
-- `--insecure-tls` - 跳过TLS证书验证
-- `--debug` - 启用调试模式
-- `--gpu` - 启用GPU监控
-- `--temperature` - 启用温度监控
-- `--disable-auto-update` - 禁用自动更新
-- `--disable-command-execute` - 禁用命令执行
-- `--disable-nat` - 禁用内网穿透
-- `--disable-send-query` - 禁用发送查询
-- `--skip-connection-count` - 跳过连接数检查
-- `--skip-procs-count` - 跳过进程数检查
-- `--report-delay <seconds>` - 设置上报间隔(1-4秒)
-- `--ip-report-period <seconds>` - 设置IP上报周期
-- `--use-ipv6-country-code` - 使用IPv6国家代码
-- `--use-gitee-to-upgrade` - 使用Gitee更新
+示例：
 
-### 4. 新增配置管理菜单
-```
-修改探针配置
-=========================
-1.  修改 域名
-2.  修改 端口
-3.  修改 密钥
-=========================
-4.  修改 全部配置
-5.  高级配置选项
-6.  编辑配置文件
-```
-
-### 5. 高级配置选项
-```
-高级配置选项
-=========================
-1.  启用/禁用 TLS 加密
-2.  启用/禁用 调试模式
-3.  启用/禁用 GPU 监控
-4.  启用/禁用 温度监控
-5.  启用/禁用 自动更新
-6.  启用/禁用 命令执行
-7.  启用/禁用 内网穿透
-8.  设置 上报间隔
-```
-
-## 使用示例
-
-### 安装示例
 ```bash
-# 示例1: 基本TLS安装
-./server-status.sh install_agent grpc.example.com 443 your-secret-key --tls
-
-# 示例2: 完整功能安装
-./server-status.sh install_agent grpc.example.com 443 your-secret-key \
-  --tls --debug --gpu --temperature --report-delay 2
-
-# 示例3: 安全生产环境安装
-./server-status.sh install_agent grpc.example.com 443 your-secret-key \
-  --tls --disable-command-execute --disable-nat --disable-auto-update
+./server-status.sh install_agent status.example.com 2222 your-secret-key
+./server-status.sh install_agent status.example.com 443 your-secret-key --tls
 ```
 
-### 配置文件位置
-- 配置文件: `/opt/server-status/agent/config.yml`
-- 程序文件: `/opt/server-status/agent/server-agent`
+常用选项：
 
-**SystemD 系统 (CentOS/Ubuntu/Debian等)**:
-- 服务文件: `/etc/systemd/system/server-agent.service`
+- `--tls`：启用 TLS。
+- `--insecure-tls`：跳过 TLS 证书验证，仅用于测试。
+- `--debug`：启用调试日志。
+- `--gpu`：启用 GPU 监控。
+- `--temperature`：启用温度监控。
+- `--disable-auto-update`：禁用自动更新。
+- `--disable-command-execute`：禁用远程命令执行。
+- `--disable-nat`：禁用 NAT 穿透。
+- `--disable-send-query`：禁用发送查询。
+- `--skip-connection-count`：跳过连接数统计。
+- `--skip-procs-count`：跳过进程数统计。
+- `--report-delay <seconds>`：状态上报间隔，建议 `1-4` 秒。
+- `--ip-report-period <seconds>`：IP 上报周期。
+- `--use-ipv6-country-code`：优先使用 IPv6 国家代码。
+- `--use-gitee-to-upgrade`：使用 Gitee 更新源。
 
-**Alpine Linux (OpenRC)**:
-- 服务文件: `/etc/init.d/server-agent`
+Agent 默认路径：
 
-**macOS (LaunchAgent)**:
-- 服务文件: `~/Library/LaunchAgents/com.serverstatus.agent.plist`
+- 配置文件：`/opt/server-status/agent/config.yml`
+- 程序文件：`/opt/server-status/agent/server-agent`
 
-### 配置文件示例
+## Agent 配置
+
+示例：
+
 ```yaml
-# 连接配置
-server: "grpc.example.com:443"
+server: "status.example.com:2222"
 clientSecret: "your-secret-key"
-tls: true
+tls: false
 insecureTLS: false
 
-# 功能开关
 debug: false
-gpu: false
-temperature: false
-disableAutoUpdate: false
-disableCommandExecute: true
-disableNat: true
-
-# 性能配置
+gpu: true
+temperature: true
 reportDelay: 1
 ipReportPeriod: 1800
+
+disableAutoUpdate: false
+disableForceUpdate: false
+disableCommandExecute: false
+disableNat: false
+disableSendQuery: false
+skipConnectionCount: false
+skipProcsCount: false
 ```
 
-## 系统支持
+生产环境如果不需要远程控制能力，建议：
 
-### 支持的操作系统
-- **CentOS/RHEL** - 使用 systemd 和 yum
-- **Ubuntu/Debian** - 使用 systemd 和 apt
-- **Alpine Linux** - 使用 OpenRC 和 apk
-- **macOS** - 使用 launchd 和 Homebrew
-- **Arch Linux** - 使用 systemd 和 pacman
-- **其他 Linux 发行版** - 基于 systemd 的系统
-
-### 服务管理
-- **systemd 系统**: 使用 `systemctl` 管理服务
-- **Alpine Linux**: 使用 `rc-service` 和 `rc-update` 管理服务
-- **macOS**: 使用 `launchctl` 管理 LaunchAgent
-
-## 兼容性说明
-
-- 新版本完全向后兼容
-- 现有安装可以通过更新脚本升级
-- 配置文件会在首次运行时自动创建
-- 支持从旧版本平滑迁移
-- 自动检测系统类型并使用相应的服务管理方式
-
-## 故障排除
-
-### 配置文件丢失
-如果配置文件丢失，脚本会自动重新下载模板：
-```bash
-./server-status.sh modify_agent_config
+```yaml
+disableCommandExecute: true
+disableNat: true
+disableSendQuery: true
 ```
 
-### 手动编辑配置
-可以直接编辑配置文件：
+## Agent 服务管理
 
-**SystemD 系统**:
+systemd：
+
 ```bash
-nano /opt/server-status/agent/config.yml
-systemctl restart server-agent
-```
-
-**Alpine Linux**:
-```bash
-nano /opt/server-status/agent/config.yml
-rc-service server-agent restart
-```
-
-**macOS**:
-```bash
-nano /opt/server-status/agent/config.yml
-launchctl stop com.serverstatus.agent
-launchctl start com.serverstatus.agent
-```
-
-### 查看当前配置
-```bash
-cat /opt/server-status/agent/config.yml
-```
-
-### 服务管理命令
-
-**SystemD 系统**:
-```bash
-# 启动服务
 systemctl start server-agent
-# 停止服务
 systemctl stop server-agent
-# 重启服务
 systemctl restart server-agent
-# 查看状态
 systemctl status server-agent
-# 查看日志
 journalctl -u server-agent -f
 ```
 
-**Alpine Linux**:
+OpenRC：
+
 ```bash
-# 启动服务
 rc-service server-agent start
-# 停止服务
 rc-service server-agent stop
-# 重启服务
 rc-service server-agent restart
-# 查看状态
 rc-service server-agent status
-# 查看日志
-tail -f /var/log/server-agent.log
 ```
 
-**macOS**:
+macOS launchd：
+
 ```bash
-# 启动服务
-launchctl start com.serverstatus.agent
-# 停止服务
-launchctl stop com.serverstatus.agent
-# 重启服务
-launchctl stop com.serverstatus.agent && launchctl start com.serverstatus.agent
-# 查看状态
-launchctl list | grep com.serverstatus.agent
-# 加载服务
 launchctl load ~/Library/LaunchAgents/com.serverstatus.agent.plist
-# 卸载服务
 launchctl unload ~/Library/LaunchAgents/com.serverstatus.agent.plist
-# 查看日志
-tail -f /tmp/server-agent.log
-# 查看错误日志
-tail -f /tmp/server-agent_error.log
+launchctl list | grep com.serverstatus.agent
 ```
 
-## 更新日志
+## Docker 脚本
 
-- 新增配置文件驱动的参数管理
-- 新增高级配置选项菜单
-- 新增配置文件编辑功能
-- 改进安装流程，支持一键配置
-- **新增Alpine Linux系统支持**
-  - 自动检测Alpine系统
-  - 使用OpenRC服务管理
-  - 适配apk包管理器
-  - 提供专用的OpenRC服务脚本
-- **新增macOS系统支持**
-  - 自动检测macOS系统
-  - 使用LaunchAgent服务管理
-  - 适配Homebrew包管理器
-  - 提供专用的LaunchAgent plist配置
-  - 支持macOS二进制文件下载
-- 增强错误处理和兼容性
-- 添加详细的使用说明和示例
-- 支持多种Linux发行版的服务管理
+启动默认 Compose：
+
+```bash
+./script/docker-deploy.sh start
+```
+
+构建 Docker 所需二进制：
+
+```bash
+./script/build-for-docker.sh
+```
+
+`build-for-docker.sh` 会输出：
+
+- `dist/server-dash-linux-amd64`
+- `dist/server-dash-linux-arm64`
+- `dist/server-dash-linux-s390x`
+
+构建 Docker 镜像前还需要生成 `frontend/dist`：
+
+```bash
+cd frontend
+npm ci
+npm run build
+cd ..
+./script/build-for-docker.sh
+docker build -t serverstatus:local .
+```

@@ -1,132 +1,196 @@
-# 探针
+# ServerStatus
 
-> 本项目为原项目[哪吒探针](https://github.com/naiba/nezha)的修改自用版
+> 本项目为原项目 [哪吒探针](https://github.com/naiba/nezha) 的自用修改版，已与原项目配置和数据结构不兼容。
 
-## 注意：
+ServerStatus 是一个轻量服务器探针面板，包含 Dashboard、Agent 通信、前台状态页、网络监控页、后台管理、通知规则、DDNS、NAT 和 API Token 管理。当前仓库同时包含 Go 后端与原生 TypeScript 前端，前端构建产物由后端统一托管，也支持单独部署到 Vercel / Cloudflare Pages。
 
-* 本项目与原项目不兼容！
-* 本项目配置文件与原项目不通用！
+## 当前状态
 
-## 精简掉的功能：
+- 后端：Go `1.25.0`，Gin HTTP 服务，gRPC Agent 通信。
+- 前端：原生 TypeScript + Vite，无运行时框架依赖。
+- 数据库：默认 SQLite，支持 BadgerDB 模式。
+- 默认 Web 端口：`80`。
+- 默认 Agent/gRPC 端口：`2222`。
+- 默认配置路径：`data/config.yaml`。
+- 默认 SQLite 数据库路径：`data/sqlite.db`。
+- Docker 数据目录：`/dashboard/data`。
 
-1. 网站监测，包含SSL证书监测；
-2. ......
+## 功能范围
 
-## 演示图
+- 前台首页：服务器分组、在线/离线状态、CPU/内存/硬盘/流量进度条、速率、传输、连接数、在线时间。
+- 网络页：按服务器查看 ICMP/TCP 监控历史，支持 `24h`、`72h` 视图和丢包/延迟统计。
+- 后台管理：服务器、监控、计划任务、报警规则、通知、NAT、DDNS、API Token、系统设置。
+- Agent 能力：系统状态上报、网络速率/流量统计、GPU/温度开关、分区/网卡白名单、远程命令/NAT/查询开关。
+- 通知能力：资源、离线、流量阈值、IP 变更、DDNS 变更等事件通知。
+- 认证能力：Cookie 登录、OAuth/OIDC、API Token 请求头授权、前台查看密码。
+- 部署方式：Docker Compose、单容器 Docker、手动二进制、前后端分离部署。
 
-### 前台
+已精简的原项目功能包括网站监测与 SSL 证书监测等，本仓库不保证与原项目模板、配置或数据库兼容。
 
-![首页截图](https://i.nange.cn/views/2022/05/25/b168b1.png)
+## 页面与接口
 
-### 后台
+- `/`：前台服务器状态页。
+- `/network`：网络监控页。
+- `/dashboard`：后台管理页。
+- `/login`：登录页。
+- `/api/v1/bootstrap`：前端初始化数据。
+- `/api/v1/server/list`：服务器列表。
+- `/api/v1/ws`：前端 WebSocket 实时数据。
+- `/api/v1/traffic`：首页同结构流量数据。
+- `/api/v1/server/:id/traffic`：单服务器流量数据。
 
-![后台截图](https://i.nange.cn/views/2022/05/25/fd1b7d.png)
+## 前台显示约定
 
-## 安装脚本
-### 默认
-```shell
+前台状态卡片的 CPU、内存、硬盘和流量进度条沿用前端既有配色、圆角和最小形态，不额外改色。
+
+资源类百分比按 `0-100%` 显示和渲染。流量百分比按真实用量显示，允许超过 `100%`，例如 `121.23%`；流量进度条宽度仍限制在 `100%`，避免条形溢出卡片。当前前端会优先使用 `used_bytes / max_bytes` 或 `used_bytes / total_bytes` 计算流量真实比例，避免后端 `percent` 字段已被截断时显示不准。
+
+## 快速部署
+
+推荐先阅读 [DEPLOYMENT.md](./DEPLOYMENT.md)。
+
+### Docker Compose
+
+```bash
+git clone https://github.com/xOS/ServerStatus.git
+cd ServerStatus
+docker compose up -d
+```
+
+默认访问：
+
+- Web：`http://服务器IP/`
+- Agent：`服务器IP:2222`
+- 数据目录：`./data`
+
+### Docker 单容器
+
+```bash
+mkdir -p ./data
+docker run -d \
+  --name serverstatus-dashboard \
+  --restart unless-stopped \
+  -p 80:80 \
+  -p 2222:2222 \
+  -v "$(pwd)/data:/dashboard/data" \
+  -e TZ=Asia/Shanghai \
+  -e GIN_MODE=release \
+  ghcr.io/xos/server-dash:latest
+```
+
+### 安装脚本
+
+```bash
 curl -L https://raw.githubusercontent.com/xos/serverstatus/master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh
 sudo ./server-status.sh
 ```
-### 国内
-```shell
-curl -L https://gitee.com/ten/ServerStatus/raw/master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh
-sudo ./server-status.sh
-```
 
-<details>
-    <summary>国内镜像加速：</summary>
+国内镜像：
 
-```shell
+```bash
 curl -L https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh -o server-status.sh && chmod +x server-status.sh
 CN=true sudo ./server-status.sh
 ```
 
-</details>
+## 本地构建
 
-_\* 使用 WatchTower 可以自动更新面板，Windows 终端可以使用 nssm 配置自启动。_
-
-
-
-## 非Docker环境手动部署控制面板
-
-注意：
-
-* 需要安装`Golang`且版本需要1.18或以上。
-* 默认安装路径 `/opt/server-status/dashboard`。
-* 手动部署的面板暂无法通过脚本进行面板部分的控制操作。
-
-1.克隆仓库
+### 前端
 
 ```bash
-git clone https://github.com/xOS/ServerStatus.git
+cd frontend
+npm ci
+npm run build
 ```
 
-2.下载依赖
+### 后端
 
 ```bash
-cd ServerStatus/
-go mod tidy -v
+go mod tidy
+go build -o server-dash ./cmd/dashboard
+./server-dash --config data/config.yaml --db data/sqlite.db
 ```
 
-3.编译，以`AMD64`架构为例
+常用启动参数：
+
+- `--config, -c`：配置文件路径，默认 `data/config.yaml`。
+- `--db`：SQLite 文件路径，默认 `data/sqlite.db`；BadgerDB 模式下可作为目录路径参考。
+- `--dbtype`：数据库类型，可选 `sqlite` 或 `badger`。
+- `--geoipdb`：自定义 MaxMind MMDB GeoIP 数据库路径。
+- `--version, -v`：输出版本。
+
+## 配置概要
+
+配置文件默认位于 `data/config.yaml`，首次 Docker 启动时会自动生成。常用字段：
+
+```yaml
+debug: false
+language: zh-CN
+httpport: 80
+grpcport: 2222
+grpchost: ""
+location: Asia/Shanghai
+
+databasetype: sqlite
+databaselocation: data/sqlite.db
+geoipdb: ""
+
+site:
+  brand: ServerStatus
+  cookiename: server-dash
+  customcode: ""
+  customcodedashboard: ""
+  footername: ""
+  footerurl: ""
+  viewpassword: ""
+
+login:
+  enableoauth: true
+  enableapikey: false
+
+security:
+  allowedorigins: ""
+```
+
+配置也可以通过 `NG_` 前缀环境变量覆盖，例如 `NG_HTTPPORT=8080`、`NG_SECURITY_ALLOWEDORIGINS=https://ops.example.com`。
+
+## 前后端分离
+
+前端默认请求同源 `/api/v1`。如果前端独立部署，需要在构建前设置：
 
 ```bash
-cd cmd/dashboard/
-CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o server-dash -ldflags="-s -w"
+VITE_SERVERSTATUS_API_BASE=https://dashboard.example.com/api/v1 npm run build
 ```
 
-4.部署面板为系统服务
+同时在后端配置跨域白名单：
+
+```yaml
+security:
+  allowedorigins: "https://ops.example.com,*.vercel.app"
+```
+
+同一白名单用于 HTTP API CORS 和 `/api/v1/ws` WebSocket Origin 检查。
+
+## Agent 接入
+
+在后台添加服务器后复制生成的安装命令。Agent 需要连接 Dashboard 的 gRPC 端口：
+
+- 不经过 TLS 反代：`服务器IP:2222`
+- 经过 HTTPS/gRPC 反代：按反代域名和端口配置，并启用 TLS
+
+Agent 示例配置见 [script/config.yml](./script/config.yml)。
+
+## 维护
 
 ```bash
-mkdir -p /opt/server-status/dashboard
-mv server-dash /opt/server-status/dashboard/
-cd ../..
-cp resource/ /opt/server-status/dashboard/ -r
-mkdir -p /opt/server-status/dashboard/data
-cp script/config.yaml /opt/server-status/dashboard/data
-cp script/server-dash.service /etc/systemd/system
+# Docker 日志
+docker compose logs -f
+
+# Docker 更新
+docker compose pull
+docker compose up -d
+
+# 备份数据
+tar -czf serverstatus-data-$(date +%Y%m%d).tar.gz data/
 ```
 
-5.修改配置文件`/opt/server-status/dashboard/data/config.yaml`，注册服务并启动
-
-```bash
-systemctl enable server-dash
-systemctl start server-dash
-```
-## 通知方式
-
-`#NG#` 是面板消息占位符，面板触发通知时会自动替换占位符到实际消息
-
-Body 内容是`JSON` 格式的：**当请求类型为 FORM 时**，值为 `key:value` 的形式，`value` 里面可放置占位符，通知时会自动替换。**当请求类型为 JSON 时** 只会简进行字符串替换后直接提交到`URL`。
-
-URL 里面也可放置占位符，请求时会进行简单的字符串替换。
-
-参考下方的示例，非常灵活。
-
-### 添加通知方式
-
-   - server 酱示例
-
-     - 名称：server 酱
-     - URL：`https://sc.ftqq.com/SCUrandomkeys.send?text=#NG#`
-     - 请求方式: `GET`
-     - 请求类型: 默认
-     - Body: 空
-
-   - wxpusher 示例，需要关注你的应用
-
-     - 名称: wxpusher
-     - URL：`http://wxpusher.zjiecode.com/api/send/message`
-     - 请求方式: `POST`
-     - 请求类型: `JSON`
-     - Body: `{"appToken":"你的appToken","topicIds":[],"content":"#NG#","contentType":"1","uids":["你的uid"]}`
-
-   - telegram 示例 [@haitau](https://github.com/haitau) 贡献
-
-     - 名称：telegram 机器人消息通知
-     - URL：`https://api.telegram.org/botXXXXXX/sendMessage?chat_id=YYYYYY&text=#NG#`
-     - 请求方式: `GET`
-     - 请求类型: 默认
-     - Body: 空
-     - URL 参数获取说明：botXXXXXX 中的 XXXXXX 是在 telegram 中关注官方 @Botfather ，输入/newbot ，创建新的机器人（bot）时，会提供的 token（在提示 Use this token to access the HTTP API:后面一行）这里 'bot' 三个字母不可少。创建 bot 后，需要先在 telegram 中与 BOT 进行对话（随便发个消息），然后才可用 API 发送消息。YYYYYY 是 telegram 用户的数字 ID。与机器人@userinfobot 对话可获得。
+详细部署、反向代理、备份恢复、前端独立部署和故障排查见 [DEPLOYMENT.md](./DEPLOYMENT.md)，Docker 专项说明见 [DOCKER.md](./DOCKER.md)，前端专项说明见 [frontend/README.md](./frontend/README.md)。
