@@ -171,7 +171,7 @@ button {
 }
 
 .nav-left {
-  gap: 4px;
+  gap: 0px;
   min-width: 0;
 }
 
@@ -195,7 +195,7 @@ button {
 
 .nav-link {
   margin: clamp(1px, 0.25vw, 3px);
-  padding: clamp(6px, 0.6vw + 4px, 8px) clamp(12px, 1.5vw + 6px, 16px);
+  padding: clamp(6px, 0.6vw + 4px, 8px) clamp(12px, 1.5vw + 6px, 12px);
   border-radius: 8px;
   color: #4b5563;
   font-size: clamp(15px, 1vw + 11px, 16px);
