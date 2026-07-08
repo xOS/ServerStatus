@@ -2823,6 +2823,10 @@ i.fl-tux {
   font-weight: 600;
 }
 
+.network-chart-unit {
+  white-space: nowrap;
+}
+
 .network-chart-subtitle {
   display: inline-flex;
   align-items: center;
@@ -2852,7 +2856,7 @@ i.fl-tux {
 }
 
 .network-range-btn {
-  min-width: 48px;
+  min-width: 62px;
   height: 24px;
   padding: 0 10px;
   border: 0;

@@ -108,8 +108,8 @@ type HoverPoint = {
 }
 
 const RANGE_LABELS: Record<RangeKey, string> = {
-  '24h': '24小时',
-  '72h': '72小时',
+  '24h': '24 小时',
+  '72h': '72 小时',
 }
 
 const RANGE_ORDER: RangeKey[] = ['24h', '72h']
@@ -153,15 +153,15 @@ export async function initNetwork(container: HTMLDivElement) {
       <div class="network-chart-panel">
         <div class="network-chart-head">
           <div>
-            <div class="network-chart-title" id="chart-title">24小时网络延迟</div>
+            <div class="network-chart-title" id="chart-title">24 小时网络延迟</div>
             <div class="network-chart-subtitle" id="chart-subtitle">请选择服务器</div>
           </div>
           <div class="network-chart-actions">
             <div class="network-range-switch" id="range-switch" aria-label="网络延迟范围">
-              <button class="network-range-btn active" type="button" data-range="24h">24h</button>
-              <button class="network-range-btn" type="button" data-range="72h">72h</button>
+              <button class="network-range-btn active" type="button" data-range="24h">24 小时</button>
+              <button class="network-range-btn" type="button" data-range="72h">72 小时</button>
             </div>
-            <div class="network-chart-unit">ms</div>
+            <div class="network-chart-unit">单位：ms</div>
           </div>
         </div>
         <div class="network-stats" id="network-stats" hidden></div>
@@ -923,7 +923,7 @@ function renderSvgChart(container: HTMLElement, series: Series[], serverNameValu
     const yy = y(tick)
     return `
       <line class="network-grid-line" x1="${padding.left}" y1="${yy.toFixed(1)}" x2="${(width - padding.right).toFixed(1)}" y2="${yy.toFixed(1)}"></line>
-      <text class="network-axis-label" x="${padding.left - 10}" y="${(yy + 4).toFixed(1)}" text-anchor="end">${tick}ms</text>
+      <text class="network-axis-label" x="${padding.left - 10}" y="${(yy + 4).toFixed(1)}" text-anchor="end">${tick}</text>
     `
   }).join('')
 
