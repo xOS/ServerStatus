@@ -163,7 +163,7 @@ export function injectAppShell(container: HTMLDivElement, activeRoute: 'home' | 
         <div class="top-nav-inner">
           <div class="nav-left">
             <a class="nav-logo" href="/" aria-label="Server Status">
-              <img src="/static/logo.svg?v20260708" alt="">
+              <img src="/static/logo.svg?v20260708b" alt="">
             </a>
             <a class="nav-link ${activeRoute === 'home' ? 'active' : ''}" href="/" data-route="home">${icon('server', 'nav-svg')}<span>服务器</span></a>
             <a class="nav-link ${activeRoute === 'network' ? 'active' : ''}" href="/network" data-route="network">${icon('circleDot', 'nav-svg')}<span>网络</span></a>
@@ -204,7 +204,7 @@ export function renderChrome(profile: ProfileResponse | null | any) {
 
   if (admin) {
     const name = escapeHtml(shortAdminName(admin.Name || admin.Login || '管理员'))
-    const avatar = escapeAttribute(admin.AvatarURL || '/static/logo.svg?v20260708')
+    const avatar = escapeAttribute(admin.AvatarURL || '/static/logo.svg?v20260708b')
     adminArea.innerHTML = `
       <div class="admin-menu">
         <button class="admin-trigger" type="button">
