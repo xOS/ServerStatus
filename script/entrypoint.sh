@@ -53,6 +53,7 @@ admin:
 # 站点配置
 site:
   brand: "ServerStatus"
+  logourl: ""
   cookiename: "server-dash"
   theme: "default"
   customcode: ""

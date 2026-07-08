@@ -204,6 +204,7 @@ geoipdb: ""
 
 site:
   brand: ServerStatus
+  logourl: ""
   cookiename: server-dash
   customcode: ""
   customcodedashboard: ""
@@ -219,6 +220,8 @@ login:
 security:
   allowedorigins: ""
 ```
+
+`site.logourl` 留空时使用项目本地 Logo；填写图片 URL 后会应用到前台、登录页和后台页头。
 
 环境变量可用 `NG_` 前缀覆盖配置，变量名中的 `_` 会转换为配置层级。例如：
 

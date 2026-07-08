@@ -33,6 +33,7 @@ type Config struct {
 	Debug bool // debug模式开关
 	Site  struct {
 		Brand               string // 站点名称
+		LogoURL             string // 自定义 Logo 图片 URL，留空使用本地默认 Logo
 		CookieName          string // 浏览器 Cookie 名称
 		CustomCode          string
 		CustomCodeDashboard string

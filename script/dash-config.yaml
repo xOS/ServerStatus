@@ -2,6 +2,7 @@ debug: true
 language: zh-CN
 site:
     brand: 服务器
+    logourl: ""
     cookiename: server-dash
     theme: default
     dashboardtheme: default

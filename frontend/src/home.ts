@@ -14,6 +14,10 @@ export interface ProfileResponse {
   Conf?: {
     Site?: {
       Brand?: string
+      LogoURL?: string
+      LogoUrl?: string
+      logo_url?: string
+      logourl?: string
       CustomCode?: string
       CustomCodeDashboard?: string
       FooterYear?: string

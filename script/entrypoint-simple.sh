@@ -34,6 +34,7 @@ admin:
   password: admin123
 site:
   brand: "ServerStatus"
+  logourl: ""
   theme: "default"
 EOF
 fi

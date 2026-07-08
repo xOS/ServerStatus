@@ -136,6 +136,7 @@ geoipdb: ""
 
 site:
   brand: ServerStatus
+  logourl: ""
   cookiename: server-dash
   customcode: ""
   customcodedashboard: ""
@@ -150,6 +151,8 @@ login:
 security:
   allowedorigins: ""
 ```
+
+`site.logourl` 为空时使用项目自带的本地 Logo；填写图片 URL 后，前台、登录页和后台页头会使用该图片。
 
 配置也可以通过 `NG_` 前缀环境变量覆盖，例如 `NG_HTTPPORT=8080`、`NG_SECURITY_ALLOWEDORIGINS=https://ops.example.com`。
 

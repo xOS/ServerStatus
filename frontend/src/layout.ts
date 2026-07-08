@@ -4,10 +4,17 @@ import { authApiPath } from './api'
 let _app: HTMLDivElement
 let adminArea: HTMLElement
 let footerContent: HTMLElement
+export const DEFAULT_LOGO_URL = '/static/logo.svg?v20260708b'
 
 // Reusable escape helpers
 const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const escapeAttribute = (s: string) => escapeHtml(s)
+
+export function logoUrlFromProfile(profile: ProfileResponse | null | any) {
+  const site = profile?.Conf?.Site || {}
+  const logo = String(site.LogoURL ?? site.LogoUrl ?? site.logo_url ?? site.logourl ?? '').trim()
+  return logo || DEFAULT_LOGO_URL
+}
 
 export const icon = (name: string, cls: string = '') => {
   const c = `class="svg-icon${cls ? ` ${cls}` : ''}"`
@@ -163,7 +170,7 @@ export function injectAppShell(container: HTMLDivElement, activeRoute: 'home' | 
         <div class="top-nav-inner">
           <div class="nav-left">
             <a class="nav-logo" href="/" aria-label="Server Status">
-              <img src="/static/logo.svg?v20260708b" alt="">
+              <img src="${escapeAttribute(DEFAULT_LOGO_URL)}" alt="">
             </a>
             <a class="nav-link ${activeRoute === 'home' ? 'active' : ''}" href="/" data-route="home">${icon('server', 'nav-svg')}<span>服务器</span></a>
             <a class="nav-link ${activeRoute === 'network' ? 'active' : ''}" href="/network" data-route="network">${icon('circleDot', 'nav-svg')}<span>网络</span></a>
@@ -199,12 +206,15 @@ export function renderChrome(profile: ProfileResponse | null | any) {
   const brandText = String(profile?.Conf?.Site?.Brand || '服务器')
   const brand = escapeHtml(brandText)
   const footer = footerOptions(profile)
+  const logo = logoUrlFromProfile(profile)
 
   document.title = brandText
+  const navLogo = _app?.querySelector<HTMLImageElement>('.nav-logo img')
+  if (navLogo) navLogo.src = logo
 
   if (admin) {
     const name = escapeHtml(shortAdminName(admin.Name || admin.Login || '管理员'))
-    const avatar = escapeAttribute(admin.AvatarURL || '/static/logo.svg?v20260708b')
+    const avatar = escapeAttribute(admin.AvatarURL || logo)
     adminArea.innerHTML = `
       <div class="admin-menu">
         <button class="admin-trigger" type="button">

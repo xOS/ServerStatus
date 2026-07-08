@@ -1,6 +1,6 @@
 import { AUTH_API_BASE, adminApiPath, apiPath, authApiPath } from '../api'
 import { authHeaders, clearStoredAuthToken, getStoredAuthToken, setStoredAuthToken } from '../auth'
-import { footerOptions, icon } from '../layout'
+import { DEFAULT_LOGO_URL, footerOptions, icon, logoUrlFromProfile } from '../layout'
 
 type AdminKey = 'dashboard' | 'server' | 'monitor' | 'cron' | 'rule' | 'notification' | 'nat' | 'ddns' | 'api' | 'setting'
 type Row = Record<string, unknown>
@@ -343,7 +343,7 @@ export function initAdmin(container: HTMLDivElement) {
     <div class="admin-shell">
       <header class="admin-header">
         <a class="admin-brand" href="/" data-route-home>
-          <img src="/static/logo.svg?v20260708b" alt="">
+          <img src="${escapeAttribute(DEFAULT_LOGO_URL)}" alt="">
           <span id="admin-brand-title">${escapeHtml(adminBrandName)}</span>
           <small>管理后台</small>
         </a>
@@ -391,12 +391,12 @@ export function initLogin(container: HTMLDivElement) {
   adminAbortController = controller
   app = container
 
-  const renderLogin = (allowOAuth = true) => {
+  const renderLogin = (allowOAuth = true, logoURL = DEFAULT_LOGO_URL) => {
     apiKeyLoginAllowed = false
     app.innerHTML = `
     <main class="login-shell">
       <section class="login-panel">
-        <img src="/static/logo.svg?v20260708b" alt="">
+        <img src="${escapeAttribute(logoURL)}" alt="">
         <h1>登录</h1>
         <p>仅允许白名单账号授权登录。</p>
         <div class="login-actions">
@@ -415,7 +415,7 @@ export function initLogin(container: HTMLDivElement) {
     .then((profile) => {
       const row = objectFrom(profile?.data || profile)
       updateAdminBrand(row)
-      renderLogin(loginOAuthAllowed(row))
+      renderLogin(loginOAuthAllowed(row), logoUrlFromProfile(row))
     })
     .catch(() => null)
 
@@ -725,12 +725,15 @@ function updateAdminBrand(profile: Row) {
   adminBrandName = brand
   document.title = brand
   const footer = footerOptions(profile)
+  const logoURL = logoUrlFromProfile(profile)
   const title = document.getElementById('admin-brand-title')
+  const logo = document.querySelector<HTMLImageElement>('.admin-brand img')
   const footerBrand = document.getElementById('admin-footer-brand')
   const footerYear = document.getElementById('admin-footer-year')
   const footerAuthor = document.getElementById('admin-footer-author') as HTMLAnchorElement | null
   const footerCustomCode = document.getElementById('admin-footer-custom-code')
   if (title) title.textContent = brand
+  if (logo) logo.src = logoURL
   if (footerBrand) footerBrand.textContent = brand
   if (footerYear) footerYear.textContent = footer.year
   if (footerAuthor) {
@@ -741,6 +744,14 @@ function updateAdminBrand(profile: Row) {
   document.querySelectorAll<HTMLElement>('[data-open-auth]').forEach((button) => {
     button.hidden = true
   })
+}
+
+function settingLogoURL(settings: Row) {
+  return value(settings, 'LogoURL') || value(settings, 'LogoUrl') || value(settings, 'logo_url') || value(settings, 'logourl')
+}
+
+function profileLogoSetting(profile: Row) {
+  return value(profile, 'Conf.Site.LogoURL') || value(profile, 'Conf.Site.LogoUrl') || value(profile, 'Conf.Site.logo_url') || value(profile, 'Conf.Site.logourl')
 }
 
 function loginOAuthAllowed(profile: Row) {
@@ -850,9 +861,14 @@ async function renderApiTokens() {
 async function renderSettings() {
   contentArea.innerHTML = loadingPanel('加载系统设置...')
   try {
-    const payload = await apiFetch<Row>(adminApiPath('/setting'))
+    const [payload, profilePayload] = await Promise.all([
+      apiFetch<Row>(adminApiPath('/setting')),
+      apiFetch<unknown>(apiPath('/profile')).catch(() => null),
+    ])
     const settings = objectFrom(get(payload, 'Settings'))
+    const profile = objectFrom((profilePayload as { data?: unknown } | null)?.data || profilePayload)
     settingsCache = settings
+    const logoURL = settingLogoURL(settings) || profileLogoSetting(profile)
 
     contentArea.innerHTML = `
       <section class="admin-panel">
@@ -864,6 +880,7 @@ async function renderSettings() {
         </div>
         <form class="admin-form-grid" data-setting-form>
           ${inputMarkup('Title', '站点名称', settings.Title)}
+          ${inputMarkup('LogoURL', 'Logo 图片 URL', logoURL, 'text', '留空使用项目本地 Logo')}
           ${inputMarkup('Admin', '管理员账号', settings.Admin)}
           ${inputMarkup('FooterYear', '页脚年份', settings.FooterYear || '2026')}
           ${inputMarkup('FooterName', '页脚作者名称', settings.FooterName || '春夏')}

@@ -1872,6 +1872,7 @@ func (ma *memberAPI) logout(c *gin.Context) {
 
 type settingForm struct {
 	Title                   string
+	LogoURL                 string
 	Admin                   string
 	CustomCode              string
 	CustomCodeDashboard     string
@@ -1913,6 +1914,7 @@ func (ma *memberAPI) updateSetting(c *gin.Context) {
 	singleton.Conf.IgnoredIPNotification = sf.IgnoredIPNotification
 	singleton.Conf.IPChangeNotificationTag = sf.IPChangeNotificationTag
 	singleton.Conf.Site.Brand = sf.Title
+	singleton.Conf.Site.LogoURL = strings.TrimSpace(sf.LogoURL)
 	singleton.Conf.Site.CustomCode = sf.CustomCode
 	singleton.Conf.Site.CustomCodeDashboard = sf.CustomCodeDashboard
 	singleton.Conf.Site.FooterYear = sf.FooterYear
@@ -2298,6 +2300,7 @@ func (ma *memberAPI) getSettingList(c *gin.Context) {
 	WriteJSON(c, http.StatusOK, gin.H{
 		"Settings": gin.H{
 			"Title":                       singleton.Conf.Site.Brand,
+			"LogoURL":                     singleton.Conf.Site.LogoURL,
 			"Admin":                       singleton.Conf.Oauth2.Admin,
 			"CustomCode":                  singleton.Conf.Site.CustomCode,
 			"CustomCodeDashboard":         singleton.Conf.Site.CustomCodeDashboard,
