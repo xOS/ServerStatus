@@ -986,12 +986,7 @@ function setChartMessage(container: HTMLElement, message: string, loading = fals
   container.innerHTML = loading
     ? `
       <div class="network-chart-message is-loading">
-        <div class="network-chart-loader" aria-hidden="true">
-          <span class="network-loader-dot dot-a"></span>
-          <span class="network-loader-dot dot-b"></span>
-          <span class="network-loader-dot dot-c"></span>
-          <span class="network-loader-line"></span>
-        </div>
+        <span class="network-chart-loader" aria-hidden="true"></span>
         <span>${escapeHtml(message)}</span>
       </div>
     `
