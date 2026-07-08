@@ -828,18 +828,45 @@ i.fl-tux {
 
 .home-loading {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 120px;
+  gap: 14px;
+  min-height: 220px;
   margin: 1em 0;
-  padding: 1em 1.5em;
+  padding: 1.5em;
   border: 1px solid var(--glass-border);
   border-radius: 8px;
-  color: rgba(0, 0, 0, 0.58);
+  color: rgba(0, 0, 0, 0.62);
   background: rgba(255, 255, 255, 0.72);
   box-shadow: var(--shadow-soft);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
+  text-align: center;
+}
+
+.home-loading .spinner {
+  width: 54px;
+  height: 54px;
+  margin: 0;
+  border-width: 4px;
+  border-color: rgba(3, 169, 244, 0.14);
+  border-top-color: #03a9f4;
+  border-right-color: #ff9800;
+  box-shadow: inset 0 0 0 1px rgba(100, 53, 201, 0.08);
+}
+
+.home-loading::after {
+  content: "";
+  width: min(260px, 74%);
+  height: 6px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, transparent, rgba(3, 169, 244, 0.95), rgba(255, 152, 0, 0.9), transparent),
+    rgba(0, 0, 0, 0.08);
+  background-size: 52% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  animation: loading-sweep 1.15s ease-in-out infinite;
 }
 
 .server-card-loading {
@@ -2607,6 +2634,39 @@ i.fl-tux {
   padding: 28px;
 }
 
+.admin-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 86px;
+  padding: 20px;
+}
+
+.admin-loading::before {
+  content: "";
+  width: 68px;
+  height: 5px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, transparent, #03a9f4, #ff9800, transparent),
+    rgba(0, 0, 0, 0.08);
+  background-size: 54% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  animation: loading-sweep 0.72s ease-in-out infinite;
+}
+
+.admin-dialog-body.admin-loading {
+  min-height: 74px;
+  padding: 18px;
+}
+
+.admin-dialog-body.admin-loading::before {
+  width: 54px;
+  height: 4px;
+}
+
 .admin-empty-cell {
   padding: 22px !important;
 }
@@ -2890,12 +2950,88 @@ i.fl-tux {
 }
 
 .network-chart-message {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
   min-height: 440px;
-  place-items: center;
   color: rgba(0, 0, 0, 0.55);
   font-size: 14px;
   font-weight: 600;
+  text-align: center;
+}
+
+.network-chart-message.is-loading {
+  color: rgba(0, 0, 0, 0.62);
+}
+
+.network-chart-loader {
+  position: relative;
+  width: min(260px, 78%);
+  height: 142px;
+  overflow: hidden;
+  border: 1px solid rgba(34, 36, 38, 0.08);
+  border-radius: 8px;
+  background:
+    linear-gradient(rgba(34, 36, 38, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 36, 38, 0.06) 1px, transparent 1px),
+    rgba(255, 255, 255, 0.64);
+  background-size: 100% 28px, 43px 100%, 100% 100%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.network-chart-loader::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: translateX(-100%);
+  animation: chart-shine 1.45s ease-in-out infinite;
+}
+
+.network-loader-line {
+  position: absolute;
+  left: 30px;
+  top: 76px;
+  width: 188px;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #03a9f4, #ff9800);
+  box-shadow: 0 6px 16px rgba(3, 169, 244, 0.18);
+  transform-origin: left center;
+  animation: chart-line 1.05s ease-in-out infinite;
+}
+
+.network-loader-dot {
+  position: absolute;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.82);
+  border-radius: 50%;
+  background: #03a9f4;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.12);
+  animation: chart-dot 1.05s ease-in-out infinite;
+}
+
+.network-loader-dot.dot-a {
+  left: 42px;
+  top: 82px;
+}
+
+.network-loader-dot.dot-b {
+  left: 122px;
+  top: 56px;
+  background: #ff9800;
+  animation-delay: 0.12s;
+}
+
+.network-loader-dot.dot-c {
+  right: 40px;
+  top: 74px;
+  background: #6435c9;
+  animation-delay: 0.24s;
 }
 
 .network-chart-svg {
@@ -3100,6 +3236,52 @@ i.fl-tux {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes loading-sweep {
+  0% {
+    background-position: -55% 0, 0 0;
+  }
+  50% {
+    background-position: 50% 0, 0 0;
+  }
+  100% {
+    background-position: 155% 0, 0 0;
+  }
+}
+
+@keyframes chart-shine {
+  0% {
+    transform: translateX(-100%);
+  }
+  58%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes chart-line {
+  0%,
+  100% {
+    transform: translateY(9px) rotate(-8deg) scaleX(0.76);
+    opacity: 0.68;
+  }
+  50% {
+    transform: translateY(-10px) rotate(-8deg) scaleX(1);
+    opacity: 1;
+  }
+}
+
+@keyframes chart-dot {
+  0%,
+  100% {
+    transform: translateY(7px);
+    opacity: 0.72;
+  }
+  50% {
+    transform: translateY(-8px);
+    opacity: 1;
   }
 }
 

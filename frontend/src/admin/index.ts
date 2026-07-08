@@ -425,7 +425,7 @@ export function initLogin(container: HTMLDivElement) {
 function oauthLoginUrl() {
   const url = new URL(authApiPath('/oauth2/login'), window.location.href)
   url.searchParams.set('auth_base', new URL(AUTH_API_BASE, window.location.href).toString().replace(/\/+$/, ''))
-  url.searchParams.set('return_to', new URL('/', window.location.href).toString())
+  url.searchParams.set('return_to', new URL('/dashboard', window.location.href).toString())
   return url.toString()
 }
 
@@ -568,7 +568,11 @@ function bindAdminEvents() {
       const token = String(new FormData(form).get('token') || '').trim()
       if (token) setStoredAuthToken(token)
       dialog.close()
-      renderAdminRoute()
+      if (window.location.pathname === '/dashboard') {
+        renderAdminRoute()
+      } else {
+        window.dispatchEvent(new CustomEvent('app-navigate', { detail: '/dashboard' }))
+      }
     } else if (form.matches('[data-token-form]')) {
       event.preventDefault()
       issueApiToken(form)
@@ -2254,7 +2258,7 @@ function currentTimeLabel() {
 }
 
 function loadingPanel(message: string) {
-  return `<section class="admin-panel admin-loading">${escapeHtml(message)}</section>`
+  return `<section class="admin-panel admin-loading"><span>${escapeHtml(message)}</span></section>`
 }
 
 function emptyPanel(message: string) {

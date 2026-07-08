@@ -184,7 +184,7 @@ export async function initNetwork(container: HTMLDivElement) {
       if (!signal.aborted) console.warn('Failed to load profile', error)
     })
 
-  setChartMessage(chartContainer, '加载服务器列表...')
+  setChartMessage(chartContainer, '加载服务器列表...', true)
 
   try {
     const [serverPayload, monitorConfigPayload] = await Promise.all([
@@ -377,7 +377,7 @@ export async function initNetwork(container: HTMLDivElement) {
 
       statsContainer.hidden = true
       chartModel = null
-      setChartMessage(chartContainer, '加载监控数据...')
+      setChartMessage(chartContainer, '加载监控数据...', true)
 
       try {
         const payload = await fetchHistoryPayload(id, range, force)
@@ -982,8 +982,20 @@ function nearestPoint(points: SeriesPoint[], targetTime: number) {
   return Math.abs(previous.time - targetTime) <= Math.abs(current.time - targetTime) ? previous : current
 }
 
-function setChartMessage(container: HTMLElement, message: string) {
-  container.innerHTML = `<div class="network-chart-message">${escapeHtml(message)}</div>`
+function setChartMessage(container: HTMLElement, message: string, loading = false) {
+  container.innerHTML = loading
+    ? `
+      <div class="network-chart-message is-loading">
+        <div class="network-chart-loader" aria-hidden="true">
+          <span class="network-loader-dot dot-a"></span>
+          <span class="network-loader-dot dot-b"></span>
+          <span class="network-loader-dot dot-c"></span>
+          <span class="network-loader-line"></span>
+        </div>
+        <span>${escapeHtml(message)}</span>
+      </div>
+    `
+    : `<div class="network-chart-message">${escapeHtml(message)}</div>`
 }
 
 function serverId(server: ServerItem) {

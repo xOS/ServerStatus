@@ -217,7 +217,7 @@ func (oa *oauth2controller) getReturnURL(c *gin.Context) string {
 	if isAllowedOAuthReturnURL(c, raw) {
 		return raw
 	}
-	return "/"
+	return "/dashboard"
 }
 
 func isAllowedOAuthReturnURL(c *gin.Context, raw string) bool {
@@ -282,7 +282,7 @@ func (oa *oauth2controller) callback(c *gin.Context) {
 	var err error
 	// 验证登录跳转时的 State
 	redirectURL := ""
-	returnURL := "/"
+	returnURL := "/dashboard"
 	stateKey, err := c.Cookie(singleton.Conf.Site.CookieName + "-sk")
 	if err == nil {
 		state, ok := singleton.Cache.Get(fmt.Sprintf("%s%s", model.CacheKeyOauth2State, stateKey))
