@@ -96,6 +96,10 @@ interface TrafficRecordView {
   max?: string
   total?: string
   used?: string
+  max_bytes?: number
+  total_bytes?: number
+  used_bytes?: number
+  used_percent?: number
   percent?: number
   serverName?: string
   server_name?: string
@@ -781,20 +785,32 @@ function setProgress(
 function queueProgressLabelMeasure(bar: HTMLElement, label: HTMLElement) {
   requestAnimationFrame(() => {
     const fillWidth = bar.clientWidth
+    const trackWidth = bar.parentElement?.clientWidth || fillWidth
     if (fillWidth <= 0) {
       label.style.removeProperty('--progress-label-right')
+      label.style.removeProperty('max-width')
       return
     }
 
-    const edgeInset = 7
+    const edgeInset = 5
     const labelWidth = label.scrollWidth
-    const defaultLeft = fillWidth - edgeInset - labelWidth
-    if (defaultLeft >= edgeInset) {
+    const minRight = fillWidth - trackWidth + edgeInset
+    const maxRight = fillWidth - edgeInset - labelWidth
+
+    if (labelWidth > trackWidth - edgeInset * 2) {
+      label.style.setProperty('max-width', `${Math.max(0, trackWidth - edgeInset * 2)}px`)
+      label.style.setProperty('--progress-label-right', `${minRight}px`)
+      return
+    }
+
+    label.style.removeProperty('max-width')
+    const right = clamp(edgeInset, minRight, maxRight)
+    if (right === edgeInset) {
       label.style.removeProperty('--progress-label-right')
       return
     }
 
-    label.style.setProperty('--progress-label-right', `${fillWidth - edgeInset - labelWidth}px`)
+    label.style.setProperty('--progress-label-right', `${right}px`)
   })
 }
 
@@ -1018,12 +1034,14 @@ function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficRe
   if (Array.isArray(payload)) {
     for (const item of payload) {
       if (item.server_id === undefined || item.server_id === null) continue
-      const maxBytes = toNumber(item.max_bytes ?? item.total_bytes)
-      const usedBytes = toNumber(item.used_bytes)
+      const maxText = item.max_formatted || item.max || item.total || ''
+      const usedText = item.used_formatted || item.used || ''
+      const maxBytes = trafficBytes(item.max_bytes ?? item.total_bytes, maxText)
+      const usedBytes = trafficBytes(item.used_bytes, usedText)
       const percent = trafficPercent(item.used_percent ?? item.percent, usedBytes, maxBytes)
       state.trafficById.set(String(item.server_id), {
-        max: item.max_formatted || item.max || item.total || formatByteSize(maxBytes),
-        used: item.used_formatted || item.used || formatByteSize(usedBytes),
+        max: maxText || formatByteSize(maxBytes),
+        used: usedText || formatByteSize(usedBytes),
         percent,
         serverName: item.server_name || '',
         cycleName: item.cycle_name || '',
@@ -1033,10 +1051,14 @@ function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficRe
   }
 
   for (const [id, value] of Object.entries(payload)) {
+    const maxText = value.max || value.total || ''
+    const usedText = value.used || ''
+    const maxBytes = trafficBytes(value.max_bytes ?? value.total_bytes, maxText)
+    const usedBytes = trafficBytes(value.used_bytes, usedText)
     state.trafficById.set(String(id), {
-      max: value.max || value.total || '0B',
-      used: value.used || '0B',
-      percent: trafficPercent(value.percent, 0, 0),
+      max: maxText || '0B',
+      used: usedText || '0B',
+      percent: trafficPercent(value.used_percent ?? value.percent, usedBytes, maxBytes),
       serverName: value.serverName || value.server_name || '',
       cycleName: value.cycleName || value.cycle_name || '',
     })
@@ -1355,8 +1377,30 @@ function progressTone(value: number) {
 }
 
 function trafficPercent(value: unknown, usedBytes: number, maxBytes: number) {
-  const fallback = maxBytes > 0 ? (usedBytes / maxBytes) * 100 : 0
-  return Math.max(0, finiteNumber(value, fallback))
+  if (maxBytes > 0 && Number.isFinite(usedBytes)) {
+    return Math.max(0, (usedBytes / maxBytes) * 100)
+  }
+  return Math.max(0, finiteNumber(value, 0))
+}
+
+function trafficBytes(value: unknown, text: string) {
+  if (value !== undefined && value !== null) {
+    const direct = Number(value)
+    if (Number.isFinite(direct) && direct >= 0) return direct
+  }
+  return parseTrafficBytes(text)
+}
+
+function parseTrafficBytes(text: string) {
+  const match = String(text || '').trim().match(/^([\d.]+)\s*([kmgtpezy]?i?b?)$/i)
+  if (!match) return 0
+  const value = Number(match[1])
+  if (!Number.isFinite(value) || value < 0) return 0
+  let unit = match[2].toUpperCase().replace('IB', 'B')
+  if (unit.length === 1) unit = `${unit}B`
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+  const index = units.indexOf(unit || 'B')
+  return value * Math.pow(1024, Math.max(0, index))
 }
 
 function badgeInlineStyle(stat: GroupStat) {
