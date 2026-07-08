@@ -1058,12 +1058,14 @@ function updateServerData(incoming: ServerInfo[], now?: number) {
     if (!nextById.has(id)) state.trafficById.delete(id)
   }
 
+  const nextIds = nextServers.map(serverId)
+  const structureChanged = previousIds.length !== nextIds.length || previousIds.some((id, index) => id !== nextIds[index])
+
   state.servers = nextServers
   state.serverById = nextById
-  storeServerSnapshot(nextServers)
+  if (structureChanged) storeServerSnapshot(nextServers)
 
-  const nextIds = nextServers.map(serverId)
-  return previousIds.length !== nextIds.length || previousIds.some((id, index) => id !== nextIds[index])
+  return structureChanged
 }
 
 function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficRecordView>) {

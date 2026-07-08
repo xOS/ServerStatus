@@ -476,11 +476,9 @@ export async function initNetwork(container: HTMLDivElement) {
 
     const scheduleNetworkConfigRefresh = () => {
       window.clearTimeout(configRefreshTimer)
-      if (signal.aborted) return
+      if (signal.aborted || document.hidden) return
       configRefreshTimer = window.setTimeout(() => {
-        if (!document.hidden) {
-          void refreshNetworkConfig()
-        }
+        void refreshNetworkConfig()
         scheduleNetworkConfigRefresh()
       }, NETWORK_CONFIG_REFRESH_MS)
     }
@@ -528,7 +526,12 @@ export async function initNetwork(container: HTMLDivElement) {
     })
     window.addEventListener('resize', resizeHandler, { signal })
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) void refreshNetworkConfig()
+      if (document.hidden) {
+        window.clearTimeout(configRefreshTimer)
+        return
+      }
+      void refreshNetworkConfig()
+      scheduleNetworkConfigRefresh()
     }, { signal })
     signal.addEventListener('abort', () => {
       window.clearTimeout(prefetchTimer)
