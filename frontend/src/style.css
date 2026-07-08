@@ -823,6 +823,7 @@ i.fl-tux {
   line-height: 1;
   white-space: nowrap;
   text-align: right;
+  transition: left 300ms ease-out;
 }
 
 .server-card-loading {
