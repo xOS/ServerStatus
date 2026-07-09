@@ -550,8 +550,6 @@ button {
   text-align: left;
   user-select: none;
   transition: box-shadow 0.2s ease, background-color 0.2s ease;
-  content-visibility: auto;
-  contain-intrinsic-size: var(--front-card-width) 260px;
 }
 
 .server-card:hover {
@@ -2053,11 +2051,6 @@ i.fl-tux {
 
 .admin-table tr:last-child td {
   border-bottom: 0;
-}
-
-.admin-data-row {
-  content-visibility: auto;
-  contain-intrinsic-size: 44px;
 }
 
 .admin-table code {

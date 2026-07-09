@@ -5,7 +5,7 @@ export default defineConfig({
   publicDir: 'public-lite',
   build: {
     target: 'es2018',
-    emptyOutDir: false,
+    emptyOutDir: true,
   },
   resolve: {
     alias: {

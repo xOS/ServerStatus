@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  serverstatus-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - TARGETOS=linux
+        - TARGETARCH=amd64
+        - TZ=Asia/Shanghai
+    
+    container_name: serverstatus-dev
+    restart: unless-stopped
+    
+    ports:
+      - "8080:80"    # 开发环境使用不同端口
+      - "2223:2222"  # Agent 连接端口
+    
+    volumes:
+      - ./data:/dashboard/data
+      - ./config:/dashboard/config:ro
+      - /etc/localtime:/etc/localtime:ro
+    
+    environment:
+      - TZ=Asia/Shanghai
+      - GIN_MODE=debug  # 开发模式
+      - LOG_LEVEL=debug
+    
+    # 开发环境不设置只读文件系统
+    networks:
+      - serverstatus-dev-net
+
+  # 可选：添加数据库服务用于开发
+  # database:
+  #   image: sqlite:latest
+  #   container_name: serverstatus-db
+  #   volumes:
+  #     - db_data:/var/lib/sqlite
+  #   networks:
+  #     - serverstatus-dev-net
+
+networks:
+  serverstatus-dev-net:
+    driver: bridge
+
+# volumes:
+#   db_data:

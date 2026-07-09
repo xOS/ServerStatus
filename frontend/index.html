@@ -11,6 +11,45 @@
       <link href="https://s4.zstatic.net/ajax/libs/font-logos/1.3.0/font-logos.min.css" rel="stylesheet">
       <link href="https://s4.zstatic.net/ajax/libs/flag-icons/7.5.0/css/flag-icons.min.css" rel="stylesheet">
     </noscript>
+    <script>
+      (function () {
+        var key = 'serverstatus:asset-retry'
+        var retried = false
+        function hasRetried() {
+          try {
+            return retried || sessionStorage.getItem(key) === '1'
+          } catch (e) {
+            return retried
+          }
+        }
+        function markRetried() {
+          retried = true
+          try {
+            sessionStorage.setItem(key, '1')
+          } catch (e) {}
+        }
+        function clearRetried() {
+          retried = false
+          try {
+            sessionStorage.removeItem(key)
+          } catch (e) {}
+        }
+        window.addEventListener('error', function (event) {
+          var target = event.target
+          if (!target || !target.tagName) return
+          var tag = String(target.tagName).toLowerCase()
+          if (tag !== 'script' && tag !== 'link') return
+          var url = tag === 'script' ? target.src : target.href
+          if (!url || !/\/assets\/index-[^/]+\.(js|css)$|\/assets\/index\.(js|css)$/.test(url)) return
+          if (hasRetried()) return
+          markRetried()
+          var next = new URL(window.location.href)
+          next.searchParams.set('_reload', String(Date.now()))
+          window.location.replace(next.toString())
+        }, true)
+        window.addEventListener('load', clearRetried)
+      })()
+    </script>
     <title>Server Status</title>
   </head>
   <body id="bg">
