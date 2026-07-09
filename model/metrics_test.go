@@ -65,3 +65,114 @@ func TestCycleTransferSnapshotUsesCumulativeState(t *testing.T) {
 		t.Fatalf("cycle transfer = %d, want 500", stats.Transfer[server.ID])
 	}
 }
+
+func TestApplyTrafficReportBaselineOnly(t *testing.T) {
+	server := &Server{
+		CumulativeNetInTransfer:  111,
+		CumulativeNetOutTransfer: 222,
+	}
+	state := &HostState{
+		NetInTransfer:  1000,
+		NetOutTransfer: 2000,
+	}
+
+	result := server.ApplyTrafficReport(state, 1000, 2000, TrafficReportOptions{BaselineOnly: true})
+
+	if !result.In.BaselineOnly || !result.Out.BaselineOnly {
+		t.Fatalf("baseline flags = %#v/%#v, want true/true", result.In, result.Out)
+	}
+	if server.PrevTransferInSnapshot != 1000 || server.PrevTransferOutSnapshot != 2000 {
+		t.Fatalf("snapshots = %d/%d, want 1000/2000", server.PrevTransferInSnapshot, server.PrevTransferOutSnapshot)
+	}
+	if server.CumulativeNetInTransfer != 111 || server.CumulativeNetOutTransfer != 222 {
+		t.Fatalf("cumulative changed to %d/%d, want 111/222", server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+	}
+	if state.NetInTransfer != 111 || state.NetOutTransfer != 222 {
+		t.Fatalf("state transfer = %d/%d, want 111/222", state.NetInTransfer, state.NetOutTransfer)
+	}
+}
+
+func TestApplyTrafficReportAccumulatesValidDelta(t *testing.T) {
+	server := &Server{
+		PrevTransferInSnapshot:   100,
+		PrevTransferOutSnapshot:  200,
+		CumulativeNetInTransfer:  1000,
+		CumulativeNetOutTransfer: 2000,
+	}
+	state := &HostState{}
+
+	result := server.ApplyTrafficReport(state, 160, 275, TrafficReportOptions{Elapsed: time.Second})
+
+	if result.IncreaseIn != 60 || result.IncreaseOut != 75 {
+		t.Fatalf("increase = %d/%d, want 60/75", result.IncreaseIn, result.IncreaseOut)
+	}
+	if server.CumulativeNetInTransfer != 1060 || server.CumulativeNetOutTransfer != 2075 {
+		t.Fatalf("cumulative = %d/%d, want 1060/2075", server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+	}
+	if state.NetInTransfer != 1060 || state.NetOutTransfer != 2075 {
+		t.Fatalf("state transfer = %d/%d, want 1060/2075", state.NetInTransfer, state.NetOutTransfer)
+	}
+}
+
+func TestApplyTrafficReportAccumulatesAfterZeroBaseline(t *testing.T) {
+	server := &Server{}
+	state := &HostState{}
+
+	server.ApplyTrafficReport(state, 0, 0, TrafficReportOptions{BaselineOnly: true})
+	result := server.ApplyTrafficReport(state, 100, 50, TrafficReportOptions{Elapsed: time.Second})
+
+	if result.IncreaseIn != 100 || result.IncreaseOut != 50 {
+		t.Fatalf("increase = %d/%d, want 100/50", result.IncreaseIn, result.IncreaseOut)
+	}
+	if server.CumulativeNetInTransfer != 100 || server.CumulativeNetOutTransfer != 50 {
+		t.Fatalf("cumulative = %d/%d, want 100/50", server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+	}
+	if state.NetInTransfer != 100 || state.NetOutTransfer != 50 {
+		t.Fatalf("state transfer = %d/%d, want 100/50", state.NetInTransfer, state.NetOutTransfer)
+	}
+}
+
+func TestApplyTrafficReportHandlesCounterReset(t *testing.T) {
+	server := &Server{
+		PrevTransferInSnapshot:  1000,
+		CumulativeNetInTransfer: 5000,
+	}
+	state := &HostState{}
+
+	result := server.ApplyTrafficReport(state, 10, 0, TrafficReportOptions{Elapsed: time.Second})
+
+	if !result.In.CounterReset {
+		t.Fatalf("CounterReset = false, want true: %#v", result.In)
+	}
+	if server.PrevTransferInSnapshot != 10 {
+		t.Fatalf("snapshot = %d, want 10", server.PrevTransferInSnapshot)
+	}
+	if server.CumulativeNetInTransfer != 5000 || state.NetInTransfer != 5000 {
+		t.Fatalf("cumulative/state = %d/%d, want 5000/5000", server.CumulativeNetInTransfer, state.NetInTransfer)
+	}
+}
+
+func TestApplyTrafficReportRejectsImplausibleSpike(t *testing.T) {
+	maxDelta := PlausibleTrafficDelta(time.Second)
+	server := &Server{
+		PrevTransferInSnapshot:  100,
+		CumulativeNetInTransfer: 5000,
+	}
+	state := &HostState{}
+	raw := uint64(101) + maxDelta
+
+	result := server.ApplyTrafficReport(state, raw, 0, TrafficReportOptions{Elapsed: time.Second})
+
+	if !result.In.RejectedSpike {
+		t.Fatalf("RejectedSpike = false, want true: %#v", result.In)
+	}
+	if result.In.Delta != maxDelta+1 {
+		t.Fatalf("delta = %d, want %d", result.In.Delta, maxDelta+1)
+	}
+	if server.PrevTransferInSnapshot != raw {
+		t.Fatalf("snapshot = %d, want %d", server.PrevTransferInSnapshot, raw)
+	}
+	if server.CumulativeNetInTransfer != 5000 || state.NetInTransfer != 5000 {
+		t.Fatalf("cumulative/state = %d/%d, want 5000/5000", server.CumulativeNetInTransfer, state.NetInTransfer)
+	}
+}

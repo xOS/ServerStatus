@@ -41,8 +41,10 @@ type Server struct {
 	TaskCloseLock *sync.Mutex                        `gorm:"-" json:"-"`
 	TaskStream    pb.ServerService_RequestTaskServer `gorm:"-" json:"-"`
 
-	PrevTransferInSnapshot  int64 `gorm:"-" json:"-"` // 上次数据点时的入站使用量
-	PrevTransferOutSnapshot int64 `gorm:"-" json:"-"` // 上次数据点时的出站使用量
+	PrevTransferInSnapshot     uint64 `gorm:"-" json:"-"` // 上次数据点时的入站原始计数器
+	PrevTransferOutSnapshot    uint64 `gorm:"-" json:"-"` // 上次数据点时的出站原始计数器
+	PrevTransferInSnapshotSet  bool   `gorm:"-" json:"-"` // 入站原始计数器基准是否已初始化
+	PrevTransferOutSnapshotSet bool   `gorm:"-" json:"-"` // 出站原始计数器基准是否已初始化
 
 	// 累计流量数据
 	CumulativeNetInTransfer  uint64    `gorm:"default:0" json:"cumulative_net_in_transfer"`  // 累计入站使用量
@@ -61,6 +63,8 @@ func (s *Server) CopyFromRunningServer(old *Server) {
 	s.TaskStream = old.TaskStream
 	s.PrevTransferInSnapshot = old.PrevTransferInSnapshot
 	s.PrevTransferOutSnapshot = old.PrevTransferOutSnapshot
+	s.PrevTransferInSnapshotSet = old.PrevTransferInSnapshotSet
+	s.PrevTransferOutSnapshotSet = old.PrevTransferOutSnapshotSet
 	s.LastStateBeforeOffline = old.LastStateBeforeOffline
 	s.IsOnline = old.IsOnline
 	s.CumulativeNetInTransfer = old.CumulativeNetInTransfer

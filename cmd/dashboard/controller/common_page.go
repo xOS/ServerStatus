@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"runtime/debug"
 	"sort"
@@ -70,18 +69,11 @@ func cachedByteSize(bytes uint64) string {
 	return result
 }
 
-func trafficUsagePercent(used, max uint64) float64 {
-	if max == 0 {
-		return 0
-	}
-	return math.Round((float64(used)/float64(max))*10000) / 100
-}
-
 func monthlyTransferForServer(server *model.Server, currentMonthStart time.Time) uint64 {
 	if server == nil || server.LastActive.IsZero() || !server.LastActive.After(currentMonthStart) {
 		return 0
 	}
-	return utils.Uint64SaturatingAdd(server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+	return model.TotalTransfer(server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
 }
 
 type commonPage struct {
@@ -738,7 +730,7 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 							}
 						}
 
-						usedPercent := trafficUsagePercent(transfer, stats.Max)
+						usedPercent := model.TrafficUsagePercent(transfer, stats.Max)
 
 						trafficItem := map[string]interface{}{
 							"server_id":       serverID,
@@ -747,7 +739,7 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 							"used_bytes":      transfer,
 							"max_formatted":   cachedByteSize(stats.Max),
 							"used_formatted":  cachedByteSize(transfer),
-							"used_percent":    math.Round(usedPercent*100) / 100,
+							"used_percent":    usedPercent,
 							"cycle_name":      stats.Name,
 							"cycle_id":        strconv.FormatUint(cycleID, 10),
 							"is_bytes_source": true, // 标识这是字节数据源
@@ -814,7 +806,7 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 			monthlyTransfer := monthlyTransferForServer(server, currentMonthStart)
 
 			// 计算使用百分比
-			usedPercent := trafficUsagePercent(monthlyTransfer, defaultQuota)
+			usedPercent := model.TrafficUsagePercent(monthlyTransfer, defaultQuota)
 
 			// 构建默认流量数据项，显示月度配额
 			trafficItem := map[string]interface{}{
@@ -824,7 +816,7 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 				"used_bytes":      monthlyTransfer,
 				"max_formatted":   cachedByteSize(defaultQuota),
 				"used_formatted":  cachedByteSize(monthlyTransfer),
-				"used_percent":    math.Round(usedPercent*100) / 100,
+				"used_percent":    usedPercent,
 				"cycle_name":      "默认月流量配额",
 				"cycle_id":        "default-monthly",
 				"cycle_start":     currentMonthStart.Format(time.RFC3339),
@@ -1004,7 +996,7 @@ func (cp *commonPage) home(c *gin.Context) {
 						}
 					}
 
-					usedPercent := trafficUsagePercent(transfer, stats.Max)
+					usedPercent := model.TrafficUsagePercent(transfer, stats.Max)
 
 					trafficItem := map[string]interface{}{
 						"server_id":       serverID,
@@ -1013,7 +1005,7 @@ func (cp *commonPage) home(c *gin.Context) {
 						"used_bytes":      transfer,
 						"max_formatted":   cachedByteSize(stats.Max),
 						"used_formatted":  cachedByteSize(transfer),
-						"used_percent":    math.Round(usedPercent*100) / 100,
+						"used_percent":    usedPercent,
 						"cycle_name":      stats.Name,
 						"cycle_id":        strconv.FormatUint(cycleID, 10),
 						"is_bytes_source": true, // 标识这是字节数据源
@@ -1060,7 +1052,7 @@ func (cp *commonPage) home(c *gin.Context) {
 				monthlyTransfer := monthlyTransferForServer(actualServer, currentMonthStart)
 
 				// 计算使用百分比
-				usedPercent := trafficUsagePercent(monthlyTransfer, defaultQuota)
+				usedPercent := model.TrafficUsagePercent(monthlyTransfer, defaultQuota)
 
 				// 构建默认流量数据项，显示月度配额
 				trafficItem := map[string]interface{}{
@@ -1070,7 +1062,7 @@ func (cp *commonPage) home(c *gin.Context) {
 					"used_bytes":      monthlyTransfer,
 					"max_formatted":   cachedByteSize(defaultQuota),
 					"used_formatted":  cachedByteSize(monthlyTransfer),
-					"used_percent":    math.Round(usedPercent*100) / 100,
+					"used_percent":    usedPercent,
 					"cycle_name":      "默认月流量配额",
 					"cycle_id":        "default-monthly",
 					"cycle_start":     currentMonthStart.Format(time.RFC3339),
@@ -1316,7 +1308,7 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 							serverName = name
 						}
 					}
-					usedPercent := trafficUsagePercent(transfer, stats.Max)
+					usedPercent := model.TrafficUsagePercent(transfer, stats.Max)
 					trafficItem := map[string]interface{}{
 						"server_id":       serverID,
 						"server_name":     serverName,
@@ -1324,7 +1316,7 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 						"used_bytes":      transfer,
 						"max_formatted":   cachedByteSize(stats.Max),
 						"used_formatted":  cachedByteSize(transfer),
-						"used_percent":    math.Round(usedPercent*100) / 100,
+						"used_percent":    usedPercent,
 						"cycle_name":      stats.Name,
 						"cycle_id":        strconv.FormatUint(cycleID, 10),
 						"is_bytes_source": true, // 标识这是字节数据源
@@ -1366,7 +1358,7 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 				monthlyTransfer := monthlyTransferForServer(actualServer, currentMonthStart)
 
 				// 计算使用百分比
-				usedPercent := trafficUsagePercent(monthlyTransfer, defaultQuota)
+				usedPercent := model.TrafficUsagePercent(monthlyTransfer, defaultQuota)
 
 				// 构建默认流量数据项，显示月度配额
 				trafficItem := map[string]interface{}{
@@ -1376,7 +1368,7 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 					"used_bytes":      monthlyTransfer,
 					"max_formatted":   cachedByteSize(defaultQuota),
 					"used_formatted":  cachedByteSize(monthlyTransfer),
-					"used_percent":    math.Round(usedPercent*100) / 100,
+					"used_percent":    usedPercent,
 					"cycle_name":      "默认月流量配额",
 					"cycle_id":        "default-monthly",
 					"cycle_start":     currentMonthStart.Format(time.RFC3339),
@@ -1477,7 +1469,7 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 							serverName = name
 						}
 					}
-					usedPercent := trafficUsagePercent(transfer, stats.Max)
+					usedPercent := model.TrafficUsagePercent(transfer, stats.Max)
 					trafficItem := map[string]interface{}{
 						"server_id":       serverID,
 						"server_name":     serverName,
@@ -1485,7 +1477,7 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 						"used_bytes":      transfer,
 						"max_formatted":   cachedByteSize(stats.Max),
 						"used_formatted":  cachedByteSize(transfer),
-						"used_percent":    math.Round(usedPercent*100) / 100,
+						"used_percent":    usedPercent,
 						"cycle_name":      stats.Name,
 						"cycle_id":        strconv.FormatUint(cycleID, 10),
 						"is_bytes_source": true, // 标识这是字节数据源
@@ -1510,7 +1502,7 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 		monthlyTransfer := monthlyTransferForServer(server, currentMonthStart)
 
 		// 计算使用百分比
-		usedPercent := trafficUsagePercent(monthlyTransfer, defaultQuota)
+		usedPercent := model.TrafficUsagePercent(monthlyTransfer, defaultQuota)
 
 		// 构建默认流量数据项，显示月度配额
 		trafficItem := map[string]interface{}{
@@ -1520,7 +1512,7 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 			"used_bytes":      monthlyTransfer,
 			"max_formatted":   cachedByteSize(defaultQuota),
 			"used_formatted":  cachedByteSize(monthlyTransfer),
-			"used_percent":    math.Round(usedPercent*100) / 100,
+			"used_percent":    usedPercent,
 			"cycle_name":      "默认月流量配额",
 			"cycle_id":        "default-monthly",
 			"cycle_start":     currentMonthStart.Format(time.RFC3339),

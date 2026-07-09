@@ -147,13 +147,13 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 	case "net_out_speed":
 		src = float64(server.State.NetOutSpeed)
 	case "net_all_speed":
-		src = float64(utils.Uint64SaturatingAdd(server.State.NetInSpeed, server.State.NetOutSpeed))
+		src = float64(TotalTransfer(server.State.NetInSpeed, server.State.NetOutSpeed))
 	case "transfer_in":
 		src = float64(server.State.NetInTransfer)
 	case "transfer_out":
 		src = float64(server.State.NetOutTransfer)
 	case "transfer_all":
-		src = float64(utils.Uint64SaturatingAdd(server.State.NetOutTransfer, server.State.NetInTransfer))
+		src = float64(TotalTransfer(server.State.NetOutTransfer, server.State.NetInTransfer))
 	case "offline":
 		// 修复离线检测逻辑：区分"从未上线"和"曾经在线但现在离线"
 		if server.LastActive.IsZero() {
@@ -168,7 +168,7 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 	case "transfer_out_cycle":
 		src = float64(server.State.NetOutTransfer)
 	case "transfer_all_cycle":
-		src = float64(utils.Uint64SaturatingAdd(server.State.NetOutTransfer, server.State.NetInTransfer))
+		src = float64(TotalTransfer(server.State.NetOutTransfer, server.State.NetInTransfer))
 	case "load1":
 		src = server.State.Load1
 	case "load5":

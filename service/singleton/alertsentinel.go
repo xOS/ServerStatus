@@ -10,7 +10,6 @@ import (
 
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
-	"github.com/xos/serverstatus/pkg/utils"
 )
 
 const (
@@ -444,32 +443,34 @@ func checkStatus() {
 					CreatedAt: server.CreatedAt,
 					UpdatedAt: server.UpdatedAt,
 				},
-				Name:                     server.Name,
-				Tag:                      server.Tag,
-				Secret:                   server.Secret,
-				Note:                     server.Note,
-				PublicNote:               server.PublicNote,
-				DisplayIndex:             server.DisplayIndex,
-				HideForGuest:             server.HideForGuest,
-				EnableDDNS:               server.EnableDDNS,
-				DDNSProfiles:             server.DDNSProfiles,
-				DDNSProfilesRaw:          server.DDNSProfilesRaw,
-				Host:                     server.Host,  // 结构体指针，浅拷贝即可
-				State:                    server.State, // 结构体指针，浅拷贝即可
-				LastActive:               server.LastActive,
-				LastStateBeforeOffline:   server.LastStateBeforeOffline,
-				IsOnline:                 server.IsOnline,
-				LastStateJSON:            server.LastStateJSON,
-				LastOnline:               server.LastOnline,
-				HostJSON:                 server.HostJSON,
-				TaskClose:                nil, // 不拷贝channel，避免并发问题
-				TaskCloseLock:            nil, // 不拷贝mutex，避免并发问题
-				TaskStream:               nil, // 不拷贝stream，避免并发问题
-				PrevTransferInSnapshot:   server.PrevTransferInSnapshot,
-				PrevTransferOutSnapshot:  server.PrevTransferOutSnapshot,
-				CumulativeNetInTransfer:  server.CumulativeNetInTransfer,
-				CumulativeNetOutTransfer: server.CumulativeNetOutTransfer,
-				LastFlowSaveTime:         server.LastFlowSaveTime,
+				Name:                       server.Name,
+				Tag:                        server.Tag,
+				Secret:                     server.Secret,
+				Note:                       server.Note,
+				PublicNote:                 server.PublicNote,
+				DisplayIndex:               server.DisplayIndex,
+				HideForGuest:               server.HideForGuest,
+				EnableDDNS:                 server.EnableDDNS,
+				DDNSProfiles:               server.DDNSProfiles,
+				DDNSProfilesRaw:            server.DDNSProfilesRaw,
+				Host:                       server.Host,  // 结构体指针，浅拷贝即可
+				State:                      server.State, // 结构体指针，浅拷贝即可
+				LastActive:                 server.LastActive,
+				LastStateBeforeOffline:     server.LastStateBeforeOffline,
+				IsOnline:                   server.IsOnline,
+				LastStateJSON:              server.LastStateJSON,
+				LastOnline:                 server.LastOnline,
+				HostJSON:                   server.HostJSON,
+				TaskClose:                  nil, // 不拷贝channel，避免并发问题
+				TaskCloseLock:              nil, // 不拷贝mutex，避免并发问题
+				TaskStream:                 nil, // 不拷贝stream，避免并发问题
+				PrevTransferInSnapshot:     server.PrevTransferInSnapshot,
+				PrevTransferOutSnapshot:    server.PrevTransferOutSnapshot,
+				PrevTransferInSnapshotSet:  server.PrevTransferInSnapshotSet,
+				PrevTransferOutSnapshotSet: server.PrevTransferOutSnapshotSet,
+				CumulativeNetInTransfer:    server.CumulativeNetInTransfer,
+				CumulativeNetOutTransfer:   server.CumulativeNetOutTransfer,
+				LastFlowSaveTime:           server.LastFlowSaveTime,
 			}
 
 			// 本次未通过检查
@@ -656,9 +657,9 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 				case "transfer_out_cycle":
 					transferValue = outTransfer
 				case "transfer_all_cycle":
-					transferValue = utils.Uint64SaturatingAdd(inTransfer, outTransfer)
+					transferValue = model.TotalTransfer(inTransfer, outTransfer)
 				default:
-					transferValue = utils.Uint64SaturatingAdd(inTransfer, outTransfer)
+					transferValue = model.TotalTransfer(inTransfer, outTransfer)
 				}
 
 				// 第四步：持写锁更新统计数据
@@ -769,7 +770,7 @@ func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, 
 				message += fmt.Sprintf("• 出站网速过高: %s/s (阈值: %s/s)\n",
 					formatBytes(server.State.NetOutSpeed), formatBytes(uint64(rule.Max)))
 			case ruleType == "net_all_speed":
-				allSpeed := utils.Uint64SaturatingAdd(server.State.NetInSpeed, server.State.NetOutSpeed)
+				allSpeed := model.TotalTransfer(server.State.NetInSpeed, server.State.NetOutSpeed)
 				message += fmt.Sprintf("• 总网速过高: %s/s (阈值: %s/s)\n",
 					formatBytes(allSpeed), formatBytes(uint64(rule.Max)))
 			case ruleType == "load1":

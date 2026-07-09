@@ -558,7 +558,7 @@ func cleanupSingleServerState(server *model.Server) bool {
 // UpdateServer 更新服务器信息
 func UpdateServer(s *model.Server) error {
 	now := time.Now()
-	
+
 	// 准备需要的数据结构
 	type updateData struct {
 		cumulativeIn  uint64
@@ -567,140 +567,51 @@ func UpdateServer(s *model.Server) error {
 		hostData      *model.Host
 		stateData     *model.HostState
 	}
-	
+
 	var update updateData
-	
+	var trafficResult model.TrafficReportResult
+	var hasTrafficResult bool
+	var displayIn, displayOut uint64
+
 	// 第一阶段：快速更新内存状态（持锁）
 	ServerLock.Lock()
-	
+
 	s.LastActive = now
 	s.IsOnline = true
-	
+
 	if s.State != nil {
-		// 获取当前上报的原始流量数据
-		currentInTransfer := s.State.NetInTransfer
-		currentOutTransfer := s.State.NetOutTransfer
-		
-		// 保存原始流量数据用于计算增量
-		originalIn := currentInTransfer
-		originalOut := currentOutTransfer
-		
-		// 获取之前存储的快照值
-		var prevIn, prevOut uint64
-		var timeSinceLastActive time.Duration
+		rawIn := s.State.NetInTransfer
+		rawOut := s.State.NetOutTransfer
+		var elapsed time.Duration
+		var baselineOnly bool
 		if server, ok := ServerList[s.ID]; ok && server != nil {
-			prevIn = uint64(server.PrevTransferInSnapshot)
-			prevOut = uint64(server.PrevTransferOutSnapshot)
-			timeSinceLastActive = now.Sub(server.LastActive)
-		}
-		
-		// 计算增量并更新累计流量
-		if originalIn < prevIn {
-			// 流量回退，更新基准点但不增加累计流量
-			s.PrevTransferInSnapshot = int64(originalIn)
+			s.CumulativeNetInTransfer = server.CumulativeNetInTransfer
+			s.CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
+			s.PrevTransferInSnapshot = server.PrevTransferInSnapshot
+			s.PrevTransferOutSnapshot = server.PrevTransferOutSnapshot
+			s.PrevTransferInSnapshotSet = server.PrevTransferInSnapshotSet
+			s.PrevTransferOutSnapshotSet = server.PrevTransferOutSnapshotSet
+			s.LastFlowSaveTime = server.LastFlowSaveTime
+			elapsed = now.Sub(server.LastActive)
 		} else {
-			// 正常增量
-			increase := originalIn - prevIn
-			
-			// 动态计算合理的增量阈值：假设最大物理网卡速率为 400Gbps (50GB/s)
-			var maxPossibleBytes uint64 = 10 * 1024 * 1024 * 1024 * 1024 // 默认10TB
-			if timeSinceLastActive > 0 {
-				seconds := uint64(timeSinceLastActive.Seconds())
-				if seconds < 31536000 {
-					if seconds == 0 {
-						seconds = 1
-					}
-					dynamicMax := 50 * 1024 * 1024 * 1024 * seconds
-					if dynamicMax < 10*1024*1024*1024 {
-						dynamicMax = 10 * 1024 * 1024 * 1024
-					}
-					if dynamicMax < maxPossibleBytes {
-						maxPossibleBytes = dynamicMax
-					}
-				}
-			}
+			baselineOnly = true
+		}
+		trafficResult = s.ApplyTrafficReport(s.State, rawIn, rawOut, model.TrafficReportOptions{
+			BaselineOnly: baselineOnly,
+			Elapsed:      elapsed,
+		})
+		hasTrafficResult = true
 
-			// 检查增量是否合理
-			if increase > maxPossibleBytes {
-				log.Printf("警告：服务器 %s 入站流量增量异常大 (%d > %d)，可能是统计错误，本次不计入", s.Name, increase, maxPossibleBytes)
-				// 异常值不累加
-			} else if s.CumulativeNetInTransfer > 0 &&
-				increase > ^uint64(0)-s.CumulativeNetInTransfer {
-				// 溢出保护
-				log.Printf("警告：服务器 %s 入站流量累计值即将溢出，保持当前值", s.Name)
-			} else {
-				s.CumulativeNetInTransfer += increase
-			}
-			s.PrevTransferInSnapshot = int64(originalIn)
-		}
-		
-		if originalOut < prevOut {
-			// 流量回退，更新基准点但不增加累计流量
-			s.PrevTransferOutSnapshot = int64(originalOut)
-		} else {
-			// 正常增量
-			increase := originalOut - prevOut
-			
-			// 动态计算合理的增量阈值
-			var maxPossibleBytes uint64 = 10 * 1024 * 1024 * 1024 * 1024 // 默认10TB
-			if timeSinceLastActive > 0 {
-				seconds := uint64(timeSinceLastActive.Seconds())
-				if seconds < 31536000 {
-					if seconds == 0 {
-						seconds = 1
-					}
-					dynamicMax := 50 * 1024 * 1024 * 1024 * seconds
-					if dynamicMax < 10*1024*1024*1024 {
-						dynamicMax = 10 * 1024 * 1024 * 1024
-					}
-					if dynamicMax < maxPossibleBytes {
-						maxPossibleBytes = dynamicMax
-					}
-				}
-			}
-
-			// 检查增量是否合理
-			if increase > maxPossibleBytes {
-				log.Printf("警告：服务器 %s 出站流量增量异常大 (%d > %d)，可能是统计错误，本次不计入", s.Name, increase, maxPossibleBytes)
-				// 异常值不累加
-			} else if s.CumulativeNetOutTransfer > 0 &&
-				increase > ^uint64(0)-s.CumulativeNetOutTransfer {
-				// 溢出保护
-				log.Printf("警告：服务器 %s 出站流量累计值即将溢出，保持当前值", s.Name)
-			} else {
-				s.CumulativeNetOutTransfer += increase
-			}
-			s.PrevTransferOutSnapshot = int64(originalOut)
-		}
-		
-		// 更新显示的流量值（只显示累计流量，不加原始流量）
-		s.State.NetInTransfer = s.CumulativeNetInTransfer
-		s.State.NetOutTransfer = s.CumulativeNetOutTransfer
-		
-		// 在ServerList中同步更新
-		if server, ok := ServerList[s.ID]; ok && server != nil {
-			server.CumulativeNetInTransfer = s.CumulativeNetInTransfer
-			server.CumulativeNetOutTransfer = s.CumulativeNetOutTransfer
-			server.PrevTransferInSnapshot = s.PrevTransferInSnapshot
-			server.PrevTransferOutSnapshot = s.PrevTransferOutSnapshot
-		}
-		
 		// 检查是否需要保存到数据库
-		shouldSave := false
-		if server, ok := ServerList[s.ID]; ok && server != nil {
-			shouldSave = time.Since(server.LastFlowSaveTime).Minutes() > 10
-			if shouldSave {
-				server.LastFlowSaveTime = now
-			}
-		} else {
-			shouldSave = true // 首次保存
+		update.shouldSaveDB = baselineOnly || time.Since(s.LastFlowSaveTime).Minutes() > 10
+		if update.shouldSaveDB {
+			s.LastFlowSaveTime = now
 		}
-		
+
 		// 准备更新数据（但不在锁内执行数据库操作）
 		update.cumulativeIn = s.CumulativeNetInTransfer
 		update.cumulativeOut = s.CumulativeNetOutTransfer
-		update.shouldSaveDB = shouldSave
-		
+
 		// 复制需要保存的数据
 		if s.Host != nil {
 			update.hostData = &model.Host{}
@@ -711,22 +622,28 @@ func UpdateServer(s *model.Server) error {
 			*update.stateData = *s.State
 		}
 	}
-	
+
 	// 更新内存中的服务器信息
 	ServerList[s.ID] = s
-	
-	// 更新前端显示的流量统计（可以在锁内快速执行）
-	UpdateTrafficStats(s.ID, s.CumulativeNetInTransfer, s.CumulativeNetOutTransfer)
-	
+	displayIn = s.CumulativeNetInTransfer
+	displayOut = s.CumulativeNetOutTransfer
+
 	ServerLock.Unlock()
-	
+
+	if hasTrafficResult {
+		logServerTrafficResult(s.Name, trafficResult)
+	}
+
+	// 更新前端显示和周期统计需要读取 ServerList/Alerts，必须在服务器写锁外执行。
+	UpdateTrafficStats(s.ID, displayIn, displayOut)
+
 	// 第二阶段：异步执行数据库操作（不持锁）
 	if update.shouldSaveDB {
 		go func(serverID uint64, serverName string, updateInfo updateData) {
 			// 错开不同服务器的更新时间
 			delay := time.Duration(serverID%10) * 50 * time.Millisecond
 			time.Sleep(delay)
-			
+
 			if Conf.DatabaseType != "badger" && DB != nil {
 				// SQLite模式
 				updateSQL := `UPDATE servers SET
@@ -734,13 +651,13 @@ func UpdateServer(s *model.Server) error {
 								cumulative_net_out_transfer = ?,
 								last_active = ?
 								WHERE id = ?`
-				
+
 				result := DB.Exec(updateSQL,
 					updateInfo.cumulativeIn,
 					updateInfo.cumulativeOut,
 					now,
 					serverID)
-				
+
 				if result.Error != nil {
 					log.Printf("异步更新服务器 %s 的流量数据失败: %v", serverName, result.Error)
 				}
@@ -756,19 +673,19 @@ func UpdateServer(s *model.Server) error {
 						dbServer.CumulativeNetOutTransfer = updateInfo.cumulativeOut
 						dbServer.LastActive = now
 						dbServer.IsOnline = true
-						
+
 						// 保存Host信息
 						if updateInfo.hostData != nil {
 							dbServer.Host = updateInfo.hostData
 						}
-						
+
 						// 保存最后状态
 						if updateInfo.stateData != nil {
 							if lastStateJSON, err := utils.Json.Marshal(updateInfo.stateData); err == nil {
 								dbServer.LastStateJSON = string(lastStateJSON)
 							}
 						}
-						
+
 						// 保存回数据库
 						if err := serverOps.SaveServer(dbServer); err != nil {
 							log.Printf("BadgerDB: 异步保存服务器 %s 的数据失败: %v", serverName, err)
@@ -778,6 +695,31 @@ func UpdateServer(s *model.Server) error {
 			}
 		}(s.ID, s.Name, update)
 	}
-	
+
 	return nil
+}
+
+func logServerTrafficResult(serverName string, result model.TrafficReportResult) {
+	if result.In.RejectedSpike {
+		log.Printf("警告：服务器 %s 入站流量增量异常大 (%d > %d)，可能是统计错误，本次不计入",
+			serverName, result.In.Delta, result.MaxDelta)
+	}
+	if result.Out.RejectedSpike {
+		log.Printf("警告：服务器 %s 出站流量增量异常大 (%d > %d)，可能是统计错误，本次不计入",
+			serverName, result.Out.Delta, result.MaxDelta)
+	}
+	if result.In.Overflow {
+		log.Printf("警告：服务器 %s 入站流量累计值溢出，已钳制到最大值", serverName)
+	}
+	if result.Out.Overflow {
+		log.Printf("警告：服务器 %s 出站流量累计值溢出，已钳制到最大值", serverName)
+	}
+	if Conf != nil && Conf.Debug {
+		if result.In.CounterReset {
+			log.Printf("调试：服务器 %s 入站原始流量计数器回退，已重置基准点", serverName)
+		}
+		if result.Out.CounterReset {
+			log.Printf("调试：服务器 %s 出站原始流量计数器回退，已重置基准点", serverName)
+		}
+	}
 }

@@ -435,26 +435,7 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 	// 检查周期流量重置
 	checkAndResetCycleTraffic(clientID)
 
-	// 检查是否是服务器重启或网络接口重置 - 优化频繁重启场景
-	isRestart := false
 	timeSinceLastActive := now.Sub(serverCopy.LastActive)
-
-	if serverCopy.Host != nil && prevState != nil {
-		// 获取之前显示的累计流量值
-		prevDisplayIn := prevState.NetInTransfer
-		prevDisplayOut := prevState.NetOutTransfer
-
-		// 优化重启检测逻辑，减少频繁重启时的误判
-		// 只有在流量大幅回退（超过80%）且上次活跃时间超过5分钟时才认为是重启
-		if timeSinceLastActive > 5*time.Minute {
-			// 长时间离线后重新上线，检查流量回退
-			if (prevDisplayIn > 0 && originalNetInTransfer < prevDisplayIn/5) ||
-				(prevDisplayOut > 0 && originalNetOutTransfer < prevDisplayOut/5) {
-				isRestart = true
-			}
-		}
-		// 短时间内的重连不认为是重启，继续累加流量
-	}
 
 	// 准备数据库更新数据
 	dbUpdates := make(map[string]interface{})
@@ -486,22 +467,14 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 	server.IsOnline = true
 	server.LastActive = now
 
-	// 处理流量计算
-	if isFirstReport || isRestart {
-		// 首次上线或重启，使用之前查询的累计流量
-		if isFirstReport && needDBQuery {
-			server.CumulativeNetInTransfer = dbCumulativeIn
-			server.CumulativeNetOutTransfer = dbCumulativeOut
-		}
-
-		server.PrevTransferInSnapshot = int64(originalNetInTransfer)
-		server.PrevTransferOutSnapshot = int64(originalNetOutTransfer)
-		state.NetInTransfer = server.CumulativeNetInTransfer
-		state.NetOutTransfer = server.CumulativeNetOutTransfer
-	} else {
-		// 正常增量更新
-		s.updateTrafficIncremental(server, state, originalNetInTransfer, originalNetOutTransfer, timeSinceLastActive)
+	if isFirstReport && needDBQuery {
+		server.CumulativeNetInTransfer = dbCumulativeIn
+		server.CumulativeNetOutTransfer = dbCumulativeOut
 	}
+	trafficResult := server.ApplyTrafficReport(state, originalNetInTransfer, originalNetOutTransfer, model.TrafficReportOptions{
+		BaselineOnly: isFirstReport,
+		Elapsed:      timeSinceLastActive,
+	})
 
 	// 保存当前状态
 	server.State = state
@@ -580,151 +553,38 @@ func (s *ServerHandler) processServerStateWithoutLock(clientID uint64, serverCop
 	}
 
 	// 同步到前端显示
-	updateTrafficDisplay(clientID, server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
-
-	// 确保PrevTransferSnapshot值被正确初始化
-	if server.PrevTransferInSnapshot == 0 || server.PrevTransferOutSnapshot == 0 {
-		singleton.ServerLock.Lock()
-		server.PrevTransferInSnapshot = int64(originalNetInTransfer)
-		server.PrevTransferOutSnapshot = int64(originalNetOutTransfer)
-		singleton.ServerLock.Unlock()
-	}
+	updateTrafficDisplay(clientID, state.NetInTransfer, state.NetOutTransfer)
+	logTrafficReportResult(clientID, trafficResult)
 
 	return &pb.Receipt{Proced: true}, nil
 }
 
-// updateTrafficIncremental 增量更新流量数据
-func (s *ServerHandler) updateTrafficIncremental(server *model.Server, state *model.HostState, originalNetInTransfer, originalNetOutTransfer uint64, timeSinceLastActive time.Duration) {
-	var increaseIn, increaseOut uint64
-
-	// 计算增量（仅在流量增长时计算）
-	if server.PrevTransferInSnapshot == 0 {
-		server.PrevTransferInSnapshot = int64(originalNetInTransfer)
+func logTrafficReportResult(serverID uint64, result model.TrafficReportResult) {
+	if result.In.RejectedSpike {
+		log.Printf("警告：服务器 %d 入站流量增量异常大 (%d > %d)，可能是统计错误，本次不计入",
+			serverID, result.In.Delta, result.MaxDelta)
 	}
-	if server.PrevTransferOutSnapshot == 0 {
-		server.PrevTransferOutSnapshot = int64(originalNetOutTransfer)
+	if result.Out.RejectedSpike {
+		log.Printf("警告：服务器 %d 出站流量增量异常大 (%d > %d)，可能是统计错误，本次不计入",
+			serverID, result.Out.Delta, result.MaxDelta)
 	}
-
-	prevIn := uint64(server.PrevTransferInSnapshot)
-	prevOut := uint64(server.PrevTransferOutSnapshot)
-
-	// 处理入站流量
-	if originalNetInTransfer < prevIn {
-		// 检测到流量回退
-		backwardAmount := prevIn - originalNetInTransfer
-		backwardPercent := float64(backwardAmount) / float64(prevIn+1)
-
-		if backwardPercent < 0.02 { // 进一步降低到2%，减少频繁重启时的误判
-			// 极小幅度回退，可能是统计误差，不计入增量
-			increaseIn = 0
-		} else if backwardPercent < 0.5 {
-			// 中等幅度回退，可能是频繁重启，保持累计流量，只重置基准点
-			server.PrevTransferInSnapshot = int64(originalNetInTransfer)
-			increaseIn = 0
-		} else {
-			// 大幅度回退，确实是重启，重置基准点
-			server.PrevTransferInSnapshot = int64(originalNetInTransfer)
-			increaseIn = 0
-		}
-	} else {
-		// 正常增量
-		increaseIn = originalNetInTransfer - prevIn
-		
-		// 动态计算合理的增量阈值：假设最大物理网卡速率为 400Gbps (50GB/s)
-		var maxPossibleBytes uint64 = 10 * 1024 * 1024 * 1024 * 1024 // 默认10TB
-		if timeSinceLastActive > 0 {
-			seconds := uint64(timeSinceLastActive.Seconds())
-			if seconds < 31536000 { // 离线少于1年才计算动态限制
-				if seconds == 0 {
-					seconds = 1
-				}
-				dynamicMax := 50 * 1024 * 1024 * 1024 * seconds // 50GB/s
-				if dynamicMax < 10*1024*1024*1024 {
-					dynamicMax = 10 * 1024 * 1024 * 1024 // 最小10GB
-				}
-				if dynamicMax < maxPossibleBytes {
-					maxPossibleBytes = dynamicMax
-				}
-			}
-		}
-
-		// 检查增量是否合理（防止异常大值）
-		if increaseIn > maxPossibleBytes {
-			log.Printf("警告：服务器 %d 入站流量增量异常大 (%d > %d)，可能是统计错误，本次不计入", server.ID, increaseIn, maxPossibleBytes)
-			increaseIn = 0
-		} else if server.CumulativeNetInTransfer > 0 &&
-			increaseIn > ^uint64(0)-server.CumulativeNetInTransfer {
-			// 溢出保护
-			log.Printf("警告：服务器 %d 入站流量累计值即将溢出，保持当前值", server.ID)
-		} else {
-			// 正常累加
-			server.CumulativeNetInTransfer += increaseIn
-		}
-		server.PrevTransferInSnapshot = int64(originalNetInTransfer)
+	if result.In.Overflow {
+		log.Printf("警告：服务器 %d 入站流量累计值溢出，已钳制到最大值", serverID)
 	}
-
-	// 处理出站流量
-	if originalNetOutTransfer < prevOut {
-		// 检测到流量回退
-		backwardAmount := prevOut - originalNetOutTransfer
-		backwardPercent := float64(backwardAmount) / float64(prevOut+1)
-
-		if backwardPercent < 0.02 { // 进一步降低到2%，减少频繁重启时的误判
-			// 极小幅度回退，可能是统计误差，不计入增量
-			increaseOut = 0
-		} else if backwardPercent < 0.5 {
-			// 中等幅度回退，可能是频繁重启，保持累计流量，只重置基准点
-			server.PrevTransferOutSnapshot = int64(originalNetOutTransfer)
-			increaseOut = 0
-		} else {
-			// 大幅度回退，确实是重启，重置基准点
-			server.PrevTransferOutSnapshot = int64(originalNetOutTransfer)
-			increaseOut = 0
-		}
-	} else {
-		// 正常增量
-		increaseOut = originalNetOutTransfer - prevOut
-
-		// 动态计算合理的增量阈值：假设最大物理网卡速率为 400Gbps (50GB/s)
-		var maxPossibleBytes uint64 = 10 * 1024 * 1024 * 1024 * 1024 // 默认10TB
-		if timeSinceLastActive > 0 {
-			seconds := uint64(timeSinceLastActive.Seconds())
-			if seconds < 31536000 { // 离线少于1年才计算动态限制
-				if seconds == 0 {
-					seconds = 1
-				}
-				dynamicMax := 50 * 1024 * 1024 * 1024 * seconds // 50GB/s
-				if dynamicMax < 10*1024*1024*1024 {
-					dynamicMax = 10 * 1024 * 1024 * 1024 // 最小10GB
-				}
-				if dynamicMax < maxPossibleBytes {
-					maxPossibleBytes = dynamicMax
-				}
-			}
-		}
-
-		// 检查增量是否合理（防止异常大值）
-		if increaseOut > maxPossibleBytes {
-			log.Printf("警告：服务器 %d 出站流量增量异常大 (%d > %d)，可能是统计错误，本次不计入", server.ID, increaseOut, maxPossibleBytes)
-			increaseOut = 0
-		} else if server.CumulativeNetOutTransfer > 0 &&
-			increaseOut > ^uint64(0)-server.CumulativeNetOutTransfer {
-			// 溢出保护
-			log.Printf("警告：服务器 %d 出站流量累计值即将溢出，保持当前值", server.ID)
-		} else {
-			// 正常累加
-			server.CumulativeNetOutTransfer += increaseOut
-		}
-		server.PrevTransferOutSnapshot = int64(originalNetOutTransfer)
+	if result.Out.Overflow {
+		log.Printf("警告：服务器 %d 出站流量累计值溢出，已钳制到最大值", serverID)
 	}
-
-	// 显示的流量 = 累计流量
-	state.NetInTransfer = server.CumulativeNetInTransfer
-	state.NetOutTransfer = server.CumulativeNetOutTransfer
-
-	// 仅在异常大流量增量时记录警告日志
-	if increaseIn > 100*1024*1024*1024 || increaseOut > 100*1024*1024*1024 {
-		log.Printf("注意：服务器 %d 流量增量较大 (入站=%d, 出站=%d)", server.ID, increaseIn, increaseOut)
+	if singleton.Conf != nil && singleton.Conf.Debug {
+		if result.In.CounterReset {
+			log.Printf("调试：服务器 %d 入站原始流量计数器回退，已重置基准点", serverID)
+		}
+		if result.Out.CounterReset {
+			log.Printf("调试：服务器 %d 出站原始流量计数器回退，已重置基准点", serverID)
+		}
+	}
+	if result.IncreaseIn > 100*1024*1024*1024 || result.IncreaseOut > 100*1024*1024*1024 {
+		log.Printf("注意：服务器 %d 流量增量较大 (入站=%d, 出站=%d)",
+			serverID, result.IncreaseIn, result.IncreaseOut)
 	}
 }
 
@@ -746,8 +606,12 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	ddnsProfiles := append([]uint64(nil), server.DDNSProfiles...)
 	serverName := server.Name
 	var serverHostIP string
+	var serverCountryCode string
+	var oldBootTime uint64
 	if server.Host != nil {
 		serverHostIP = server.Host.IP
+		serverCountryCode = server.Host.CountryCode
+		oldBootTime = server.Host.BootTime
 	}
 	singleton.ServerLock.RUnlock()
 
@@ -769,13 +633,12 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 			)
 			if err == nil {
 				log.Printf("服务器 %s (ID:%d) IP变化 (%s -> %s)，触发DDNS更新，配置数量: %d",
-					server.Name, clientID,
+					serverName, clientID,
 					func() string {
-						if server.Host != nil {
-							return server.Host.IP
-						} else {
+						if serverHostIP == "" {
 							return "无"
 						}
+						return serverHostIP
 					}(),
 					host.IP, len(providers))
 				for _, provider := range providers {
@@ -784,18 +647,17 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 					}(provider)
 				}
 			} else {
-				log.Printf("服务器 %s (ID:%d) 获取DDNS配置时发生错误: %v", server.Name, clientID, err)
+				log.Printf("服务器 %s (ID:%d) 获取DDNS配置时发生错误: %v", serverName, clientID, err)
 			}
 		}
 	}
 
 	// 发送IP变动通知（带节流机制）
-	if singleton.ServerList[clientID].Host != nil && singleton.Conf.EnableIPChangeNotification &&
+	if serverHostIP != "" && singleton.Conf.EnableIPChangeNotification &&
 		((singleton.Conf.Cover == model.ConfigCoverAll && !singleton.Conf.IgnoredIPNotificationServerIDs[clientID]) ||
 			(singleton.Conf.Cover == model.ConfigCoverIgnoreAll && singleton.Conf.IgnoredIPNotificationServerIDs[clientID])) &&
-		singleton.ServerList[clientID].Host.IP != "" &&
 		host.IP != "" &&
-		singleton.ServerList[clientID].Host.IP != host.IP {
+		serverHostIP != host.IP {
 
 		// 使用IP变更通知的静音标签来实现节流
 		muteLabel := singleton.NotificationMuteLabel.IPChanged(clientID)
@@ -815,47 +677,53 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 	 * 当 agent 重启时，bootTime 变大，agent 端会先上报 host 信息，然后上报 state 信息
 	 * 优化：只有在 BootTime 显著变化时才认为是真正的重启
 	 */
-	if singleton.ServerList[clientID].Host != nil {
-		oldBootTime := singleton.ServerList[clientID].Host.BootTime
-		bootTimeDiff := host.BootTime - oldBootTime
+	rebooted := oldBootTime > 0 && host.BootTime > 0 &&
+		(host.BootTime < oldBootTime || host.BootTime-oldBootTime > 3600)
+	if rebooted {
+		var dbCumulativeIn, dbCumulativeOut uint64
+		var hasDBCumulative bool
 
-		// 只有在 BootTime 显著增加（超过1小时）或出现回退时才认为是重启
-		// 注意：bootTimeDiff 为无符号，不能与 0 比较，回退用 host.BootTime < oldBootTime 判断
-		if bootTimeDiff > 3600 || host.BootTime < oldBootTime {
-			// 真正的重启：保持累计流量不变，只重置上次记录点
-			singleton.ServerList[clientID].PrevTransferInSnapshot = 0
-			singleton.ServerList[clientID].PrevTransferOutSnapshot = 0
-
-			// 确保从数据库读取最新的累计流量值（只在重启时读取一次）
-			if singleton.Conf.DatabaseType == "badger" {
-				// 使用BadgerDB读取累计流量
-				if db.DB != nil {
-					serverOps := db.NewServerOps(db.DB)
-					if server, err := serverOps.GetServer(clientID); err == nil && server != nil {
-						singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
-						singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
-					}
+		// 确保从数据库读取最新的累计流量值（只在重启时读取一次）
+		if singleton.Conf.DatabaseType == "badger" {
+			// 使用BadgerDB读取累计流量
+			if db.DB != nil {
+				serverOps := db.NewServerOps(db.DB)
+				if server, err := serverOps.GetServer(clientID); err == nil && server != nil {
+					dbCumulativeIn = server.CumulativeNetInTransfer
+					dbCumulativeOut = server.CumulativeNetOutTransfer
+					hasDBCumulative = true
 				}
-			} else {
-				// 使用SQLite读取累计流量
-				if singleton.DB != nil {
-					var server model.Server
-					if err := singleton.DB.First(&server, clientID).Error; err == nil {
-						singleton.ServerList[clientID].CumulativeNetInTransfer = server.CumulativeNetInTransfer
-						singleton.ServerList[clientID].CumulativeNetOutTransfer = server.CumulativeNetOutTransfer
-					}
+			}
+		} else {
+			// 使用SQLite读取累计流量
+			if singleton.DB != nil {
+				var server model.Server
+				if err := singleton.DB.First(&server, clientID).Error; err == nil {
+					dbCumulativeIn = server.CumulativeNetInTransfer
+					dbCumulativeOut = server.CumulativeNetOutTransfer
+					hasDBCumulative = true
 				}
 			}
 		}
-		// 小幅度的 BootTime 变化不认为是重启，继续正常累加流量
-	}
 
-	// 不要冲掉国家码（需要加读锁保护）
-	singleton.ServerLock.RLock()
-	if singleton.ServerList[clientID].Host != nil {
-		host.CountryCode = singleton.ServerList[clientID].Host.CountryCode
+		// 真正的重启：保持累计流量不变，只重置上次记录点
+		singleton.ServerLock.Lock()
+		if current := singleton.ServerList[clientID]; current != nil {
+			current.PrevTransferInSnapshot = 0
+			current.PrevTransferOutSnapshot = 0
+			current.PrevTransferInSnapshotSet = false
+			current.PrevTransferOutSnapshotSet = false
+			if hasDBCumulative {
+				current.CumulativeNetInTransfer = dbCumulativeIn
+				current.CumulativeNetOutTransfer = dbCumulativeOut
+			}
+		}
+		singleton.ServerLock.Unlock()
 	}
-	singleton.ServerLock.RUnlock()
+	// 小幅度的 BootTime 变化不认为是重启，继续正常累加流量
+
+	// 不要冲掉国家码
+	host.CountryCode = serverCountryCode
 
 	// 保存完整Host信息到数据库，用于重启后恢复（在锁外序列化）
 	hostJSON, err := utils.Json.Marshal(host)
@@ -1080,6 +948,8 @@ func checkAndResetCycleTraffic(clientID uint64) {
 	resetServer.CumulativeNetOutTransfer = 0
 	resetServer.PrevTransferInSnapshot = 0
 	resetServer.PrevTransferOutSnapshot = 0
+	resetServer.PrevTransferInSnapshotSet = false
+	resetServer.PrevTransferOutSnapshotSet = false
 	resetServer.LastTrafficResetTime = now // 更新重置时间
 	singleton.ServerLock.Unlock()
 
