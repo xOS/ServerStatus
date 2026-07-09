@@ -100,6 +100,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: ./assets
+          pattern: server-dash-*
 
       - name: Archive and compress binaries
         run: |
@@ -114,7 +115,7 @@ jobs:
       - name: Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "assets/*/*/*.zip"
+          artifacts: "assets/server-dash-*/*/*.zip"
           generateReleaseNotes: true
 
 
