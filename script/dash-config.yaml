@@ -9,6 +9,8 @@ site:
     customcode: ""
     customcodedashboard: ""
     viewpassword: ""
+frontend:
+    dist: frontend/dist
 oauth2:
     type: github
     admin:

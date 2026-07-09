@@ -28,6 +28,8 @@ const (
 	ConfigCoverIgnoreAll
 )
 
+const DefaultFrontendDist = "frontend/dist"
+
 // Config 站点配置
 type Config struct {
 	Debug bool // debug模式开关
@@ -65,6 +67,9 @@ type Config struct {
 	}
 	Security struct {
 		AllowedOrigins string // 允许跨域访问 API 的前端 Origin 或域名，多个用逗号分隔，支持 *.example.com
+	}
+	Frontend struct {
+		Dist string // 前端构建产物目录；前后端分离部署时可指向任意 dist 目录
 	}
 	HTTPPort      uint
 	GRPCPort      uint
@@ -104,20 +109,19 @@ func (c *Config) Read(path string) error {
 	c.k = koanf.New(".")
 	c.filePath = path
 
-	// 先读取环境变量，然后读取配置文件；后者可以覆盖前者
-
-	err := c.k.Load(env.Provider("NG_", ".", func(s string) string {
-		return strings.Replace(strings.ToLower(strings.TrimPrefix(s, "NG_")), "_", ".", -1)
-	}), nil)
-	if err != nil {
-		return err
-	}
-
 	if _, err := os.Stat(path); err == nil {
 		err = c.k.Load(file.Provider(path), kyaml.Parser())
 		if err != nil {
 			return err
 		}
+	}
+
+	// 后读取环境变量，让 NG_ 前缀配置覆盖文件配置。
+	err := c.k.Load(env.Provider("NG_", ".", func(s string) string {
+		return strings.Replace(strings.ToLower(strings.TrimPrefix(s, "NG_")), "_", ".", -1)
+	}), nil)
+	if err != nil {
+		return err
 	}
 
 	err = c.k.Unmarshal("", c)
@@ -134,6 +138,10 @@ func (c *Config) Read(path string) error {
 	}
 	if c.Site.CookieName == "" {
 		c.Site.CookieName = "server-dash"
+	}
+	c.Frontend.Dist = strings.TrimSpace(c.Frontend.Dist)
+	if c.Frontend.Dist == "" && !configKeyExists(c.k, "frontend.dist", "Frontend.Dist") {
+		c.Frontend.Dist = DefaultFrontendDist
 	}
 	if !configKeyExists(c.k, "login.enableoauth", "Login.EnableOAuth", "enableoauthlogin", "EnableOAuthLogin") {
 		c.Login.EnableOAuth = true

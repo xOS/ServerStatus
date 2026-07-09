@@ -76,6 +76,10 @@ site:
   customcode: ""
   viewpassword: ""
 
+# 前端构建产物目录
+frontend:
+  dist: "frontend/dist"
+
 # 其他配置
 cover: 0
 ignoredipnotification: ""

@@ -4,7 +4,8 @@ import { resolve } from 'path'
 export default defineConfig({
   publicDir: 'public-lite',
   build: {
-    target: 'es2020',
+    target: 'es2018',
+    emptyOutDir: false,
   },
   resolve: {
     alias: {

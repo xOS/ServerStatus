@@ -144,6 +144,9 @@ site:
   footerurl: ""
   viewpassword: ""
 
+frontend:
+  dist: frontend/dist
+
 login:
   enableoauth: true
   enableapikey: false
@@ -154,7 +157,9 @@ security:
 
 `site.logourl` 为空时使用项目自带的本地 Logo；填写图片 URL 后，前台、登录页和后台页头会使用该图片。
 
-配置也可以通过 `NG_` 前缀环境变量覆盖，例如 `NG_HTTPPORT=8080`、`NG_SECURITY_ALLOWEDORIGINS=https://ops.example.com`。
+`frontend.dist` 是后端托管前端构建产物时使用的目录；前后端分离部署时可按运行环境改到任意 dist 目录，明确配置为空值时后端不挂载本地前端资源。
+
+配置也可以通过 `NG_` 前缀环境变量覆盖，例如 `NG_HTTPPORT=8080`、`NG_FRONTEND_DIST=/opt/serverstatus/frontend-dist`、`NG_SECURITY_ALLOWEDORIGINS=https://ops.example.com`。
 
 ## 前后端分离
 

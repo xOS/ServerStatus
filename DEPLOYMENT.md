@@ -213,6 +213,9 @@ site:
   footerurl: ""
   viewpassword: ""
 
+frontend:
+  dist: frontend/dist
+
 login:
   enableoauth: true
   enableapikey: false
@@ -222,12 +225,14 @@ security:
 ```
 
 `site.logourl` 留空时使用项目本地 Logo；填写图片 URL 后会应用到前台、登录页和后台页头。
+`frontend.dist` 是后端托管前端构建产物时使用的目录；前后端分离部署时可改为实际挂载的前端 dist 路径，明确配置为空值时后端不挂载本地前端资源。
 
 环境变量可用 `NG_` 前缀覆盖配置，变量名中的 `_` 会转换为配置层级。例如：
 
 ```bash
 NG_HTTPPORT=8080
 NG_GRPCPORT=2222
+NG_FRONTEND_DIST=/opt/serverstatus/frontend-dist
 NG_DATABASETYPE=badger
 NG_DATABASELOCATION=data/badger
 NG_SECURITY_ALLOWEDORIGINS=https://ops.example.com,*.vercel.app
@@ -453,7 +458,7 @@ npm ci
 npm run build
 ```
 
-后端运行目录中必须存在 `frontend/dist/index.html`。
+后端运行目录中必须存在 `frontend.dist` 指向目录下的 `index.html`；默认路径为 `frontend/dist/index.html`。
 
 ### 前端跨域或 WebSocket 失败
 

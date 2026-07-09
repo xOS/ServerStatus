@@ -59,6 +59,10 @@ site:
   customcode: ""
   viewpassword: ""
 
+# 前端构建产物目录
+frontend:
+  dist: "frontend/dist"
+
 # OAuth2 配置 (可选)
 oauth2:
   type: ""

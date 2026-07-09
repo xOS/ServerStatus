@@ -1,6 +1,6 @@
 # ServerStatus Frontend
 
-当前前端是原生 TypeScript + Vite 实现，不依赖 Vue/React 等运行时框架。构建产物输出到 `frontend/dist`，后端会从该目录托管 SPA 页面、`/assets` 静态资源和 `favicon.svg`。
+当前前端是原生 TypeScript + Vite 实现，不依赖 Vue/React 等运行时框架。构建产物默认输出到 `frontend/dist`，后端通过 `frontend.dist` 配置项决定托管哪个前端 dist 目录。
 
 ## 命令
 
@@ -14,8 +14,9 @@ npm run preview
 说明：
 
 - `npm run dev` 仅用于本地开发。
-- 生产部署使用 `npm run build`，生成 `frontend/dist`。
-- 后端运行目录中缺少 `frontend/dist/index.html` 时，会显示“新版前端尚未构建”的占位页面。
+- 生产部署使用 `npm run build`，默认生成 `frontend/dist`。
+- 后端运行目录中缺少 `frontend.dist` 指向目录下的 `index.html` 时，会显示“新版前端尚未构建”的占位页面。
+- 前后端完全分离部署时，可以把 `frontend.dist` 明确配置为空值，此时后端不挂载本地前端资源。
 
 ## 路由
 
@@ -27,7 +28,7 @@ npm run preview
 - `/login`：登录页。
 - 其他路径回落到首页。
 
-后端 `NoRoute` 会对非 API、非静态资源的 GET 请求返回 `frontend/dist/index.html`，用于支持 SPA 刷新。
+后端 `NoRoute` 会对非 API、非静态资源的 GET 请求返回 `frontend.dist` 指向目录下的 `index.html`，用于支持 SPA 刷新。
 
 ## API Base
 
@@ -147,4 +148,4 @@ security:
 - 修改 `frontend/src/style.css` 时保持现有颜色方案，特别是首页进度条状态色。
 - 固定格式控件要设置稳定尺寸，避免卡片内容跳动。
 - 状态卡片中的百分比文本必须始终限制在进度槽内。
-- 前端构建完成后，由后端统一托管 `frontend/dist`；Docker 镜像构建也依赖该目录。
+- 前端构建完成后，后端按 `frontend.dist` 配置托管构建产物；Docker 镜像默认仍复制 `frontend/dist`。

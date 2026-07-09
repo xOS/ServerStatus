@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -140,12 +141,12 @@ func WriteJSONPayload(c *gin.Context, status int, payload []byte) {
 }
 
 func serveSPA(c *gin.Context) {
-	const indexPath = "frontend/dist/index.html"
-	if _, err := os.Stat(indexPath); err == nil {
+	setNoStoreHeaders(c)
+	if indexPath, ok := frontendDistPath("index.html"); ok && frontendPathExists(indexPath) {
 		c.File(indexPath)
 		return
 	}
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ServerStatus</title></head><body><div id="app">新版前端尚未构建，请在 frontend 目录执行 npm run build。</div></body></html>`))
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ServerStatus</title></head><body><div id="app">新版前端尚未构建，请确认 frontend.dist 指向有效的前端构建目录。</div></body></html>`))
 }
 
 // handleBrokenPipe 中间件处理broken pipe错误
@@ -174,6 +175,91 @@ func securityHeaders(c *gin.Context) {
 	c.Header("Referrer-Policy", "same-origin")
 	c.Header("Cross-Origin-Resource-Policy", "same-origin")
 	c.Next()
+}
+
+func frontendCacheHeaders(c *gin.Context) {
+	if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+		c.Next()
+		return
+	}
+
+	path := c.Request.URL.Path
+	switch {
+	case strings.HasPrefix(path, "/assets/") && frontendFileExists("/assets/", "assets", path):
+		c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	case strings.HasPrefix(path, "/static/") && frontendFileExists("/static/", "static", path):
+		c.Header("Cache-Control", "public, max-age=3600, must-revalidate")
+	case path == "/favicon.svg" && frontendDistFileExists("favicon.svg"):
+		c.Header("Cache-Control", "public, max-age=3600, must-revalidate")
+	}
+	c.Next()
+}
+
+func frontendFileExists(prefix, dirname, requestPath string) bool {
+	dir, ok := frontendDistPath(dirname)
+	if !ok {
+		return false
+	}
+	rel := strings.TrimPrefix(requestPath, prefix)
+	rel = strings.TrimPrefix(rel, "/")
+	if rel == "" || strings.Contains(rel, "..") {
+		return false
+	}
+	return frontendPathExists(filepath.Join(dir, filepath.FromSlash(rel)))
+}
+
+func frontendPathExists(filename string) bool {
+	info, err := os.Stat(filename)
+	return err == nil && !info.IsDir()
+}
+
+func frontendDirExists(dirname string) bool {
+	info, err := os.Stat(dirname)
+	return err == nil && info.IsDir()
+}
+
+func frontendDistDir() string {
+	if singleton.Conf != nil {
+		return strings.TrimSpace(singleton.Conf.Frontend.Dist)
+	}
+	return ""
+}
+
+func frontendDistPath(parts ...string) (string, bool) {
+	dist := frontendDistDir()
+	if dist == "" {
+		return "", false
+	}
+	items := append([]string{dist}, parts...)
+	return filepath.Join(items...), true
+}
+
+func frontendDistFileExists(parts ...string) bool {
+	filename, ok := frontendDistPath(parts...)
+	return ok && frontendPathExists(filename)
+}
+
+func mountFrontendAssets(r *gin.Engine) {
+	staticDir, ok := frontendDistPath("static")
+	if ok && frontendDirExists(staticDir) {
+		r.Static("/static", staticDir)
+	}
+
+	assetsDir, ok := frontendDistPath("assets")
+	if ok && frontendDirExists(assetsDir) {
+		r.Static("/assets", assetsDir)
+	}
+
+	faviconPath, ok := frontendDistPath("favicon.svg")
+	if ok && frontendPathExists(faviconPath) {
+		r.StaticFile("/favicon.svg", faviconPath)
+	}
+}
+
+func setNoStoreHeaders(c *gin.Context) {
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 }
 
 func requestRateLimiter() gin.HandlerFunc {
@@ -551,6 +637,7 @@ func ServeWeb(port uint) *http.Server {
 	r.Use(globalPanicRecovery())
 	r.Use(natGateway)
 	r.Use(securityHeaders)
+	r.Use(frontendCacheHeaders)
 	r.Use(requestRateLimiter())
 	r.Use(handleBrokenPipe) // 添加broken pipe错误处理中间件
 	r.Use(corsMiddleware)   // 添加CORS中间件处理OPTIONS请求
@@ -568,13 +655,7 @@ func ServeWeb(port uint) *http.Server {
 		c.Next()
 	})
 	r.Use(mygin.RecordPath)
-	r.Static("/static", "frontend/dist/static")
-	if _, err := os.Stat("frontend/dist/assets"); err == nil {
-		r.Static("/assets", "frontend/dist/assets")
-	}
-	if _, err := os.Stat("frontend/dist/favicon.svg"); err == nil {
-		r.StaticFile("/favicon.svg", "frontend/dist/favicon.svg")
-	}
+	mountFrontendAssets(r)
 
 	routers(r)
 	page404 := func(c *gin.Context) {

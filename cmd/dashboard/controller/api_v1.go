@@ -128,6 +128,7 @@ func profilePayload(c *gin.Context) gin.H {
 		"Conf": gin.H{
 			"Site": gin.H{
 				"Brand":               singleton.Conf.Site.Brand,
+				"LogoURL":             singleton.Conf.Site.LogoURL,
 				"CustomCode":          singleton.Conf.Site.CustomCode,
 				"CustomCodeDashboard": singleton.Conf.Site.CustomCodeDashboard,
 				"FooterYear":          singleton.Conf.Site.FooterYear,

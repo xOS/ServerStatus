@@ -36,6 +36,8 @@ site:
   brand: "ServerStatus"
   logourl: ""
   theme: "default"
+frontend:
+  dist: "frontend/dist"
 EOF
 fi
 
