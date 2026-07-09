@@ -1,6 +1,7 @@
 import { AUTH_API_BASE, adminApiPath, apiPath, authApiPath } from '../api'
 import { authHeaders, clearStoredAuthToken, getStoredAuthToken, setStoredAuthToken } from '../auth'
-import { DEFAULT_LOGO_URL, footerOptions, icon, logoUrlFromProfile } from '../layout'
+import { addAbortableEvent, createOptionalAbortController, fetchSignalInit } from '../compat'
+import { DEFAULT_LOGO_URL, applyLogoImage, footerOptions, icon, logoImageHTML, logoUrlFromProfile } from '../layout'
 
 type AdminKey = 'dashboard' | 'server' | 'monitor' | 'cron' | 'rule' | 'notification' | 'nat' | 'ddns' | 'api' | 'setting'
 type Row = Record<string, unknown>
@@ -94,6 +95,7 @@ let contentArea: HTMLElement
 let dialog: HTMLDialogElement
 let toastTimer = 0
 let adminAbortController: AbortController | undefined
+let adminCleanupTasks: Array<() => void> = []
 const entityRows = new Map<AdminKey, Row[]>()
 let settingsCache: Row | null = null
 let adminBrandName = 'ServerStatus'
@@ -336,14 +338,15 @@ const entityConfigs: Partial<Record<AdminKey, EntityConfig>> = {
 
 export function initAdmin(container: HTMLDivElement) {
   cleanupAdmin()
-  adminAbortController = new AbortController()
+  adminAbortController = createOptionalAbortController()
+  adminCleanupTasks = []
   app = container
 
   app.innerHTML = `
     <div class="admin-shell">
       <header class="admin-header">
         <a class="admin-brand" href="/" data-route-home>
-          <img src="${escapeAttribute(DEFAULT_LOGO_URL)}" alt="">
+          ${logoImageHTML()}
           <span id="admin-brand-title">${escapeHtml(adminBrandName)}</span>
           <small>管理后台</small>
         </a>
@@ -379,6 +382,7 @@ export function initAdmin(container: HTMLDivElement) {
 
   contentArea = requiredElement('admin-content')
   dialog = requiredDialog('admin-dialog')
+  applyLogoImage(document.querySelector<HTMLElement>('.admin-brand [data-logo-root]'), DEFAULT_LOGO_URL)
   bindAdminEvents()
   void loadAdminProfile()
   renderAdminRoute()
@@ -387,8 +391,9 @@ export function initAdmin(container: HTMLDivElement) {
 
 export function initLogin(container: HTMLDivElement) {
   cleanupAdmin()
-  const controller = new AbortController()
+  const controller = createOptionalAbortController()
   adminAbortController = controller
+  adminCleanupTasks = []
   app = container
 
   const renderLogin = (allowOAuth = true, logoURL = DEFAULT_LOGO_URL) => {
@@ -396,7 +401,7 @@ export function initLogin(container: HTMLDivElement) {
     app.innerHTML = `
     <main class="login-shell">
       <section class="login-panel">
-        <img src="${escapeAttribute(logoURL)}" alt="">
+        ${logoImageHTML(logoURL)}
         <h1>登录</h1>
         <p>仅允许白名单账号授权登录。</p>
         <div class="login-actions">
@@ -406,11 +411,12 @@ export function initLogin(container: HTMLDivElement) {
       </section>
     </main>
   `
+    applyLogoImage(app.querySelector<HTMLElement>('.login-panel [data-logo-root]'), logoURL)
   }
 
   renderLogin()
-  const signal = controller.signal
-  fetch(apiPath('/profile'), { credentials: 'include', headers: authHeaders(), signal })
+  const signal = controller?.signal
+  fetch(apiPath('/profile'), { credentials: 'include', headers: authHeaders(), ...fetchSignalInit(signal) })
     .then((response) => response.json())
     .then((profile) => {
       const row = objectFrom(profile?.data || profile)
@@ -432,6 +438,7 @@ function oauthLoginUrl() {
 function cleanupAdmin() {
   adminAbortController?.abort()
   adminAbortController = undefined
+  for (const cleanup of adminCleanupTasks.splice(0)) cleanup()
   if (toastTimer) {
     window.clearTimeout(toastTimer)
     toastTimer = 0
@@ -440,10 +447,10 @@ function cleanupAdmin() {
 
 function bindAdminEvents() {
   const signal = adminAbortController?.signal
-  if (!signal) return
 
-  app.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement
+  adminCleanupTasks.push(addAbortableEvent(app, 'click', (event) => {
+    const target = event.target
+    if (!(target instanceof Element)) return
     const authButton = target.closest<HTMLElement>('[data-open-auth]')
     if (authButton) {
       openAuthDialog()
@@ -556,9 +563,9 @@ function bindAdminEvents() {
     }
 
     closeAdminDropdowns(target)
-  }, { signal })
+  }, signal))
 
-  app.addEventListener('submit', (event) => {
+  adminCleanupTasks.push(addAbortableEvent(app, 'submit', (event) => {
     const form = event.target as HTMLFormElement
     if (form.matches('[data-entity-form]')) {
       event.preventDefault()
@@ -583,9 +590,9 @@ function bindAdminEvents() {
       event.preventDefault()
       batchUpdateServerGroup(form)
     }
-  }, { signal })
+  }, signal))
 
-  app.addEventListener('change', (event) => {
+  adminCleanupTasks.push(addAbortableEvent(app, 'change', (event) => {
     const selectAllServers = (event.target as HTMLElement).closest<HTMLInputElement>('[data-server-select-all]')
     if (selectAllServers) {
       setAllServerSelection(selectAllServers.checked)
@@ -601,13 +608,13 @@ function bindAdminEvents() {
     const option = (event.target as HTMLElement).closest<HTMLInputElement>('[data-relation-option]')
     if (!option) return
     updateRelationValue(option)
-  }, { signal })
+  }, signal))
 
-  app.addEventListener('input', (event) => {
+  adminCleanupTasks.push(addAbortableEvent(app, 'input', (event) => {
     const comboInput = (event.target as HTMLElement).closest<HTMLInputElement>('[data-admin-combo-input]')
     if (!comboInput) return
     updateAdminComboInput(comboInput)
-  }, { signal })
+  }, signal))
 }
 
 async function renderAdminRoute() {
@@ -727,13 +734,13 @@ function updateAdminBrand(profile: Row) {
   const footer = footerOptions(profile)
   const logoURL = logoUrlFromProfile(profile)
   const title = document.getElementById('admin-brand-title')
-  const logo = document.querySelector<HTMLImageElement>('.admin-brand img')
+  const logo = document.querySelector<HTMLElement>('.admin-brand [data-logo-root]')
   const footerBrand = document.getElementById('admin-footer-brand')
   const footerYear = document.getElementById('admin-footer-year')
   const footerAuthor = document.getElementById('admin-footer-author') as HTMLAnchorElement | null
   const footerCustomCode = document.getElementById('admin-footer-custom-code')
   if (title) title.textContent = brand
-  if (logo) logo.src = logoURL
+  applyLogoImage(logo, logoURL)
   if (footerBrand) footerBrand.textContent = brand
   if (footerYear) footerYear.textContent = footer.year
   if (footerAuthor) {
@@ -790,7 +797,7 @@ async function renderEntityPage(config: EntityConfig) {
 
 async function loadAdminLookups() {
   const keys: AdminKey[] = ['server', 'cron', 'notification', 'ddns']
-  await Promise.allSettled(keys.map(async (key) => {
+  await settleAll(keys.map(async (key) => {
     if (entityRows.has(key)) return
     const config = entityConfigs[key]
     if (!config) return
@@ -799,7 +806,7 @@ async function loadAdminLookups() {
   }))
 
   if (!settingsCache) {
-    const result = await Promise.allSettled([apiFetch<Row>(adminApiPath('/setting'))])
+    const result = await settleAll([apiFetch<Row>(adminApiPath('/setting'))])
     const payload = result[0].status === 'fulfilled' ? result[0].value : null
     settingsCache = payload ? objectFrom(get(payload, 'Settings')) : null
   }
@@ -808,13 +815,19 @@ async function loadAdminLookups() {
 async function loadDisplayLookups(key: AdminKey) {
   if (!['server', 'monitor', 'cron', 'rule', 'nat'].includes(key)) return
   const keys: AdminKey[] = ['server', 'cron', 'ddns']
-  await Promise.allSettled(keys.map(async (lookupKey) => {
+  await settleAll(keys.map(async (lookupKey) => {
     if (entityRows.has(lookupKey)) return
     const config = entityConfigs[lookupKey]
     if (!config) return
     const payload = await apiFetch<unknown>(config.endpoint)
     entityRows.set(lookupKey, config.rowsFrom(payload))
   }))
+}
+
+function settleAll<T>(promises: Array<Promise<T>>) {
+  return Promise.all(promises.map((promise) => promise
+    .then((value) => ({ status: 'fulfilled' as const, value }))
+    .catch((reason) => ({ status: 'rejected' as const, reason }))))
 }
 
 async function renderApiTokens() {
@@ -2142,7 +2155,7 @@ function toggleAdminDropdown(toggle: HTMLElement) {
   }
 }
 
-function closeAdminDropdowns(target?: HTMLElement) {
+function closeAdminDropdowns(target?: Element) {
   app.querySelectorAll<HTMLElement>('[data-admin-select], [data-admin-combo]').forEach((root) => {
     if (target && root.contains(target)) return
     const panel = root.querySelector<HTMLElement>('[data-admin-select-panel], [data-admin-combo-panel]')

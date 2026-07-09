@@ -53,13 +53,28 @@ export class Router {
     this.container.innerHTML = ''
     
     currentCleanup = route.cleanup
-    const cleanup = await route.render(this.container)
-    if (token !== navigationToken) {
-      if (typeof cleanup === 'function') cleanup()
-      return
-    }
-    if (typeof cleanup === 'function') {
-      currentCleanup = cleanup
+    try {
+      const cleanup = await route.render(this.container)
+      if (token !== navigationToken) {
+        if (typeof cleanup === 'function') cleanup()
+        return
+      }
+      if (typeof cleanup === 'function') {
+        currentCleanup = cleanup
+      }
+    } catch (error) {
+      console.error('Route render failed', error)
+      if (token === navigationToken) {
+        currentCleanup = undefined
+        this.container.innerHTML = `
+          <main class="app-fallback-error">
+            <section>
+              <strong>页面加载失败</strong>
+              <span>请刷新页面重试。</span>
+            </section>
+          </main>
+        `
+      }
     }
   }
 }

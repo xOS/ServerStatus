@@ -4,7 +4,45 @@ import { authApiPath } from './api'
 let _app: HTMLDivElement
 let adminArea: HTMLElement
 let footerContent: HTMLElement
-export const DEFAULT_LOGO_URL = '/static/logo.svg?v20260708b'
+
+function publicAssetURL(path: string, version = '') {
+  const base = String(import.meta.env.BASE_URL || '/')
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`
+  const normalizedPath = path.replace(/^\/+/, '')
+  const suffix = version ? `?${encodeURIComponent(version)}` : ''
+  return `${normalizedBase}${normalizedPath}${suffix}`
+}
+
+export const DEFAULT_LOGO_URL = publicAssetURL('static/logo.svg', 'v20260709a')
+const DEFAULT_LOGO_SVG = `<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <style>
+      .status-light{animation:status-light-blink 3.2s steps(2,end) infinite}
+      .status-light:nth-of-type(4n){animation-delay:.4s}
+      .status-light:nth-of-type(4n+1){animation-delay:.9s}
+      .status-light:nth-of-type(4n+2){animation-delay:1.45s}
+      .status-light:nth-of-type(4n+3){animation-delay:2s}
+      @keyframes status-light-blink{0%,48%,100%{opacity:1}49%,62%{opacity:.32}}
+    </style>
+  </defs>
+  <rect x="5" y="10" width="90" height="22" rx="6" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/>
+  <rect x="5" y="38" width="90" height="22" rx="6" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/>
+  <rect x="5" y="66" width="90" height="22" rx="6" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/>
+  <circle class="status-light" cx="15" cy="21" r="4" fill="#00ff00"/><circle class="status-light" cx="27" cy="21" r="4" fill="#ff8000"/><circle class="status-light" cx="39" cy="21" r="4" fill="#ff4000"/>
+  <circle class="status-light" cx="15" cy="49" r="4" fill="#ffff00"/><circle class="status-light" cx="27" cy="49" r="4" fill="#00ffff"/><circle class="status-light" cx="39" cy="49" r="4" fill="#ff69b4"/>
+  <circle class="status-light" cx="15" cy="77" r="4" fill="#fff" stroke="#999" stroke-width=".8"/><circle class="status-light" cx="27" cy="77" r="4" fill="#ff4080"/><circle class="status-light" cx="39" cy="77" r="4" fill="#80ff00"/>
+  <g fill="#999" opacity=".6">
+    <rect x="50" y="14" width="3" height="3"/><rect x="55" y="14" width="3" height="3"/><rect x="60" y="14" width="3" height="3"/><rect x="65" y="14" width="3" height="3"/><rect x="70" y="14" width="3" height="3"/><rect x="75" y="14" width="3" height="3"/><rect x="80" y="14" width="3" height="3"/><rect x="85" y="14" width="3" height="3"/>
+    <rect x="50" y="19" width="3" height="3"/><rect x="55" y="19" width="3" height="3"/><rect x="60" y="19" width="3" height="3"/><rect x="65" y="19" width="3" height="3"/><rect x="70" y="19" width="3" height="3"/><rect x="75" y="19" width="3" height="3"/><rect x="80" y="19" width="3" height="3"/><rect x="85" y="19" width="3" height="3"/>
+    <rect x="50" y="24" width="3" height="3"/><rect x="55" y="24" width="3" height="3"/><rect x="60" y="24" width="3" height="3"/><rect x="65" y="24" width="3" height="3"/><rect x="70" y="24" width="3" height="3"/><rect x="75" y="24" width="3" height="3"/><rect x="80" y="24" width="3" height="3"/><rect x="85" y="24" width="3" height="3"/>
+    <rect x="50" y="42" width="3" height="3"/><rect x="55" y="42" width="3" height="3"/><rect x="60" y="42" width="3" height="3"/><rect x="65" y="42" width="3" height="3"/><rect x="70" y="42" width="3" height="3"/><rect x="75" y="42" width="3" height="3"/><rect x="80" y="42" width="3" height="3"/><rect x="85" y="42" width="3" height="3"/>
+    <rect x="50" y="47" width="3" height="3"/><rect x="55" y="47" width="3" height="3"/><rect x="60" y="47" width="3" height="3"/><rect x="65" y="47" width="3" height="3"/><rect x="70" y="47" width="3" height="3"/><rect x="75" y="47" width="3" height="3"/><rect x="80" y="47" width="3" height="3"/><rect x="85" y="47" width="3" height="3"/>
+    <rect x="50" y="52" width="3" height="3"/><rect x="55" y="52" width="3" height="3"/><rect x="60" y="52" width="3" height="3"/><rect x="65" y="52" width="3" height="3"/><rect x="70" y="52" width="3" height="3"/><rect x="75" y="52" width="3" height="3"/><rect x="80" y="52" width="3" height="3"/><rect x="85" y="52" width="3" height="3"/>
+    <rect x="50" y="70" width="3" height="3"/><rect x="55" y="70" width="3" height="3"/><rect x="60" y="70" width="3" height="3"/><rect x="65" y="70" width="3" height="3"/><rect x="70" y="70" width="3" height="3"/><rect x="75" y="70" width="3" height="3"/><rect x="80" y="70" width="3" height="3"/><rect x="85" y="70" width="3" height="3"/>
+    <rect x="50" y="75" width="3" height="3"/><rect x="55" y="75" width="3" height="3"/><rect x="60" y="75" width="3" height="3"/><rect x="65" y="75" width="3" height="3"/><rect x="70" y="75" width="3" height="3"/><rect x="75" y="75" width="3" height="3"/><rect x="80" y="75" width="3" height="3"/><rect x="85" y="75" width="3" height="3"/>
+    <rect x="50" y="80" width="3" height="3"/><rect x="55" y="80" width="3" height="3"/><rect x="60" y="80" width="3" height="3"/><rect x="65" y="80" width="3" height="3"/><rect x="70" y="80" width="3" height="3"/><rect x="75" y="80" width="3" height="3"/><rect x="80" y="80" width="3" height="3"/><rect x="85" y="80" width="3" height="3"/>
+  </g>
+</svg>`
 
 // Reusable escape helpers
 const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -14,6 +52,66 @@ export function logoUrlFromProfile(profile: ProfileResponse | null | any) {
   const site = profile?.Conf?.Site || {}
   const logo = String(site.LogoURL ?? site.LogoUrl ?? site.logo_url ?? site.logourl ?? '').trim()
   return logo || DEFAULT_LOGO_URL
+}
+
+export function logoImageHTML(src = DEFAULT_LOGO_URL) {
+  return `<span class="site-logo" data-logo-root data-logo-src="${escapeAttribute(src || DEFAULT_LOGO_URL)}"><span class="site-logo-default" data-logo-default>${DEFAULT_LOGO_SVG}</span><img alt="" data-logo-image hidden></span>`
+}
+
+function resolveLogoURL(src: string) {
+  try {
+    return new URL(src, window.location.href).href
+  } catch {
+    return ''
+  }
+}
+
+export function applyLogoImage(target: Element | null | undefined, src = DEFAULT_LOGO_URL) {
+  if (!target) return
+
+  const root = target.matches('[data-logo-root]')
+    ? target as HTMLElement
+    : target.closest<HTMLElement>('[data-logo-root]')
+  if (!root) return
+
+  const img = root.querySelector<HTMLImageElement>('[data-logo-image]')
+  const defaultLogo = root.querySelector<HTMLElement>('[data-logo-default]')
+  if (!img || !defaultLogo) return
+
+  const fallback = DEFAULT_LOGO_URL
+  const preferred = String(src || fallback).trim() || fallback
+  const fallbackURL = resolveLogoURL(fallback)
+  const preferredURL = resolveLogoURL(preferred)
+  const requestID = `${Date.now()}-${Math.random()}`
+  root.dataset.logoRequest = requestID
+
+  if (!preferredURL || preferredURL === fallbackURL) {
+    img.onload = null
+    img.onerror = null
+    img.removeAttribute('src')
+    img.hidden = true
+    defaultLogo.hidden = false
+    return
+  }
+
+  defaultLogo.hidden = false
+  img.hidden = true
+  img.decoding = 'async'
+  img.referrerPolicy = 'no-referrer'
+  img.onload = () => {
+    if (root.dataset.logoRequest !== requestID) return
+    defaultLogo.hidden = true
+    img.hidden = false
+  }
+  img.onerror = () => {
+    if (root.dataset.logoRequest !== requestID) return
+    img.onerror = null
+    img.onload = null
+    img.removeAttribute('src')
+    img.hidden = true
+    defaultLogo.hidden = false
+  }
+  img.src = preferredURL
 }
 
 export const icon = (name: string, cls: string = '') => {
@@ -170,7 +268,7 @@ export function injectAppShell(container: HTMLDivElement, activeRoute: 'home' | 
         <div class="top-nav-inner">
           <div class="nav-left">
             <a class="nav-logo" href="/" aria-label="服务器">
-              <img src="${escapeAttribute(DEFAULT_LOGO_URL)}" alt="">
+              ${logoImageHTML()}
             </a>
             <a class="nav-link ${activeRoute === 'home' ? 'active' : ''}" href="/" data-route="home">${icon('server', 'nav-svg')}<span>主机</span></a>
             <a class="nav-link ${activeRoute === 'network' ? 'active' : ''}" href="/network" data-route="network">${icon('circleDot', 'nav-svg')}<span>网络</span></a>
@@ -195,6 +293,7 @@ export function injectAppShell(container: HTMLDivElement, activeRoute: 'home' | 
 
   adminArea = _app.querySelector('#admin-area')!
   footerContent = _app.querySelector('#footer-content')!
+  applyLogoImage(_app.querySelector<HTMLElement>('.nav-logo [data-logo-root]'), DEFAULT_LOGO_URL)
 
   return {
     contentArea: _app.querySelector('#page-content')!
@@ -209,16 +308,15 @@ export function renderChrome(profile: ProfileResponse | null | any) {
   const logo = logoUrlFromProfile(profile)
 
   document.title = brandText
-  const navLogo = _app?.querySelector<HTMLImageElement>('.nav-logo img')
-  if (navLogo) navLogo.src = logo
+  const navLogo = _app?.querySelector<HTMLElement>('.nav-logo [data-logo-root]')
+  applyLogoImage(navLogo, logo)
 
   if (admin) {
     const name = escapeHtml(shortAdminName(admin.Name || admin.Login || '管理员'))
-    const avatar = escapeAttribute(admin.AvatarURL || logo)
     adminArea.innerHTML = `
       <div class="admin-menu">
         <button class="admin-trigger" type="button">
-          <img src="${avatar}" alt="">
+          ${logoImageHTML(admin.AvatarURL || logo)}
           <span>${name}</span>
           <span class="admin-caret" aria-hidden="true"></span>
         </button>
@@ -227,7 +325,8 @@ export function renderChrome(profile: ProfileResponse | null | any) {
           <a class="is-logout" href="${authApiPath('/logout')}" data-native-link>${icon('logout', 'dropdown-svg')}<span>退出</span></a>
         </div>
       </div>
-    `
+  `
+    applyLogoImage(adminArea.querySelector<HTMLElement>('.admin-trigger [data-logo-root]'), admin.AvatarURL || logo)
   } else {
     adminArea.innerHTML = `<a href="/login" class="login-button">${icon('login', 'login-svg')}<span>登录</span></a>`
   }

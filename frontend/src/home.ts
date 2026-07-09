@@ -362,7 +362,9 @@ function bindEvents() {
   const cardsEl = cards
 
   tabsClickHandler = (event) => {
-    const target = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-tab]')
+    const eventTarget = event.target
+    if (!(eventTarget instanceof Element)) return
+    const target = eventTarget.closest<HTMLButtonElement>('[data-tab]')
     if (!target) return
 
     state.activeTag = target.dataset.tab || ''
@@ -376,7 +378,9 @@ function bindEvents() {
   tabsContentEl.addEventListener('click', tabsClickHandler)
 
   cardsPointerOverHandler = (event) => {
-    const trigger = (event.target as HTMLElement).closest<HTMLElement>('[data-tooltip-server]')
+    const eventTarget = event.target
+    if (!(eventTarget instanceof Element)) return
+    const trigger = eventTarget.closest<HTMLElement>('[data-tooltip-server]')
     if (!trigger) return
     const id = trigger.dataset.tooltipServer || ''
     state.tooltipServerId = id
@@ -391,7 +395,9 @@ function bindEvents() {
   cardsEl.addEventListener('pointermove', cardsPointerMoveHandler)
 
   cardsPointerOutHandler = (event) => {
-    const trigger = (event.target as HTMLElement).closest<HTMLElement>('[data-tooltip-server]')
+    const eventTarget = event.target
+    if (!(eventTarget instanceof Element)) return
+    const trigger = eventTarget.closest<HTMLElement>('[data-tooltip-server]')
     if (!trigger) return
     const next = event.relatedTarget as Node | null
     if (next && trigger.contains(next)) return

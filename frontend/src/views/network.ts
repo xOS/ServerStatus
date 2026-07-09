@@ -1,6 +1,7 @@
 import { injectAppShell, renderChrome } from '../layout'
 import { apiPath } from '../api'
 import { authHeaders } from '../auth'
+import { addAbortableEvent, createOptionalAbortController, fetchSignalInit } from '../compat'
 
 type RangeKey = '24h' | '72h'
 
@@ -139,11 +140,19 @@ const NETWORK_COLORS = [
 
 let resizeHandler: (() => void) | undefined
 let abortController: AbortController | undefined
+let networkCleanupTasks: Array<() => void> = []
+
+const inertSignal = {
+  aborted: false,
+  addEventListener() {},
+} as unknown as AbortSignal
 
 export async function initNetwork(container: HTMLDivElement) {
-  abortController?.abort()
-  abortController = new AbortController()
-  const signal = abortController.signal
+  cleanupNetwork()
+  abortController = createOptionalAbortController()
+  networkCleanupTasks = []
+  const nativeSignal = abortController?.signal
+  const signal = nativeSignal || inertSignal
 
   const { contentArea } = injectAppShell(container, 'network')
 
@@ -178,7 +187,7 @@ export async function initNetwork(container: HTMLDivElement) {
   const statsContainer = contentArea.querySelector<HTMLDivElement>('#network-stats')
   if (!buttonsContainer || !chartContainer || !subtitle || !title || !rangeSwitch || !statsContainer) return cleanupNetwork
 
-  fetch(apiPath('/profile'), { credentials: 'include', headers: authHeaders(), signal })
+  fetch(apiPath('/profile'), { credentials: 'include', headers: authHeaders(), ...fetchSignalInit(nativeSignal) })
     .then((response) => response.json())
     .then((data) => renderChrome(data.data || data))
     .catch((error) => {
@@ -189,8 +198,8 @@ export async function initNetwork(container: HTMLDivElement) {
 
   try {
     const [serverPayload, monitorConfigPayload] = await Promise.all([
-      fetchJson<unknown>(apiPath('/server/list'), signal),
-      fetchJson<unknown>(apiPath('/monitor/configs'), signal).catch((error) => {
+      fetchJson<unknown>(apiPath('/server/list'), nativeSignal),
+      fetchJson<unknown>(apiPath('/monitor/configs'), nativeSignal).catch((error) => {
         if (!signal.aborted) console.warn('Failed to load monitor configs', error)
         return null
       }),
@@ -282,7 +291,7 @@ export async function initNetwork(container: HTMLDivElement) {
       const pending = historyRequests.get(cacheKey)
       if (!force && pending) return pending
 
-      const request = fetchJson<unknown>(`${apiPath(`/monitor/${encodeURIComponent(id)}`)}?range=${range}`, signal)
+      const request = fetchJson<unknown>(`${apiPath(`/monitor/${encodeURIComponent(id)}`)}?range=${range}`, nativeSignal)
         .then((payload) => {
           const normalized = normalizeHistoryPayload(payload, monitorNames, range)
           putHistoryCache(cacheKey, normalized)
@@ -460,8 +469,8 @@ export async function initNetwork(container: HTMLDivElement) {
       configRefreshInFlight = true
       try {
         const [nextServerPayload, nextMonitorConfigPayload] = await Promise.all([
-          fetchJson<unknown>(apiPath('/server/list'), signal),
-          fetchJson<unknown>(apiPath('/monitor/configs'), signal).catch((error) => {
+          fetchJson<unknown>(apiPath('/server/list'), nativeSignal),
+          fetchJson<unknown>(apiPath('/monitor/configs'), nativeSignal).catch((error) => {
             if (!signal.aborted) console.warn('Failed to refresh monitor configs', error)
             return null
           }),
@@ -483,60 +492,68 @@ export async function initNetwork(container: HTMLDivElement) {
       }, NETWORK_CONFIG_REFRESH_MS)
     }
 
-    buttonsContainer.addEventListener('click', (event) => {
-      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('.network-btn')
+    networkCleanupTasks.push(addAbortableEvent(buttonsContainer, 'click', (event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const button = target.closest<HTMLButtonElement>('.network-btn')
       if (!button || !button.dataset.id || button.dataset.id === currentServerId) return
       currentServerId = button.dataset.id
       updateActiveButton()
       void loadChartData(currentServerId)
-    }, { signal })
+    }, nativeSignal))
 
-    rangeSwitch.addEventListener('click', (event) => {
-      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('.network-range-btn')
+    networkCleanupTasks.push(addAbortableEvent(rangeSwitch, 'click', (event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const button = target.closest<HTMLButtonElement>('.network-range-btn')
       const range = button?.dataset.range
       if (!button || !isRangeKey(range) || range === currentRange) return
       currentRange = range
       updateActiveRange()
       void loadChartData(currentServerId)
-    }, { signal })
+    }, nativeSignal))
 
-    chartContainer.addEventListener('pointermove', (event) => {
+    networkCleanupTasks.push(addAbortableEvent(chartContainer, 'pointermove', (event) => {
       if (!chartModel) return
-      updateChartHover(chartContainer, chartModel, event)
-    }, { signal })
+      updateChartHover(chartContainer, chartModel, event as PointerEvent)
+    }, nativeSignal))
 
-    chartContainer.addEventListener('pointerdown', (event) => {
+    networkCleanupTasks.push(addAbortableEvent(chartContainer, 'pointerdown', (event) => {
       if (!chartModel) return
-      if (event.pointerType !== 'mouse') event.preventDefault()
-      updateChartHover(chartContainer, chartModel, event)
-    }, { signal })
+      const pointerEvent = event as PointerEvent
+      if (pointerEvent.pointerType !== 'mouse') pointerEvent.preventDefault()
+      updateChartHover(chartContainer, chartModel, pointerEvent)
+    }, nativeSignal))
 
-    chartContainer.addEventListener('pointercancel', () => {
+    networkCleanupTasks.push(addAbortableEvent(chartContainer, 'pointercancel', () => {
       hideChartHover(chartContainer)
-    }, { signal })
+    }, nativeSignal))
 
-    chartContainer.addEventListener('pointerleave', () => {
+    networkCleanupTasks.push(addAbortableEvent(chartContainer, 'pointerleave', () => {
       hideChartHover(chartContainer)
-    }, { signal })
+    }, nativeSignal))
 
     resizeHandler = throttleFrame(() => {
       if (currentSeries.length > 0) {
         renderCurrentChart()
       }
     })
-    window.addEventListener('resize', resizeHandler, { signal })
-    document.addEventListener('visibilitychange', () => {
+    networkCleanupTasks.push(addAbortableEvent(window, 'resize', resizeHandler, nativeSignal))
+    const visibilityHandler = () => {
       if (document.hidden) {
         window.clearTimeout(configRefreshTimer)
         return
       }
       void refreshNetworkConfig()
       scheduleNetworkConfigRefresh()
-    }, { signal })
-    signal.addEventListener('abort', () => {
+    }
+    networkCleanupTasks.push(addAbortableEvent(document, 'visibilitychange', visibilityHandler, nativeSignal))
+    const clearTimers = () => {
       window.clearTimeout(prefetchTimer)
       window.clearTimeout(configRefreshTimer)
-    }, { once: true })
+    }
+    networkCleanupTasks.push(clearTimers)
+    if (nativeSignal) nativeSignal.addEventListener('abort', clearTimers, { once: true })
 
     updateActiveRange()
     if (servers.length === 0) {
@@ -559,11 +576,12 @@ export async function initNetwork(container: HTMLDivElement) {
 function cleanupNetwork() {
   abortController?.abort()
   abortController = undefined
+  for (const cleanup of networkCleanupTasks.splice(0)) cleanup()
   resizeHandler = undefined
 }
 
-async function fetchJson<T>(url: string, signal: AbortSignal): Promise<T> {
-  const response = await fetch(url, { credentials: 'include', headers: authHeaders(), signal })
+async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(url, { credentials: 'include', headers: authHeaders(), ...fetchSignalInit(signal) })
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
   return response.json() as Promise<T>
 }

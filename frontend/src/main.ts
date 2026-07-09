@@ -44,7 +44,9 @@ window.addEventListener('app-navigate', ((e: CustomEvent<string>) => {
 
 // Handle link clicks globally
 document.body.addEventListener('click', (e) => {
-  const link = (e.target as HTMLElement).closest('a')
+  const target = e.target
+  if (!(target instanceof Element)) return
+  const link = target.closest('a')
   if (link && link.href && link.origin === window.location.origin && !link.hasAttribute('target') && !link.hasAttribute('data-native-link')) {
     e.preventDefault()
     window.dispatchEvent(new CustomEvent('app-navigate', { detail: link.pathname }))
@@ -52,4 +54,4 @@ document.body.addEventListener('click', (e) => {
 })
 
 // Initial load
-router.navigate(window.location.pathname, false)
+void router.navigate(window.location.pathname, false)
