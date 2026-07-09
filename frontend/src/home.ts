@@ -129,6 +129,7 @@ interface WebSocketFrame {
 interface BootstrapPayload {
   profile?: ProfileResponse
   servers?: unknown
+  trafficData?: TrafficWireItem[] | Record<string, TrafficRecordView>
   now?: number
 }
 
@@ -214,6 +215,7 @@ interface ServerSnapshot {
   savedAt: number
   apiBase: string
   servers: ServerInfo[]
+  trafficById?: Record<string, TrafficView>
 }
 
 const state = {
@@ -319,12 +321,12 @@ async function init(token: number) {
   renderEmptyState()
   connectWebSocket()
 
-  void loadBootstrap().then(() => {
+  void loadBootstrap().then((structureChanged) => {
     if (token !== activeHomeToken) return
     state.initialLoading = false
     renderHomeLoading()
     renderChrome(state.profile)
-    renderCards()
+    if (structureChanged || state.cards.size === 0) renderCards()
     renderTabs()
     applyFilter()
   }).catch(() => {
@@ -477,7 +479,8 @@ async function loadBootstrap() {
   const payload = await fetchJson<BootstrapPayload>(apiPath('/bootstrap'))
   if (payload.profile) state.profile = payload.profile
   state.snapshotAllowed = !state.profile?.Admin
-  applyServerPayload(payload.servers, payload.now)
+  if (payload.trafficData) updateTrafficData(payload.trafficData)
+  return applyServerPayload(payload.servers, payload.now)
 }
 
 async function loadServers() {
@@ -493,6 +496,10 @@ async function loadServers() {
 
 function applyServerPayload(payload: unknown, now?: number) {
   const list = normalizeServerList(payload)
+  const previousIds = state.servers.map(serverId)
+  const nextIds = list.map(serverId)
+  const structureChanged = previousIds.length !== nextIds.length || previousIds.some((id, index) => id !== nextIds[index])
+
   state.servers = list
   state.serverById.clear()
   for (const server of list) {
@@ -500,6 +507,7 @@ function applyServerPayload(payload: unknown, now?: number) {
     state.serverById.set(serverId(server), server)
   }
   storeServerSnapshot(list)
+  return structureChanged
 }
 
 function restoreServerSnapshot() {
@@ -519,6 +527,19 @@ function restoreServerSnapshot() {
     server.live = isServerLive(server)
     state.serverById.set(serverId(server), server)
   }
+  state.trafficById.clear()
+  if (snapshot.trafficById && typeof snapshot.trafficById === 'object') {
+    for (const [id, value] of Object.entries(snapshot.trafficById)) {
+      if (!value || typeof value !== 'object') continue
+      state.trafficById.set(id, {
+        max: String(value.max || '0B'),
+        used: String(value.used || '0B'),
+        percent: Math.max(0, finiteNumber(value.percent, 0)),
+        serverName: String(value.serverName || ''),
+        cycleName: String(value.cycleName || ''),
+      })
+    }
+  }
 }
 
 function storeServerSnapshot(list: ServerInfo[]) {
@@ -528,10 +549,19 @@ function storeServerSnapshot(list: ServerInfo[]) {
       savedAt: Date.now(),
       apiBase: apiPath(''),
       servers: list,
+      trafficById: trafficSnapshotRecord(),
     } satisfies ServerSnapshot))
   } catch {
     // Snapshot is only a first-paint optimization.
   }
+}
+
+function trafficSnapshotRecord() {
+  const record: Record<string, TrafficView> = {}
+  for (const [id, traffic] of state.trafficById) {
+    record[id] = { ...traffic }
+  }
+  return record
 }
 
 async function fetchJson<T>(url: string): Promise<T> {

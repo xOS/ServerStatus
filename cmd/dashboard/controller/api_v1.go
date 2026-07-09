@@ -114,9 +114,10 @@ func (v *apiV1) profile(c *gin.Context) {
 
 func (v *apiV1) bootstrap(c *gin.Context) {
 	WriteJSON(c, 200, gin.H{
-		"profile": profilePayload(c),
-		"servers": frontendServerList(c, c.Query("tag")),
-		"now":     time.Now().UnixMilli(),
+		"profile":     profilePayload(c),
+		"servers":     frontendServerList(c, c.Query("tag")),
+		"trafficData": buildTrafficData(),
+		"now":         time.Now().UnixMilli(),
 	})
 }
 
