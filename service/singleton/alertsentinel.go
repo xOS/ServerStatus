@@ -10,6 +10,7 @@ import (
 
 	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
+	"github.com/xos/serverstatus/pkg/utils"
 )
 
 const (
@@ -655,9 +656,9 @@ func UpdateTrafficStats(serverID uint64, inTransfer, outTransfer uint64) {
 				case "transfer_out_cycle":
 					transferValue = outTransfer
 				case "transfer_all_cycle":
-					transferValue = inTransfer + outTransfer
+					transferValue = utils.Uint64SaturatingAdd(inTransfer, outTransfer)
 				default:
-					transferValue = inTransfer + outTransfer
+					transferValue = utils.Uint64SaturatingAdd(inTransfer, outTransfer)
 				}
 
 				// 第四步：持写锁更新统计数据
@@ -750,15 +751,15 @@ func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, 
 				message += fmt.Sprintf("• CPU使用率超限: %.2f%% (阈值: %.2f%%)\n",
 					server.State.CPU, rule.Max)
 			case ruleType == "memory":
-				memPercent := float64(server.State.MemUsed) * 100 / float64(server.Host.MemTotal)
+				memPercent := safeUsagePercent(server.State.MemUsed, server.Host.MemTotal)
 				message += fmt.Sprintf("• 内存使用率超限: %.2f%% (阈值: %.2f%%)\n",
 					memPercent, rule.Max)
 			case ruleType == "swap":
-				swapPercent := float64(server.State.SwapUsed) * 100 / float64(server.Host.SwapTotal)
+				swapPercent := safeUsagePercent(server.State.SwapUsed, server.Host.SwapTotal)
 				message += fmt.Sprintf("• Swap使用率超限: %.2f%% (阈值: %.2f%%)\n",
 					swapPercent, rule.Max)
 			case ruleType == "disk":
-				diskPercent := float64(server.State.DiskUsed) * 100 / float64(server.Host.DiskTotal)
+				diskPercent := safeUsagePercent(server.State.DiskUsed, server.Host.DiskTotal)
 				message += fmt.Sprintf("• 磁盘使用率超限: %.2f%% (阈值: %.2f%%)\n",
 					diskPercent, rule.Max)
 			case ruleType == "net_in_speed":
@@ -768,7 +769,7 @@ func generateDetailedAlertMessage(alert *model.AlertRule, server *model.Server, 
 				message += fmt.Sprintf("• 出站网速过高: %s/s (阈值: %s/s)\n",
 					formatBytes(server.State.NetOutSpeed), formatBytes(uint64(rule.Max)))
 			case ruleType == "net_all_speed":
-				allSpeed := server.State.NetInSpeed + server.State.NetOutSpeed
+				allSpeed := utils.Uint64SaturatingAdd(server.State.NetInSpeed, server.State.NetOutSpeed)
 				message += fmt.Sprintf("• 总网速过高: %s/s (阈值: %s/s)\n",
 					formatBytes(allSpeed), formatBytes(uint64(rule.Max)))
 			case ruleType == "load1":
@@ -1129,8 +1130,8 @@ func generateDetailedRecoveryMessage(alert *model.AlertRule, server *model.Serve
 	// 添加当前服务器状态信息
 	if server.State != nil && server.Host != nil {
 		// 计算百分比
-		memPercent := float64(server.State.MemUsed) * 100 / float64(server.Host.MemTotal)
-		diskPercent := float64(server.State.DiskUsed) * 100 / float64(server.Host.DiskTotal)
+		memPercent := safeUsagePercent(server.State.MemUsed, server.Host.MemTotal)
+		diskPercent := safeUsagePercent(server.State.DiskUsed, server.Host.DiskTotal)
 
 		message += fmt.Sprintf("• 当前状态: CPU %.2f%%, 内存 %.2f%%, 磁盘 %.2f%%\n",
 			server.State.CPU,
@@ -1139,6 +1140,13 @@ func generateDetailedRecoveryMessage(alert *model.AlertRule, server *model.Serve
 	}
 
 	return message
+}
+
+func safeUsagePercent(used, total uint64) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(used) * 100 / float64(total)
 }
 
 // checkTrafficThresholds 检查流量阈值并发送相应通知

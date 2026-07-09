@@ -90,3 +90,10 @@ func Uint64SubInt64(a uint64, b int64) uint64 {
 	}
 	return a - uint64(b)
 }
+
+func Uint64SaturatingAdd(a, b uint64) uint64 {
+	if ^uint64(0)-a < b {
+		return ^uint64(0)
+	}
+	return a + b
+}

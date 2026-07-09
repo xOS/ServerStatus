@@ -70,6 +70,20 @@ func cachedByteSize(bytes uint64) string {
 	return result
 }
 
+func trafficUsagePercent(used, max uint64) float64 {
+	if max == 0 {
+		return 0
+	}
+	return math.Round((float64(used)/float64(max))*10000) / 100
+}
+
+func monthlyTransferForServer(server *model.Server, currentMonthStart time.Time) uint64 {
+	if server == nil || server.LastActive.IsZero() || !server.LastActive.After(currentMonthStart) {
+		return 0
+	}
+	return utils.Uint64SaturatingAdd(server.CumulativeNetInTransfer, server.CumulativeNetOutTransfer)
+}
+
 type commonPage struct {
 	r            *gin.Engine
 	requestGroup singleflight.Group
@@ -724,16 +738,7 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 							}
 						}
 
-						usedPercent := float64(0)
-						if stats.Max > 0 {
-							usedPercent = (float64(transfer) / float64(stats.Max)) * 100
-							if usedPercent > 100 {
-								usedPercent = 100
-							}
-							if usedPercent < 0 {
-								usedPercent = 0
-							}
-						}
+						usedPercent := trafficUsagePercent(transfer, stats.Max)
 
 						trafficItem := map[string]interface{}{
 							"server_id":       serverID,
@@ -806,22 +811,10 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 			nextMonthStart := currentMonthStart.AddDate(0, 1, 0)
 
 			// 计算当月累积流量（模拟月度重置）
-			var monthlyTransfer uint64
-
-			// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
-			if !server.LastActive.IsZero() && server.LastActive.After(currentMonthStart) {
-				monthlyTransfer = server.CumulativeNetInTransfer + server.CumulativeNetOutTransfer
-			} else {
-				// 如果服务器在本月开始前就不活跃，或者没有记录，流量从0开始
-				monthlyTransfer = 0
-			}
+			monthlyTransfer := monthlyTransferForServer(server, currentMonthStart)
 
 			// 计算使用百分比
-			usedPercent := float64(0)
-			if defaultQuota > 0 {
-				usedPercent = (float64(monthlyTransfer) / float64(defaultQuota)) * 100
-				usedPercent = math.Max(0, math.Min(100, usedPercent))
-			}
+			usedPercent := trafficUsagePercent(monthlyTransfer, defaultQuota)
 
 			// 构建默认流量数据项，显示月度配额
 			trafficItem := map[string]interface{}{
@@ -1011,16 +1004,7 @@ func (cp *commonPage) home(c *gin.Context) {
 						}
 					}
 
-					usedPercent := float64(0)
-					if stats.Max > 0 {
-						usedPercent = (float64(transfer) / float64(stats.Max)) * 100
-						if usedPercent > 100 {
-							usedPercent = 100
-						}
-						if usedPercent < 0 {
-							usedPercent = 0
-						}
-					}
+					usedPercent := trafficUsagePercent(transfer, stats.Max)
 
 					trafficItem := map[string]interface{}{
 						"server_id":       serverID,
@@ -1073,22 +1057,10 @@ func (cp *commonPage) home(c *gin.Context) {
 				nextMonthStart := currentMonthStart.AddDate(0, 1, 0)
 
 				// 计算当月累积流量（模拟月度重置）
-				var monthlyTransfer uint64
-
-				// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
-				if !actualServer.LastActive.IsZero() && actualServer.LastActive.After(currentMonthStart) {
-					monthlyTransfer = actualServer.CumulativeNetInTransfer + actualServer.CumulativeNetOutTransfer
-				} else {
-					// 如果服务器在本月开始前就不活跃，或者没有记录，流量从0开始
-					monthlyTransfer = 0
-				}
+				monthlyTransfer := monthlyTransferForServer(actualServer, currentMonthStart)
 
 				// 计算使用百分比
-				usedPercent := float64(0)
-				if defaultQuota > 0 {
-					usedPercent = (float64(monthlyTransfer) / float64(defaultQuota)) * 100
-					usedPercent = math.Max(0, math.Min(100, usedPercent))
-				}
+				usedPercent := trafficUsagePercent(monthlyTransfer, defaultQuota)
 
 				// 构建默认流量数据项，显示月度配额
 				trafficItem := map[string]interface{}{
@@ -1344,16 +1316,7 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 							serverName = name
 						}
 					}
-					usedPercent := float64(0)
-					if stats.Max > 0 {
-						usedPercent = (float64(transfer) / float64(stats.Max)) * 100
-						if usedPercent > 100 {
-							usedPercent = 100
-						}
-						if usedPercent < 0 {
-							usedPercent = 0
-						}
-					}
+					usedPercent := trafficUsagePercent(transfer, stats.Max)
 					trafficItem := map[string]interface{}{
 						"server_id":       serverID,
 						"server_name":     serverName,
@@ -1400,22 +1363,10 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 				nextMonthStart := currentMonthStart.AddDate(0, 1, 0)
 
 				// 计算当月累积流量（模拟月度重置）
-				var monthlyTransfer uint64
-
-				// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
-				if !actualServer.LastActive.IsZero() && actualServer.LastActive.After(currentMonthStart) {
-					monthlyTransfer = actualServer.CumulativeNetInTransfer + actualServer.CumulativeNetOutTransfer
-				} else {
-					// 如果服务器在本月开始前就不活跃，或者没有记录，流量从0开始
-					monthlyTransfer = 0
-				}
+				monthlyTransfer := monthlyTransferForServer(actualServer, currentMonthStart)
 
 				// 计算使用百分比
-				usedPercent := float64(0)
-				if defaultQuota > 0 {
-					usedPercent = (float64(monthlyTransfer) / float64(defaultQuota)) * 100
-					usedPercent = math.Max(0, math.Min(100, usedPercent))
-				}
+				usedPercent := trafficUsagePercent(monthlyTransfer, defaultQuota)
 
 				// 构建默认流量数据项，显示月度配额
 				trafficItem := map[string]interface{}{
@@ -1526,16 +1477,7 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 							serverName = name
 						}
 					}
-					usedPercent := float64(0)
-					if stats.Max > 0 {
-						usedPercent = (float64(transfer) / float64(stats.Max)) * 100
-						if usedPercent > 100 {
-							usedPercent = 100
-						}
-						if usedPercent < 0 {
-							usedPercent = 0
-						}
-					}
+					usedPercent := trafficUsagePercent(transfer, stats.Max)
 					trafficItem := map[string]interface{}{
 						"server_id":       serverID,
 						"server_name":     serverName,
@@ -1565,22 +1507,10 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 		nextMonthStart := currentMonthStart.AddDate(0, 1, 0)
 
 		// 计算当月累积流量（模拟月度重置）
-		var monthlyTransfer uint64
-
-		// 如果服务器有最后活跃时间记录，且在当月内，使用累积流量
-		if !server.LastActive.IsZero() && server.LastActive.After(currentMonthStart) {
-			monthlyTransfer = server.CumulativeNetInTransfer + server.CumulativeNetOutTransfer
-		} else {
-			// 如果服务器在本月开始前就不活跃，或者没有记录，流量从0开始
-			monthlyTransfer = 0
-		}
+		monthlyTransfer := monthlyTransferForServer(server, currentMonthStart)
 
 		// 计算使用百分比
-		usedPercent := float64(0)
-		if defaultQuota > 0 {
-			usedPercent = (float64(monthlyTransfer) / float64(defaultQuota)) * 100
-			usedPercent = math.Max(0, math.Min(100, usedPercent))
-		}
+		usedPercent := trafficUsagePercent(monthlyTransfer, defaultQuota)
 
 		// 构建默认流量数据项，显示月度配额
 		trafficItem := map[string]interface{}{

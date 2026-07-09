@@ -16,10 +16,6 @@ const (
 	RuleCoverIgnoreAll
 )
 
-type NResult struct {
-	N uint64
-}
-
 type Rule struct {
 	// 指标类型，cpu、memory、swap、disk、net_in_speed、net_out_speed
 	// net_all_speed、transfer_in、transfer_out、transfer_all、offline
@@ -97,7 +93,7 @@ func percentage(used, total uint64) float64 {
 }
 
 // Snapshot 未通过规则返回 struct{}{}, 通过返回 nil
-func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, db *gorm.DB) interface{} {
+func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, _ *gorm.DB) interface{} {
 	// 安全检查：确保server不为nil
 	if server == nil {
 		return nil
@@ -151,13 +147,13 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 	case "net_out_speed":
 		src = float64(server.State.NetOutSpeed)
 	case "net_all_speed":
-		src = float64(server.State.NetInSpeed + server.State.NetOutSpeed)
+		src = float64(utils.Uint64SaturatingAdd(server.State.NetInSpeed, server.State.NetOutSpeed))
 	case "transfer_in":
 		src = float64(server.State.NetInTransfer)
 	case "transfer_out":
 		src = float64(server.State.NetOutTransfer)
 	case "transfer_all":
-		src = float64(server.State.NetOutTransfer + server.State.NetInTransfer)
+		src = float64(utils.Uint64SaturatingAdd(server.State.NetOutTransfer, server.State.NetInTransfer))
 	case "offline":
 		// 修复离线检测逻辑：区分"从未上线"和"曾经在线但现在离线"
 		if server.LastActive.IsZero() {
@@ -168,26 +164,11 @@ func (u *Rule) Snapshot(cycleTransferStats *CycleTransferStats, server *Server, 
 			src = float64(server.LastActive.Unix())
 		}
 	case "transfer_in_cycle":
-		src = float64(utils.Uint64SubInt64(server.State.NetInTransfer, server.PrevTransferInSnapshot))
-		if u.CycleInterval != 0 && db != nil {
-			var res NResult
-			db.Model(&Transfer{}).Select("SUM(`in`) AS n").Where("datetime(`created_at`) >= datetime(?) AND server_id = ?", u.GetTransferDurationStart().UTC(), server.ID).Scan(&res)
-			src += float64(res.N)
-		}
+		src = float64(server.State.NetInTransfer)
 	case "transfer_out_cycle":
-		src = float64(utils.Uint64SubInt64(server.State.NetOutTransfer, server.PrevTransferOutSnapshot))
-		if u.CycleInterval != 0 && db != nil {
-			var res NResult
-			db.Model(&Transfer{}).Select("SUM(`out`) AS n").Where("datetime(`created_at`) >= datetime(?) AND server_id = ?", u.GetTransferDurationStart().UTC(), server.ID).Scan(&res)
-			src += float64(res.N)
-		}
+		src = float64(server.State.NetOutTransfer)
 	case "transfer_all_cycle":
-		src = float64(utils.Uint64SubInt64(server.State.NetOutTransfer, server.PrevTransferOutSnapshot) + utils.Uint64SubInt64(server.State.NetInTransfer, server.PrevTransferInSnapshot))
-		if u.CycleInterval != 0 && db != nil {
-			var res NResult
-			db.Model(&Transfer{}).Select("SUM(`in`+`out`) AS n").Where("datetime(`created_at`) >= datetime(?) AND server_id = ?", u.GetTransferDurationStart().UTC(), server.ID).Scan(&res)
-			src += float64(res.N)
-		}
+		src = float64(utils.Uint64SaturatingAdd(server.State.NetOutTransfer, server.State.NetInTransfer))
 	case "load1":
 		src = server.State.Load1
 	case "load5":

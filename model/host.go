@@ -1,6 +1,8 @@
 package model
 
 import (
+	"math"
+
 	pb "github.com/xos/serverstatus/proto"
 )
 
@@ -70,12 +72,12 @@ func PB2State(s *pb.State) HostState {
 	for _, t := range s.GetTemperatures() {
 		ts = append(ts, SensorTemperature{
 			Name:        t.GetName(),
-			Temperature: t.GetTemperature(),
+			Temperature: cleanNonNegativeFloat(t.GetTemperature()),
 		})
 	}
 
 	return HostState{
-		CPU:            s.GetCpu(),
+		CPU:            cleanPercent(s.GetCpu()),
 		MemUsed:        s.GetMemUsed(),
 		SwapUsed:       s.GetSwapUsed(),
 		DiskUsed:       s.GetDiskUsed(),
@@ -84,15 +86,32 @@ func PB2State(s *pb.State) HostState {
 		NetInSpeed:     s.GetNetInSpeed(),
 		NetOutSpeed:    s.GetNetOutSpeed(),
 		Uptime:         s.GetUptime(),
-		Load1:          s.GetLoad1(),
-		Load5:          s.GetLoad5(),
-		Load15:         s.GetLoad15(),
+		Load1:          cleanNonNegativeFloat(s.GetLoad1()),
+		Load5:          cleanNonNegativeFloat(s.GetLoad5()),
+		Load15:         cleanNonNegativeFloat(s.GetLoad15()),
 		TcpConnCount:   s.GetTcpConnCount(),
 		UdpConnCount:   s.GetUdpConnCount(),
 		ProcessCount:   s.GetProcessCount(),
 		Temperatures:   ts,
-		GPU:            s.GetGpu(),
+		GPU:            cleanPercent(s.GetGpu()),
 	}
+}
+
+func cleanPercent(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
+}
+
+func cleanNonNegativeFloat(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return 0
+	}
+	return value
 }
 
 type Host struct {

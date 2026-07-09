@@ -56,3 +56,12 @@ func TestGenerGenerateRandomString(t *testing.T) {
 		generatedString[str] = true
 	}
 }
+
+func TestUint64SaturatingAdd(t *testing.T) {
+	if got := Uint64SaturatingAdd(10, 20); got != 30 {
+		t.Fatalf("Uint64SaturatingAdd(10, 20) = %d, want 30", got)
+	}
+	if got := Uint64SaturatingAdd(^uint64(0), 1); got != ^uint64(0) {
+		t.Fatalf("Uint64SaturatingAdd(max, 1) = %d, want max", got)
+	}
+}
