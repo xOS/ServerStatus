@@ -1117,7 +1117,9 @@ function confirmAction(options: ConfirmActionOptions): Promise<boolean> {
     <div class="admin-dialog-body is-small">
       <header>
         <h2 style="display: flex; align-items: center; gap: 8px;">
-          ${icon(options.danger ? 'alert' : 'info', 'admin-button-svg')}
+          <span style="display: flex; color: ${options.danger ? 'var(--danger-color, #ef4444)' : 'var(--primary-color, #3b82f6)'};">
+            ${icon(options.danger ? 'alert' : 'info', 'admin-button-svg')}
+          </span>
           ${escapeHtml(options.title)}
         </h2>
         <button type="button" class="admin-dialog-close" data-dialog-cancel>×</button>
@@ -1126,8 +1128,8 @@ function confirmAction(options: ConfirmActionOptions): Promise<boolean> {
         <p class="admin-confirm-message" style="font-size: 14px; color: rgba(0, 0, 0, 0.72); font-weight: 500;">${escapeHtml(options.message)}</p>
       </div>
       <footer>
-        <button class="admin-button is-ghost" type="button" data-dialog-cancel data-form-action="cancel"><span>取消</span></button>
-        <button class="admin-button" type="button" data-confirm-action data-form-action="${options.danger ? 'danger' : 'confirm'}" style="background: ${options.danger ? 'var(--danger-color, #ef4444)' : 'var(--primary-color, #3b82f6)'}; color: #fff; border: none; box-shadow: 0 4px 12px ${options.danger ? 'rgba(239, 68, 68, 0.3)' : 'rgba(59, 130, 246, 0.3)'};">
+        <button class="admin-button is-ghost" type="button" data-dialog-cancel data-form-action="cancel">${icon('cancel', 'admin-button-svg')}<span>取消</span></button>
+        <button class="admin-button is-ghost" type="button" data-confirm-action data-form-action="${options.danger ? 'danger' : 'confirm'}">
           ${icon(options.danger ? 'trash' : 'play', 'admin-button-svg')}<span>${escapeHtml(options.confirmLabel)}</span>
         </button>
       </footer>
