@@ -13,7 +13,7 @@ AGENT_SERVICE="/etc/systemd/system/server-agent.service"
 AGENT_CONFIG="${AGENT_PATH}/config.yml"
 AGENT_OPENRC_SERVICE="/etc/init.d/server-agent"
 AGENT_LAUNCHD_SERVICE="$HOME/Library/LaunchAgents/com.serverstatus.agent.plist"
-VERSION="v0.2.9"
+VERSION="v0.3.0"
 
 red='\033[0;31m'
 green='\033[0;32m'

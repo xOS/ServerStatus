@@ -112,9 +112,13 @@ ipReportPeriod: 1800
 # 设置为 true 将优先使用 IPv6 地址进行地理位置查询
 useIPv6CountryCode: false
 
-# 使用 Gitee 更新 - 是否强制从 Gitee 获取更新
-# 设置为 true 将从 Gitee 而不是 GitHub 获取更新（适用于中国大陆用户）
-useGiteeToUpgrade: false
+# 使用 R2 更新 - 是否强制从 Cloudflare R2 获取更新
+# 设置为 true 将从指定的 R2 节点获取更新（适用于中国大陆用户）
+useR2ToUpgrade: false
+
+# R2 更新源地址
+# 默认为我们提供的公共 R2 节点
+r2UpdateURL: "https://assets.cnic.eu.org/serveragent"
 
 # ==================== 配置说明 ====================
 
