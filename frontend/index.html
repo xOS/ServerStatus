@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <link rel="preconnect" href="https://s4.zstatic.net" crossorigin>
     <link href="https://s4.zstatic.net/ajax/libs/font-logos/1.3.0/font-logos.min.css" rel="stylesheet" media="print" onload="this.media='all'">
     <link href="https://s4.zstatic.net/ajax/libs/flag-icons/7.5.0/css/flag-icons.min.css" rel="stylesheet" media="print" onload="this.media='all'">
@@ -16,16 +19,18 @@
         var key = 'serverstatus:asset-retry'
         var retried = false
         function hasRetried() {
+          if (retried) return true
           try {
-            return retried || sessionStorage.getItem(key) === '1'
+            var last = parseInt(sessionStorage.getItem(key), 10)
+            return !isNaN(last) && (Date.now() - last < 5000)
           } catch (e) {
-            return retried
+            return false
           }
         }
         function markRetried() {
           retried = true
           try {
-            sessionStorage.setItem(key, '1')
+            sessionStorage.setItem(key, String(Date.now()))
           } catch (e) {}
         }
         function clearRetried() {
