@@ -136,7 +136,7 @@ jobs:
       - name: Trigger R2 release sync
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run sync-release.yml -f tag="${GITHUB_REF_NAME}"
+        run: gh workflow run sync-release.yml -f tag="${GITHUB_REF_NAME}" -R ${{ github.repository }}
 
 
   release-docker:
