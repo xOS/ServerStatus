@@ -1,4 +1,4 @@
-name: Sync Release to Gitee
+name: Sync Release to R2
 
 on:
   workflow_dispatch:
@@ -12,48 +12,42 @@ permissions:
   contents: read
 
 concurrency:
-  group: sync-gitee-release
+  group: sync-r2-release
   cancel-in-progress: false
 
 jobs:
-  sync-release-to-gitee:
+  sync-release-to-r2:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    env:
-      GITHUB_TOKEN: ${{ github.token }}
-      GITHUB_REPO: xOS/ServerStatus
-      GITHUB_RELEASE_TAG: ${{ inputs.tag }}
-      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-      GITEE_OWNER: Ten
-      GITEE_REPO: ServerStatus
-      GITEE_TARGET: master
-      GITEE_UPLOAD_READ_TIMEOUT: "120"
-      GITEE_UPLOAD_ATTEMPTS: "1"
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install sync dependency
-        run: python3 -m pip install --disable-pip-version-check --retries 5 --timeout 120 requests
-
-      - name: Test sync logic
-        run: python3 .github/workflows/sync_test.py
-
-      - name: Sync release assets
+      - name: Download Release Assets
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          for pass in 1 2 3; do
-            echo "Gitee synchronization pass ${pass}/3"
-            if python3 .github/workflows/sync.py; then
-              exit 0
-            fi
-            if [ "${pass}" -lt 3 ]; then
-              delay=$((pass * 30))
-              echo "Pass ${pass} incomplete; retrying missing assets in ${delay}s."
-              sleep "${delay}"
-            fi
-          done
-          echo "Gitee synchronization remains incomplete after 3 resumable passes."
-          exit 1
+          if [ -n "${{ inputs.tag }}" ]; then
+            gh release download "${{ inputs.tag }}" --repo ${{ github.repository }} --dir assets
+          else
+            gh release download --repo ${{ github.repository }} --dir assets
+          fi
+
+      - name: Sync to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --repo ${{ github.repository }} --json tagName -q .tagName)
+          fi
+          
+          mkdir -p upload_dir/$TAG
+          cp assets/checksums.txt upload_dir/$TAG/ 2>/dev/null || true
+          find assets -type f -name '*.zip' -exec cp {} upload_dir/$TAG/ \;
+          echo "{\"tag_name\":\"$TAG\"}" > upload_dir/index.json
+          
+          aws s3 sync upload_dir/ s3://${R2_BUCKET}/serverstatus/ \
+            --delete \
+            --endpoint-url https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
