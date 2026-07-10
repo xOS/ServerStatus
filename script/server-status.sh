@@ -1342,7 +1342,7 @@ update_dashboard() {
 
     local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serverstatus/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
     if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "${R2_URL:-https://assets.cnic.eu.org}/serverstatus/index.json" | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
+        version=$(curl -m 10 -sL "${R2_URL:-https://assets.cnic.eu.org}/serverdash/index.json" | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
     fi
 
     if [ ! -n "$version" ]; then
