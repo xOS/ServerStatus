@@ -25,9 +25,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ -n "${{ inputs.tag }}" ]; then
-            gh release download "${{ inputs.tag }}" --repo ${{ github.repository }} --dir assets
+            gh release download "${{ inputs.tag }}" --repo ${{ github.repository }} --dir assets --pattern '*'
           else
-            gh release download --repo ${{ github.repository }} --dir assets
+            gh release download --repo ${{ github.repository }} --dir assets --pattern '*'
           fi
 
       - name: Sync to Cloudflare R2
