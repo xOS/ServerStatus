@@ -37,6 +37,7 @@ jobs:
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ inputs.tag }}"
           if [ -z "$TAG" ]; then
