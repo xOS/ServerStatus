@@ -6,6 +6,11 @@ on:
     tags:
       - "v*"
 
+permissions:
+  actions: write
+  contents: write
+  packages: write
+
 jobs:
   build:
     strategy:
@@ -105,18 +110,33 @@ jobs:
       - name: Archive and compress binaries
         run: |
           find assets/*/*/* -type f | while read -r file; do
-            chmod +x $file
+            chmod +x "$file"
             dir=$(dirname "$file")
             filename=$(basename "$file")
             fileWithoutExt="${filename%.*}"
             zip -jr "$dir/$fileWithoutExt.zip" "$file"
           done
 
+      - name: Generate checksums
+        run: |
+          : > checksums.txt
+          while IFS= read -r -d '' file; do
+            checksum=$(sha256sum "$file" | awk '{print $1}')
+            printf '%s  %s\n' "$checksum" "$(basename "$file")" >> checksums.txt
+          done < <(find assets -type f -name '*.zip' -print0 | sort -z)
+          test -s checksums.txt
+          cat checksums.txt
+
       - name: Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "assets/server-dash-*/*/*.zip"
+          artifacts: "checksums.txt,assets/server-dash-*/*/*.zip"
           generateReleaseNotes: true
+
+      - name: Trigger Gitee release sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run sync-release.yml -f tag="${GITHUB_REF_NAME}"
 
 
   release-docker:
@@ -217,10 +237,3 @@ jobs:
             org.opencontainers.image.created=${{ steps.date.outputs.date }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=MIT
-      - name: Trigger sync
-        env:
-          GH_REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ github.token }}
-          GH_DEBUG: api
-        run: |
-          gh workflow run sync-release.yml
