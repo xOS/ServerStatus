@@ -2430,7 +2430,8 @@ i.fl-tux {
 }
 
 .admin-dialog {
-  width: min(760px, calc(100vw - 28px));
+  width: fit-content;
+  max-width: calc(100vw - 28px);
   max-height: calc(100vh - 48px);
   padding: 0;
   border: 1px solid var(--glass-border);
@@ -2447,13 +2448,16 @@ i.fl-tux {
 }
 
 .admin-dialog-body {
+  width: min(760px, calc(100vw - 28px));
   display: grid;
-  gap: 12px;
+  gap: 16px;
   padding: 14px;
 }
 
 .admin-dialog-body.is-small {
-  width: min(420px, calc(100vw - 28px));
+  width: fit-content;
+  min-width: 340px;
+  max-width: min(480px, calc(100vw - 28px));
 }
 
 .admin-dialog-body header,
