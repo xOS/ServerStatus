@@ -13,7 +13,7 @@ AGENT_SERVICE="/etc/systemd/system/server-agent.service"
 AGENT_CONFIG="${AGENT_PATH}/config.yml"
 AGENT_OPENRC_SERVICE="/etc/init.d/server-agent"
 AGENT_LAUNCHD_SERVICE="$HOME/Library/LaunchAgents/com.serverstatus.agent.plist"
-VERSION="v0.3.0"
+VERSION="v0.3.1"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -138,17 +138,25 @@ download_release_archive() {
     local fallback_url="$2"
     local output_file="$3"
 
-    if wget -t 2 -T 60 -O "$output_file" "$primary_url" >/dev/null 2>&1; then
+    local wget_log="/tmp/wget_error_$$.log"
+    if wget -t 2 -T 60 -O "$output_file" "$primary_url" >/dev/null 2>"$wget_log"; then
+        rm -f "$wget_log"
         return 0
     fi
 
     rm -f "$output_file"
     if [ -n "$fallback_url" ] && [ "$fallback_url" != "$primary_url" ]; then
-        echo -e "${yellow}中国镜像缺少文件或暂时不可用，正在回退 GitHub 下载...${plain}"
+        echo -e "${yellow}首选节点下载失败，正在回退备用下载...${plain}"
+        echo -e "${yellow}失败详情：请求 URL [ $primary_url ] 发生错误：${plain}"
+        cat "$wget_log" | grep -v '已发出' | sed 's/^/  /'
+        rm -f "$wget_log"
+
         if wget -t 2 -T 60 -O "$output_file" "$fallback_url" >/dev/null 2>&1; then
             return 0
         fi
         rm -f "$output_file"
+    else
+        rm -f "$wget_log"
     fi
 
     return 1
@@ -461,7 +469,7 @@ install_agent() {
             AGENT_URL="https://${GITHUB_URL}/xos/serveragent/releases/download/${version}/server-agent_darwin_${os_arch}.zip"
             AGENT_FALLBACK_URL=""
         else
-            AGENT_URL="https://${GITHUB_URL}/Ten/ServerAgent/releases/download/${version}/server-agent_darwin_${os_arch}.zip"
+            AGENT_URL="https://${GITHUB_URL}/serveragent/${version}/server-agent_darwin_${os_arch}.zip"
             AGENT_FALLBACK_URL="https://github.com/xos/serveragent/releases/download/${version}/server-agent_darwin_${os_arch}.zip"
         fi
         AGENT_ZIP="server-agent_darwin_${os_arch}.zip"
@@ -470,7 +478,7 @@ install_agent() {
             AGENT_URL="https://${GITHUB_URL}/xos/serveragent/releases/download/${version}/server-agent_linux_${os_arch}.zip"
             AGENT_FALLBACK_URL=""
         else
-            AGENT_URL="https://${GITHUB_URL}/Ten/ServerAgent/releases/download/${version}/server-agent_linux_${os_arch}.zip"
+            AGENT_URL="https://${GITHUB_URL}/serveragent/${version}/server-agent_linux_${os_arch}.zip"
             AGENT_FALLBACK_URL="https://github.com/xos/serveragent/releases/download/${version}/server-agent_linux_${os_arch}.zip"
         fi
         AGENT_ZIP="server-agent_linux_${os_arch}.zip"
@@ -635,7 +643,7 @@ update_agent() {
             AGENT_URL="https://${GITHUB_URL}/xos/serveragent/releases/download/${version}/server-agent_darwin_${os_arch}.zip"
             AGENT_FALLBACK_URL=""
         else
-            AGENT_URL="https://${GITHUB_URL}/Ten/ServerAgent/releases/download/${version}/server-agent_darwin_${os_arch}.zip"
+            AGENT_URL="https://${GITHUB_URL}/serveragent/${version}/server-agent_darwin_${os_arch}.zip"
             AGENT_FALLBACK_URL="https://github.com/xos/serveragent/releases/download/${version}/server-agent_darwin_${os_arch}.zip"
         fi
         AGENT_ZIP="server-agent_darwin_${os_arch}.zip"
@@ -644,7 +652,7 @@ update_agent() {
             AGENT_URL="https://${GITHUB_URL}/xos/serveragent/releases/download/${version}/server-agent_linux_${os_arch}.zip"
             AGENT_FALLBACK_URL=""
         else
-            AGENT_URL="https://${GITHUB_URL}/Ten/ServerAgent/releases/download/${version}/server-agent_linux_${os_arch}.zip"
+            AGENT_URL="https://${GITHUB_URL}/serveragent/${version}/server-agent_linux_${os_arch}.zip"
             AGENT_FALLBACK_URL="https://github.com/xos/serveragent/releases/download/${version}/server-agent_linux_${os_arch}.zip"
         fi
         AGENT_ZIP="server-agent_linux_${os_arch}.zip"
@@ -1362,7 +1370,7 @@ update_dashboard() {
         DASHBOARD_URL="https://${GITHUB_URL}/xos/serverstatus/releases/download/${version}/server-dash-linux-${os_arch}.zip"
         DASHBOARD_FALLBACK_URL=""
     else
-        DASHBOARD_URL="https://${GITHUB_URL}/ten/ServerStatus/releases/download/${version}/server-dash-linux-${os_arch}.zip"
+        DASHBOARD_URL="https://${GITHUB_URL}/serverdash/${version}/server-dash-linux-${os_arch}.zip"
         DASHBOARD_FALLBACK_URL="https://github.com/xos/serverstatus/releases/download/${version}/server-dash-linux-${os_arch}.zip"
     fi
     echo -e "正在下载探针面板"
