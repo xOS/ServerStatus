@@ -133,10 +133,23 @@ jobs:
           artifacts: "checksums.txt,assets/server-dash-*/*/*.zip"
           generateReleaseNotes: true
 
-      - name: Trigger Gitee release sync
+      - name: Sync to Cloudflare R2
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run sync-release.yml -f tag="${GITHUB_REF_NAME}"
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          mkdir -p upload_dir/${GITHUB_REF_NAME}
+          cp checksums.txt upload_dir/${GITHUB_REF_NAME}/
+          find assets -type f -name '*.zip' -exec cp {} upload_dir/${GITHUB_REF_NAME}/ \;
+          echo "{\"tag_name\":\"${GITHUB_REF_NAME}\"}" > upload_dir/index.json
+          
+          # Sync to R2, deleting old versions to keep only the latest
+          aws s3 sync upload_dir/ s3://${R2_BUCKET}/serverstatus/ \
+            --delete \
+            --endpoint-url https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
 
 
   release-docker:

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/libdns/cloudflare"
-	tencentcloud "github.com/nezhahq/libdns-tencentcloud"
+	tencentcloud "github.com/xos/serverstatus/pkg/ddns/tencentcloud"
 	"gorm.io/gorm"
 
 	"github.com/xos/serverstatus/db"

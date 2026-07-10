@@ -263,8 +263,8 @@ pre_check() {
         GITHUB_RELEASE_URL="github.com/xos/serveragent/releases/latest/download"
     else
         GITHUB_RAW_URL="gitee.com/ten/ServerStatus/raw/master"
-        GITHUB_URL="gitee.com"
-        GITHUB_RELEASE_URL="gitee.com/ten/ServerAgent/releases/latest/download"
+        GITHUB_URL="${R2_URL_NO_PROTO:-assets.cnic.eu.org}"
+        GITHUB_RELEASE_URL="${R2_URL_NO_PROTO:-assets.cnic.eu.org}/serveragent/latest"
     fi
 }
 
@@ -418,7 +418,7 @@ install_agent() {
 
     local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serveragent/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
     if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "https://gitee.com/api/v5/repos/Ten/ServerAgent/releases/latest" | awk -F '"' '{for(i=1;i<=NF;i++){if($i=="tag_name"){print $(i+2)}}}')
+        version=$(curl -m 10 -sL "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
     fi
 
     if [ ! -n "$version" ]; then
@@ -591,7 +591,7 @@ update_agent() {
 
     local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serveragent/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
 	if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "https://gitee.com/api/v5/repos/Ten/ServerAgent/releases/latest" | awk -F '"' '{for(i=1;i<=NF;i++){if($i=="tag_name"){print $(i+2)}}}')
+        version=$(curl -m 10 -sL "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
     fi
 
     if [ ! -n "$version" ]; then
@@ -1050,8 +1050,8 @@ modify_agent_config() {
             update_config_value "useIPv6CountryCode" "true" ${AGENT_CONFIG}
         fi
         # 处理use-gitee-to-upgrade参数
-        if [[ "$*" == *"--use-gitee-to-upgrade"* ]]; then
-            update_config_value "useGiteeToUpgrade" "true" ${AGENT_CONFIG}
+        if [[ "$*" == *"--use-r2-to-upgrade"* ]]; then
+            update_config_value "useR2ToUpgrade" "true" ${AGENT_CONFIG}
         fi
         # 处理report-delay参数
         if [[ "$*" =~ --report-delay[[:space:]]+([0-9]+) ]]; then
@@ -1342,7 +1342,7 @@ update_dashboard() {
 
     local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serverstatus/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
     if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "https://gitee.com/api/v5/repos/ten/ServerStatus/releases/latest" | awk -F '"' '{for(i=1;i<=NF;i++){if($i=="tag_name"){print $(i+2)}}}')
+        version=$(curl -m 10 -sL "${R2_URL:-https://assets.cnic.eu.org}/serverstatus/index.json" | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
     fi
 
     if [ ! -n "$version" ]; then

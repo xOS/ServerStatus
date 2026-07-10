@@ -19,7 +19,6 @@ require (
 	github.com/libdns/cloudflare v0.2.1
 	github.com/libdns/libdns v1.0.0
 	github.com/miekg/dns v1.1.65
-	github.com/nezhahq/libdns-tencentcloud v0.0.0-20250501081622-bd293105845a
 	github.com/ory/graceful v0.1.3
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/patrickmn/go-cache v2.1.0+incompatible
@@ -91,7 +90,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
-	github.com/tidwall/sjson v1.2.5 // indirect
+	github.com/tidwall/sjson v1.2.5
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	golang.org/x/arch v0.16.0 // indirect
