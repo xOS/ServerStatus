@@ -48,8 +48,8 @@ type Provider struct {
 	ServerName string // 服务器名称 (导出)
 	ServerID   uint64 // 服务器ID (导出)
 
-	DDNSProfile       *model.DDNSProfile
-	NotifyChangeFunc  NotifyDDNSChangeFunc // 通知回调函数
+	DDNSProfile      *model.DDNSProfile
+	NotifyChangeFunc NotifyDDNSChangeFunc // 通知回调函数
 }
 
 func (provider *Provider) SetRecords(ctx context.Context, zone string,
@@ -200,22 +200,11 @@ func recordToIPType(record string) string {
 }
 
 // sendDDNSChangeNotification 发送DDNS记录变更通知
-func (provider *Provider) sendDDNSChangeNotification() {
-	if provider.DDNSProfile == nil || provider.ServerID == 0 || provider.ServerName == "" || provider.NotifyChangeFunc == nil {
-		return // 缺少必要信息，无法发送通知
-	}
 
-	// 调用通知回调函数
-	oldIP := "" // 无法获取旧IP，传空字符串
-	provider.NotifyChangeFunc(
-		provider.ServerName,
-		provider.ServerID,
-		provider.domain,
-		provider.recordType,
-		oldIP,
-		provider.ipAddr,
-	)
-}
+// 缺少必要信息，无法发送通知
+
+// 调用通知回调函数
+// 无法获取旧IP，传空字符串
 
 // SendTestNotification 发送测试通知（仅用于测试）
 func (provider *Provider) SendTestNotification(testDomain, testRecordType, testOldIP, testNewIP string) {

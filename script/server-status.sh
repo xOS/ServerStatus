@@ -268,11 +268,9 @@ pre_check() {
     if [ -z "$CN" ]; then
         GITHUB_RAW_URL="raw.githubusercontent.com/xos/serverstatus/master"
         GITHUB_URL="github.com"
-        GITHUB_RELEASE_URL="github.com/xos/serveragent/releases/latest/download"
     else
         GITHUB_RAW_URL="gitee.com/ten/ServerStatus/raw/master"
         GITHUB_URL="${R2_URL_NO_PROTO:-assets.cnic.eu.org}"
-        GITHUB_RELEASE_URL="${R2_URL_NO_PROTO:-assets.cnic.eu.org}/serveragent/latest"
     fi
 }
 
@@ -1057,7 +1055,7 @@ modify_agent_config() {
         if [[ "$*" == *"--use-ipv6-country-code"* ]]; then
             update_config_value "useIPv6CountryCode" "true" ${AGENT_CONFIG}
         fi
-        # 处理use-gitee-to-upgrade参数
+        # 处理 R2 更新参数
         if [[ "$*" == *"--use-r2-to-upgrade"* ]]; then
             update_config_value "useR2ToUpgrade" "true" ${AGENT_CONFIG}
         fi

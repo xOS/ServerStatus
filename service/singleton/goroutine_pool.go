@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"sync"
 	"time"
-	
+
 	"github.com/xos/serverstatus/model"
 )
 
@@ -25,7 +25,7 @@ type GoroutinePool struct {
 var (
 	// 全局通知Goroutine池
 	NotificationPool *GoroutinePool
-	// 全局任务触发Goroutine池  
+	// 全局任务触发Goroutine池
 	TriggerTaskPool *GoroutinePool
 	poolInitOnce    sync.Once
 )
@@ -36,11 +36,11 @@ func InitGoroutinePools() {
 		// 通知池：最多20个worker，队列大小1000
 		NotificationPool = NewGoroutinePool(5, 20, 1000)
 		NotificationPool.Start()
-		
+
 		// 任务触发池：最多10个worker，队列大小500
 		TriggerTaskPool = NewGoroutinePool(2, 10, 500)
 		TriggerTaskPool.Start()
-		
+
 		log.Printf("Goroutine池初始化完成 - 通知池: 5-20 workers, 任务池: 2-10 workers")
 	})
 }
@@ -64,7 +64,7 @@ func (p *GoroutinePool) Start() {
 	for i := int64(0); i < p.minWorkers; i++ {
 		p.startWorker()
 	}
-	
+
 	// 启动监控goroutine，定期检查池状态
 	go p.monitor()
 }
@@ -78,7 +78,7 @@ func (p *GoroutinePool) Submit(task func()) bool {
 		queueLen := len(p.queue)
 		workers := p.workers
 		p.mu.RUnlock()
-		
+
 		// 如果队列积压且worker数量未达到最大值，增加worker
 		if queueLen > int(workers*2) && workers < p.maxWorkers {
 			p.startWorker()
@@ -99,7 +99,7 @@ func (p *GoroutinePool) startWorker() {
 	p.workers++
 	currentWorkers := p.workers
 	p.mu.Unlock()
-	
+
 	p.wg.Add(1)
 	go func() {
 		defer func() {
@@ -107,20 +107,20 @@ func (p *GoroutinePool) startWorker() {
 			p.mu.Lock()
 			p.workers--
 			p.mu.Unlock()
-			
+
 			if r := recover(); r != nil {
 				log.Printf("Goroutine池worker panic恢复: %v", r)
 			}
 		}()
-		
+
 		idleTimer := time.NewTimer(time.Minute * 5) // 空闲5分钟后退出
 		defer idleTimer.Stop()
-		
+
 		for {
 			select {
 			case task := <-p.queue:
 				idleTimer.Reset(time.Minute * 5)
-				
+
 				// 执行任务
 				func() {
 					defer func() {
@@ -130,25 +130,25 @@ func (p *GoroutinePool) startWorker() {
 					}()
 					task()
 				}()
-				
+
 			case <-idleTimer.C:
 				// 空闲超时，如果当前worker数量大于最小值，则退出
 				p.mu.RLock()
 				canExit := p.workers > p.minWorkers
 				p.mu.RUnlock()
-				
+
 				if canExit {
 					log.Printf("Goroutine池worker空闲退出，当前workers: %d", currentWorkers-1)
 					return
 				}
 				idleTimer.Reset(time.Minute * 5)
-				
+
 			case <-p.ctx.Done():
 				return
 			}
 		}
 	}()
-	
+
 	log.Printf("Goroutine池启动新worker，当前workers: %d", currentWorkers)
 }
 
@@ -156,7 +156,7 @@ func (p *GoroutinePool) startWorker() {
 func (p *GoroutinePool) monitor() {
 	ticker := time.NewTicker(time.Minute * 2)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ticker.C:
@@ -164,19 +164,19 @@ func (p *GoroutinePool) monitor() {
 			workers := p.workers
 			queueLen := len(p.queue)
 			p.mu.RUnlock()
-			
+
 			// 记录状态
 			if queueLen > 10 || workers > p.minWorkers {
-				log.Printf("Goroutine池状态 - Workers: %d, 队列长度: %d, Goroutines总数: %d", 
+				log.Printf("Goroutine池状态 - Workers: %d, 队列长度: %d, Goroutines总数: %d",
 					workers, queueLen, runtime.NumGoroutine())
 			}
-			
+
 			// 内存压力过高时，强制减少worker
 			if GetMemoryPressureLevel() >= 2 && workers > p.minWorkers {
 				log.Printf("内存压力过高，减少Goroutine池worker数量")
 				// 通过缩小队列容量来自然减少worker
 			}
-			
+
 		case <-p.ctx.Done():
 			return
 		}
@@ -203,11 +203,11 @@ func SafeSendNotification(notificationTag string, desc string, muteLabel *string
 	if NotificationPool == nil {
 		InitGoroutinePools()
 	}
-	
+
 	task := func() {
 		SendNotification(notificationTag, desc, muteLabel, ext...)
 	}
-	
+
 	if !NotificationPool.Submit(task) {
 		log.Printf("警告：无法提交通知任务到池中，直接执行")
 		// 如果池满了，直接执行但不创建新goroutine
@@ -220,11 +220,11 @@ func SafeSendTriggerTasks(taskIDs []uint64, triggerServer uint64) {
 	if TriggerTaskPool == nil {
 		InitGoroutinePools()
 	}
-	
+
 	task := func() {
 		SendTriggerTasks(taskIDs, triggerServer)
 	}
-	
+
 	if !TriggerTaskPool.Submit(task) {
 		log.Printf("警告：无法提交触发任务到池中，直接执行")
 		// 如果池满了，直接执行但不创建新goroutine
@@ -247,7 +247,7 @@ func CleanupGoroutinePools() {
 func (p *GoroutinePool) Clear() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	// 清空队列中的等待任务
 	cleared := 0
 	for {
@@ -258,7 +258,7 @@ func (p *GoroutinePool) Clear() {
 			goto done
 		}
 	}
-	done:
+done:
 	if cleared > 0 {
 		log.Printf("Goroutine池强制清理了 %d 个等待任务", cleared)
 	}
@@ -269,21 +269,21 @@ func (p *GoroutinePool) ForceReduceWorkers(targetWorkers int64) {
 	p.mu.RLock()
 	current := p.workers
 	p.mu.RUnlock()
-	
+
 	if current <= targetWorkers {
 		return
 	}
-	
+
 	// 通过取消context来强制部分worker退出
 	log.Printf("强制减少Goroutine池worker从 %d 到 %d", current, targetWorkers)
-	
+
 	// 创建新的context来重置池
 	p.mu.Lock()
 	p.cancel() // 停止当前所有worker
 	p.ctx, p.cancel = context.WithCancel(context.Background())
 	p.workers = 0 // 重置worker计数
 	p.mu.Unlock()
-	
+
 	// 启动最小数量的worker
 	for i := int64(0); i < p.minWorkers && i < targetWorkers; i++ {
 		p.startWorker()

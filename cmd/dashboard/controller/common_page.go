@@ -8,19 +8,17 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
-	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
-	"code.cloudfoundry.org/bytefmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/go-uuid"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/xos/serverstatus/db"
 	"github.com/xos/serverstatus/model"
 	"github.com/xos/serverstatus/pkg/mygin"
 	"github.com/xos/serverstatus/pkg/utils"
@@ -52,7 +50,7 @@ func cachedByteSize(bytes uint64) string {
 	byteFmtMutex.RUnlock()
 
 	// 计算格式化结果
-	result := bytefmt.ByteSize(bytes)
+	result := formatByteSize(bytes)
 
 	// 写锁更新缓存（限制缓存大小避免内存泄漏）
 	byteFmtMutex.Lock()
@@ -67,6 +65,21 @@ func cachedByteSize(bytes uint64) string {
 	byteFmtMutex.Unlock()
 
 	return result
+}
+
+func formatByteSize(size uint64) string {
+	if size == 0 {
+		return "0 B"
+	}
+	units := [...]string{"B", "K", "M", "G", "T", "P", "E"}
+	value := float64(size)
+	unit := 0
+	for value >= 1024 && unit < len(units)-1 {
+		value /= 1024
+		unit++
+	}
+	formatted := strconv.FormatFloat(value, 'f', 1, 64)
+	return strings.TrimSuffix(formatted, ".0") + units[unit]
 }
 
 func monthlyTransferForServer(server *model.Server, currentMonthStart time.Time) uint64 {
@@ -132,422 +145,10 @@ func (p *commonPage) issueViewPassword(c *gin.Context) {
 
 func (p *commonPage) service(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/")
-	return
-
-	res, _, _ := p.requestGroup.Do("servicePage", func() (interface{}, error) {
-		// 使用深拷贝确保并发安全
-		singleton.AlertsLock.RLock()
-		var stats map[uint64]model.ServiceItemResponse
-		var statsStore map[uint64]model.CycleTransferStats
-
-		// 安全获取ServiceSentinel的统计数据
-		originalStats := singleton.ServiceSentinelShared.LoadStats()
-		if originalStats != nil {
-			stats = make(map[uint64]model.ServiceItemResponse)
-			for k, v := range originalStats {
-				if v != nil {
-					// 深拷贝每个ServiceItemResponse
-					statsCopy := model.ServiceItemResponse{}
-					// 手动深拷贝字段，避免使用 copier 包
-					statsCopy.Monitor = v.Monitor // Monitor 为指针，可以共享
-					statsCopy.CurrentUp = v.CurrentUp
-					statsCopy.CurrentDown = v.CurrentDown
-					statsCopy.TotalUp = v.TotalUp
-					statsCopy.TotalDown = v.TotalDown
-
-					// 深拷贝数组
-					if v.Delay != nil {
-						delayArray := *v.Delay
-						statsCopy.Delay = &delayArray
-					}
-					if v.Up != nil {
-						upArray := *v.Up
-						statsCopy.Up = &upArray
-					}
-					if v.Down != nil {
-						downArray := *v.Down
-						statsCopy.Down = &downArray
-					}
-
-					stats[k] = statsCopy
-				}
-			}
-		}
-
-		// 深拷贝AlertsCycleTransferStatsStore
-		if singleton.AlertsCycleTransferStatsStore != nil {
-			statsStore = make(map[uint64]model.CycleTransferStats)
-			for cycleID, statData := range singleton.AlertsCycleTransferStatsStore {
-				// 深拷贝每个CycleTransferStats
-				newStats := model.CycleTransferStats{
-					Name: statData.Name,
-					Max:  statData.Max,
-				}
-
-				// 深拷贝Transfer map
-				if statData.Transfer != nil {
-					newStats.Transfer = make(map[uint64]uint64)
-					for serverID, transfer := range statData.Transfer {
-						newStats.Transfer[serverID] = transfer
-					}
-				}
-
-				// 深拷贝ServerName map
-				if statData.ServerName != nil {
-					newStats.ServerName = make(map[uint64]string)
-					for serverID, name := range statData.ServerName {
-						newStats.ServerName[serverID] = name
-					}
-				}
-
-				statsStore[cycleID] = newStats
-			}
-		}
-		singleton.AlertsLock.RUnlock()
-		for k, service := range stats {
-			if !service.Monitor.EnableShowInService {
-				delete(stats, k)
-			}
-		}
-		return []interface {
-		}{
-			stats, statsStore,
-		}, nil
-	})
-	c.HTML(http.StatusOK, mygin.GetPreferredTheme(c, "/service"), mygin.CommonEnvironment(c, gin.H{
-		"Title":              "服务状态",
-		"Services":           res.([]interface{})[0],
-		"CycleTransferStats": res.([]interface{})[1],
-	}))
 }
 
 func (cp *commonPage) network(c *gin.Context) {
 	serveSPA(c)
-	return
-
-	if singleton.Conf.Debug {
-		log.Printf("network: 进入网络页面处理函数")
-	}
-
-	var (
-		monitorHistory       *model.MonitorHistory
-		servers              []*model.Server
-		serverIdsWithMonitor []uint64
-		monitorInfos         = []byte("[]") // 默认为空数组
-		id                   uint64
-	)
-
-	// 根据数据库类型选择不同的处理方式
-	if singleton.Conf.DatabaseType == "badger" {
-		if singleton.Conf.Debug {
-			log.Printf("network: 使用BadgerDB模式，跳过GORM查询监控历史")
-		}
-
-		// 从监控配置中获取有监控任务的服务器ID
-		if singleton.Conf.Debug {
-			log.Printf("network: 从监控配置构建监控服务器ID列表")
-		}
-
-		// 安全初始化
-		if servers == nil {
-			servers = []*model.Server{}
-		}
-		if serverIdsWithMonitor == nil {
-			serverIdsWithMonitor = []uint64{}
-		}
-
-		// 性能优化：使用高效算法替代三重嵌套循环
-		if singleton.ServiceSentinelShared != nil {
-			monitors := singleton.ServiceSentinelShared.Monitors()
-
-			// 使用map避免重复检查，O(1)查找
-			serverIDSet := make(map[uint64]bool)
-
-			// 一次性获取所有服务器，避免重复加锁
-			singleton.ServerLock.RLock()
-			serverListCopy := make(map[uint64]*model.Server)
-			for serverID, server := range singleton.ServerList {
-				if server != nil {
-					serverListCopy[serverID] = server
-				}
-			}
-			singleton.ServerLock.RUnlock()
-
-			// 遍历监控器，高效计算覆盖的服务器
-			for _, monitor := range monitors {
-				if monitor != nil {
-					for serverID, server := range serverListCopy {
-						var shouldInclude bool
-
-						// 根据Cover字段和SkipServers字段判断是否应该包含此服务器
-						if monitor.Cover == 0 {
-							// Cover=0: 覆盖所有，仅特定服务器不请求
-							shouldInclude = monitor.SkipServers == nil || !monitor.SkipServers[serverID]
-						} else {
-							// Cover=1: 忽略所有，仅通过特定服务器请求
-							shouldInclude = monitor.SkipServers != nil && monitor.SkipServers[serverID]
-						}
-
-						if shouldInclude {
-							// 使用map避免重复，O(1)操作
-							if !serverIDSet[serverID] {
-								serverIDSet[serverID] = true
-								serverIdsWithMonitor = append(serverIdsWithMonitor, serverID)
-							}
-							// 如果还没有选定ID，或者服务器在线，则将此服务器ID设为当前ID
-							if id == 0 || server.IsOnline {
-								id = serverID
-							}
-						}
-					}
-				}
-			}
-		}
-
-		// 如果仍然没有找到ID，并且有排序列表，则使用排序列表中的第一个ID
-		singleton.SortedServerLock.RLock()
-		if id == 0 && singleton.SortedServerList != nil && len(singleton.SortedServerList) > 0 {
-			// 检查第一个元素是否为nil
-			if singleton.SortedServerList[0] != nil {
-				id = singleton.SortedServerList[0].ID
-				if singleton.Conf.Debug {
-					log.Printf("network: 使用SortedServerList中第一个服务器ID: %d", id)
-				}
-			} else {
-				log.Printf("network: 警告 - SortedServerList第一个元素为nil")
-			}
-		}
-		singleton.SortedServerLock.RUnlock()
-
-		// 如果依然没有ID，创建一个默认值
-		if id == 0 {
-			id = 1
-			if singleton.Conf.Debug {
-				log.Printf("network: 未找到有效服务器ID，使用默认ID: %d", id)
-			}
-		}
-	} else {
-		// SQLite 模式，使用 GORM 查询
-		if err := singleton.DB.Model(&model.MonitorHistory{}).Select("monitor_id, server_id").
-			Where("monitor_id != 0 and server_id != 0").Limit(1).First(&monitorHistory).Error; err != nil {
-			mygin.ShowErrorPage(c, mygin.ErrInfo{
-				Code:  http.StatusForbidden,
-				Title: "请求失败",
-				Msg:   "请求参数有误：" + "server monitor history not found",
-				Link:  "/",
-				Btn:   "返回重试",
-			}, true)
-			return
-		} else {
-			if monitorHistory == nil || monitorHistory.ServerID == 0 {
-				if len(singleton.SortedServerList) > 0 {
-					id = singleton.SortedServerList[0].ID
-				}
-			} else {
-				id = monitorHistory.ServerID
-			}
-		}
-
-		// 使用GORM获取带有监控的服务器ID列表
-		if err := singleton.DB.Model(&model.MonitorHistory{}).
-			Select("distinct(server_id)").
-			Where("server_id != 0").
-			Find(&serverIdsWithMonitor).
-			Error; err != nil {
-			mygin.ShowErrorPage(c, mygin.ErrInfo{
-				Code:  http.StatusForbidden,
-				Title: "请求失败",
-				Msg:   "请求参数有误：" + "no server with monitor histories",
-				Link:  "/",
-				Btn:   "返回重试",
-			}, true)
-			return
-		}
-	}
-
-	// 检查URL参数中是否指定了服务器ID
-	idStr := c.Param("id")
-	if idStr != "" {
-		var err error
-		id, err = strconv.ParseUint(idStr, 10, 64)
-		if err != nil {
-			mygin.ShowErrorPage(c, mygin.ErrInfo{
-				Code:  http.StatusForbidden,
-				Title: "请求失败",
-				Msg:   "请求参数有误：" + err.Error(),
-				Link:  "/",
-				Btn:   "返回重试",
-			}, true)
-			return
-		}
-
-		// 确保指定的服务器ID存在
-		singleton.ServerLock.RLock()
-		_, ok := singleton.ServerList[id]
-		singleton.ServerLock.RUnlock()
-
-		if !ok {
-			mygin.ShowErrorPage(c, mygin.ErrInfo{
-				Code:  http.StatusForbidden,
-				Title: "请求失败",
-				Msg:   "请求参数有误：" + "server id not found",
-				Link:  "/",
-				Btn:   "返回重试",
-			}, true)
-			return
-		}
-	}
-
-	// 获取监控历史记录
-	var monitorHistories interface{}
-	if singleton.Conf.DatabaseType == "badger" {
-		// 轻量级预取：默认展示第一个服务器最近24小时网络监控数据（受限并发+下采样）
-		monitorHistories = []model.MonitorHistory{}
-		monitorInfos = []byte("[]")
-		if id > 0 && db.DB != nil && singleton.ServiceSentinelShared != nil {
-			endTime := time.Now()
-			startTime := endTime.Add(-24 * time.Hour)
-			monitors := singleton.ServiceSentinelShared.Monitors()
-			if len(monitors) > 0 {
-				monitorOps := db.NewMonitorHistoryOps(db.DB)
-				type monitorResult struct {
-					histories []*model.MonitorHistory
-					err       error
-				}
-				sem := make(chan struct{}, 3)
-				resultChan := make(chan monitorResult, len(monitors))
-				active := 0
-				for _, m := range monitors {
-					if m == nil {
-						continue
-					}
-					if m.Type != model.TaskTypeICMPPing && m.Type != model.TaskTypeTCPPing {
-						continue
-					}
-					active++
-					go func(monitorID uint64) {
-						sem <- struct{}{}
-						defer func() { <-sem }()
-						// 提升上限到6000条，覆盖更高采样频率（~15s采样≈5760），确保完整24小时窗口
-						hs, err := monitorOps.GetMonitorHistoriesByServerAndMonitorRangeReverseLimit(
-							id, monitorID, startTime, endTime, 6000,
-						)
-						resultChan <- monitorResult{histories: hs, err: err}
-					}(m.ID)
-				}
-				var networkHistories []*model.MonitorHistory
-				for i := 0; i < active; i++ {
-					r := <-resultChan
-					if r.err != nil {
-						continue
-					}
-					networkHistories = append(networkHistories, r.histories...)
-				}
-				sort.Slice(networkHistories, func(i, j int) bool {
-					return networkHistories[i].CreatedAt.After(networkHistories[j].CreatedAt)
-				})
-				networkHistories = sampleMonitorHistories(networkHistories, 1500)
-				if b, err := utils.Json.Marshal(networkHistories); err == nil {
-					monitorInfos = b
-				}
-			}
-		}
-	} else {
-		// SQLite 模式，使用 MonitorAPI
-		if singleton.MonitorAPI != nil {
-			monitorHistories = singleton.MonitorAPI.GetMonitorHistories(map[string]any{"server_id": id})
-			var err error
-			if monitorHistories != nil {
-				monitorInfos, err = utils.Json.Marshal(monitorHistories)
-				if err != nil {
-					monitorInfos = []byte("[]")
-				}
-			} else {
-				monitorInfos = []byte("[]")
-			}
-		} else {
-			monitorInfos = []byte("[]")
-		}
-	}
-
-	// 检查用户是否有权限访问
-	_, isMember := c.Get(model.CtxKeyAuthorizedUser)
-	_, isViewPasswordVerfied := c.Get(model.CtxKeyViewPasswordVerified)
-	authorized := isMember || isViewPasswordVerfied
-
-	// 根据权限过滤服务器列表
-	singleton.SortedServerLock.RLock()
-	defer singleton.SortedServerLock.RUnlock()
-
-	// 安全检查，确保服务器切片已初始化
-	if servers == nil {
-		servers = make([]*model.Server, 0)
-	}
-
-	// 性能优化：使用map进行O(1)查找，避免双重循环
-	monitorServerMap := make(map[uint64]bool)
-	for _, serverID := range serverIdsWithMonitor {
-		monitorServerMap[serverID] = true
-	}
-
-	if authorized {
-		// 有权限的用户可以访问所有服务器
-		if singleton.SortedServerList != nil {
-			for _, server := range singleton.SortedServerList {
-				// 确保服务器不为nil
-				if server != nil {
-					// 如果serverIdsWithMonitor为空或包含当前服务器ID，则添加
-					if len(serverIdsWithMonitor) == 0 || monitorServerMap[server.ID] {
-						servers = append(servers, server)
-					}
-				}
-			}
-		} else if singleton.Conf.Debug {
-			log.Printf("network: 警告: SortedServerList为nil")
-		}
-	} else {
-		// 访客只能访问非隐藏服务器
-		if singleton.SortedServerListForGuest != nil {
-			for _, server := range singleton.SortedServerListForGuest {
-				// 确保服务器不为nil
-				if server != nil {
-					// 如果serverIdsWithMonitor为空或包含当前服务器ID，则添加
-					if len(serverIdsWithMonitor) == 0 || monitorServerMap[server.ID] {
-						servers = append(servers, server)
-					}
-				}
-			}
-		} else if singleton.Conf.Debug {
-			log.Printf("network: 警告: SortedServerListForGuest为nil")
-		}
-	}
-
-	if len(servers) == 0 {
-		if singleton.Conf.Debug {
-			log.Printf("network: 未找到任何服务器")
-		}
-	}
-
-	// 序列化数据以便在前端使用
-	data := Data{
-		Now:     time.Now().Unix() * 1000,
-		Servers: cloneServersForFrontend(servers, true),
-	}
-
-	serversBytes, err := utils.Json.Marshal(data)
-	if err != nil {
-		log.Printf("network: 服务器数据序列化失败: %v", err)
-		// 在序列化失败时使用空对象
-		serversBytes = []byte(`{"now":` + fmt.Sprintf("%d", time.Now().Unix()*1000) + `,"servers":[]}`)
-	}
-
-	// 渲染页面
-	c.HTML(http.StatusOK, mygin.GetPreferredTheme(c, "/network"), mygin.CommonEnvironment(c, gin.H{
-		"Servers":         string(serversBytes),
-		"MonitorInfos":    string(monitorInfos),
-		"MaxTCPPingValue": singleton.Conf.MaxTCPPingValue,
-		"DefaultServerID": id,
-	}))
 }
 
 type Data struct {
@@ -618,7 +219,7 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 		}
 
 		// 修复：安全地检查服务器列表
-		if serverList == nil || len(serverList) == 0 {
+		if len(serverList) == 0 {
 			if singleton.Conf.Debug {
 				log.Printf("getServerStat: 服务器列表为空，尝试从 ServerList 提取数据")
 			}
@@ -719,33 +320,31 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 		singleton.AlertsLock.RUnlock()
 
 		// 现在可以安全地访问深拷贝的数据
-		if statsStore != nil {
-			for cycleID, stats := range statsStore {
-				if stats.Transfer != nil {
-					for serverID, transfer := range stats.Transfer {
-						serverName := ""
-						if stats.ServerName != nil {
-							if name, exists := stats.ServerName[serverID]; exists {
-								serverName = name
-							}
+		for cycleID, stats := range statsStore {
+			if stats.Transfer != nil {
+				for serverID, transfer := range stats.Transfer {
+					serverName := ""
+					if stats.ServerName != nil {
+						if name, exists := stats.ServerName[serverID]; exists {
+							serverName = name
 						}
-
-						usedPercent := model.TrafficUsagePercent(transfer, stats.Max)
-
-						trafficItem := map[string]interface{}{
-							"server_id":       serverID,
-							"server_name":     serverName,
-							"max_bytes":       stats.Max,
-							"used_bytes":      transfer,
-							"max_formatted":   cachedByteSize(stats.Max),
-							"used_formatted":  cachedByteSize(transfer),
-							"used_percent":    usedPercent,
-							"cycle_name":      stats.Name,
-							"cycle_id":        strconv.FormatUint(cycleID, 10),
-							"is_bytes_source": true, // 标识这是字节数据源
-						}
-						trafficData = append(trafficData, trafficItem)
 					}
+
+					usedPercent := model.TrafficUsagePercent(transfer, stats.Max)
+
+					trafficItem := map[string]interface{}{
+						"server_id":       serverID,
+						"server_name":     serverName,
+						"max_bytes":       stats.Max,
+						"used_bytes":      transfer,
+						"max_formatted":   cachedByteSize(stats.Max),
+						"used_formatted":  cachedByteSize(transfer),
+						"used_percent":    usedPercent,
+						"cycle_name":      stats.Name,
+						"cycle_id":        strconv.FormatUint(cycleID, 10),
+						"is_bytes_source": true, // 标识这是字节数据源
+					}
+					trafficData = append(trafficData, trafficItem)
 				}
 			}
 		}
@@ -880,232 +479,6 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 
 func (cp *commonPage) home(c *gin.Context) {
 	serveSPA(c)
-	return
-
-	// 添加函数级别的panic恢复
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("🚨 home控制器发生PANIC: %v", r)
-			if gin.IsDebugging() {
-				debug.PrintStack()
-			}
-			mygin.ShowErrorPage(c, mygin.ErrInfo{
-				Code:  http.StatusInternalServerError,
-				Title: "服务器临时不可用",
-				Msg:   "页面正在维护中，请稍后重试",
-				Link:  "/",
-				Btn:   "重新加载",
-			}, true)
-		}
-	}()
-
-	stat, err := cp.getServerStat(c, true)
-	if err != nil {
-		log.Printf("获取服务器状态失败: %v", err)
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusInternalServerError,
-			Title: "数据获取失败",
-			Msg:   "无法获取服务器状态，请稍后重试",
-			Link:  "/",
-			Btn:   "重新加载",
-		}, true)
-		return
-	}
-
-	// 使用深拷贝确保并发安全，添加超时机制避免锁阻塞
-	var statsStore map[uint64]model.CycleTransferStats
-
-	// 使用带超时的锁获取，避免被内存清理任务阻塞
-	lockAcquired := make(chan bool, 1)
-	var lockSuccess bool
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("获取AlertsLock时发生panic: %v", r)
-				lockAcquired <- false
-			}
-		}()
-		singleton.AlertsLock.RLock()
-		lockAcquired <- true
-	}()
-
-	select {
-	case success := <-lockAcquired:
-		lockSuccess = success
-		if lockSuccess {
-			// 成功获取锁，继续处理
-			if singleton.AlertsCycleTransferStatsStore != nil {
-				statsStore = make(map[uint64]model.CycleTransferStats)
-				for cycleID, stats := range singleton.AlertsCycleTransferStatsStore {
-					// 安全检查stats是否为nil
-					if stats == nil {
-						continue
-					}
-
-					// 深拷贝每个CycleTransferStats
-					newStats := model.CycleTransferStats{
-						Name: stats.Name,
-						Max:  stats.Max,
-					}
-
-					// 深拷贝Transfer map
-					if stats.Transfer != nil {
-						newStats.Transfer = make(map[uint64]uint64)
-						for serverID, transfer := range stats.Transfer {
-							newStats.Transfer[serverID] = transfer
-						}
-					}
-
-					// 深拷贝ServerName map
-					if stats.ServerName != nil {
-						newStats.ServerName = make(map[uint64]string)
-						for serverID, name := range stats.ServerName {
-							newStats.ServerName[serverID] = name
-						}
-					}
-
-					statsStore[cycleID] = newStats
-				}
-			}
-			singleton.AlertsLock.RUnlock()
-		}
-
-	case <-time.After(3 * time.Second):
-		// 超时情况，使用空的统计数据继续渲染页面
-		log.Printf("警告: 获取AlertsLock超时，可能正在执行内存清理，使用空统计数据渲染页面")
-		statsStore = make(map[uint64]model.CycleTransferStats)
-		lockSuccess = false
-	}
-
-	// 如果没有成功获取锁或数据为空，使用空数据
-	if !lockSuccess || statsStore == nil {
-		statsStore = make(map[uint64]model.CycleTransferStats)
-	}
-
-	// 预处理流量数据
-	var trafficData []map[string]interface{}
-	if statsStore != nil {
-		for cycleID, stats := range statsStore {
-			if stats.Transfer != nil {
-				for serverID, transfer := range stats.Transfer {
-					serverName := ""
-					if stats.ServerName != nil {
-						if name, exists := stats.ServerName[serverID]; exists {
-							serverName = name
-						}
-					}
-
-					usedPercent := model.TrafficUsagePercent(transfer, stats.Max)
-
-					trafficItem := map[string]interface{}{
-						"server_id":       serverID,
-						"server_name":     serverName,
-						"max_bytes":       stats.Max,
-						"used_bytes":      transfer,
-						"max_formatted":   cachedByteSize(stats.Max),
-						"used_formatted":  cachedByteSize(transfer),
-						"used_percent":    usedPercent,
-						"cycle_name":      stats.Name,
-						"cycle_id":        strconv.FormatUint(cycleID, 10),
-						"is_bytes_source": true, // 标识这是字节数据源
-					}
-					trafficData = append(trafficData, trafficItem)
-				}
-			}
-		}
-	}
-
-	// 回退机制：为没有警报规则的服务器创建默认流量数据（10TB月配额）
-	if len(trafficData) == 0 {
-		// 获取当前用户的权限状态
-		_, authorized := c.Get(model.CtxKeyAuthorizedUser)
-		_, isViewPasswordVerified := c.Get(model.CtxKeyViewPasswordVerified)
-		isAuthorized := authorized || isViewPasswordVerified
-
-		// 根据权限获取服务器列表
-		var serverList []*model.Server
-		if isAuthorized {
-			serverList = singleton.SortedServerList
-		} else {
-			serverList = singleton.SortedServerListForGuest
-		}
-
-		singleton.ServerLock.RLock()
-		for _, server := range serverList {
-			if server == nil || !server.IsOnline {
-				continue
-			}
-
-			serverID := server.ID
-			// 检查服务器是否在ServerList中存在
-			if actualServer := singleton.ServerList[serverID]; actualServer != nil {
-				// 创建默认的月流量配额（10TB = 10 * 1024^4 bytes）
-				defaultQuota := uint64(10 * 1024 * 1024 * 1024 * 1024) // 10TB
-
-				// 计算当前月的开始和结束时间（每月1号开始）
-				now := time.Now()
-				currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-				nextMonthStart := currentMonthStart.AddDate(0, 1, 0)
-
-				// 计算当月累积流量（模拟月度重置）
-				monthlyTransfer := monthlyTransferForServer(actualServer, currentMonthStart)
-
-				// 计算使用百分比
-				usedPercent := model.TrafficUsagePercent(monthlyTransfer, defaultQuota)
-
-				// 构建默认流量数据项，显示月度配额
-				trafficItem := map[string]interface{}{
-					"server_id":       serverID,
-					"server_name":     actualServer.Name,
-					"max_bytes":       defaultQuota,
-					"used_bytes":      monthlyTransfer,
-					"max_formatted":   cachedByteSize(defaultQuota),
-					"used_formatted":  cachedByteSize(monthlyTransfer),
-					"used_percent":    usedPercent,
-					"cycle_name":      "默认月流量配额",
-					"cycle_id":        "default-monthly",
-					"cycle_start":     currentMonthStart.Format(time.RFC3339),
-					"cycle_end":       nextMonthStart.Format(time.RFC3339),
-					"cycle_unit":      "month",
-					"cycle_interval":  1,
-					"is_bytes_source": true,
-				}
-				trafficData = append(trafficData, trafficItem)
-			}
-		}
-		singleton.ServerLock.RUnlock()
-	}
-
-	trafficDataJSON, _ := utils.Json.Marshal(trafficData)
-
-	if err != nil {
-		mygin.ShowErrorPage(c, mygin.ErrInfo{
-			Code:  http.StatusInternalServerError,
-			Title: "系统错误",
-			Msg:   "服务器状态获取失败",
-			Link:  "/",
-			Btn:   "返回首页",
-		}, true)
-		return
-	}
-	c.HTML(http.StatusOK, mygin.GetPreferredTheme(c, "/home"), mygin.CommonEnvironment(c, gin.H{
-		"Servers":            string(stat),
-		"CycleTransferStats": statsStore,
-		"TrafficData":        string(trafficDataJSON),
-	}))
-}
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  8192,
-	WriteBufferSize: 8192,
-	CheckOrigin: func(r *http.Request) bool {
-		return isAllowedWebSocketOrigin(r)
-	},
-	Error: func(w http.ResponseWriter, r *http.Request, status int, reason error) {
-		// 自定义错误处理，避免写入响应头冲突
-		log.Printf("WebSocket升级错误 [%d]: %v", status, reason)
-	},
 }
 
 func (cp *commonPage) ws(c *gin.Context) {
@@ -1298,31 +671,29 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 	singleton.AlertsLock.RUnlock()
 
 	var trafficData []map[string]interface{}
-	if statsStore != nil {
-		for cycleID, stats := range statsStore {
-			if stats.Transfer != nil {
-				for serverID, transfer := range stats.Transfer {
-					serverName := ""
-					if stats.ServerName != nil {
-						if name, exists := stats.ServerName[serverID]; exists {
-							serverName = name
-						}
+	for cycleID, stats := range statsStore {
+		if stats.Transfer != nil {
+			for serverID, transfer := range stats.Transfer {
+				serverName := ""
+				if stats.ServerName != nil {
+					if name, exists := stats.ServerName[serverID]; exists {
+						serverName = name
 					}
-					usedPercent := model.TrafficUsagePercent(transfer, stats.Max)
-					trafficItem := map[string]interface{}{
-						"server_id":       serverID,
-						"server_name":     serverName,
-						"max_bytes":       stats.Max,
-						"used_bytes":      transfer,
-						"max_formatted":   cachedByteSize(stats.Max),
-						"used_formatted":  cachedByteSize(transfer),
-						"used_percent":    usedPercent,
-						"cycle_name":      stats.Name,
-						"cycle_id":        strconv.FormatUint(cycleID, 10),
-						"is_bytes_source": true, // 标识这是字节数据源
-					}
-					trafficData = append(trafficData, trafficItem)
 				}
+				usedPercent := model.TrafficUsagePercent(transfer, stats.Max)
+				trafficItem := map[string]interface{}{
+					"server_id":       serverID,
+					"server_name":     serverName,
+					"max_bytes":       stats.Max,
+					"used_bytes":      transfer,
+					"max_formatted":   cachedByteSize(stats.Max),
+					"used_formatted":  cachedByteSize(transfer),
+					"used_percent":    usedPercent,
+					"cycle_name":      stats.Name,
+					"cycle_id":        strconv.FormatUint(cycleID, 10),
+					"is_bytes_source": true, // 标识这是字节数据源
+				}
+				trafficData = append(trafficData, trafficItem)
 			}
 		}
 	}
@@ -1459,31 +830,29 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 	singleton.AlertsLock.RUnlock()
 
 	var trafficData []map[string]interface{}
-	if statsStore != nil {
-		for cycleID, stats := range statsStore {
-			if stats.Transfer != nil {
-				if transfer, exists := stats.Transfer[serverID]; exists {
-					serverName := ""
-					if stats.ServerName != nil {
-						if name, exists := stats.ServerName[serverID]; exists {
-							serverName = name
-						}
+	for cycleID, stats := range statsStore {
+		if stats.Transfer != nil {
+			if transfer, exists := stats.Transfer[serverID]; exists {
+				serverName := ""
+				if stats.ServerName != nil {
+					if name, exists := stats.ServerName[serverID]; exists {
+						serverName = name
 					}
-					usedPercent := model.TrafficUsagePercent(transfer, stats.Max)
-					trafficItem := map[string]interface{}{
-						"server_id":       serverID,
-						"server_name":     serverName,
-						"max_bytes":       stats.Max,
-						"used_bytes":      transfer,
-						"max_formatted":   cachedByteSize(stats.Max),
-						"used_formatted":  cachedByteSize(transfer),
-						"used_percent":    usedPercent,
-						"cycle_name":      stats.Name,
-						"cycle_id":        strconv.FormatUint(cycleID, 10),
-						"is_bytes_source": true, // 标识这是字节数据源
-					}
-					trafficData = append(trafficData, trafficItem)
 				}
+				usedPercent := model.TrafficUsagePercent(transfer, stats.Max)
+				trafficItem := map[string]interface{}{
+					"server_id":       serverID,
+					"server_name":     serverName,
+					"max_bytes":       stats.Max,
+					"used_bytes":      transfer,
+					"max_formatted":   cachedByteSize(stats.Max),
+					"used_formatted":  cachedByteSize(transfer),
+					"used_percent":    usedPercent,
+					"cycle_name":      stats.Name,
+					"cycle_id":        strconv.FormatUint(cycleID, 10),
+					"is_bytes_source": true, // 标识这是字节数据源
+				}
+				trafficData = append(trafficData, trafficItem)
 			}
 		}
 	}

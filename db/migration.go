@@ -1119,8 +1119,8 @@ func (m *Migration) migrateMonitorHistories() error {
 			lastID = strconv.FormatUint(id, 10)
 
 			// 获取monitor_id和created_at用于构建key
-			monitorID, _ := data["monitor_id"]
-			createdAt, _ := data["created_at"]
+			monitorID := data["monitor_id"]
+			createdAt := data["created_at"]
 
 			// 如果配置了跳过大数据字段，移除data字段
 			if m.config.SkipLargeHistoryData {
@@ -2078,9 +2078,3 @@ func FullMigrationConfig() *MigrationConfig {
 }
 
 // 用于解析JSON字段的工具函数
-func parseJSONField(data []byte, dest interface{}) error {
-	if len(data) == 0 {
-		return nil
-	}
-	return utils.Json.Unmarshal(data, dest)
-}

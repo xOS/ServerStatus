@@ -42,7 +42,7 @@ func (c *Cron) AfterFind(tx *gorm.DB) error {
 		c.Servers = []uint64{}
 		return nil
 	}
-	
+
 	// 尝试解析JSON，如果失败则修复格式
 	err := utils.Json.Unmarshal([]byte(c.ServersRaw), &c.Servers)
 	if err != nil {
@@ -54,7 +54,7 @@ func (c *Cron) AfterFind(tx *gorm.DB) error {
 			tx.Model(c).Update("servers_raw", "[]")
 			return nil
 		}
-		
+
 		// 其他格式错误，尝试修复
 		log.Printf("解析Cron任务 %s 的ServersRaw失败（%s），重置为空数组: %v", c.Name, c.ServersRaw, err)
 		c.ServersRaw = "[]"
@@ -63,7 +63,7 @@ func (c *Cron) AfterFind(tx *gorm.DB) error {
 		tx.Model(c).Update("servers_raw", "[]")
 		return nil
 	}
-	
+
 	return nil
 }
 

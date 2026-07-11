@@ -49,19 +49,18 @@ func loadServers() {
 				// 确保服务器列表为空数组而不是nil
 				servers = []*model.Server{}
 			} else {
-				// 确保没有nil条目
+				filtered := servers[:0]
 				for i, s := range servers {
 					if s == nil {
 						log.Printf("警告: 服务器列表中第 %d 项为nil，已移除", i)
-						// 移除nil条目
-						servers = append(servers[:i], servers[i+1:]...)
+						continue
 					}
+					filtered = append(filtered, s)
 				}
+				servers = filtered
 			}
 		} else {
 			log.Println("警告: BadgerDB 未初始化，无法加载服务器")
-			// 确保服务器列表为空数组而不是nil
-			servers = []*model.Server{}
 			return
 		}
 	} else {
@@ -79,18 +78,12 @@ func loadServers() {
 	ServerTagToIDList = make(map[string][]uint64)
 
 	for _, s := range servers {
-		innerS := s
-		// 如果是指针，不需要再取地址
-		if innerS == nil {
-			log.Printf("警告: 跳过空的服务器对象")
-			continue
-		}
-
 		// 确保服务器有有效的ID
-		if innerS.ID == 0 {
-			log.Printf("警告: 跳过ID为0的服务器: %s", innerS.Name)
+		if s.ID == 0 {
+			log.Printf("警告: 跳过ID为0的服务器: %s", s.Name)
 			continue
 		}
+		innerS := s
 
 		// 初始化基本对象
 		if innerS.State == nil {

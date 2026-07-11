@@ -78,105 +78,46 @@ func GetBadgerDBPath(conf interface{}) string {
 }
 
 // isSQLiteFileExists 检查SQLite数据库文件是否存在
-func isSQLiteFileExists(conf interface{}) bool {
-	// 获取SQLite数据库路径
-	sqlitePath := getSQLitePath(conf)
 
-	_, err := os.Stat(sqlitePath)
-	return err == nil
-}
+// 获取SQLite数据库路径
 
 // getSQLitePath 获取SQLite数据库文件路径
-func getSQLitePath(conf interface{}) string {
-	// 默认路径
-	defaultPath := "data/sqlite.db"
 
-	if conf == nil {
-		return defaultPath
-	}
+// 默认路径
 
-	// 从配置中获取数据库信息
-	var dbType, dbLocation string
-	if confMap, ok := conf.(map[string]interface{}); ok {
-		if t, exists := confMap["DatabaseType"]; exists {
-			dbType, _ = t.(string)
-		}
-		if l, exists := confMap["DatabaseLocation"]; exists {
-			dbLocation, _ = l.(string)
-		}
-	}
+// 从配置中获取数据库信息
 
-	// 如果当前数据库类型不是badger，直接使用配置的路径
-	if dbType != "badger" && dbLocation != "" {
-		return dbLocation
-	}
+// 如果当前数据库类型不是badger，直接使用配置的路径
 
-	// 如果当前是badger类型，需要推断SQLite的路径
-	// 尝试几种可能的路径
-	possiblePaths := []string{
-		defaultPath,      // 默认路径
-		"data/sqlite.db", // 标准路径
-		"/opt/server-status/dashboard/data/sqlite.db", // 生产环境路径
-	}
+// 如果当前是badger类型，需要推断SQLite的路径
+// 尝试几种可能的路径
 
-	// 如果配置了DatabaseLocation，也尝试将其作为SQLite路径
-	// （可能用户之前配置的是SQLite路径，后来改为badger）
-	if dbLocation != "" {
-		// 如果配置的路径看起来像SQLite文件，也加入候选
-		if strings.HasSuffix(dbLocation, ".db") {
-			possiblePaths = append([]string{dbLocation}, possiblePaths...)
-		} else {
-			// 如果是目录，尝试在该目录下查找sqlite.db
-			sqliteInConfigDir := filepath.Join(dbLocation, "sqlite.db")
-			possiblePaths = append([]string{sqliteInConfigDir}, possiblePaths...)
-		}
-	}
+// 默认路径
+// 标准路径
+// 生产环境路径
 
-	// 检查哪个路径存在
-	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
-			log.Printf("找到SQLite数据库文件: %s", path)
-			return path
-		}
-	}
+// 如果配置了DatabaseLocation，也尝试将其作为SQLite路径
+// （可能用户之前配置的是SQLite路径，后来改为badger）
 
-	log.Printf("未找到SQLite数据库文件，使用默认路径: %s", defaultPath)
-	return defaultPath
-}
+// 如果配置的路径看起来像SQLite文件，也加入候选
+
+// 如果是目录，尝试在该目录下查找sqlite.db
+
+// 检查哪个路径存在
 
 // renameSQLiteFileToBackup 将SQLite数据库文件重命名为备份
-func renameSQLiteFileToBackup(conf interface{}) error {
-	// 获取SQLite数据库路径
-	sqlitePath := getSQLitePath(conf)
 
-	// 检查文件是否存在
-	if _, err := os.Stat(sqlitePath); os.IsNotExist(err) {
-		log.Printf("SQLite数据库文件不存在，跳过备份: %s", sqlitePath)
-		return nil
-	}
+// 获取SQLite数据库路径
 
-	backupPath := sqlitePath + ".bak." + time.Now().Format("20060102150405")
-	log.Printf("将SQLite数据库文件重命名为备份: %s -> %s", sqlitePath, backupPath)
-	return os.Rename(sqlitePath, backupPath)
-}
+// 检查文件是否存在
 
 // migrateFromSQLiteToBadgerDB 从SQLite迁移数据到BadgerDB
-func migrateFromSQLiteToBadgerDB(badgerPath string, conf interface{}) error {
-	// 获取SQLite数据库文件路径
-	sqlitePath := getSQLitePath(conf)
 
-	log.Printf("从SQLite路径迁移: %s 到 BadgerDB路径: %s", sqlitePath, badgerPath)
+// 获取SQLite数据库文件路径
 
-	// 创建迁移实例
-	migration, err := NewMigration(DB, sqlitePath)
-	if err != nil {
-		return err
-	}
-	defer migration.Close()
+// 创建迁移实例
 
-	// 执行全部迁移
-	return migration.MigrateAll()
-}
+// 执行全部迁移
 
 // initializeBadgerDBIndexes 初始化BadgerDB的索引
 func initializeBadgerDBIndexes() error {
@@ -313,17 +254,14 @@ func startBadgerDBMaintenanceTasks() {
 		ticker := time.NewTicker(6 * time.Hour) // 改为每6小时清理一次
 		defer ticker.Stop()
 
-		for {
-			select {
-			case <-ticker.C:
-				// 清理3天前的监控历史记录，减少数据库大小
-				monitorHistoryOps := NewMonitorHistoryOps(DB)
-				count, err := monitorHistoryOps.CleanupOldMonitorHistories(3 * 24 * time.Hour)
-				if err != nil {
-					log.Printf("清理过期监控历史记录失败: %v", err)
-				} else if count > 0 {
-					log.Printf("已清理 %d 条过期的监控历史记录", count)
-				}
+		for range ticker.C {
+			// 清理3天前的监控历史记录，减少数据库大小
+			monitorHistoryOps := NewMonitorHistoryOps(DB)
+			count, err := monitorHistoryOps.CleanupOldMonitorHistories(3 * 24 * time.Hour)
+			if err != nil {
+				log.Printf("清理过期监控历史记录失败: %v", err)
+			} else if count > 0 {
+				log.Printf("已清理 %d 条过期的监控历史记录", count)
 			}
 		}
 	}()

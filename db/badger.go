@@ -19,16 +19,6 @@ import (
 	"github.com/xos/serverstatus/pkg/utils"
 )
 
-// 迭代器池，重用迭代器对象减少内存分配
-var iteratorPool = sync.Pool{
-	New: func() interface{} {
-		return make(map[string]*badger.Iterator)
-	},
-}
-
-// JSON 序列化结果缓存，减少重复序列化
-var jsonCache = sync.Map{}
-
 // CacheConfig BadgerDB缓存配置
 type CacheConfig struct {
 	BlockCache int // MB
@@ -65,10 +55,7 @@ func getOptimalCacheConfig() CacheConfig {
 
 // Global variables
 var (
-	DB            *BadgerDB
-	globalBadger  *badger.DB
-	globalContext context.Context
-	globalCancel  context.CancelFunc
+	DB *BadgerDB
 )
 
 // ErrorNotFound is returned when a key is not found
@@ -136,10 +123,6 @@ func OpenDB(path string) (*BadgerDB, error) {
 		}
 	}()
 
-	// Set global variables
-	globalBadger = db
-	globalContext = ctx
-	globalCancel = cancel
 	DB = badgerDB
 
 	// 自动修复因为前端精度丢失导致的数据库ID损坏
@@ -192,16 +175,16 @@ func (b *BadgerDB) FixCorruptedIDs() error {
 				// 如果 JSON 内部的 ID 和键名包含的 ID 不一致，说明发生了前端进度丢失修改
 				if actualID > 0 && actualID != expectedID {
 					log.Printf("FixCorruptedIDs: 发现损坏的数据库ID [%s]. 正确ID应为 %d, 但JSON内部为 %d. 正在修复...", key, expectedID, actualID)
-					
+
 					var data map[string]interface{}
 					// 这里反序列化是为了修改结构，即使有精度丢失，后续转换也会处理
 					if err := utils.Json.Unmarshal(val, &data); err != nil {
 						return nil // 忽略解析错误
 					}
-					
+
 					// 必须调用 convertDbFieldTypes 并传入原始 val 才能保证其他 ID 字段（比如 ServerID）不被 float64 污染
 					convertDbFieldTypes(&data, val)
-					
+
 					// 强制使用正确的 expectedID
 					data["ID"] = expectedID
 
@@ -1256,21 +1239,6 @@ func convertDbFieldTypes(data *map[string]interface{}, rawJSON []byte) {
 				d[field] = v != 0
 			case int:
 				d[field] = v != 0
-			}
-		}
-	}
-
-	// 处理特殊的 JSON 字符串字段
-	// 注意：HostJSON和LastStateJSON字段有json:"-"标签，需要特殊处理
-	jsonFields := []string{"HostJSON", "LastStateJSON", "host_json", "last_state_json"}
-	for _, field := range jsonFields {
-		if val, ok := d[field]; ok {
-			if strVal, isStr := val.(string); isStr && strVal != "" {
-				var jsonData interface{}
-				if err := utils.Json.Unmarshal([]byte(strVal), &jsonData); err == nil {
-					// 如果能成功解析为 JSON，保持原样，否则视为普通字符串
-					// 这里不做替换，因为 model 会自己处理这些 JSON 字段
-				}
 			}
 		}
 	}

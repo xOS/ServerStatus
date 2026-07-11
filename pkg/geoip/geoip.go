@@ -57,7 +57,6 @@ var (
 	dbPath   string    // 当前加载的数据库路径
 	dbFmt    dbFormat  // 当前数据库格式
 	initDone bool      // 标记是否已通过 Init() 显式初始化
-	confPath string    // 记录 Init 传入的路径，供 ensureInit 使用
 )
 
 // Init 初始化 GeoIP 数据库
@@ -66,7 +65,6 @@ func Init(path string) error {
 	dbMu.Lock()
 	defer dbMu.Unlock()
 
-	confPath = path
 	return initLocked(path)
 }
 

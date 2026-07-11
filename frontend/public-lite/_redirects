@@ -1,0 +1,6 @@
+/login /index.html 200
+/dashboard /index.html 200
+/dashboard/* /index.html 200
+/network /index.html 200
+/network/* /index.html 200
+/_asset-recovery/* /index.html 200

@@ -183,7 +183,7 @@ func (ns *NotificationServerBundle) replaceParamsInString(str string, message st
 	if ns.Server != nil {
 		str = strings.ReplaceAll(str, "#SERVER.NAME#", mod(ns.Server.Name))
 		str = strings.ReplaceAll(str, "#SERVER.ID#", mod(fmt.Sprintf("%d", ns.Server.ID)))
-		
+
 		// 安全地访问 State 字段
 		if ns.Server.State != nil {
 			str = strings.ReplaceAll(str, "#SERVER.CPU#", mod(fmt.Sprintf("%f", ns.Server.State.CPU)))

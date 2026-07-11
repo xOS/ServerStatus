@@ -105,7 +105,14 @@ Output Directory: dist
 VITE_SERVERSTATUS_API_BASE=https://status.example.com/api/v1
 ```
 
-`frontend/vercel.json` 负责将 `/dashboard`、`/network` 等 SPA 路由回落到 `index.html`。
+`frontend/vercel.json` 只将 `/dashboard`、`/network`、`/login` 和资源恢复入口回落到 `index.html`。不要改成全路径回落：缺失的旧哈希 JS/CSS 必须返回 404，返回 `index.html` 会让浏览器因模块 MIME 不匹配而白屏。
+
+缓存策略由响应头控制，不依赖 `index.html` 中的 meta 标签：
+
+- 页面 HTML 使用 `no-store`，每次打开都获取当前构建入口。
+- `/assets/` 下带内容哈希的 JS/CSS 使用一年 `immutable` 缓存。
+- `/static/` 和 `favicon.svg` 每次重新验证，避免固定 URL 的 Logo 长期保留旧内容。
+- 入口资源加载失败时会访问一次唯一的 `/_asset-recovery/<timestamp>` 路径，成功后恢复原 URL；CDN 不得归一化或缓存该路径。
 
 ### Cloudflare Pages
 
@@ -124,7 +131,7 @@ Build output directory: dist
 VITE_SERVERSTATUS_API_BASE=https://status.example.com/api/v1
 ```
 
-Cloudflare Pages 在没有顶层 `404.html` 时可正常处理 Vite SPA 路由。
+`public-lite/_redirects`、`_headers` 和 `404.html` 会随构建复制到 `dist`：页面路由显式回落到 `index.html`，缺失资源保持 404，并应用与 Vercel 相同的缓存边界。不要删除 `404.html` 或增加 `/* /index.html 200` 全局回落规则。
 
 ## 后端 CORS / WebSocket Origin
 

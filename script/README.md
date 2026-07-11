@@ -67,7 +67,7 @@
 - `--report-delay <seconds>`：状态上报间隔，建议 `1-4` 秒。
 - `--ip-report-period <seconds>`：IP 上报周期。
 - `--use-ipv6-country-code`：优先使用 IPv6 国家代码。
-- `--use-gitee-to-upgrade`：使用 Gitee 更新源。
+- `--use-r2-to-upgrade`：使用 Cloudflare R2 更新源。
 
 Agent 默认路径：
 

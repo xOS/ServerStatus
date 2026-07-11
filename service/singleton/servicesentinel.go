@@ -618,17 +618,12 @@ func (ss *ServiceSentinel) handleServiceReport(r ReportData) {
 
 	// 优化：先收集需要的数据，减少锁持有时间
 	type updateData struct {
-		todayStats     *_TodayStatsOfMonitor
-		currentStatus  []*pb.TaskResult
-		currentIndex   int
-		shouldSave     bool
-		avgDelay       float32
-		upCount        uint64
-		downCount      uint64
-		lastSaveTime   time.Time
-		stateCode      uint
-		monitorInfo    *model.Monitor
-		lastStatusCode uint
+		shouldSave   bool
+		avgDelay     float32
+		upCount      uint64
+		downCount    uint64
+		lastSaveTime time.Time
+		stateCode    uint
 	}
 
 	var update updateData
@@ -1063,60 +1058,20 @@ func (ss *ServiceSentinel) limitDataSize() {
 }
 
 // emergencyCleanup 紧急清理ServiceSentinel数据
-func (ss *ServiceSentinel) emergencyCleanup() {
-	ss.serviceResponseDataStoreLock.Lock()
-	defer ss.serviceResponseDataStoreLock.Unlock()
 
-	log.Printf("ServiceSentinel开始紧急清理...")
+// 清空ping数据
 
-	// 清空ping数据
-	ss.serviceResponsePing = make(map[uint64]map[uint64]*pingStore)
+// 清空状态数据，只保留最新的
 
-	// 清空状态数据，只保留最新的
-	for id := range ss.serviceCurrentStatusData {
-		// 保留当前状态，清理历史
-		if len(ss.serviceCurrentStatusData[id]) > 1 {
-			latest := ss.serviceCurrentStatusData[id][len(ss.serviceCurrentStatusData[id])-1]
-			ss.serviceCurrentStatusData[id] = []*pb.TaskResult{latest}
-		}
-	}
+// 保留当前状态，清理历史
 
-	// 清空月度统计
-	ss.monthlyStatusLock.Lock()
-	ss.monthlyStatus = make(map[uint64]*model.ServiceItemResponse)
-	ss.monthlyStatusLock.Unlock()
+// 清空月度统计
 
-	// 重置计数器
-	ss.serviceResponseDataStoreCurrentUp = make(map[uint64]uint64)
-	ss.serviceResponseDataStoreCurrentDown = make(map[uint64]uint64)
-	ss.serviceResponseDataStoreCurrentAvgDelay = make(map[uint64]float32)
+// 重置计数器
 
-	// 重置今日统计
-	for id := range ss.serviceStatusToday {
-		ss.serviceStatusToday[id] = &_TodayStatsOfMonitor{}
-	}
-
-	log.Printf("ServiceSentinel紧急清理完成")
-}
+// 重置今日统计
 
 // getMemoryUsageEstimate 估算当前内存使用量（仅用于调试）
-func (ss *ServiceSentinel) getMemoryUsageEstimate() map[string]int {
-	ss.serviceResponseDataStoreLock.RLock()
-	defer ss.serviceResponseDataStoreLock.RUnlock()
-
-	usage := map[string]int{
-		"status_records":  len(ss.serviceCurrentStatusData),
-		"ping_records":    0,
-		"monthly_records": len(ss.monthlyStatus),
-		"monitors":        len(ss.monitors),
-	}
-
-	for _, pingMap := range ss.serviceResponsePing {
-		usage["ping_records"] += len(pingMap)
-	}
-
-	return usage
-}
 
 // isActiveServer 检查服务器是否处于活跃状态
 func (ss *ServiceSentinel) isActiveServer(serverID uint64) bool {

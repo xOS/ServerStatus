@@ -549,31 +549,6 @@ func InitDBFromPath(path string) error {
 	return nil
 }
 
-// RecordTransferHourlyUsage 记录每小时流量使用情况
-func RecordTransferHourlyUsage() {
-	// 废弃TrafficManager, 仅保留函数框架
-}
-
-// StartTrafficManager 初始化流量管理器
-func StartTrafficManager() {
-	// 废弃TrafficManager, 仅保留函数框架
-}
-
-// GetTrafficManager 模拟流量管理器，向后兼容
-func GetTrafficManager() interface{} {
-	return &struct {
-		SaveToDatabase func() error
-		Shutdown       func() error
-	}{
-		SaveToDatabase: func() error {
-			return nil
-		},
-		Shutdown: func() error {
-			return nil
-		},
-	}
-}
-
 // 数据库并发控制 - 移除全局锁，使用SQLite WAL模式的原生并发控制
 
 // isSystemBusy 检查系统是否处于繁忙状态
@@ -696,12 +671,6 @@ func isRetryableError(err error) bool {
 		}
 	}
 	return false
-}
-
-// executeWithRetry 带重试机制的数据库操作，用于处理临时的数据库锁定
-// 已废弃：使用 executeWithAdvancedRetry 替代
-func executeWithRetry(operation func() error) error {
-	return executeWithAdvancedRetry(operation, 3, 100*time.Millisecond, 1*time.Second)
 }
 
 // CleanMonitorHistory 清理无效或过时的监控记录和流量记录
@@ -972,11 +941,6 @@ func runBadgerValueLogGC(trigger string, discardRatio float64, maxRounds int) {
 	if rounds > 0 || noRewrite {
 		log.Printf("BadgerDB ValueLog GC完成(%s): ratio=%.2f, rounds=%d, noRewrite=%t, cost=%s", trigger, discardRatio, rounds, noRewrite, time.Since(start))
 	}
-}
-
-// CleanCumulativeTransferData 清理累计流量数据
-func CleanCumulativeTransferData(days int) {
-	// 废弃TrafficManager, 仅保留函数框架
 }
 
 // IPDesensitize 根据设置选择是否对IP进行打码处理 返回处理后的IP(关闭打码则返回原IP)

@@ -17,27 +17,53 @@
     <script>
       (function () {
         var key = 'serverstatus:asset-retry'
-        var retried = false
+        var returnURLKey = 'serverstatus:asset-retry-return-url'
+        var recoveryPrefix = '/_asset-recovery/'
+        var isRecoveryPage = window.location.pathname.indexOf(recoveryPrefix) === 0
+        var legacyURL = new URL(window.location.href)
+
+        if (legacyURL.searchParams.has('_reload')) {
+          legacyURL.searchParams.delete('_reload')
+          window.history.replaceState(null, '', legacyURL.pathname + legacyURL.search + legacyURL.hash)
+        }
+
+        if (isRecoveryPage) {
+          try {
+            var returnURL = sessionStorage.getItem(returnURLKey)
+            if (returnURL && returnURL.charAt(0) === '/') {
+              window.history.replaceState(null, '', returnURL)
+            } else {
+              window.history.replaceState(null, '', '/')
+            }
+          } catch (e) {
+            window.history.replaceState(null, '', '/')
+          }
+        }
+
         function hasRetried() {
-          if (retried) return true
           try {
             var last = parseInt(sessionStorage.getItem(key), 10)
-            return !isNaN(last) && (Date.now() - last < 5000)
+            return !isNaN(last) && (Date.now() - last < 30000)
           } catch (e) {
             return false
           }
         }
         function markRetried() {
-          retried = true
           try {
             sessionStorage.setItem(key, String(Date.now()))
+            sessionStorage.setItem(returnURLKey, window.location.pathname + window.location.search + window.location.hash)
           } catch (e) {}
         }
         function clearRetried() {
-          retried = false
           try {
             sessionStorage.removeItem(key)
+            sessionStorage.removeItem(returnURLKey)
           } catch (e) {}
+        }
+        function showLoadError() {
+          var app = document.getElementById('app')
+          if (!app) return
+          app.innerHTML = '<main style="box-sizing:border-box;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px;font:16px/1.6 system-ui,sans-serif;color:#444">页面资源加载失败，请稍后重试。</main>'
         }
         window.addEventListener('error', function (event) {
           var target = event.target
@@ -46,13 +72,14 @@
           if (tag !== 'script' && tag !== 'link') return
           var url = tag === 'script' ? target.src : target.href
           if (!url || !/\/assets\/index-[^/]+\.(js|css)$|\/assets\/index\.(js|css)$/.test(url)) return
-          if (hasRetried()) return
+          if (isRecoveryPage || hasRetried()) {
+            showLoadError()
+            return
+          }
           markRetried()
-          var next = new URL(window.location.href)
-          next.searchParams.set('_reload', String(Date.now()))
-          window.location.replace(next.toString())
+          window.location.replace(recoveryPrefix + Date.now())
         }, true)
-        window.addEventListener('load', clearRetried)
+        window.addEventListener('serverstatus:app-ready', clearRetried, { once: true })
       })()
     </script>
     <title>Server Status</title>

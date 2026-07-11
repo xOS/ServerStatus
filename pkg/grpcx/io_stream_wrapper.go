@@ -60,21 +60,21 @@ func (iw *IOStreamWrapper) Read(p []byte) (n int, err error) {
 func (iw *IOStreamWrapper) Write(p []byte) (n int, err error) {
 	// 限制单次写入的数据大小，防止过大的消息
 	const maxChunkSize = 64 * 1024 // 64KB chunks
-	
+
 	written := 0
 	for written < len(p) {
 		end := written + maxChunkSize
 		if end > len(p) {
 			end = len(p)
 		}
-		
+
 		chunk := p[written:end]
 		if err := iw.Send(&proto.IOStreamData{Data: chunk}); err != nil {
 			return written, err
 		}
 		written += len(chunk)
 	}
-	
+
 	return len(p), nil
 }
 

@@ -107,9 +107,9 @@ func AlertSentinelStart() {
 		}
 	} else {
 		// 使用SQLite加载事件规则
-		err := executeWithRetry(func() error {
+		err := executeWithAdvancedRetry(func() error {
 			return DB.Find(&Alerts).Error
-		})
+		}, 3, 100*time.Millisecond, time.Second)
 		if err != nil {
 			log.Printf("从SQLite加载事件规则失败: %v", err)
 			AlertsLock.Unlock()
@@ -395,14 +395,6 @@ func checkStatus() {
 			// 根据数据库类型决定是否传入DB参数
 			var snapshot []interface{}
 			cycleStats := cycleTransferStatsCopy[alert.ID]
-
-			// 安全检查：确保alert不为nil再调用Snapshot
-			if alert == nil {
-				if Conf.Debug {
-					log.Printf("警告：alert为nil，跳过Snapshot调用")
-				}
-				continue
-			}
 
 			if Conf.DatabaseType == "badger" {
 				// BadgerDB模式下，传入nil作为DB参数

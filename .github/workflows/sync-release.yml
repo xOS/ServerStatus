@@ -43,12 +43,18 @@ jobs:
           if [ -z "$TAG" ]; then
             TAG=$(gh release view --repo ${{ github.repository }} --json tagName -q .tagName)
           fi
-          
+
           mkdir -p upload_dir/$TAG
-          cp assets/checksums.txt upload_dir/$TAG/ 2>/dev/null || true
+          test -s assets/checksums.txt
+          cp assets/checksums.txt upload_dir/$TAG/
           find assets -type f -name '*.zip' -exec cp {} upload_dir/$TAG/ \;
+          test -n "$(find upload_dir/$TAG -maxdepth 1 -type f -name '*.zip' -print -quit)"
           echo "{\"tag_name\":\"$TAG\"}" > upload_dir/index.json
-          
-          aws s3 sync upload_dir/ s3://${R2_BUCKET}/serverdash/ \
-            --delete \
+
+          aws s3 sync upload_dir/$TAG/ s3://${R2_BUCKET}/serverdash/$TAG/ \
+            --cache-control 'public, max-age=31536000, immutable' \
+            --endpoint-url https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+          aws s3 cp upload_dir/index.json s3://${R2_BUCKET}/serverdash/index.json \
+            --cache-control 'no-store, max-age=0' \
+            --content-type 'application/json' \
             --endpoint-url https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com

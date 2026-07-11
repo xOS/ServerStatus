@@ -11,7 +11,6 @@ import (
 	"path"
 	"path/filepath"
 	"runtime/debug"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -188,7 +187,7 @@ func frontendCacheHeaders(c *gin.Context) {
 	path := c.Request.URL.Path
 	switch {
 	case strings.HasPrefix(path, "/assets/") && frontendFileExists("/assets/", "assets", path):
-		setFrontendAssetCacheHeaders(c, "assets", strings.TrimPrefix(path, "/assets/"), false)
+		setFrontendAssetCacheHeaders(c, "assets", strings.TrimPrefix(path, "/assets/"))
 	case strings.HasPrefix(path, "/static/") && frontendFileExists("/static/", "static", path):
 		c.Header("Cache-Control", "no-cache, must-revalidate")
 	case path == "/favicon.svg" && frontendDistFileExists("favicon.svg"):
@@ -281,29 +280,16 @@ func serveFrontendAsset(dirname string) gin.HandlerFunc {
 
 		filename := filepath.Join(dir, rel)
 		if frontendPathExists(filename) {
-			setFrontendAssetCacheHeaders(c, dirname, rel, false)
+			setFrontendAssetCacheHeaders(c, dirname, rel)
 			c.File(filename)
 			return
-		}
-
-		if dirname == "assets" {
-			if fallback, found := frontendIndexAssetFallback(dir, rel); found {
-				setFrontendAssetCacheHeaders(c, dirname, rel, true)
-				c.Header("X-ServerStatus-Asset-Fallback", "1")
-				c.File(fallback)
-				return
-			}
 		}
 
 		c.Status(http.StatusNotFound)
 	}
 }
 
-func setFrontendAssetCacheHeaders(c *gin.Context, dirname string, rel string, fallback bool) {
-	if fallback {
-		c.Header("Cache-Control", "no-cache, must-revalidate")
-		return
-	}
+func setFrontendAssetCacheHeaders(c *gin.Context, dirname string, rel string) {
 	if dirname == "assets" && isVersionedFrontendAsset(rel) {
 		c.Header("Cache-Control", "public, max-age=31536000, immutable")
 		return
@@ -331,30 +317,6 @@ func cleanFrontendAssetPath(raw string) (string, bool) {
 		return "", false
 	}
 	return cleaned, true
-}
-
-func frontendIndexAssetFallback(dir, rel string) (string, bool) {
-	base := path.Base(filepath.ToSlash(rel))
-	ext := path.Ext(base)
-	if !strings.HasPrefix(base, "index-") || (ext != ".js" && ext != ".css") {
-		return "", false
-	}
-
-	matches, err := filepath.Glob(filepath.Join(dir, "index*"+ext))
-	if err != nil || len(matches) == 0 {
-		return "", false
-	}
-
-	sort.SliceStable(matches, func(i, j int) bool {
-		left, leftErr := os.Stat(matches[i])
-		right, rightErr := os.Stat(matches[j])
-		if leftErr == nil && rightErr == nil && !left.ModTime().Equal(right.ModTime()) {
-			return left.ModTime().After(right.ModTime())
-		}
-		return matches[i] > matches[j]
-	})
-
-	return matches[0], true
 }
 
 func setNoStoreHeaders(c *gin.Context) {
@@ -756,7 +718,6 @@ func ServeWeb(port uint) *http.Server {
 		}
 		c.Next()
 	})
-	r.Use(mygin.RecordPath)
 	mountFrontendAssets(r)
 
 	routers(r)

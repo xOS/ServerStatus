@@ -1826,49 +1826,9 @@ func (ma *memberAPI) getAlertRule(c *gin.Context) {
 	})
 }
 
-type logoutForm struct {
-	ID uint64
-}
+// BadgerDB 模式下使用 BadgerDB 操作
 
-func (ma *memberAPI) logout(c *gin.Context) {
-	admin := c.MustGet(model.CtxKeyAuthorizedUser).(*model.User)
-	var lf logoutForm
-	if err := c.ShouldBindJSON(&lf); err != nil {
-		WriteJSON(c, http.StatusOK, model.Response{
-			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("请求错误：%s", err),
-		})
-		return
-	}
-	if lf.ID != admin.ID {
-		WriteJSON(c, http.StatusOK, model.Response{
-			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("请求错误：%s", "用户ID不匹配"),
-		})
-		return
-	}
-	// BadgerDB 模式下使用 BadgerDB 操作
-	if singleton.Conf.DatabaseType == "badger" {
-		admin.Token = ""
-		admin.TokenExpired = time.Now()
-		if err := db.DB.SaveModel("user", admin.ID, admin); err != nil {
-			log.Printf("更新用户登出状态到BadgerDB失败: %v", err)
-		}
-	} else if singleton.DB != nil {
-		singleton.DB.Model(admin).UpdateColumns(model.User{
-			Token:        "",
-			TokenExpired: time.Now(),
-		})
-	}
-	WriteJSON(c, http.StatusOK, model.Response{
-		Code: http.StatusOK,
-	})
-
-	if oidcLogoutUrl := singleton.Conf.Oauth2.OidcLogoutURL; oidcLogoutUrl != "" {
-		// 重定向到 OIDC 退出登录地址。不知道为什么，这里的重定向不生效
-		c.Redirect(http.StatusOK, oidcLogoutUrl)
-	}
-}
+// 重定向到 OIDC 退出登录地址。不知道为什么，这里的重定向不生效
 
 type settingForm struct {
 	Title                   string

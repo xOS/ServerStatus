@@ -54,4 +54,5 @@ document.body.addEventListener('click', (e) => {
 })
 
 // Initial load
+window.dispatchEvent(new Event('serverstatus:app-ready'))
 void router.navigate(window.location.pathname, false)

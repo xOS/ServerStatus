@@ -22,14 +22,6 @@ func InitCronTask() {
 	Cron = cron.New(cron.WithSeconds(), cron.WithLocation(Loc))
 	Crons = make(map[uint64]*model.Cron)
 
-	// 添加基础的系统定时任务 - 修复重复任务注册问题
-	// 每天凌晨3点清理累计流量数据（已废弃，保留为空函数）
-	if _, err := Cron.AddFunc("0 0 3 * * *", func() {
-		CleanCumulativeTransferData(3) // 改为3天，与监控历史保持一致
-	}); err != nil {
-		panic(err)
-	}
-
 	// 每天的3:30 对 监控记录 和 流量记录 进行清理（3天前数据）
 	if _, err := Cron.AddFunc("0 30 3 * * *", func() {
 		count, err := CleanMonitorHistory() // 处理返回值
@@ -51,11 +43,6 @@ func InitCronTask() {
 			log.Printf("定时清理监控历史记录完成，共清理 %d 条记录", count)
 		}
 	}); err != nil {
-		panic(err)
-	}
-
-	// 每1小时对流量记录进行打点 - 只注册一次
-	if _, err := Cron.AddFunc("0 0 */1 * * *", RecordTransferHourlyUsage); err != nil {
 		panic(err)
 	}
 

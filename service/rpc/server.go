@@ -736,7 +736,9 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 				if server, err := serverOps.GetServer(clientID); err == nil && server != nil {
 					server.HostJSON = string(hostJSON)
 					if err := serverOps.SaveServer(server); err != nil {
-						// 静默处理保存失败，避免日志干扰
+						if singleton.Conf.Debug {
+							log.Printf("保存服务器 Host 信息失败: %v", err)
+						}
 					}
 				}
 			}
@@ -745,7 +747,9 @@ func (s *ServerHandler) ReportSystemInfo(c context.Context, r *pb.Host) (*pb.Rec
 			if singleton.DB != nil {
 				if err := singleton.DB.Exec("UPDATE servers SET host_json = ? WHERE id = ?",
 					string(hostJSON), clientID).Error; err != nil {
-					// 静默处理保存失败，避免日志干扰
+					if singleton.Conf.Debug {
+						log.Printf("保存服务器 Host 信息失败: %v", err)
+					}
 				}
 			}
 		}

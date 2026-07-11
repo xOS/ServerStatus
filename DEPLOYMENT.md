@@ -353,6 +353,15 @@ security:
 
 Vercel / Cloudflare Pages 设置见 [frontend/README.md](./frontend/README.md)。
 
+前端 CDN 必须保留以下缓存和路由约束：
+
+- `index.html` 及 `/`、`/login`、`/dashboard/*`、`/network/*` 返回 `Cache-Control: no-store`。
+- `/assets/*` 仅对真实存在的内容哈希文件返回 `200`，并使用 `public, max-age=31536000, immutable`。
+- 缺失的 `.js`、`.css`、图片不得回落为 `index.html`，必须返回 `404`。
+- `/_asset-recovery/*` 回落到最新 `index.html`，但不得在浏览器或 CDN 中缓存。
+
+若在 Vercel 前再套一层 CDN，外层 CDN 也必须遵守源站的 `CDN-Cache-Control`，并关闭“忽略查询字符串/缓存所有内容”一类覆盖规则。部署本次修复后应主动清理一次外层 CDN 中已有的 HTML 缓存，旧的错误缓存不会因代码发布自动消失。
+
 ## Agent 接入
 
 在后台 `/dashboard/server` 添加服务器后复制安装命令。安装命令会包含：

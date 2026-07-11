@@ -3,7 +3,6 @@ module github.com/xos/serverstatus
 go 1.25.0
 
 require (
-	code.cloudfoundry.org/bytefmt v0.0.0-20240425163905-bcdc1ad063ea
 	code.gitea.io/sdk/gitea v0.18.0
 	github.com/coreos/go-oidc/v3 v3.11.0
 	github.com/gin-contrib/pprof v1.5.3

@@ -191,10 +191,10 @@ Agent 示例配置见 [script/config.yml](./script/config.yml)。
 
 ### 中国大陆 Release 镜像
 
-- GitHub Release 是二进制发布源，Gitee Release 是中国大陆优先镜像；普通 Cloudflare R2 未作为大陆更新源，因为标准 R2 自定义域名不提供中国大陆网络保证，`r2.dev` 也仅适合开发用途。
-- `.github/workflows/sync-release.yml` 使用 `GITEE_TOKEN` 将最新 Release 同步到 Gitee。新版本先保持预发布状态，所有附件齐备后才转为正式版本，失败时重新运行会只续传缺失附件。
-- 上传超时属于不确定结果，工作流会轮询 Gitee 附件列表确认是否已经落盘，避免重复上传。面板 Release 同时发布 `checksums.txt`。
-- 中国镜像缺少特定架构附件时，`script/server-status.sh` 会自动回退到对应的 GitHub Release 下载。
+- GitHub Release 是二进制发布源，Cloudflare R2 是中国大陆优先下载源。
+- `.github/workflows/sync-release.yml` 使用 `R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`R2_ACCOUNT_ID` 和 `R2_BUCKET` 将版本目录同步到 R2。
+- 版本目录使用不可变缓存并保留旧版本；`checksums.txt` 和至少一个 ZIP 缺失时同步直接失败。所有版本文件完成后才更新不缓存的 `index.json`。
+- R2 缺少特定架构附件时，`script/server-status.sh` 会回退到对应的 GitHub Release 下载。
 
 ```bash
 # Docker 日志

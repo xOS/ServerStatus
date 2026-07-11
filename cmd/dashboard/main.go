@@ -138,11 +138,6 @@ func main() {
 	// 初始化Goroutine池，防止内存泄漏
 	singleton.InitGoroutinePools()
 
-	// 创建用于控制所有后台任务的context
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	_ = ctx // 用于将来的goroutine控制
-
 	// 【重要】提前启动HTTP服务器，避免前端502错误
 	log.Printf("正在提前启动HTTP服务器在端口 %d...", singleton.Conf.HTTPPort)
 	srv := controller.ServeWeb(singleton.Conf.HTTPPort)
@@ -227,9 +222,6 @@ func main() {
 	}, func(c context.Context) error {
 		log.Println("NG>> Graceful::START")
 
-		// 取消所有后台任务
-		cancel()
-
 		// 等待所有任务完成
 		done := make(chan struct{})
 		go func() {
@@ -266,7 +258,6 @@ func main() {
 			singleton.CleanupGoroutinePools()
 
 			// 4. 保存流量数据
-			singleton.RecordTransferHourlyUsage()
 			singleton.SaveAllTrafficToDB()
 
 			// 5. 保存所有数据到数据库（BadgerDB模式下特别重要）
