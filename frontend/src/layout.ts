@@ -14,7 +14,7 @@ function publicAssetURL(path: string, version = '') {
 }
 
 export const DEFAULT_LOGO_URL = publicAssetURL('static/logo.svg', 'v20260709a')
-const DEFAULT_LOGO_SVG = `<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+const DEFAULT_LOGO_SVG = `<svg width="100%" height="100%" viewBox="4 3 92 92" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <defs>
     <style>
       .status-light{animation:status-light-blink 3.2s steps(2,end) infinite}
