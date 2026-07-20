@@ -1120,7 +1120,7 @@ function serverCountry(server: ServerItem) {
 function serverFlagMarkup(server: ServerItem) {
   const country = cssSafeId(serverCountry(server))
   if (!country) return ''
-  return `<span class="country-flag network-server-flag fi fi-${country}" title="${escapeAttribute(country.toUpperCase())}"></span>`
+  return `<span class="country-flag network-server-flag fi fi-${country}"></span>`
 }
 
 function formatTime(input: number, showDate = false) {

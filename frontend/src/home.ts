@@ -1437,7 +1437,7 @@ function setFlag(element: HTMLElement, countryCode: string, cache: Map<string, s
   cache.set('country', value)
   element.hidden = !value
   element.className = value ? `country-flag fi fi-${cssSafeId(value)}` : 'country-flag'
-  element.title = value.toUpperCase()
+  element.removeAttribute('title')
   element.textContent = ''
 }
 
