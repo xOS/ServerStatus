@@ -1,3 +1,5 @@
+import 'flag-icons/css/flag-icons.min.css'
+import 'font-logos/assets/font-logos.css'
 import './style.css'
 import { Router } from './router'
 import { initHome } from './home'
