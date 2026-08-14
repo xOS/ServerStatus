@@ -51,6 +51,7 @@ interface EntityConfig {
   key: AdminKey
   title: string
   endpoint: string
+  submitEndpoint?: string
   deleteModel: string
   description: string
   addLabel: string
@@ -217,6 +218,7 @@ const entityConfigs: Partial<Record<AdminKey, EntityConfig>> = {
     key: 'rule',
     title: '报警规则',
     endpoint: adminApiPath('/notification'),
+    submitEndpoint: adminApiPath('/alert-rule'),
     deleteModel: 'alert-rule',
     description: '管理资源、离线、流量等报警规则。',
     addLabel: '添加规则',
@@ -1185,7 +1187,8 @@ async function submitEntityForm(form: HTMLFormElement) {
   const payload = formParams(form, config.fields)
   setFormBusy(form, true, '保存中...')
   try {
-    await apiFetch<ApiResponse>(config.endpoint, { method: 'POST', body: payload })
+    const postUrl = config.submitEndpoint || config.endpoint
+    await apiFetch<ApiResponse>(postUrl, { method: 'POST', body: payload })
     dialog.close()
     toast('保存成功')
     await renderEntityPage(config)
