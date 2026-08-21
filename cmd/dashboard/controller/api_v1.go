@@ -87,16 +87,6 @@ func (v *apiV1) serve() {
 	mr.GET("/configs", v.monitorConfigs)
 	mr.GET("/:id", v.monitorHistoriesById)
 
-	sr := v.r.Group("service")
-	sr.Use(mygin.Authorize(mygin.AuthorizeOption{
-		MemberOnly: false,
-		IsPage:     false,
-	}))
-	sr.Use(mygin.ValidateViewPassword(mygin.ValidateViewPasswordOption{
-		IsPage:        false,
-		AbortWhenFail: true,
-	}))
-	sr.GET("", v.serviceStatus)
 
 	// Frontend Profile API (提供原先由 CommonEnvironment 注入的全局配置)
 	cr := v.r.Group("profile")
@@ -834,80 +824,3 @@ func monitoredServerIDs(monitors []*model.Monitor) []uint64 {
 	return result
 }
 
-func (v *apiV1) serviceStatus(c *gin.Context) {
-	type serviceItem struct {
-		ID          uint64         `json:"ID"`
-		Monitor     *model.Monitor `json:"Monitor"`
-		CurrentUp   uint64         `json:"CurrentUp"`
-		CurrentDown uint64         `json:"CurrentDown"`
-		TotalUp     uint64         `json:"TotalUp"`
-		TotalDown   uint64         `json:"TotalDown"`
-		Uptime      float32        `json:"Uptime"`
-		Delay       []float32      `json:"Delay"`
-		Up          []int          `json:"Up"`
-		Down        []int          `json:"Down"`
-	}
-
-	items := make([]serviceItem, 0)
-	if singleton.ServiceSentinelShared != nil {
-		singleton.AlertsLock.RLock()
-		stats := singleton.ServiceSentinelShared.LoadStats()
-		for id, item := range stats {
-			if item == nil || item.Monitor == nil || !item.Monitor.EnableShowInService {
-				continue
-			}
-			total := item.TotalUp + item.TotalDown
-			uptime := float32(0)
-			if total > 0 {
-				uptime = float32(item.TotalUp) / float32(total) * 100
-			}
-			items = append(items, serviceItem{
-				ID:          id,
-				Monitor:     item.Monitor,
-				CurrentUp:   item.CurrentUp,
-				CurrentDown: item.CurrentDown,
-				TotalUp:     item.TotalUp,
-				TotalDown:   item.TotalDown,
-				Uptime:      uptime,
-				Delay:       float32Array(item.Delay),
-				Up:          intArray(item.Up),
-				Down:        intArray(item.Down),
-			})
-		}
-		singleton.AlertsLock.RUnlock()
-	}
-
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Monitor == nil || items[j].Monitor == nil {
-			return items[i].ID < items[j].ID
-		}
-		if items[i].Monitor.Name == items[j].Monitor.Name {
-			return items[i].ID < items[j].ID
-		}
-		return items[i].Monitor.Name < items[j].Monitor.Name
-	})
-
-	WriteJSON(c, 200, gin.H{"Services": items})
-}
-
-func float32Array(input *[30]float32) []float32 {
-	if input == nil {
-		return []float32{}
-	}
-	output := make([]float32, 0, len(input))
-	for _, value := range input {
-		output = append(output, value)
-	}
-	return output
-}
-
-func intArray(input *[30]int) []int {
-	if input == nil {
-		return []int{}
-	}
-	output := make([]int, 0, len(input))
-	for _, value := range input {
-		output = append(output, value)
-	}
-	return output
-}

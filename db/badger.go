@@ -222,7 +222,7 @@ func (b *BadgerDB) startMaintenance() {
 		}()
 
 		// 智能维护：结合缓存监控和内存优化
-		ticker := time.NewTicker(10 * time.Minute)     // 10分钟间隔
+		ticker := time.NewTicker(5 * time.Minute)     // 5分钟间隔
 		cacheTicker := time.NewTicker(5 * time.Minute) // 5分钟缓存检查
 		defer ticker.Stop()
 		defer cacheTicker.Stop()
@@ -230,10 +230,12 @@ func (b *BadgerDB) startMaintenance() {
 		for {
 			select {
 			case <-ticker.C:
-				// 值日志GC - 单次周期内尝试多轮回收，提升清理效果
-				_, _, err := b.RunValueLogGCWithStats(0.7, 3)
+				// 值日志GC - 更加激进：降至0.4阈值，每次最多20轮，为了解决日志文件无限堆积的问题
+				rounds, _, err := b.RunValueLogGCWithStats(0.4, 20)
 				if err != nil {
 					log.Printf("Value log GC failed: %v", err)
+				} else if rounds > 0 {
+					log.Printf("Value log GC 成功执行了 %d 轮清理", rounds)
 				}
 
 			case <-cacheTicker.C:
@@ -1223,7 +1225,6 @@ func convertDbFieldTypes(data *map[string]interface{}, rawJSON []byte) {
 		"HideForGuest", "EnableDDNS", "enable_ddns",
 		// Monitor fields
 		"notify", "Notify", "enable_trigger_task", "EnableTriggerTask",
-		"enable_show_in_service", "EnableShowInService",
 		"latency_notify", "LatencyNotify",
 		// User fields
 		"hireable", "Hireable", "super_admin", "SuperAdmin",
