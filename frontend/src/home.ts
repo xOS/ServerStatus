@@ -244,6 +244,7 @@ let tabSlider: HTMLElement | null = null
 let cards: HTMLElement | null = null
 let homeLoading: HTMLElement | null = null
 let emptyState: HTMLElement | null = null
+let emptyIcon: HTMLElement | null = null
 let emptyTitle: HTMLElement | null = null
 let emptyText: HTMLElement | null = null
 let tooltip: HTMLElement | null = null
@@ -276,6 +277,7 @@ export function initHome(container: HTMLDivElement) {
     </section>
     <section class="status-cards" id="cards" aria-live="polite"></section>
     <section class="empty-state" id="empty-state" hidden>
+      <div class="empty-state-icon" id="empty-icon"></div>
       <div class="empty-state-header" id="empty-title">没有服务器</div>
       <p class="empty-state-text" id="empty-text">请先在后台添加服务器</p>
     </section>
@@ -289,6 +291,7 @@ export function initHome(container: HTMLDivElement) {
   cards = requiredElement('cards')
   homeLoading = requiredElement('home-loading')
   emptyState = requiredElement('empty-state')
+  emptyIcon = requiredElement('empty-icon')
   emptyTitle = requiredElement('empty-title')
   emptyText = requiredElement('empty-text')
   tooltip = requiredElement('tooltip')
@@ -462,6 +465,7 @@ function cleanupHome() {
   cards = null
   homeLoading = null
   emptyState = null
+  emptyIcon = null
   emptyTitle = null
   emptyText = null
   tooltip = null
@@ -955,21 +959,41 @@ function renderEmptyState() {
   emptyState.hidden = hasServers && hasVisible
   cards.hidden = !hasServers
 
-  if (!hasServers || state.activeTag === '') {
-    emptyTitle.textContent = '没有服务器'
-    emptyText.textContent = '请先在后台添加服务器'
+  if (emptyState.hidden || !emptyIcon) return
+
+  // 场景 1：系统里完全没有添加任何服务器
+  if (!hasServers) {
+    emptyIcon.className = 'empty-state-icon is-info'
+    emptyIcon.innerHTML = icon('server', 'empty-icon-svg')
+    emptyTitle.textContent = '暂无任何服务器'
+    emptyText.textContent = '当前系统暂未添加受监控的主机，请先在管理后台添加服务器'
     return
   }
 
-  if (state.activeTag === 'online') {
+  // 场景 2：已有服务器，但在当前分类下没有匹配的主机
+  if (state.activeTag === 'offline') {
+    // 没有离线服务器是极好的状态（所有服务器均在线）
+    emptyIcon.className = 'empty-state-icon is-success'
+    emptyIcon.innerHTML = icon('shield', 'empty-icon-svg')
+    emptyTitle.textContent = '太好了，没有离线的服务器'
+    emptyText.textContent = '当前所有监控主机均处于正常在线状态，运行健康'
+  } else if (state.activeTag === 'online') {
+    // 没有在线服务器（全部失联）
+    emptyIcon.className = 'empty-state-icon is-warning'
+    emptyIcon.innerHTML = icon('alert', 'empty-icon-svg')
     emptyTitle.textContent = '没有在线服务器'
-    emptyText.textContent = ''
-  } else if (state.activeTag === 'offline') {
-    emptyTitle.textContent = '没有离线服务器'
-    emptyText.textContent = ''
+    emptyText.textContent = '当前暂未检测到活跃在线的主机连接'
+  } else if (state.activeTag) {
+    // 某个自定义分组下暂无服务器
+    emptyIcon.className = 'empty-state-icon is-primary'
+    emptyIcon.innerHTML = icon('group', 'empty-icon-svg')
+    emptyTitle.textContent = '该分组暂无服务器'
+    emptyText.textContent = `分组 "${state.activeTag}" 下暂未分配任何服务器`
   } else {
-    emptyTitle.textContent = `没有该分组的服务器 "${state.activeTag}"`
-    emptyText.textContent = ''
+    emptyIcon.className = 'empty-state-icon is-info'
+    emptyIcon.innerHTML = icon('server', 'empty-icon-svg')
+    emptyTitle.textContent = '暂无可见服务器'
+    emptyText.textContent = '当前视图下暂无符合展示条件的服务器'
   }
 }
 

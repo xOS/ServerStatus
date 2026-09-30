@@ -1001,31 +1001,98 @@ i.fl-tux {
 }
 
 .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  min-height: auto;
-  margin: 1em 0;
-  padding: 1em 1.5em;
-  border: none;
-  border-radius: 0.28571429rem;
-  color: #276f86;
-  background: #f8ffff;
-  box-shadow: 0 0 0 1px #a9d5de inset, 0 0 0 0 transparent;
-  text-align: left;
+  max-width: 460px;
+  margin: 36px auto;
+  padding: 34px 28px;
+  border-radius: 16px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-card);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: var(--shadow-soft);
+  text-align: center;
+  user-select: none;
+  animation: emptyStateFadeIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes emptyStateFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.empty-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 14px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.04);
+  color: rgba(15, 23, 42, 0.6);
+  border: 1px solid transparent;
+  transition: transform 0.2s ease;
+}
+
+.empty-state-icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.empty-state-icon.is-success {
+  color: var(--green);
+  background: rgba(76, 175, 80, 0.12);
+  border-color: rgba(76, 175, 80, 0.22);
+}
+
+.empty-state-icon.is-warning {
+  color: var(--warning);
+  background: rgba(255, 152, 0, 0.12);
+  border-color: rgba(255, 152, 0, 0.22);
+}
+
+.empty-state-icon.is-info {
+  color: var(--blue);
+  background: rgba(3, 169, 244, 0.12);
+  border-color: rgba(3, 169, 244, 0.22);
+}
+
+.empty-state-icon.is-primary {
+  color: var(--violet);
+  background: rgba(100, 53, 201, 0.12);
+  border-color: rgba(100, 53, 201, 0.22);
 }
 
 .empty-state-header {
-  margin-bottom: 0.25em;
-  color: rgba(15, 23, 42, 0.9);
-  font-size: 1.35rem;
+  margin: 0;
+  color: rgba(15, 23, 42, 0.88);
+  font-size: 16px;
   font-weight: 700;
   line-height: 1.4;
+  letter-spacing: -0.01em;
 }
 
 .empty-state-text {
-  margin: 0.55em 0 0;
-  color: rgba(51, 65, 85, 0.86);
-  font-size: 0.95rem;
-  line-height: 1.55;
+  margin: 6px 0 0;
+  color: rgba(100, 116, 139, 0.85);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.empty-state-text:empty {
+  display: none;
 }
 
 .bottom-footer {
