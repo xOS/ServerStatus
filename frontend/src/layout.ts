@@ -239,14 +239,16 @@ export const icon = (name: string, cls: string = '') => {
     case 'windows':
       return `<svg ${c} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M3.4 5.6 10.7 4.6v6.55H3.4V5.6Z"/><path d="M12.2 4.38 20.6 3.2v7.95h-8.4V4.38Z"/><path d="M3.4 12.85h7.3v6.55l-7.3-1.02v-5.53Z"/><path d="M12.2 12.85h8.4v7.95l-8.4-1.18v-6.77Z"/></svg>`
 
+    case 'global':
     case 'linuxScript':
-      return `<svg ${base}><rect x="3.8" y="4.2" width="16.4" height="15.6" rx="2.4"/><path class="svg-soft" d="M7.1 8.2h9.8M7.1 16h9.8"/><path class="svg-accent" d="m8.1 10.5 2 1.5-2 1.5"/><path class="svg-accent" d="M12 13.6h4.1"/><circle class="svg-accent" cx="16.8" cy="8.2" r=".9" fill="currentColor" stroke="none"/></svg>`
+      return `<svg ${base}><circle cx="12" cy="12" r="8.8"/><ellipse cx="12" cy="12" rx="3.8" ry="8.8"/><path class="svg-accent" d="M3.2 12h17.6"/><path class="svg-soft" d="M4.8 7.4h14.4M4.8 16.6h14.4"/></svg>`
 
     case 'windowsScript':
       return `<svg ${base}><path d="M4 5.6 10.7 4.7v6.15H4V5.6Z"/><path d="M12.1 4.5 20 3.4v7.45h-7.9V4.5Z"/><path d="M4 12.55h6.7v6.15L4 17.76v-5.21Z"/><path d="M12.1 12.55H20V20l-7.9-1.1v-6.35Z"/><path class="svg-accent" d="M6.8 15.15h3M14 15.15h3.4"/></svg>`
 
+    case 'china':
     case 'chinaSource':
-      return `<svg ${base}><path d="M5.1 4.3v15.4"/><path d="M5.1 5.2h13.4l-1.7 4.05 1.7 4.05H5.1V5.2Z"/><path class="svg-accent" d="m9.3 7.45.56 1.12 1.24.18-.9.88.21 1.24-1.11-.58-1.1.58.21-1.24-.9-.88 1.24-.18.55-1.12Z" fill="currentColor" stroke="none"/><path class="svg-soft" d="M12.8 8.1h2.35M12.8 10.7h1.9"/></svg>`
+      return `<svg ${base}><path d="M4.2 3.5v17"/><circle class="svg-accent" cx="4.2" cy="3.5" r="1" fill="currentColor" stroke="none"/><path d="M4.2 4.8h15a1.4 1.4 0 0 1 1.4 1.4v9a1.4 1.4 0 0 1-1.4 1.4H4.2"/><polygon class="svg-accent" points="7.60,6.30 8.12,7.89 9.79,7.89 8.44,8.87 8.95,10.46 7.60,9.48 6.25,10.46 6.76,8.87 5.41,7.89 7.08,7.89" fill="currentColor" stroke="none"/><polygon class="svg-accent" points="9.85,7.20 10.24,6.72 9.92,6.20 10.49,6.43 10.89,5.96 10.84,6.57 11.42,6.80 10.82,6.95 10.77,7.57 10.45,7.05" fill="currentColor" stroke="none"/><polygon class="svg-accent" points="10.92,8.13 11.47,7.86 11.39,7.25 11.82,7.70 12.37,7.43 12.08,7.97 12.51,8.41 11.90,8.31 11.61,8.85 11.53,8.24" fill="currentColor" stroke="none"/><polygon class="svg-accent" points="10.82,9.52 11.44,9.50 11.61,8.91 11.82,9.49 12.44,9.47 11.95,9.85 12.16,10.43 11.65,10.08 11.16,10.46 11.33,9.87" fill="currentColor" stroke="none"/><polygon class="svg-accent" points="9.63,10.30 10.20,10.53 10.60,10.06 10.56,10.68 11.13,10.91 10.53,11.06 10.49,11.67 10.16,11.15 9.56,11.30 9.96,10.83" fill="currentColor" stroke="none"/></svg>`
 
     case 'apple':
       return `<svg ${c} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M16.5 12.2c-.02-2.15 1.75-3.18 1.83-3.23-1-1.47-2.56-1.67-3.12-1.69-1.33-.13-2.6.78-3.27.78-.68 0-1.72-.76-2.83-.74-1.46.02-2.8.85-3.55 2.16-1.51 2.62-.39 6.5 1.09 8.62.72 1.04 1.58 2.21 2.71 2.17 1.09-.04 1.5-.7 2.81-.7 1.31 0 1.68.7 2.83.68 1.17-.02 1.91-1.06 2.62-2.1.83-1.21 1.17-2.39 1.19-2.45-.03-.01-2.28-.87-2.31-3.5ZM14.34 5.88c.59-.71.99-1.7.88-2.68-.85.03-1.88.57-2.49 1.28-.55.64-1.03 1.64-.9 2.61.94.07 1.91-.48 2.51-1.21Z"/></svg>`

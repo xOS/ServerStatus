@@ -2429,6 +2429,7 @@ i.fl-tux {
   gap: 5px;
 }
 
+.admin-script-head .script-global-svg,
 .admin-script-head .script-linux-svg {
   color: #f88400;
 }
