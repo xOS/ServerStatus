@@ -1045,15 +1045,23 @@ i.fl-tux {
   transition: transform 0.2s ease;
 }
 
-.empty-state-icon svg {
+.empty-state-icon svg,
+.empty-state-icon .svg-icon {
+  display: block;
   width: 26px;
   height: 26px;
+  margin: 0;
 }
 
 .empty-state-icon.is-success {
   color: var(--green);
   background: rgba(76, 175, 80, 0.12);
   border-color: rgba(76, 175, 80, 0.22);
+}
+
+.empty-state-icon.is-success svg,
+.empty-state-icon.is-success .svg-icon {
+  transform: translateY(0.5px);
 }
 
 .empty-state-icon.is-warning {
