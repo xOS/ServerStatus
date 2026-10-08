@@ -22,7 +22,7 @@ AGENT_SERVICE="/etc/systemd/system/server-agent.service"
 AGENT_CONFIG="${AGENT_PATH}/config.yml"
 AGENT_OPENRC_SERVICE="/etc/init.d/server-agent"
 AGENT_LAUNCHD_SERVICE="$HOME/Library/LaunchAgents/com.serverstatus.agent.plist"
-VERSION="v0.4.3"
+VERSION="v0.4.4"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -1599,22 +1599,6 @@ modify_agent_config() {
 
         if [ "$service_started" = true ]; then
             echo -e "${green}探针服务启动成功！${plain}"
-
-            if [ "$os_alpine" = 1 ]; then
-                sleep 1
-                if [ -s "/var/log/server-agent.log" ]; then
-                    echo -e "${green}探针日志正常生成 (/var/log/server-agent.log)${plain}"
-                fi
-            elif [ "$os_macos" = 1 ]; then
-                sleep 2  # 等待日志写入
-                if [ -s "/tmp/server-agent.log" ]; then
-                    echo -e "${green}探针日志正常生成 (/tmp/server-agent.log)${plain}"
-                elif [ -s "/tmp/server-agent_error.log" ]; then
-                    echo -e "${yellow}探针日志已生成 (/tmp/server-agent_error.log)${plain}"
-                else
-                    echo -e "${yellow}探针已启动，等待日志生成...${plain}"
-                fi
-            fi
             break
         fi
 
@@ -1662,124 +1646,51 @@ modify_agent_config() {
 }
 
 show_agent_log() {
-    echo -e "> 获取探针日志"
+    echo -e "> 查看探针运行状态"
 
     if [ "$os_alpine" = 1 ]; then
-        # Alpine使用OpenRC，查看日志文件
         init_openrc_env
-        echo -e "${green}=== 探针状态 ===${plain}"
-        service_status
-
-        # 兼容旧版本：若旧错误日志存在内容且运行日志为空，合并至运行日志
-        if [ -s "/var/log/server-agent_error.log" ]; then
-            if [ ! -s "/var/log/server-agent.log" ]; then
-                cat /var/log/server-agent_error.log >> /var/log/server-agent.log 2>/dev/null || true
-            fi
-        fi
-
-        local log_target="/var/log/server-agent.log"
-        if [ ! -s "$log_target" ] && [ -s "/var/log/server-agent_error.log" ]; then
-            log_target="/var/log/server-agent_error.log"
-        fi
-
-        echo -e "\n${green}=== 运行日志 (${log_target}) ===${plain}"
-        echo -e "${yellow}提示: 按 Ctrl+C 可退出日志查看并返回菜单${plain}\n"
-
-        if [ -f "$log_target" ]; then
-            if [ ! -s "$log_target" ]; then
-                echo -e "${yellow}提示: 当前日志文件暂无内容。若 $AGENT_CONFIG 中 debug 为 false，探针将保持静默；可在菜单高级设置中开启调试模式。${plain}\n"
-            fi
-            trap 'echo ""; trap - INT' INT
-            tail -n 30 -f "$log_target"
-            trap - INT
-        else
-            echo -e "${yellow}运行日志文件不存在，请检查服务是否正在运行${plain}"
-        fi
-    elif [ "$os_macos" = 1 ]; then
-        # macOS使用LaunchAgent，查看日志文件
-        echo -e "正在检查探针状态..."
-
-        # 详细的诊断信息
-        echo -e "${green}=== 诊断信息 ===${plain}"
-
-        # 检查文件是否存在
-        if [ -f "$AGENT_PATH/server-agent" ]; then
-            echo -e "✓ 探针程序存在: $AGENT_PATH/server-agent"
-            ls -la "$AGENT_PATH/server-agent"
-        else
-            echo -e "✗ 探针程序不存在: $AGENT_PATH/server-agent"
-        fi
-
-        # 检查配置文件
-        if [ -f "$AGENT_CONFIG" ]; then
-            echo -e "✓ 配置文件存在: $AGENT_CONFIG"
-        else
-            echo -e "✗ 配置文件不存在: $AGENT_CONFIG"
-        fi
-
-        # 检查LaunchAgent文件
-        if [ -f "$AGENT_LAUNCHD_SERVICE" ]; then
-            echo -e "✓ LaunchAgent配置存在: $AGENT_LAUNCHD_SERVICE"
-            if grep -q '<string>/tmp/server-agent_error.log</string>' "$AGENT_LAUNCHD_SERVICE" 2>/dev/null; then
-                sed -i '' 's#/tmp/server-agent_error.log#/tmp/server-agent.log#g' "$AGENT_LAUNCHD_SERVICE" 2>/dev/null || true
-            fi
-        else
-            echo -e "✗ LaunchAgent配置不存在: $AGENT_LAUNCHD_SERVICE"
-        fi
-
-        # 检查服务状态
         echo -e "\n${green}=== 服务状态 ===${plain}"
+        service_status
+        echo -e ""
+        if [ -f /run/server-agent.pid ]; then
+            local pid=$(cat /run/server-agent.pid 2>/dev/null)
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                echo -e "${green}✓ 探针进程正在运行 (PID: ${pid})${plain}"
+                if command -v ps >/dev/null 2>&1; then
+                    ps -o pid,user,args 2>/dev/null | grep -E "^ *${pid} " || true
+                fi
+            else
+                echo -e "${red}✗ 探针进程未运行 (PID 文件残留或进程异常退出)${plain}"
+            fi
+        else
+            echo -e "${yellow}未找到 PID 文件 (/run/server-agent.pid)，服务可能未启动${plain}"
+        fi
+
+        if [ -s /var/log/server-agent.log ]; then
+            echo -e "\n${yellow}提示: 如需查看日志文件，可手动执行: tail -f /var/log/server-agent.log${plain}"
+        elif [ -s /var/log/server-agent_error.log ]; then
+            echo -e "\n${yellow}提示: 如需查看日志文件，可手动执行: tail -f /var/log/server-agent_error.log${plain}"
+        fi
+
+    elif [ "$os_macos" = 1 ]; then
+        echo -e "\n${green}=== LaunchAgent 状态 ===${plain}"
         if launchctl list | grep com.serverstatus.agent >/dev/null 2>&1; then
-            echo -e "✓ LaunchAgent已加载"
+            echo -e "${green}✓ LaunchAgent 已加载运行${plain}"
             launchctl list | grep com.serverstatus.agent
         else
-            echo -e "✗ LaunchAgent未加载，尝试启动..."
-            service_start
-            sleep 3
-            if launchctl list | grep com.serverstatus.agent >/dev/null 2>&1; then
-                echo -e "✓ LaunchAgent启动成功"
-                launchctl list | grep com.serverstatus.agent
-            else
-                echo -e "✗ LaunchAgent启动失败"
-            fi
+            echo -e "${red}✗ LaunchAgent 未运行${plain}"
         fi
 
-        # 尝试手动测试
-        echo -e "\n${green}=== 手动测试 ===${plain}"
-        if [ -f "$AGENT_PATH/server-agent" ] && [ -f "$AGENT_CONFIG" ]; then
-            echo -e "尝试手动启动探针（测试5秒）..."
-            cd "$AGENT_PATH"
-            timeout 5 ./server-agent 2>&1 | head -10 || echo "手动启动测试完成"
+        if [ -s /tmp/server-agent.log ]; then
+            echo -e "\n${yellow}提示: 如需查看日志文件，可手动执行: tail -f /tmp/server-agent.log${plain}"
         fi
-
-        # 兼容旧版本：合并旧错误日志
-        if [ -s "/tmp/server-agent_error.log" ]; then
-            if [ ! -s "/tmp/server-agent.log" ]; then
-                cat /tmp/server-agent_error.log >> /tmp/server-agent.log 2>/dev/null || true
-            fi
-        fi
-
-        local macos_log="/tmp/server-agent.log"
-        if [ ! -s "$macos_log" ] && [ -s "/tmp/server-agent_error.log" ]; then
-            macos_log="/tmp/server-agent_error.log"
-        fi
-
-        # 显示日志
-        echo -e "\n${green}=== 运行日志 (${macos_log}) ===${plain}"
-        if [ -f "$macos_log" ]; then
-            tail -n 30 "$macos_log"
-        else
-            echo -e "日志文件不存在"
-        fi
-
-        echo -e "\n${yellow}如果问题持续，请尝试：${plain}"
-        echo -e "1. 手动启动: cd $AGENT_PATH && ./server-agent"
-        echo -e "2. 检查配置: cat $AGENT_CONFIG"
-        echo -e "3. 重新安装: ./server-status.sh uninstall_agent && ./server-status.sh install_agent"
 
     else
-        # 其他系统使用systemd
-        journalctl -xf -u server-agent.service
+        echo -e "\n${green}=== systemd 服务状态 ===${plain}"
+        systemctl status server-agent --no-pager -l 2>&1 || true
+
+        echo -e "\n${yellow}提示: 如需实时查看日志，可手动执行: journalctl -u server-agent -f${plain}"
     fi
 
     if [[ $# == 0 ]]; then
