@@ -730,7 +730,7 @@ server: ""
 clientSecret: ""
 tls: false
 insecureTLS: false
-debug: false
+debug: true
 gpu: false
 temperature: false
 disableAutoUpdate: false
@@ -1686,6 +1686,9 @@ show_agent_log() {
         echo -e "${yellow}提示: 按 Ctrl+C 可退出日志查看并返回菜单${plain}\n"
 
         if [ -f "$log_target" ]; then
+            if [ ! -s "$log_target" ]; then
+                echo -e "${yellow}提示: 当前日志文件暂无内容。若 $AGENT_CONFIG 中 debug 为 false，探针将保持静默；可在菜单高级设置中开启调试模式。${plain}\n"
+            fi
             trap 'echo ""; trap - INT' INT
             tail -n 30 -f "$log_target"
             trap - INT
