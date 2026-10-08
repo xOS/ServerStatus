@@ -6,25 +6,8 @@
 #   Github: https://github.com/xOS/ServerStatus
 #========================================================
 
-# Alpine / POSIX sh 兼容：若当前非 bash 执行，尝试自动安装并切换为 bash 运行
+# 若系统已安装 bash，优先切入 bash 运行以获得更佳交互体验；若无 bash，则直接以当前 POSIX / BusyBox ash 运行，避免占用额外空间
 if [ -z "$BASH_VERSION" ]; then
-    if [ -f /etc/alpine-release ] || grep -qi "alpine" /etc/os-release 2>/dev/null; then
-        if ! command -v bash >/dev/null 2>&1; then
-            echo "检测到 Alpine 系统未安装 bash，正在自动安装必要依赖..."
-            if command -v apk >/dev/null 2>&1; then
-                if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
-                    apk update >/dev/null 2>&1 || true
-                    apk add --no-cache bash ca-certificates curl wget unzip >/dev/null 2>&1 || apk add bash ca-certificates curl wget unzip
-                elif command -v sudo >/dev/null 2>&1; then
-                    sudo apk update >/dev/null 2>&1 || true
-                    sudo apk add --no-cache bash ca-certificates curl wget unzip >/dev/null 2>&1 || sudo apk add bash ca-certificates curl wget unzip
-                elif command -v doas >/dev/null 2>&1; then
-                    doas apk update >/dev/null 2>&1 || true
-                    doas apk add --no-cache bash ca-certificates curl wget unzip >/dev/null 2>&1 || doas apk add bash ca-certificates curl wget unzip
-                fi
-            fi
-        fi
-    fi
     if command -v bash >/dev/null 2>&1; then
         if [ -f "$0" ]; then
             exec bash "$0" "$@"
@@ -39,7 +22,7 @@ AGENT_SERVICE="/etc/systemd/system/server-agent.service"
 AGENT_CONFIG="${AGENT_PATH}/config.yml"
 AGENT_OPENRC_SERVICE="/etc/init.d/server-agent"
 AGENT_LAUNCHD_SERVICE="$HOME/Library/LaunchAgents/com.serverstatus.agent.plist"
-VERSION="v0.4.1"
+VERSION="v0.4.2"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -206,12 +189,38 @@ download_file() {
         fi
     fi
 
+    # 若 Alpine 下自带 wget 无法完成 HTTPS 下载，按需补充安装必要依赖重试
+    if [ "$os_alpine" = 1 ]; then
+        if [ ! -f /etc/ssl/certs/ca-certificates.crt ]; then
+            install_soft ca-certificates >/dev/null 2>&1
+            command -v update-ca-certificates >/dev/null 2>&1 && sudo update-ca-certificates >/dev/null 2>&1 || true
+            if command -v wget >/dev/null 2>&1 && wget -T "$timeout" -O "$output" "$url" >/dev/null 2>&1; then
+                return 0
+            fi
+        fi
+        if ! command -v curl >/dev/null 2>&1; then
+            echo -e "${yellow}原生下载工具请求失败，正在按需安装 curl...${plain}"
+            if install_soft curl >/dev/null 2>&1; then
+                if curl -fsSL -m "$timeout" "$url" -o "$output" 2>/dev/null; then
+                    return 0
+                fi
+            fi
+        fi
+    fi
+
     return 1
 }
 
 get_agent_version() {
     local ver=""
-    if command -v curl >/dev/null 2>&1; then
+    if [ -n "$CN" ]; then
+        if command -v curl >/dev/null 2>&1; then
+            ver=$(curl -m 10 -sL "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
+        elif command -v wget >/dev/null 2>&1; then
+            ver=$(wget -qO- -T 10 "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
+        fi
+    fi
+    if [ -z "$ver" ] && command -v curl >/dev/null 2>&1; then
         ver=$(curl -m 10 -sL "https://api.github.com/repos/xos/serveragent/releases/latest" 2>/dev/null | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
         if [ -z "$ver" ]; then
             ver=$(curl -m 10 -sL "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
@@ -360,15 +369,15 @@ pre_check() {
 }
 
 confirm() {
-    if [[ $# > 1 ]]; then
-        echo && read -e -p "$1 [默认$2]: " temp
-        if [[ x"${temp}" == x"" ]]; then
+    if [ $# -gt 1 ]; then
+        echo && read -r -p "$1 [默认$2]: " temp
+        if [ -z "${temp}" ]; then
             temp=$2
         fi
     else
-        read -e -p "$1 [y/n]: " temp
+        read -r -p "$1 [y/n]: " temp
     fi
-    if [[ x"${temp}" == x"y" || x"${temp}" == x"Y" ]]; then
+    if [ "${temp}" = "y" ] || [ "${temp}" = "Y" ]; then
         return 0
     else
         return 1
@@ -401,9 +410,23 @@ before_show_menu() {
 
 install_base() {
     if [ "$os_alpine" = 1 ]; then
-        ensure_commands curl wget unzip ca-certificates bash || return 1
+        # 1. 证书：仅当系统缺失证书库时安装 ca-certificates (~700KB)
+        if [ ! -f /etc/ssl/certs/ca-certificates.crt ] && ! command -v update-ca-certificates >/dev/null 2>&1; then
+            echo -e "${yellow}检测到未安装 ca-certificates，正在安装以支持 HTTPS 下载...${plain}"
+            install_soft ca-certificates
+            command -v update-ca-certificates >/dev/null 2>&1 && sudo update-ca-certificates >/dev/null 2>&1 || true
+        fi
+        # 2. 解压工具：BusyBox 自带 unzip，仅当系统完全没有 unzip 时才安装
+        if ! command -v unzip >/dev/null 2>&1; then
+            install_soft unzip
+        fi
+        # 3. 下载工具：只要已有 curl 或 wget 之一即可，避免额外安装体积庞大的下载器
+        if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+            install_soft curl
+        fi
+        # 4. OpenRC：仅当精简系统缺失时才安装
         if ! command -v rc-service >/dev/null 2>&1 || ! command -v rc-update >/dev/null 2>&1; then
-            echo -e "${yellow}检测到未安装 OpenRC，正在自动安装...${plain}"
+            echo -e "${yellow}检测到未安装 OpenRC，正在安装...${plain}"
             install_soft openrc
         fi
         init_openrc_env
@@ -418,7 +441,11 @@ ensure_commands() {
     local missing_cmds=""
 
     for cmd in "$@"; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
+        if [ "$cmd" = "ca-certificates" ]; then
+            if [ ! -f /etc/ssl/certs/ca-certificates.crt ] && ! command -v update-ca-certificates >/dev/null 2>&1; then
+                missing_cmds="${missing_cmds:+$missing_cmds }$cmd"
+            fi
+        elif ! command -v "$cmd" >/dev/null 2>&1; then
             missing_cmds="${missing_cmds:+$missing_cmds }$cmd"
         fi
     done
@@ -426,17 +453,24 @@ ensure_commands() {
     if [ -n "$missing_cmds" ]; then
         echo -e "${yellow}检测到缺少依赖: ${missing_cmds}，尝试自动安装...${plain}"
         install_soft $missing_cmds
+        if echo " $missing_cmds " | grep -q " ca-certificates "; then
+            command -v update-ca-certificates >/dev/null 2>&1 && sudo update-ca-certificates >/dev/null 2>&1 || true
+        fi
     fi
 
     missing_cmds=""
     for cmd in "$@"; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
+        if [ "$cmd" = "ca-certificates" ]; then
+            if [ ! -f /etc/ssl/certs/ca-certificates.crt ] && ! command -v update-ca-certificates >/dev/null 2>&1; then
+                missing_cmds="${missing_cmds:+$missing_cmds }$cmd"
+            fi
+        elif ! command -v "$cmd" >/dev/null 2>&1; then
             missing_cmds="${missing_cmds:+$missing_cmds }$cmd"
         fi
     done
 
     if [ -n "$missing_cmds" ]; then
-        err "缺少必要命令: ${missing_cmds}，请先安装后重试"
+        err "缺少必要依赖: ${missing_cmds}，请先安装后重试"
         return 1
     fi
 
@@ -446,8 +480,8 @@ ensure_commands() {
 install_soft() {
 	# 根据不同系统使用相应的包管理器
     if [ "$os_alpine" = 1 ]; then
-        # Alpine Linux 使用 apk
-        sudo apk update && (sudo apk add --no-cache "$@" || sudo apk add "$@")
+        # Alpine Linux 优先使用 --no-cache 安装，避免在磁盘留下数十兆索引缓存
+        sudo apk add --no-cache "$@" 2>/dev/null || (sudo apk update && sudo apk add "$@")
     elif [ "$os_macos" = 1 ]; then
         # macOS 使用 Homebrew
         if command -v brew >/dev/null 2>&1; then
@@ -900,16 +934,16 @@ update_agent() {
 }
 
 set_host(){
-    read -ep "请输入一个解析到探针面板所在IP的域名: " grpc_host
-        [[ -z "${grpc_host}" ]] && echo "已取消输入..." && exit 1
+    read -r -p "请输入一个解析到探针面板所在IP的域名: " grpc_host
+    [ -z "${grpc_host}" ] && echo "已取消输入..." && exit 1
 }
 set_port(){
-    read -ep "请输入探针面板 GRPC 端口（默认：2222）: " grpc_port
-        [[ -z "${grpc_port}" ]] && grpc_port=2222
+    read -r -p "请输入探针面板 GRPC 端口（默认：2222）: " grpc_port
+    [ -z "${grpc_port}" ] && grpc_port=2222
 }
 set_secret(){
-    read -ep "请输入探针密钥: " client_secret
-        [[ -z "${client_secret}" ]] && echo "已取消输入..." && exit 1
+    read -r -p "请输入探针密钥: " client_secret
+    [ -z "${client_secret}" ] && echo "已取消输入..." && exit 1
 }
 # 更新配置文件中的值
 update_config_value() {
@@ -959,8 +993,8 @@ set_agent(){
     ${green}4.${plain}  修改 全部配置
     ${green}5.${plain}  高级配置选项
     ${green}6.${plain}  编辑配置文件" && echo
-	    read -e -p "(默认: 取消):" modify
-        [[ -z "${modify}" ]] && echo "已取消..." && exit 1
+	    read -r -p "(默认: 取消): " modify
+        [ -z "${modify}" ] && echo "已取消..." && exit 1
 
 	if [[ "${modify}" == "1" ]]; then
         read_config
@@ -1028,7 +1062,7 @@ advanced_config_menu() {
     ${green}8.${plain}  设置 上报间隔
     =========================
     ${green}0.${plain}  返回上级菜单" && echo
-    read -e -p "请选择配置项 [0-8]: " advanced_option
+    read -r -p "请选择配置项 [0-8]: " advanced_option
 
     case "${advanced_option}" in
     1)
@@ -1075,7 +1109,7 @@ toggle_config_boolean() {
     current_value=$(grep "^${key}:" ${AGENT_CONFIG} | awk '{print $2}')
 
     echo "当前 ${description} 状态: ${current_value}"
-    read -e -p "是否切换状态? [y/n]: " toggle
+    read -r -p "是否切换状态? [y/n]: " toggle
 
     if [[ x"${toggle}" == x"y" || x"${toggle}" == x"Y" ]]; then
         if [[ "${current_value}" == "true" ]]; then
@@ -1102,7 +1136,7 @@ set_report_delay() {
     current_delay=$(grep "^reportDelay:" ${AGENT_CONFIG} | awk '{print $2}')
     echo "当前上报间隔: ${current_delay} 秒"
 
-    read -e -p "请输入新的上报间隔 (1-4秒，推荐1秒): " new_delay
+    read -r -p "请输入新的上报间隔 (1-4秒，推荐1秒): " new_delay
 
     if [[ "${new_delay}" =~ ^[1-4]$ ]]; then
         update_config_value "reportDelay" "${new_delay}" ${AGENT_CONFIG}
@@ -1143,7 +1177,7 @@ edit_config_file() {
     fi
 
     echo -e "配置文件编辑完成"
-    read -e -p "是否重启探针以使配置生效? [y/n]: " restart_choice
+    read -r -p "是否重启探针以使配置生效? [y/n]: " restart_choice
 
     if [[ x"${restart_choice}" == x"y" || x"${restart_choice}" == x"Y" ]]; then
         echo "重启探针中..."
@@ -1187,10 +1221,10 @@ modify_agent_config() {
 
     if [[ $# -lt 3 ]]; then
         echo "请先在管理面板上添加探针服务，记录下密钥" &&
-            read -ep "请输入一个解析到探针面板所在IP的域名: " grpc_host &&
-            read -ep "请输入探针面板 GRPC 端口（默认：2222）: " grpc_port &&
-            read -ep "请输入探针密钥: " client_secret
-        if [[ -z "${grpc_host}" || -z "${client_secret}" ]]; then
+            read -r -p "请输入一个解析到探针面板所在IP的域名: " grpc_host &&
+            read -r -p "请输入探针面板 GRPC 端口（默认：2222）: " grpc_port &&
+            read -r -p "请输入探针密钥: " client_secret
+        if [ -z "${grpc_host}" ] || [ -z "${client_secret}" ]; then
             echo -e "${red}所有选项都不能为空${plain}"
             before_show_menu
             return 1
@@ -1690,7 +1724,7 @@ show_menu() {
     ${green}00.${plain} 退出脚本
     =========================
     "
-    echo && read -ep "请输入选择 [0-9]: " num
+    echo && read -r -p "请输入选择 [0-9]: " num
 
     case "${num}" in
     00)
