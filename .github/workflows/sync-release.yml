@@ -19,10 +19,15 @@ jobs:
   sync-release-to-r2:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Download Release Assets
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -n "${{ inputs.tag }}" ]; then
             gh release download "${{ inputs.tag }}" --repo ${{ github.repository }} --dir assets --pattern '*'
@@ -31,17 +36,15 @@ jobs:
           fi
 
       - name: Sync to Cloudflare R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ inputs.tag }}"
           if [ -z "$TAG" ]; then
             TAG=$(gh release view --repo ${{ github.repository }} --json tagName -q .tagName)
+          fi
+
+          if [ -z "$TAG" ]; then
+            echo "错误: 未能获取到有效的 Release 标签"
+            exit 1
           fi
 
           mkdir -p upload_dir/$TAG
@@ -51,6 +54,7 @@ jobs:
           test -n "$(find upload_dir/$TAG -maxdepth 1 -type f -name '*.zip' -print -quit)"
           echo "{\"tag_name\":\"$TAG\"}" > upload_dir/index.json
 
+          echo "正在上传 $TAG 到 R2..."
           aws s3 sync upload_dir/$TAG/ s3://${R2_BUCKET}/serverdash/$TAG/ \
             --cache-control 'public, max-age=31536000, immutable' \
             --endpoint-url https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
@@ -58,3 +62,56 @@ jobs:
             --cache-control 'no-store, max-age=0' \
             --content-type 'application/json' \
             --endpoint-url https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+
+      - name: Clean Up Old Releases in Cloudflare R2
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --repo ${{ github.repository }} --json tagName -q .tagName)
+          fi
+
+          if [ -z "$TAG" ]; then
+            echo "错误: 未能获取到有效的 Release 标签，跳过清理"
+            exit 0
+          fi
+
+          # 获取仓库最近发布的 Releases 列表（排除 draft）
+          RELEASE_TAGS=$(gh release list --repo ${{ github.repository }} --exclude-drafts --limit 10 --json tagName -q '.[].tagName')
+
+          # 策略：仅保留最新版本和上一个版本
+          KEEP_TAG_1="$TAG"
+          KEEP_TAG_2=""
+          for t in $RELEASE_TAGS; do
+            if [ "$t" != "$KEEP_TAG_1" ]; then
+              KEEP_TAG_2="$t"
+              break
+            fi
+          done
+
+          echo "=========================================="
+          echo "R2 版本保留策略: 仅保留最新版本和上一个版本"
+          echo "保留版本 1 (最新): $KEEP_TAG_1"
+          if [ -n "$KEEP_TAG_2" ]; then
+            echo "保留版本 2 (前一版): $KEEP_TAG_2"
+          else
+            echo "保留版本 2: 无 (未找到更早的发布版本)"
+          fi
+          echo "=========================================="
+
+          # 列出 R2 中 serverdash/ 下所有的版本目录
+          REMOTE_DIRS=$(aws s3 ls s3://${R2_BUCKET}/serverdash/ \
+            --endpoint-url https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com \
+            | awk '/PRE/ {print $2}' | sed 's#/$##')
+
+          for dir in $REMOTE_DIRS; do
+            [ -z "$dir" ] && continue
+            if [ "$dir" = "$KEEP_TAG_1" ] || [ -n "$KEEP_TAG_2" -a "$dir" = "$KEEP_TAG_2" ]; then
+              echo "✓ 保留版本: $dir"
+            else
+              echo "✗ 清理历史旧版本: s3://${R2_BUCKET}/serverdash/$dir/"
+              aws s3 rm s3://${R2_BUCKET}/serverdash/$dir/ --recursive \
+                --endpoint-url https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+            fi
+          done
+          echo "=========================================="
+          echo "R2 存储桶旧版本清理完成"
