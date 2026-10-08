@@ -8,10 +8,11 @@ description="ServerStatus Agent Service"
 
 # 服务配置
 command="/opt/server-status/agent/server-agent"
-# command_args="-c /opt/server-status/agent/config.yml"
+directory="/opt/server-status/agent"
+start_stop_daemon_args="--chdir /opt/server-status/agent"
 command_user="root"
 command_background="yes"
-pidfile="/var/run/${name}.pid"
+pidfile="/run/${name}.pid"
 
 # 日志配置
 output_log="/var/log/${name}.log"
@@ -41,7 +42,7 @@ start_pre() {
     checkpath --directory --owner root:root --mode 0755 /var/log
     
     # 创建PID文件目录
-    checkpath --directory --owner root:root --mode 0755 /var/run
+    checkpath --directory --owner root:root --mode 0755 /run
     
     return 0
 }

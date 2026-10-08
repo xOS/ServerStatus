@@ -1,10 +1,36 @@
-#!/bin/bash
+#!/bin/sh
 #========================================================
-#   System Required: CentOS 7+ / Debian 8+ / Ubuntu 16+ /
+#   System Required: CentOS 7+ / Debian 8+ / Ubuntu 16+ / Alpine / macOS
 #   Arch 未测试
 #   Description: 探针安装脚本
 #   Github: https://github.com/xOS/ServerStatus
 #========================================================
+
+# Alpine / POSIX sh 兼容：若当前非 bash 执行，尝试自动安装并切换为 bash 运行
+if [ -z "$BASH_VERSION" ]; then
+    if [ -f /etc/alpine-release ] || grep -qi "alpine" /etc/os-release 2>/dev/null; then
+        if ! command -v bash >/dev/null 2>&1; then
+            echo "检测到 Alpine 系统未安装 bash，正在自动安装必要依赖..."
+            if command -v apk >/dev/null 2>&1; then
+                if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+                    apk update >/dev/null 2>&1 || true
+                    apk add --no-cache bash ca-certificates curl wget unzip >/dev/null 2>&1 || apk add bash ca-certificates curl wget unzip
+                elif command -v sudo >/dev/null 2>&1; then
+                    sudo apk update >/dev/null 2>&1 || true
+                    sudo apk add --no-cache bash ca-certificates curl wget unzip >/dev/null 2>&1 || sudo apk add bash ca-certificates curl wget unzip
+                elif command -v doas >/dev/null 2>&1; then
+                    doas apk update >/dev/null 2>&1 || true
+                    doas apk add --no-cache bash ca-certificates curl wget unzip >/dev/null 2>&1 || doas apk add bash ca-certificates curl wget unzip
+                fi
+            fi
+        fi
+    fi
+    if command -v bash >/dev/null 2>&1; then
+        if [ -f "$0" ]; then
+            exec bash "$0" "$@"
+        fi
+    fi
+fi
 
 BASE_PATH="/opt/server-status"
 DASHBOARD_PATH="${BASE_PATH}/dashboard"
@@ -13,29 +39,38 @@ AGENT_SERVICE="/etc/systemd/system/server-agent.service"
 AGENT_CONFIG="${AGENT_PATH}/config.yml"
 AGENT_OPENRC_SERVICE="/etc/init.d/server-agent"
 AGENT_LAUNCHD_SERVICE="$HOME/Library/LaunchAgents/com.serverstatus.agent.plist"
-VERSION="v0.3.1"
+VERSION="v0.4.1"
 
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
-export PATH=$PATH:/usr/local/bin
+export PATH=$PATH:/usr/local/bin:/sbin:/usr/sbin
 
 os_arch=""
 os_alpine=0
 os_macos=0
 
 sudo() {
-    myEUID=$(id -ru)
+    myEUID=$(id -u 2>/dev/null || echo "$EUID")
     if [ "$myEUID" -ne 0 ]; then
         if command -v sudo > /dev/null 2>&1; then
             command sudo "$@"
+        elif command -v doas > /dev/null 2>&1; then
+            command doas "$@"
         else
-            err "错误: 您的系统未安装 sudo，因此无法进行该项操作。"
+            err "错误: 您的系统未安装 sudo 或 doas，因此无法进行该项操作。"
             exit 1
         fi
     else
         "$@"
+    fi
+}
+
+init_openrc_env() {
+    if [ "$os_alpine" = 1 ]; then
+        sudo mkdir -p /run/openrc
+        [ -f /run/openrc/softlevel ] || sudo touch /run/openrc/softlevel
     fi
 }
 
@@ -49,7 +84,8 @@ check_systemd() {
 # 服务管理辅助函数
 service_enable() {
     if [ "$os_alpine" = 1 ]; then
-        rc-update add server-agent default
+        init_openrc_env
+        rc-update add server-agent default 2>/dev/null || true
     elif [ "$os_macos" = 1 ]; then
         # macOS使用用户级LaunchAgent
         echo "正在加载LaunchAgent..."
@@ -63,6 +99,7 @@ service_enable() {
 
 service_start() {
     if [ "$os_alpine" = 1 ]; then
+        init_openrc_env
         rc-service server-agent start
     elif [ "$os_macos" = 1 ]; then
         # macOS LaunchAgent通过load自动启动，如果没有启动则手动启动
@@ -77,7 +114,17 @@ service_start() {
 
 service_stop() {
     if [ "$os_alpine" = 1 ]; then
-        rc-service server-agent stop
+        init_openrc_env
+        rc-service server-agent stop 2>/dev/null || true
+        if [ -f /run/server-agent.pid ]; then
+            local pid=$(cat /run/server-agent.pid 2>/dev/null)
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                kill "$pid" 2>/dev/null || true
+                sleep 1
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+            rm -f /run/server-agent.pid
+        fi
     elif [ "$os_macos" = 1 ]; then
         launchctl stop com.serverstatus.agent
     else
@@ -87,7 +134,12 @@ service_stop() {
 
 service_restart() {
     if [ "$os_alpine" = 1 ]; then
-        rc-service server-agent restart
+        init_openrc_env
+        if rc-service server-agent status >/dev/null 2>&1; then
+            rc-service server-agent restart
+        else
+            rc-service server-agent start
+        fi
     elif [ "$os_macos" = 1 ]; then
         echo "正在重启探针服务..."
         launchctl stop com.serverstatus.agent 2>/dev/null || true
@@ -104,6 +156,7 @@ service_restart() {
 
 service_status() {
     if [ "$os_alpine" = 1 ]; then
+        init_openrc_env
         rc-service server-agent status
     elif [ "$os_macos" = 1 ]; then
         launchctl list | grep com.serverstatus.agent || echo "服务未运行"
@@ -114,7 +167,8 @@ service_status() {
 
 service_disable() {
     if [ "$os_alpine" = 1 ]; then
-        rc-update del server-agent default
+        init_openrc_env
+        rc-update del server-agent default 2>/dev/null || true
     elif [ "$os_macos" = 1 ]; then
         launchctl disable gui/$(id -u)/com.serverstatus.agent 2>/dev/null || true
         launchctl unload $AGENT_LAUNCHD_SERVICE 2>/dev/null || true
@@ -133,30 +187,61 @@ err() {
     printf "${red}$*${plain}\n" >&2
 }
 
+download_file() {
+    local url="$1"
+    local output="$2"
+    local timeout="${3:-30}"
+
+    if command -v curl >/dev/null 2>&1; then
+        if curl -fsSL -m "$timeout" "$url" -o "$output" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    if command -v wget >/dev/null 2>&1; then
+        if wget -t 2 -T "$timeout" -O "$output" "$url" >/dev/null 2>&1; then
+            return 0
+        elif wget -T "$timeout" -O "$output" "$url" >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+get_agent_version() {
+    local ver=""
+    if command -v curl >/dev/null 2>&1; then
+        ver=$(curl -m 10 -sL "https://api.github.com/repos/xos/serveragent/releases/latest" 2>/dev/null | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
+        if [ -z "$ver" ]; then
+            ver=$(curl -m 10 -sL "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
+        fi
+    fi
+    if [ -z "$ver" ] && command -v wget >/dev/null 2>&1; then
+        ver=$(wget -qO- -T 10 "https://api.github.com/repos/xos/serveragent/releases/latest" 2>/dev/null | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
+        if [ -z "$ver" ]; then
+            ver=$(wget -qO- -T 10 "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
+        fi
+    fi
+    echo "$ver"
+}
+
 download_release_archive() {
     local primary_url="$1"
     local fallback_url="$2"
     local output_file="$3"
 
-    local wget_log="/tmp/wget_error_$$.log"
-    if wget -t 2 -T 60 -O "$output_file" "$primary_url" >/dev/null 2>"$wget_log"; then
-        rm -f "$wget_log"
+    if download_file "$primary_url" "$output_file" 60; then
         return 0
     fi
 
     rm -f "$output_file"
     if [ -n "$fallback_url" ] && [ "$fallback_url" != "$primary_url" ]; then
         echo -e "${yellow}首选节点下载失败，正在回退备用下载...${plain}"
-        echo -e "${yellow}失败详情：请求 URL [ $primary_url ] 发生错误：${plain}"
-        cat "$wget_log" | grep -v '已发出' | sed 's/^/  /'
-        rm -f "$wget_log"
-
-        if wget -t 2 -T 60 -O "$output_file" "$fallback_url" >/dev/null 2>&1; then
+        if download_file "$fallback_url" "$output_file" 60; then
             return 0
         fi
         rm -f "$output_file"
-    else
-        rm -f "$wget_log"
     fi
 
     return 1
@@ -217,7 +302,7 @@ pre_check() {
         *Linux*)
             os="linux"
             # 检测是否为Alpine Linux
-            if [ -f /etc/alpine-release ]; then
+            if [ -f /etc/alpine-release ] || grep -qi "alpine" /etc/os-release 2>/dev/null; then
                 os_alpine=1
                 echo "检测到Alpine Linux系统"
             else
@@ -315,34 +400,43 @@ before_show_menu() {
 }
 
 install_base() {
-    ensure_commands curl wget unzip || return 1
+    if [ "$os_alpine" = 1 ]; then
+        ensure_commands curl wget unzip ca-certificates bash || return 1
+        if ! command -v rc-service >/dev/null 2>&1 || ! command -v rc-update >/dev/null 2>&1; then
+            echo -e "${yellow}检测到未安装 OpenRC，正在自动安装...${plain}"
+            install_soft openrc
+        fi
+        init_openrc_env
+    else
+        ensure_commands curl wget unzip || return 1
+    fi
 }
 
 # 确保依赖命令存在，不存在则尝试安装并做二次校验
 ensure_commands() {
     local cmd
-    local missing_cmds=()
+    local missing_cmds=""
 
     for cmd in "$@"; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
-            missing_cmds+=("$cmd")
+            missing_cmds="${missing_cmds:+$missing_cmds }$cmd"
         fi
     done
 
-    if [ ${#missing_cmds[@]} -gt 0 ]; then
-        echo -e "${yellow}检测到缺少依赖: ${missing_cmds[*]}，尝试自动安装...${plain}"
-        install_soft "${missing_cmds[@]}"
+    if [ -n "$missing_cmds" ]; then
+        echo -e "${yellow}检测到缺少依赖: ${missing_cmds}，尝试自动安装...${plain}"
+        install_soft $missing_cmds
     fi
 
-    missing_cmds=()
+    missing_cmds=""
     for cmd in "$@"; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
-            missing_cmds+=("$cmd")
+            missing_cmds="${missing_cmds:+$missing_cmds }$cmd"
         fi
     done
 
-    if [ ${#missing_cmds[@]} -gt 0 ]; then
-        err "缺少必要命令: ${missing_cmds[*]}，请先安装后重试"
+    if [ -n "$missing_cmds" ]; then
+        err "缺少必要命令: ${missing_cmds}，请先安装后重试"
         return 1
     fi
 
@@ -353,7 +447,7 @@ install_soft() {
 	# 根据不同系统使用相应的包管理器
     if [ "$os_alpine" = 1 ]; then
         # Alpine Linux 使用 apk
-        sudo apk update && sudo apk add "$@"
+        sudo apk update && (sudo apk add --no-cache "$@" || sudo apk add "$@")
     elif [ "$os_macos" = 1 ]; then
         # macOS 使用 Homebrew
         if command -v brew >/dev/null 2>&1; then
@@ -414,6 +508,147 @@ selinux() {
     fi
 }
 
+setup_agent_config_template() {
+    [ -d "$AGENT_PATH" ] || sudo mkdir -p "$AGENT_PATH"
+
+    if [ -f "$AGENT_CONFIG" ]; then
+        return 0
+    fi
+
+    echo "正在下载配置文件模板"
+    if download_file "https://${GITHUB_RAW_URL}/script/config.yml" "$AGENT_CONFIG" 15; then
+        return 0
+    fi
+
+    if [ -f "./script/config.yml" ]; then
+        cp "./script/config.yml" "$AGENT_CONFIG" && return 0
+    elif [ -f "../script/config.yml" ]; then
+        cp "../script/config.yml" "$AGENT_CONFIG" && return 0
+    fi
+
+    echo -e "${yellow}未找到远程模板，生成默认配置文件...${plain}"
+    cat <<'EOF' > "$AGENT_CONFIG"
+# ServerAgent 配置文件
+server: ""
+clientSecret: ""
+tls: false
+insecureTLS: false
+debug: false
+gpu: false
+temperature: false
+disableAutoUpdate: false
+disableForceUpdate: false
+disableCommandExecute: false
+disableNat: false
+disableSendQuery: false
+skipConnectionCount: false
+skipProcsCount: false
+reportDelay: 1
+ipReportPeriod: 1800
+useIPv6CountryCode: false
+useR2ToUpgrade: false
+EOF
+    return 0
+}
+
+setup_openrc_service() {
+    echo "正在配置 OpenRC 服务..."
+    init_openrc_env
+    if download_file "https://${GITHUB_RAW_URL}/script/server-agent.openrc" "$AGENT_OPENRC_SERVICE" 15; then
+        chmod +x "$AGENT_OPENRC_SERVICE"
+        return 0
+    fi
+
+    if [ -f "./script/server-agent.openrc" ]; then
+        cp "./script/server-agent.openrc" "$AGENT_OPENRC_SERVICE"
+        chmod +x "$AGENT_OPENRC_SERVICE"
+        return 0
+    elif [ -f "../script/server-agent.openrc" ]; then
+        cp "../script/server-agent.openrc" "$AGENT_OPENRC_SERVICE"
+        chmod +x "$AGENT_OPENRC_SERVICE"
+        return 0
+    fi
+
+    echo -e "${yellow}未能从远程下载 OpenRC 服务文件，正在生成本地服务脚本...${plain}"
+    cat <<'EOF' > "$AGENT_OPENRC_SERVICE"
+#!/sbin/openrc-run
+
+name="server-agent"
+description="ServerStatus Agent Service"
+command="/opt/server-status/agent/server-agent"
+directory="/opt/server-status/agent"
+start_stop_daemon_args="--chdir /opt/server-status/agent"
+command_user="root"
+command_background="yes"
+pidfile="/run/${name}.pid"
+
+output_log="/var/log/${name}.log"
+error_log="/var/log/${name}_error.log"
+
+depend() {
+    need net
+    after firewall
+}
+
+start_pre() {
+    if [ ! -x "${command}" ]; then
+        eerror "ServerStatus Agent executable not found: ${command}"
+        return 1
+    fi
+    if [ ! -f "/opt/server-status/agent/config.yml" ]; then
+        eerror "ServerStatus Agent config file not found: /opt/server-status/agent/config.yml"
+        return 1
+    fi
+    checkpath --directory --owner root:root --mode 0755 /var/log
+    checkpath --directory --owner root:root --mode 0755 /run
+    return 0
+}
+
+start_post() {
+    sleep 1
+    if [ -f "${pidfile}" ]; then
+        local pid=$(cat "${pidfile}")
+        if kill -0 "${pid}" 2>/dev/null; then
+            einfo "ServerStatus Agent started successfully with PID ${pid}"
+            return 0
+        else
+            eerror "ServerStatus Agent failed to start properly"
+            return 1
+        fi
+    else
+        eerror "ServerStatus Agent PID file not created"
+        return 1
+    fi
+}
+
+stop_post() {
+    if [ -f "${pidfile}" ]; then
+        rm -f "${pidfile}"
+    fi
+    einfo "ServerStatus Agent stopped"
+    return 0
+}
+
+status() {
+    if [ -f "${pidfile}" ]; then
+        local pid=$(cat "${pidfile}")
+        if kill -0 "${pid}" 2>/dev/null; then
+            einfo "ServerStatus Agent is running with PID ${pid}"
+            return 0
+        else
+            eerror "ServerStatus Agent PID file exists but process is not running"
+            return 1
+        fi
+    else
+        einfo "ServerStatus Agent is not running"
+        return 1
+    fi
+}
+EOF
+    chmod +x "$AGENT_OPENRC_SERVICE"
+    return 0
+}
+
 install_agent() {
     install_base || return 1
     selinux
@@ -422,12 +657,9 @@ install_agent() {
 
     echo -e "正在获取探针版本号"
 
-    local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serveragent/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
-    if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
-    fi
+    local version=$(get_agent_version)
 
-    if [ ! -n "$version" ]; then
+    if [ -z "$version" ]; then
         echo -e "获取版本号失败！"
         return 0
     else
@@ -435,7 +667,7 @@ install_agent() {
     fi
 
     # 探针文件夹
-    if [ ! -z "${AGENT_PATH}" ]; then
+    if [ -n "${AGENT_PATH}" ]; then
         # macOS下可能需要sudo权限创建/opt目录
         if [ "$os_macos" = 1 ]; then
             if [ ! -d "/opt" ]; then
@@ -489,7 +721,7 @@ install_agent() {
     fi
     unzip -qo $AGENT_ZIP &&
         chmod +x server-agent &&
-        mv server-agent $AGENT_PATH &&
+        mv -f server-agent "$AGENT_PATH/" &&
         rm -rf $AGENT_ZIP README.md
 
     # macOS下设置正确的文件权限
@@ -518,12 +750,7 @@ install_agent() {
     fi
 
     # 下载配置文件模板
-    echo "正在下载配置文件模板"
-    wget -t 2 -T 10 -O $AGENT_CONFIG https://${GITHUB_RAW_URL}/script/config.yml >/dev/null 2>&1
-    if [[ $? != 0 ]]; then
-        echo -e "${red}配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
-        return 1
-    fi
+    setup_agent_config_template
 
     # macOS下设置配置文件权限
     if [ "$os_macos" = 1 ]; then
@@ -549,29 +776,21 @@ install_agent() {
         fi
     fi
 
-    # 根据系统类型下载相应的服务文件
+    # 根据系统类型配置相应的服务文件
     if [ "$os_alpine" = 1 ]; then
-        echo "正在下载OpenRC服务文件"
-        wget -t 2 -T 10 -O $AGENT_OPENRC_SERVICE https://${GITHUB_RAW_URL}/script/server-agent.openrc >/dev/null 2>&1
-        if [[ $? != 0 ]]; then
-            echo -e "${red}OpenRC服务文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
-            return 1
-        fi
-        chmod +x $AGENT_OPENRC_SERVICE
+        setup_openrc_service
     elif [ "$os_macos" = 1 ]; then
         echo "正在下载LaunchAgent配置文件"
         # 确保LaunchAgents目录存在
         mkdir -p "$HOME/Library/LaunchAgents"
-        wget -t 2 -T 10 -O $AGENT_LAUNCHD_SERVICE https://${GITHUB_RAW_URL}/script/com.serverstatus.agent.plist >/dev/null 2>&1
-        if [[ $? != 0 ]]; then
+        if ! download_file "https://${GITHUB_RAW_URL}/script/com.serverstatus.agent.plist" "$AGENT_LAUNCHD_SERVICE" 10; then
             echo -e "${red}LaunchAgent配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
             return 1
         fi
     else
         # 其他系统使用systemd
         echo "正在下载systemd服务文件"
-        wget -t 2 -T 10 -O $AGENT_SERVICE https://${GITHUB_RAW_URL}/script/server-agent.service >/dev/null 2>&1
-        if [[ $? != 0 ]]; then
+        if ! download_file "https://${GITHUB_RAW_URL}/script/server-agent.service" "$AGENT_SERVICE" 10; then
             echo -e "${red}Service文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
             return 1
         fi
@@ -595,12 +814,9 @@ update_agent() {
 
     echo -e "正在获取探针版本号"
 
-    local version=$(curl -m 10 -sL "https://api.github.com/repos/xos/serveragent/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
-	if [ ! -n "$version" ]; then
-        version=$(curl -m 10 -sL "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
-    fi
+    local version=$(get_agent_version)
 
-    if [ ! -n "$version" ]; then
+    if [ -z "$version" ]; then
         echo -e "获取版本号失败！"
         return 0
     else
@@ -608,7 +824,7 @@ update_agent() {
     fi
 
     # 探针文件夹
-    if [ ! -z "${AGENT_PATH}" ]; then
+    if [ -n "${AGENT_PATH}" ]; then
         # macOS下可能需要sudo权限创建/opt目录
         if [ "$os_macos" = 1 ]; then
             if [ ! -d "/opt" ]; then
@@ -663,21 +879,21 @@ update_agent() {
     fi
     unzip -qo $AGENT_ZIP &&
         chmod +x server-agent &&
-        mv server-agent $AGENT_PATH &&
+        mv -f server-agent "$AGENT_PATH/" &&
         rm -rf $AGENT_ZIP README.md
 
-    # 检查配置文件是否存在，如果不存在则下载
-    if [[ ! -f ${AGENT_CONFIG} ]]; then
-        echo "配置文件不存在，正在下载配置文件模板"
-        wget -t 2 -T 10 -O $AGENT_CONFIG https://${GITHUB_RAW_URL}/script/config.yml >/dev/null 2>&1
-        if [[ $? != 0 ]]; then
-            echo -e "${yellow}配置文件下载失败，将使用默认配置${plain}"
-        fi
+    # 检查配置文件是否存在，如果不存在则下载/生成
+    if [ ! -f "${AGENT_CONFIG}" ]; then
+        setup_agent_config_template
+    fi
+
+    if [ "$os_alpine" = 1 ]; then
+        [ -f "$AGENT_OPENRC_SERVICE" ] || setup_openrc_service
     fi
 
     service_restart
 
-    if [[ $# == 0 ]]; then
+    if [ $# = 0 ]; then
         echo -e "更新完毕！"
         before_show_menu
     fi
@@ -701,28 +917,29 @@ update_config_value() {
     local value=$2
     local config_file=$3
 
-    # 处理不同类型的值
-    if [[ "$value" == "true" || "$value" == "false" ]]; then
-        # 布尔值不需要引号
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/^${key}:.*/${key}: ${value}/" "$config_file"
+    [ -f "$config_file" ] || touch "$config_file"
+
+    local formatted=""
+    case "$value" in
+        true|false)
+            formatted="${key}: ${value}"
+            ;;
+        ""|*[!0-9]*)
+            formatted="${key}: \"${value}\""
+            ;;
+        *)
+            formatted="${key}: ${value}"
+            ;;
+    esac
+
+    if grep -q "^${key}:" "$config_file" 2>/dev/null; then
+        if [ "$os_macos" = 1 ]; then
+            sed -i '' "s|^${key}:.*|${formatted}|" "$config_file"
         else
-            sed -i "s/^${key}:.*/${key}: ${value}/" "$config_file"
-        fi
-    elif [[ "$value" =~ ^[0-9]+$ ]]; then
-        # 数字不需要引号
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/^${key}:.*/${key}: ${value}/" "$config_file"
-        else
-            sed -i "s/^${key}:.*/${key}: ${value}/" "$config_file"
+            sed -i "s|^${key}:.*|${formatted}|" "$config_file"
         fi
     else
-        # 字符串需要引号
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/^${key}:.*/${key}: \"${value}\"/" "$config_file"
-        else
-            sed -i "s/^${key}:.*/${key}: \"${value}\"/" "$config_file"
-        fi
+        echo "$formatted" >> "$config_file"
     fi
 }
 
@@ -940,40 +1157,32 @@ edit_config_file() {
 modify_agent_config() {
     echo -e "> 初始化探针配置"
 
-    # 根据系统类型下载相应的服务文件
+    # 根据系统类型配置相应的服务文件
     if [ "$os_alpine" = 1 ]; then
         # Alpine使用OpenRC
-        wget -t 2 -T 10 -O $AGENT_OPENRC_SERVICE https://${GITHUB_RAW_URL}/script/server-agent.openrc >/dev/null 2>&1
-        if [[ $? != 0 ]]; then
-            echo -e "${red}OpenRC服务文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
-            return 0
-        fi
-        chmod +x $AGENT_OPENRC_SERVICE
+        [ -f "$AGENT_OPENRC_SERVICE" ] || setup_openrc_service
     elif [ "$os_macos" = 1 ]; then
         # macOS使用LaunchAgent
-        mkdir -p "$HOME/Library/LaunchAgents"
-        wget -t 2 -T 10 -O $AGENT_LAUNCHD_SERVICE https://${GITHUB_RAW_URL}/script/com.serverstatus.agent.plist >/dev/null 2>&1
-        if [[ $? != 0 ]]; then
-            echo -e "${red}LaunchAgent配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
-            return 0
+        if [ ! -f "$AGENT_LAUNCHD_SERVICE" ]; then
+            mkdir -p "$HOME/Library/LaunchAgents"
+            if ! download_file "https://${GITHUB_RAW_URL}/script/com.serverstatus.agent.plist" "$AGENT_LAUNCHD_SERVICE" 10; then
+                echo -e "${red}LaunchAgent配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
+                return 0
+            fi
         fi
     else
         # 其他系统使用systemd
-        wget -t 2 -T 10 -O $AGENT_SERVICE https://${GITHUB_RAW_URL}/script/server-agent.service >/dev/null 2>&1
-        if [[ $? != 0 ]]; then
-            echo -e "${red}Service文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
-            return 0
+        if [ ! -f "$AGENT_SERVICE" ]; then
+            if ! download_file "https://${GITHUB_RAW_URL}/script/server-agent.service" "$AGENT_SERVICE" 10; then
+                echo -e "${red}Service文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
+                return 0
+            fi
         fi
     fi
 
     # 确保配置文件存在
-    if [[ ! -f ${AGENT_CONFIG} ]]; then
-        echo "配置文件不存在，正在下载配置文件模板"
-        wget -t 2 -T 10 -O $AGENT_CONFIG https://${GITHUB_RAW_URL}/script/config.yml >/dev/null 2>&1
-        if [[ $? != 0 ]]; then
-            echo -e "${red}配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
-            return 0
-        fi
+    if [ ! -f "${AGENT_CONFIG}" ]; then
+        setup_agent_config_template
     fi
 
     if [[ $# -lt 3 ]]; then
@@ -1062,10 +1271,16 @@ modify_agent_config() {
         # 处理report-delay参数
         if [[ "$*" =~ --report-delay[[:space:]]+([0-9]+) ]]; then
             update_config_value "reportDelay" "${BASH_REMATCH[1]}" ${AGENT_CONFIG}
+        elif echo " $*" | grep -Eq -- '--report-delay[= ][0-9]+'; then
+            report_delay_val=$(echo " $*" | sed -n 's/.*--report-delay[= ][[:space:]]*\([0-9]\{1,\}\).*/\1/p')
+            [ -n "$report_delay_val" ] && update_config_value "reportDelay" "$report_delay_val" "$AGENT_CONFIG"
         fi
         # 处理ip-report-period参数
         if [[ "$*" =~ --ip-report-period[[:space:]]+([0-9]+) ]]; then
             update_config_value "ipReportPeriod" "${BASH_REMATCH[1]}" ${AGENT_CONFIG}
+        elif echo " $*" | grep -Eq -- '--ip-report-period[= ][0-9]+'; then
+            ip_report_val=$(echo " $*" | sed -n 's/.*--ip-report-period[= ][[:space:]]*\([0-9]\{1,\}\).*/\1/p')
+            [ -n "$ip_report_val" ] && update_config_value "ipReportPeriod" "$ip_report_val" "$AGENT_CONFIG"
         fi
     fi
 
@@ -1079,12 +1294,14 @@ modify_agent_config() {
     echo -e "正在检查探针状态..."
 
     # 等待最多15秒检查服务状态
-    for i in {1..15}; do
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
         sleep 1
         service_started=false
 
         if [ "$os_alpine" = 1 ]; then
             if rc-service server-agent status >/dev/null 2>&1; then
+                service_started=true
+            elif [ -f /run/server-agent.pid ] && kill -0 "$(cat /run/server-agent.pid 2>/dev/null)" 2>/dev/null; then
                 service_started=true
             fi
         elif [ "$os_macos" = 1 ]; then
@@ -1129,6 +1346,7 @@ modify_agent_config() {
             echo -e "您可以使用以下命令诊断问题："
             if [ "$os_alpine" = 1 ]; then
                 echo -e "  rc-service server-agent status"
+                echo -e "  cat /var/log/server-agent_error.log"
                 echo -e "  tail -f /var/log/server-agent.log"
             elif [ "$os_macos" = 1 ]; then
                 echo -e "  launchctl list | grep com.serverstatus.agent"
@@ -1152,11 +1370,19 @@ show_agent_log() {
 
     if [ "$os_alpine" = 1 ]; then
         # Alpine使用OpenRC，查看日志文件
+        echo -e "${green}=== 探针状态 ===${plain}"
+        service_status
+        echo -e "\n${green}=== 错误日志 (/var/log/server-agent_error.log) ===${plain}"
+        if [ -f "/var/log/server-agent_error.log" ] && [ -s "/var/log/server-agent_error.log" ]; then
+            tail -n 20 /var/log/server-agent_error.log
+        else
+            echo "无错误日志"
+        fi
+        echo -e "\n${green}=== 运行日志 (/var/log/server-agent.log) ===${plain}"
         if [ -f "/var/log/server-agent.log" ]; then
             tail -f /var/log/server-agent.log
         else
-            echo -e "${yellow}日志文件不存在，请检查服务是否正在运行${plain}"
-            service_status
+            echo -e "${yellow}运行日志文件不存在，请检查服务是否正在运行${plain}"
         fi
     elif [ "$os_macos" = 1 ]; then
         # macOS使用LaunchAgent，查看日志文件
@@ -1251,6 +1477,8 @@ uninstall_agent() {
 
     if [ "$os_alpine" = 1 ]; then
         rm -rf $AGENT_OPENRC_SERVICE
+        rm -f /run/server-agent.pid /var/run/server-agent.pid
+        rm -f /var/log/server-agent.log /var/log/server-agent_error.log
     elif [ "$os_macos" = 1 ]; then
         rm -rf $AGENT_LAUNCHD_SERVICE
         # 清理日志文件（使用当前用户权限）
