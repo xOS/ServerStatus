@@ -22,7 +22,7 @@ AGENT_SERVICE="/etc/systemd/system/server-agent.service"
 AGENT_CONFIG="${AGENT_PATH}/config.yml"
 AGENT_OPENRC_SERVICE="/etc/init.d/server-agent"
 AGENT_LAUNCHD_SERVICE="$HOME/Library/LaunchAgents/com.serverstatus.agent.plist"
-VERSION="v0.4.2"
+VERSION="v0.4.3"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -54,6 +54,19 @@ init_openrc_env() {
     if [ "$os_alpine" = 1 ]; then
         sudo mkdir -p /run/openrc
         [ -f /run/openrc/softlevel ] || sudo touch /run/openrc/softlevel
+        # 兼容旧版本：检查已存在的 OpenRC 脚本是否将错误流单独输出至 _error.log
+        if [ -f "$AGENT_OPENRC_SERVICE" ]; then
+            if grep -q 'error_log="/var/log/\${name}_error.log"' "$AGENT_OPENRC_SERVICE" 2>/dev/null; then
+                sed -i 's#error_log="/var/log/\${name}_error.log"#error_log="/var/log/\${name}.log"#g' "$AGENT_OPENRC_SERVICE" 2>/dev/null || true
+            fi
+        fi
+        # 迁移旧版本残留的错误日志
+        if [ -s /var/log/server-agent_error.log ]; then
+            if [ ! -s /var/log/server-agent.log ]; then
+                cat /var/log/server-agent_error.log >> /var/log/server-agent.log 2>/dev/null || true
+            fi
+            rm -f /var/log/server-agent_error.log 2>/dev/null || true
+        fi
     fi
 }
 
@@ -170,68 +183,153 @@ err() {
     printf "${red}$*${plain}\n" >&2
 }
 
+LAST_DOWNLOAD_ERROR=""
+
+set_download_error() {
+    LAST_DOWNLOAD_ERROR="$*"
+    if [ -n "$*" ]; then
+        echo "$*" > "/tmp/server_status_last_dl_err_$$.log" 2>/dev/null || true
+    else
+        rm -f "/tmp/server_status_last_dl_err_$$.log" 2>/dev/null || true
+    fi
+}
+
+get_download_error() {
+    if [ -n "$LAST_DOWNLOAD_ERROR" ]; then
+        echo "$LAST_DOWNLOAD_ERROR"
+    elif [ -s "/tmp/server_status_last_dl_err_$$.log" ]; then
+        cat "/tmp/server_status_last_dl_err_$$.log" 2>/dev/null
+    else
+        echo "未能建立网络连接或未知网络错误"
+    fi
+}
+
 download_file() {
     local url="$1"
     local output="$2"
     local timeout="${3:-30}"
+    local err_file="/tmp/dl_err_$$.log"
+    rm -f "$err_file"
+    set_download_error ""
 
+    # 1. 尝试使用 curl
     if command -v curl >/dev/null 2>&1; then
-        if curl -fsSL -m "$timeout" "$url" -o "$output" 2>/dev/null; then
+        if curl -fSL -m "$timeout" "$url" -o "$output" 2>"$err_file"; then
+            rm -f "$err_file"
+            set_download_error ""
             return 0
+        else
+            local curl_code=$?
+            local err_msg=""
+            [ -f "$err_file" ] && err_msg=$(head -n 2 "$err_file" | tr '\n' ' ' | sed 's/  */ /g')
+            set_download_error "curl 错误 (退出码 ${curl_code}): ${err_msg:-网络连接失败或超时}"
         fi
     fi
 
+    # 2. 尝试使用 wget
     if command -v wget >/dev/null 2>&1; then
-        if wget -t 2 -T "$timeout" -O "$output" "$url" >/dev/null 2>&1; then
+        if wget -T "$timeout" -O "$output" "$url" 2>"$err_file"; then
+            rm -f "$err_file"
+            set_download_error ""
             return 0
-        elif wget -T "$timeout" -O "$output" "$url" >/dev/null 2>&1; then
+        elif wget -O "$output" "$url" 2>"$err_file"; then
+            rm -f "$err_file"
+            set_download_error ""
             return 0
+        else
+            local wget_code=$?
+            local err_msg=""
+            [ -f "$err_file" ] && err_msg=$(head -n 2 "$err_file" | tr '\n' ' ' | sed 's/  */ /g')
+            set_download_error "wget 错误 (退出码 ${wget_code}): ${err_msg:-网络连接失败或超时}"
         fi
     fi
 
-    # 若 Alpine 下自带 wget 无法完成 HTTPS 下载，按需补充安装必要依赖重试
+    # 3. Alpine 特殊处理：若自带 wget 因缺少根证书失败，按需补充安装 ca-certificates 或 curl 重试
     if [ "$os_alpine" = 1 ]; then
         if [ ! -f /etc/ssl/certs/ca-certificates.crt ]; then
-            install_soft ca-certificates >/dev/null 2>&1
+            echo -e "${yellow}[自动修复] 检测到缺失 SSL 根证书，正在安装 ca-certificates...${plain}" >&2
+            install_soft ca-certificates
             command -v update-ca-certificates >/dev/null 2>&1 && sudo update-ca-certificates >/dev/null 2>&1 || true
-            if command -v wget >/dev/null 2>&1 && wget -T "$timeout" -O "$output" "$url" >/dev/null 2>&1; then
+            if command -v wget >/dev/null 2>&1 && wget -T "$timeout" -O "$output" "$url" 2>"$err_file"; then
+                rm -f "$err_file"
+                set_download_error ""
                 return 0
             fi
         fi
         if ! command -v curl >/dev/null 2>&1; then
-            echo -e "${yellow}原生下载工具请求失败，正在按需安装 curl...${plain}"
-            if install_soft curl >/dev/null 2>&1; then
-                if curl -fsSL -m "$timeout" "$url" -o "$output" 2>/dev/null; then
+            echo -e "${yellow}[自动修复] 原生 wget 下载失败，正在按需安装 curl 进行重试...${plain}" >&2
+            if install_soft curl; then
+                if curl -fSL -m "$timeout" "$url" -o "$output" 2>"$err_file"; then
+                    rm -f "$err_file"
+                    set_download_error ""
                     return 0
+                else
+                    local retry_code=$?
+                    local err_msg=""
+                    [ -f "$err_file" ] && err_msg=$(head -n 2 "$err_file" | tr '\n' ' ' | sed 's/  */ /g')
+                    set_download_error "curl 重试错误 (退出码 ${retry_code}): ${err_msg:-网络连接失败或超时}"
                 fi
             fi
         fi
     fi
 
+    if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+        set_download_error "系统未找到 curl 或 wget 下载工具"
+    fi
+
+    rm -f "$err_file"
     return 1
 }
 
 get_agent_version() {
+    local tmp_json="/tmp/agent_ver_$$.json"
     local ver=""
+    local r2_err=""
+    local gh_err=""
+    rm -f "$tmp_json"
+
+    # 中国大陆优先查询 R2 镜像节点
     if [ -n "$CN" ]; then
-        if command -v curl >/dev/null 2>&1; then
-            ver=$(curl -m 10 -sL "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
-        elif command -v wget >/dev/null 2>&1; then
-            ver=$(wget -qO- -T 10 "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
+        local r2_url="${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json"
+        if download_file "$r2_url" "$tmp_json" 10 >/dev/null; then
+            ver=$(grep -o '"tag_name":"[^"]*"' "$tmp_json" 2>/dev/null | head -n 1 | awk -F '"' '{print $4}')
+            [ -z "$ver" ] && r2_err="R2 响应内容未包含 tag_name"
+        else
+            r2_err="$(get_download_error)"
         fi
+        rm -f "$tmp_json"
     fi
-    if [ -z "$ver" ] && command -v curl >/dev/null 2>&1; then
-        ver=$(curl -m 10 -sL "https://api.github.com/repos/xos/serveragent/releases/latest" 2>/dev/null | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
-        if [ -z "$ver" ]; then
-            ver=$(curl -m 10 -sL "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
+
+    # 查询 GitHub Releases API
+    if [ -z "$ver" ]; then
+        local gh_url="https://api.github.com/repos/xos/serveragent/releases/latest"
+        if download_file "$gh_url" "$tmp_json" 10 >/dev/null; then
+            ver=$(grep "tag_name" "$tmp_json" 2>/dev/null | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
+            [ -z "$ver" ] && gh_err="GitHub API 响应内容未包含 tag_name"
+        else
+            gh_err="$(get_download_error)"
         fi
+        rm -f "$tmp_json"
     fi
-    if [ -z "$ver" ] && command -v wget >/dev/null 2>&1; then
-        ver=$(wget -qO- -T 10 "https://api.github.com/repos/xos/serveragent/releases/latest" 2>/dev/null | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
-        if [ -z "$ver" ]; then
-            ver=$(wget -qO- -T 10 "${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json" 2>/dev/null | grep -o '"tag_name":"[^"]*"' | head -n 1 | awk -F '"' '{print $4}')
+
+    # 兜底：若前两者未成功且非CN，再尝试R2
+    if [ -z "$ver" ] && [ -z "$CN" ]; then
+        local r2_url="${R2_URL:-https://assets.cnic.eu.org}/serveragent/index.json"
+        if download_file "$r2_url" "$tmp_json" 10 >/dev/null; then
+            ver=$(grep -o '"tag_name":"[^"]*"' "$tmp_json" 2>/dev/null | head -n 1 | awk -F '"' '{print $4}')
+            [ -z "$ver" ] && r2_err="R2 响应内容未包含 tag_name"
+        else
+            r2_err="$(get_download_error)"
         fi
+        rm -f "$tmp_json"
     fi
+
+    if [ -z "$ver" ]; then
+        set_download_error "探针版本查询失败 (R2: ${r2_err:-未响应}; GitHub API: ${gh_err:-未响应})"
+    else
+        set_download_error ""
+    fi
+
     echo "$ver"
 }
 
@@ -240,17 +338,27 @@ download_release_archive() {
     local fallback_url="$2"
     local output_file="$3"
 
+    echo -e "正在从节点下载: ${primary_url}"
     if download_file "$primary_url" "$output_file" 60; then
         return 0
     fi
 
+    local primary_err="$(get_download_error)"
     rm -f "$output_file"
+
     if [ -n "$fallback_url" ] && [ "$fallback_url" != "$primary_url" ]; then
-        echo -e "${yellow}首选节点下载失败，正在回退备用下载...${plain}"
+        echo -e "${yellow}主源下载失败: ${primary_err}${plain}"
+        echo -e "正在切换备用下载节点: ${fallback_url}"
         if download_file "$fallback_url" "$output_file" 60; then
             return 0
         fi
+        local fallback_err="$(get_download_error)"
         rm -f "$output_file"
+        set_download_error "主源失败 (${primary_err}); 备用源失败 (${fallback_err})"
+        err "备用源下载同样失败: ${fallback_err}"
+    else
+        set_download_error "主源下载失败: ${primary_err}"
+        err "主源下载失败: ${primary_err}"
     fi
 
     return 1
@@ -261,12 +369,17 @@ geo_check() {
     ua="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
     set -- $api_list
     for url in $api_list; do
-        text="$(curl -A "$ua" -m 10 -s $url)"
-        endpoint="$(echo $text | sed -n 's/.*h=\([^ ]*\).*/\1/p')"
-        if echo $text | grep -qw 'CN'; then
+        text=""
+        if command -v curl >/dev/null 2>&1; then
+            text="$(curl -A "$ua" -m 10 -s "$url" 2>/dev/null)"
+        elif command -v wget >/dev/null 2>&1; then
+            text="$(wget -qO- -T 10 -U "$ua" "$url" 2>/dev/null || wget -qO- -T 10 "$url" 2>/dev/null)"
+        fi
+        endpoint="$(echo "$text" | sed -n 's/.*h=\([^ ]*\).*/\1/p')"
+        if echo "$text" | grep -qw 'CN'; then
             isCN=true
             break
-        elif echo $url | grep -q $endpoint; then
+        elif echo "$url" | grep -q "$endpoint"; then
             break
         fi
     done
@@ -387,19 +500,63 @@ confirm() {
 update_script() {
     echo -e "> 更新脚本"
 
-    curl -sL https://${GITHUB_RAW_URL}/script/server-status.sh -o /tmp/server-status.sh
-    new_version=$(cat /tmp/server-status.sh | grep "VERSION" | head -n 1 | awk -F "=" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
-    if [ ! -n "$new_version" ]; then
-        echo -e "脚本获取失败，请检查本机能否链接 https://${GITHUB_RAW_URL}/script/server-status.sh"
+    install_base || return 1
+
+    local tmp_script="/tmp/server-status.sh"
+    rm -f "$tmp_script"
+
+    local urls=""
+    if [ -n "$CN" ]; then
+        urls="https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh https://gitee.com/ten/ServerStatus/raw/master/script/server-status.sh https://raw.githubusercontent.com/xos/serverstatus/master/script/server-status.sh"
+    else
+        urls="https://raw.githubusercontent.com/xos/serverstatus/master/script/server-status.sh https://fastly.jsdelivr.net/gh/xos/serverstatus@master/script/server-status.sh https://gitee.com/ten/ServerStatus/raw/master/script/server-status.sh"
+    fi
+
+    local success=0
+    for url in $urls; do
+        echo -e "正在从节点获取脚本: ${url}"
+        if download_file "$url" "$tmp_script" 20; then
+            if [ -s "$tmp_script" ] && grep -q "VERSION=" "$tmp_script" 2>/dev/null; then
+                success=1
+                break
+            else
+                local preview
+                preview=$(head -n 2 "$tmp_script" 2>/dev/null | tr '\n' ' ' | sed 's/  */ /g')
+                echo -e "${yellow}[警告] 节点响应内容非有效脚本 (可能被网页重定向拦截): ${preview:-空文件}${plain}"
+                rm -f "$tmp_script"
+            fi
+        else
+            echo -e "${yellow}[失败] 节点拉取失败: $(get_download_error)${plain}"
+        fi
+    done
+
+    if [ "$success" -ne 1 ]; then
+        err "脚本更新失败！所有候选源均无法获取有效脚本。"
+        err "已尝试的所有下载节点:"
+        for u in $urls; do
+            err "  - $u"
+        done
+        err "最后一次错误详情: $(get_download_error)"
+        err "请检查本机的网络连接、DNS 解析或防火墙规则。"
+        if [ $# = 0 ]; then
+            before_show_menu
+        fi
         return 1
     fi
-    echo -e "当前最新版本为: ${new_version}"
-    mv -f /tmp/server-status.sh ./server-status.sh && chmod a+x ./server-status.sh
 
-    echo -e "3s后执行新脚本"
+    local new_version
+    new_version=$(grep "VERSION=" "$tmp_script" | head -n 1 | awk -F "=" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
+    echo -e "获取成功！最新版本为: ${green}${new_version:-未知}${plain}"
+    local target_script="$0"
+    if [ ! -f "$target_script" ] || [ ! -w "$target_script" ]; then
+        target_script="./server-status.sh"
+    fi
+    mv -f "$tmp_script" "$target_script" && chmod a+x "$target_script"
+
+    echo -e "3s后执行新脚本..."
     sleep 3s
     clear
-    exec ./server-status.sh
+    exec "$target_script"
     exit 0
 }
 
@@ -481,7 +638,10 @@ install_soft() {
 	# 根据不同系统使用相应的包管理器
     if [ "$os_alpine" = 1 ]; then
         # Alpine Linux 优先使用 --no-cache 安装，避免在磁盘留下数十兆索引缓存
-        sudo apk add --no-cache "$@" 2>/dev/null || (sudo apk update && sudo apk add "$@")
+        if ! sudo apk add --no-cache "$@"; then
+            echo -e "${yellow}apk 直接安装失败，尝试更新源索引后重试...${plain}"
+            sudo apk update && sudo apk add "$@"
+        fi
     elif [ "$os_macos" = 1 ]; then
         # macOS 使用 Homebrew
         if command -v brew >/dev/null 2>&1; then
@@ -549,10 +709,13 @@ setup_agent_config_template() {
         return 0
     fi
 
-    echo "正在下载配置文件模板"
+    echo "正在下载配置文件模板..."
     if download_file "https://${GITHUB_RAW_URL}/script/config.yml" "$AGENT_CONFIG" 15; then
         return 0
     fi
+
+    local dl_err="$(get_download_error)"
+    [ -n "$dl_err" ] && echo -e "${yellow}远程模板下载失败 (${dl_err})，尝试本地文件或内置模板...${plain}"
 
     if [ -f "./script/config.yml" ]; then
         cp "./script/config.yml" "$AGENT_CONFIG" && return 0
@@ -560,7 +723,7 @@ setup_agent_config_template() {
         cp "../script/config.yml" "$AGENT_CONFIG" && return 0
     fi
 
-    echo -e "${yellow}未找到远程模板，生成默认配置文件...${plain}"
+    echo -e "${yellow}未找到远程及本地模板，生成默认配置文件...${plain}"
     cat <<'EOF' > "$AGENT_CONFIG"
 # ServerAgent 配置文件
 server: ""
@@ -593,6 +756,9 @@ setup_openrc_service() {
         return 0
     fi
 
+    local dl_err="$(get_download_error)"
+    [ -n "$dl_err" ] && echo -e "${yellow}远程 OpenRC 脚本下载失败 (${dl_err})，尝试本地文件或内置模板...${plain}"
+
     if [ -f "./script/server-agent.openrc" ]; then
         cp "./script/server-agent.openrc" "$AGENT_OPENRC_SERVICE"
         chmod +x "$AGENT_OPENRC_SERVICE"
@@ -603,7 +769,7 @@ setup_openrc_service() {
         return 0
     fi
 
-    echo -e "${yellow}未能从远程下载 OpenRC 服务文件，正在生成本地服务脚本...${plain}"
+    echo -e "${yellow}未能从远程或本地获取 OpenRC 服务文件，正在生成本地服务脚本...${plain}"
     cat <<'EOF' > "$AGENT_OPENRC_SERVICE"
 #!/sbin/openrc-run
 
@@ -617,7 +783,7 @@ command_background="yes"
 pidfile="/run/${name}.pid"
 
 output_log="/var/log/${name}.log"
-error_log="/var/log/${name}_error.log"
+error_log="/var/log/${name}.log"
 
 depend() {
     need net
@@ -634,7 +800,15 @@ start_pre() {
         return 1
     fi
     checkpath --directory --owner root:root --mode 0755 /var/log
+    checkpath --file --owner root:root --mode 0644 /var/log/${name}.log
     checkpath --directory --owner root:root --mode 0755 /run
+
+    if [ -s "/var/log/${name}_error.log" ]; then
+        if [ ! -s "/var/log/${name}.log" ]; then
+            cat "/var/log/${name}_error.log" >> "/var/log/${name}.log" 2>/dev/null || true
+        fi
+        rm -f "/var/log/${name}_error.log" 2>/dev/null || true
+    fi
     return 0
 }
 
@@ -694,8 +868,13 @@ install_agent() {
     local version=$(get_agent_version)
 
     if [ -z "$version" ]; then
-        echo -e "获取版本号失败！"
-        return 0
+        err "获取探针版本号失败！"
+        local dl_err="$(get_download_error)"
+        [ -n "$dl_err" ] && err "错误详情: ${dl_err}"
+        if [ $# = 0 ]; then
+            before_show_menu
+        fi
+        return 1
     else
         echo -e "当前最新版本为: ${version}"
     fi
@@ -750,13 +929,33 @@ install_agent() {
 
     echo -e "正在下载探针"
     if ! download_release_archive "$AGENT_URL" "$AGENT_FALLBACK_URL" "$AGENT_ZIP"; then
-        err "Release 下载失败，请检查中国镜像或 GitHub 的网络连接"
+        err "探针压缩包下载失败，请检查中国镜像或 GitHub 的网络连接"
+        local dl_err="$(get_download_error)"
+        [ -n "$dl_err" ] && err "错误详情: ${dl_err}"
+        if [ $# = 0 ]; then
+            before_show_menu
+        fi
         return 1
     fi
-    unzip -qo $AGENT_ZIP &&
-        chmod +x server-agent &&
-        mv -f server-agent "$AGENT_PATH/" &&
-        rm -rf $AGENT_ZIP README.md
+    if ! unzip -qo "$AGENT_ZIP"; then
+        err "解压探针压缩包 ($AGENT_ZIP) 失败！"
+        rm -f "$AGENT_ZIP"
+        if [ $# = 0 ]; then
+            before_show_menu
+        fi
+        return 1
+    fi
+    chmod +x server-agent 2>/dev/null || true
+    mv -f server-agent "$AGENT_PATH/" &&
+        rm -rf "$AGENT_ZIP" README.md
+
+    if [ ! -f "$AGENT_PATH/server-agent" ]; then
+        err "未找到探针程序: $AGENT_PATH/server-agent，安装未完成"
+        if [ $# = 0 ]; then
+            before_show_menu
+        fi
+        return 1
+    fi
 
     # macOS下设置正确的文件权限
     if [ "$os_macos" = 1 ]; then
@@ -812,20 +1011,30 @@ install_agent() {
 
     # 根据系统类型配置相应的服务文件
     if [ "$os_alpine" = 1 ]; then
-        setup_openrc_service
+        setup_openrc_service || return 1
     elif [ "$os_macos" = 1 ]; then
         echo "正在下载LaunchAgent配置文件"
         # 确保LaunchAgents目录存在
         mkdir -p "$HOME/Library/LaunchAgents"
         if ! download_file "https://${GITHUB_RAW_URL}/script/com.serverstatus.agent.plist" "$AGENT_LAUNCHD_SERVICE" 10; then
-            echo -e "${red}LaunchAgent配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
+            err "LaunchAgent配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}"
+            local dl_err="$(get_download_error)"
+            [ -n "$dl_err" ] && err "错误详情: ${dl_err}"
+            if [ $# = 0 ]; then
+                before_show_menu
+            fi
             return 1
         fi
     else
         # 其他系统使用systemd
         echo "正在下载systemd服务文件"
         if ! download_file "https://${GITHUB_RAW_URL}/script/server-agent.service" "$AGENT_SERVICE" 10; then
-            echo -e "${red}Service文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
+            err "Service文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}"
+            local dl_err="$(get_download_error)"
+            [ -n "$dl_err" ] && err "错误详情: ${dl_err}"
+            if [ $# = 0 ]; then
+                before_show_menu
+            fi
             return 1
         fi
     fi
@@ -851,8 +1060,13 @@ update_agent() {
     local version=$(get_agent_version)
 
     if [ -z "$version" ]; then
-        echo -e "获取版本号失败！"
-        return 0
+        err "获取探针版本号失败！"
+        local dl_err="$(get_download_error)"
+        [ -n "$dl_err" ] && err "错误详情: ${dl_err}"
+        if [ $# = 0 ]; then
+            before_show_menu
+        fi
+        return 1
     else
         echo -e "当前最新版本为: ${version}"
     fi
@@ -908,13 +1122,33 @@ update_agent() {
 
     echo -e "正在下载探针"
     if ! download_release_archive "$AGENT_URL" "$AGENT_FALLBACK_URL" "$AGENT_ZIP"; then
-        err "Release 下载失败，请检查中国镜像或 GitHub 的网络连接"
+        err "探针压缩包下载失败，请检查中国镜像或 GitHub 的网络连接"
+        local dl_err="$(get_download_error)"
+        [ -n "$dl_err" ] && err "错误详情: ${dl_err}"
+        if [ $# = 0 ]; then
+            before_show_menu
+        fi
         return 1
     fi
-    unzip -qo $AGENT_ZIP &&
-        chmod +x server-agent &&
-        mv -f server-agent "$AGENT_PATH/" &&
-        rm -rf $AGENT_ZIP README.md
+    if ! unzip -qo "$AGENT_ZIP"; then
+        err "解压探针压缩包 ($AGENT_ZIP) 失败！"
+        rm -f "$AGENT_ZIP"
+        if [ $# = 0 ]; then
+            before_show_menu
+        fi
+        return 1
+    fi
+    chmod +x server-agent 2>/dev/null || true
+    mv -f server-agent "$AGENT_PATH/" &&
+        rm -rf "$AGENT_ZIP" README.md
+
+    if [ ! -f "$AGENT_PATH/server-agent" ]; then
+        err "未找到探针程序: $AGENT_PATH/server-agent，更新未完成"
+        if [ $# = 0 ]; then
+            before_show_menu
+        fi
+        return 1
+    fi
 
     # 检查配置文件是否存在，如果不存在则下载/生成
     if [ ! -f "${AGENT_CONFIG}" ]; then
@@ -1200,16 +1434,26 @@ modify_agent_config() {
         if [ ! -f "$AGENT_LAUNCHD_SERVICE" ]; then
             mkdir -p "$HOME/Library/LaunchAgents"
             if ! download_file "https://${GITHUB_RAW_URL}/script/com.serverstatus.agent.plist" "$AGENT_LAUNCHD_SERVICE" 10; then
-                echo -e "${red}LaunchAgent配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
-                return 0
+                err "LaunchAgent配置文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}"
+                local dl_err="$(get_download_error)"
+                [ -n "$dl_err" ] && err "错误详情: ${dl_err}"
+                if [ $# = 0 ]; then
+                    before_show_menu
+                fi
+                return 1
             fi
         fi
     else
         # 其他系统使用systemd
         if [ ! -f "$AGENT_SERVICE" ]; then
             if ! download_file "https://${GITHUB_RAW_URL}/script/server-agent.service" "$AGENT_SERVICE" 10; then
-                echo -e "${red}Service文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}${plain}"
-                return 0
+                err "Service文件下载失败，请检查本机能否连接 ${GITHUB_RAW_URL}"
+                local dl_err="$(get_download_error)"
+                [ -n "$dl_err" ] && err "错误详情: ${dl_err}"
+                if [ $# = 0 ]; then
+                    before_show_menu
+                fi
+                return 1
             fi
         fi
     fi
@@ -1356,13 +1600,17 @@ modify_agent_config() {
         if [ "$service_started" = true ]; then
             echo -e "${green}探针服务启动成功！${plain}"
 
-            # macOS下额外检查日志文件是否有内容
-            if [ "$os_macos" = 1 ]; then
+            if [ "$os_alpine" = 1 ]; then
+                sleep 1
+                if [ -s "/var/log/server-agent.log" ]; then
+                    echo -e "${green}探针日志正常生成 (/var/log/server-agent.log)${plain}"
+                fi
+            elif [ "$os_macos" = 1 ]; then
                 sleep 2  # 等待日志写入
-                if [ -f "/tmp/server-agent.log" ] && [ -s "/tmp/server-agent.log" ]; then
-                    echo -e "${green}探针日志正常生成${plain}"
-                elif [ -f "/tmp/server-agent_error.log" ] && [ -s "/tmp/server-agent_error.log" ]; then
-                    echo -e "${yellow}探针启动但有错误，请查看日志${plain}"
+                if [ -s "/tmp/server-agent.log" ]; then
+                    echo -e "${green}探针日志正常生成 (/tmp/server-agent.log)${plain}"
+                elif [ -s "/tmp/server-agent_error.log" ]; then
+                    echo -e "${yellow}探针日志已生成 (/tmp/server-agent_error.log)${plain}"
                 else
                     echo -e "${yellow}探针已启动，等待日志生成...${plain}"
                 fi
@@ -1376,20 +1624,34 @@ modify_agent_config() {
         fi
 
         if [ $i -eq 15 ]; then
-            echo -e "${yellow}探针服务启动超时，请检查配置或查看日志${plain}"
-            echo -e "您可以使用以下命令诊断问题："
+            echo -e "${yellow}探针服务启动超时，正在自动收集诊断信息...${plain}"
             if [ "$os_alpine" = 1 ]; then
-                echo -e "  rc-service server-agent status"
-                echo -e "  cat /var/log/server-agent_error.log"
-                echo -e "  tail -f /var/log/server-agent.log"
+                echo -e "${yellow}--- 服务状态 (rc-service server-agent status) ---${plain}"
+                rc-service server-agent status 2>&1 || true
+                if [ -s /var/log/server-agent.log ]; then
+                    echo -e "${yellow}--- 最近运行日志 (/var/log/server-agent.log) ---${plain}"
+                    tail -n 20 /var/log/server-agent.log 2>/dev/null
+                elif [ -s /var/log/server-agent_error.log ]; then
+                    echo -e "${yellow}--- 最近运行日志 (/var/log/server-agent_error.log) ---${plain}"
+                    tail -n 20 /var/log/server-agent_error.log 2>/dev/null
+                fi
             elif [ "$os_macos" = 1 ]; then
-                echo -e "  launchctl list | grep com.serverstatus.agent"
-                echo -e "  ./server-status.sh show_agent_log  # 查看详细诊断"
-                echo -e "  cd $AGENT_PATH && ./server-agent  # 手动测试"
+                echo -e "${yellow}--- LaunchAgent 状态 ---${plain}"
+                launchctl list | grep com.serverstatus.agent || true
+                if [ -s /tmp/server-agent.log ]; then
+                    echo -e "${yellow}--- 最近运行日志 (/tmp/server-agent.log) ---${plain}"
+                    tail -n 20 /tmp/server-agent.log 2>/dev/null
+                elif [ -s /tmp/server-agent_error.log ]; then
+                    echo -e "${yellow}--- 最近运行日志 (/tmp/server-agent_error.log) ---${plain}"
+                    tail -n 20 /tmp/server-agent_error.log 2>/dev/null
+                fi
             else
-                echo -e "  systemctl status server-agent"
-                echo -e "  journalctl -u server-agent"
+                echo -e "${yellow}--- 服务状态 (systemctl status server-agent) ---${plain}"
+                systemctl status server-agent --no-pager -l 2>&1 || true
+                echo -e "${yellow}--- 最近日志 (journalctl -u server-agent -n 20) ---${plain}"
+                journalctl -u server-agent -n 20 --no-pager 2>&1 || true
             fi
+            echo -e "${yellow}提示: 请检查 $AGENT_CONFIG 中的配置参数及网络连通性。${plain}"
         fi
     done
 
@@ -1404,17 +1666,29 @@ show_agent_log() {
 
     if [ "$os_alpine" = 1 ]; then
         # Alpine使用OpenRC，查看日志文件
+        init_openrc_env
         echo -e "${green}=== 探针状态 ===${plain}"
         service_status
-        echo -e "\n${green}=== 错误日志 (/var/log/server-agent_error.log) ===${plain}"
-        if [ -f "/var/log/server-agent_error.log" ] && [ -s "/var/log/server-agent_error.log" ]; then
-            tail -n 20 /var/log/server-agent_error.log
-        else
-            echo "无错误日志"
+
+        # 兼容旧版本：若旧错误日志存在内容且运行日志为空，合并至运行日志
+        if [ -s "/var/log/server-agent_error.log" ]; then
+            if [ ! -s "/var/log/server-agent.log" ]; then
+                cat /var/log/server-agent_error.log >> /var/log/server-agent.log 2>/dev/null || true
+            fi
         fi
-        echo -e "\n${green}=== 运行日志 (/var/log/server-agent.log) ===${plain}"
-        if [ -f "/var/log/server-agent.log" ]; then
-            tail -f /var/log/server-agent.log
+
+        local log_target="/var/log/server-agent.log"
+        if [ ! -s "$log_target" ] && [ -s "/var/log/server-agent_error.log" ]; then
+            log_target="/var/log/server-agent_error.log"
+        fi
+
+        echo -e "\n${green}=== 运行日志 (${log_target}) ===${plain}"
+        echo -e "${yellow}提示: 按 Ctrl+C 可退出日志查看并返回菜单${plain}\n"
+
+        if [ -f "$log_target" ]; then
+            trap 'echo ""; trap - INT' INT
+            tail -n 30 -f "$log_target"
+            trap - INT
         else
             echo -e "${yellow}运行日志文件不存在，请检查服务是否正在运行${plain}"
         fi
@@ -1443,6 +1717,9 @@ show_agent_log() {
         # 检查LaunchAgent文件
         if [ -f "$AGENT_LAUNCHD_SERVICE" ]; then
             echo -e "✓ LaunchAgent配置存在: $AGENT_LAUNCHD_SERVICE"
+            if grep -q '<string>/tmp/server-agent_error.log</string>' "$AGENT_LAUNCHD_SERVICE" 2>/dev/null; then
+                sed -i '' 's#/tmp/server-agent_error.log#/tmp/server-agent.log#g' "$AGENT_LAUNCHD_SERVICE" 2>/dev/null || true
+            fi
         else
             echo -e "✗ LaunchAgent配置不存在: $AGENT_LAUNCHD_SERVICE"
         fi
@@ -1472,20 +1749,24 @@ show_agent_log() {
             timeout 5 ./server-agent 2>&1 | head -10 || echo "手动启动测试完成"
         fi
 
-        # 显示日志
-        echo -e "\n${green}=== 日志文件 ===${plain}"
-        if [ -f "/tmp/server-agent.log" ]; then
-            echo -e "标准输出日志 (最近20行):"
-            tail -20 /tmp/server-agent.log
-        else
-            echo -e "标准输出日志文件不存在"
+        # 兼容旧版本：合并旧错误日志
+        if [ -s "/tmp/server-agent_error.log" ]; then
+            if [ ! -s "/tmp/server-agent.log" ]; then
+                cat /tmp/server-agent_error.log >> /tmp/server-agent.log 2>/dev/null || true
+            fi
         fi
 
-        if [ -f "/tmp/server-agent_error.log" ]; then
-            echo -e "\n错误日志 (最近20行):"
-            tail -20 /tmp/server-agent_error.log
+        local macos_log="/tmp/server-agent.log"
+        if [ ! -s "$macos_log" ] && [ -s "/tmp/server-agent_error.log" ]; then
+            macos_log="/tmp/server-agent_error.log"
+        fi
+
+        # 显示日志
+        echo -e "\n${green}=== 运行日志 (${macos_log}) ===${plain}"
+        if [ -f "$macos_log" ]; then
+            tail -n 30 "$macos_log"
         else
-            echo -e "错误日志文件不存在"
+            echo -e "日志文件不存在"
         fi
 
         echo -e "\n${yellow}如果问题持续，请尝试：${plain}"
@@ -1762,6 +2043,7 @@ show_menu() {
         ;;
     *)
         echo -e "${red}请输入正确的数字 [0-9]${plain}"
+        before_show_menu
         ;;
     esac
 }

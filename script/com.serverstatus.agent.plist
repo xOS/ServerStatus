@@ -35,9 +35,9 @@
     <key>StandardOutPath</key>
     <string>/tmp/server-agent.log</string>
 
-    <!-- 标准错误日志 -->
+    <!-- 标准错误日志 (合并至运行日志) -->
     <key>StandardErrorPath</key>
-    <string>/tmp/server-agent_error.log</string>
+    <string>/tmp/server-agent.log</string>
 
     <!-- 启动超时 -->
     <key>StartInterval</key>

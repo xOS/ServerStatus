@@ -14,9 +14,9 @@ command_user="root"
 command_background="yes"
 pidfile="/run/${name}.pid"
 
-# 日志配置
+# 日志配置 (探针运行日志输出至标准错误流，故合并重定向到运行日志)
 output_log="/var/log/${name}.log"
-error_log="/var/log/${name}_error.log"
+error_log="/var/log/${name}.log"
 
 # 依赖服务
 depend() {
@@ -38,11 +38,20 @@ start_pre() {
         return 1
     fi
     
-    # 创建日志目录
+    # 创建日志目录与日志文件
     checkpath --directory --owner root:root --mode 0755 /var/log
+    checkpath --file --owner root:root --mode 0644 /var/log/${name}.log
     
     # 创建PID文件目录
     checkpath --directory --owner root:root --mode 0755 /run
+
+    # 迁移合并旧版本可能残留的错误日志
+    if [ -s "/var/log/${name}_error.log" ]; then
+        if [ ! -s "/var/log/${name}.log" ]; then
+            cat "/var/log/${name}_error.log" >> "/var/log/${name}.log" 2>/dev/null || true
+        fi
+        rm -f "/var/log/${name}_error.log" 2>/dev/null || true
+    fi
     
     return 0
 }
