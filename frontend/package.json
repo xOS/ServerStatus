@@ -12,7 +12,7 @@
   "devDependencies": {
     "@types/node": "^24.13.2",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "vite": "^8.1.6"
   },
   "dependencies": {
     "flag-icons": "^7.5.0",
