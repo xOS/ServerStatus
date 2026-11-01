@@ -815,6 +815,16 @@ i.fl-tux {
   margin: 0 4px;
 }
 
+.metric-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.metric-reset .metric-svg {
+  margin: 0;
+}
+
 .letter-icon {
   display: inline-flex;
   align-items: center;

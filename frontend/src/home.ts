@@ -94,6 +94,7 @@ interface TrafficWireItem {
   used_percent?: number
   percent?: number
   cycle_name?: string
+  cycle_end?: string
 }
 
 interface TrafficRecordView {
@@ -109,6 +110,8 @@ interface TrafficRecordView {
   server_name?: string
   cycleName?: string
   cycle_name?: string
+  cycleEnd?: string
+  cycle_end?: string
 }
 
 interface TrafficView {
@@ -117,6 +120,7 @@ interface TrafficView {
   percent: number
   serverName: string
   cycleName: string
+  cycleEnd: string
 }
 
 interface WebSocketFrame {
@@ -162,6 +166,9 @@ interface CardRefs {
   tcpCount: HTMLElement
   udpCount: HTMLElement
   uptime: HTMLElement
+  trafficReset: HTMLElement
+  trafficResetCycle: string
+  trafficResetAt: number
   loadingName: HTMLElement
   cache: Map<string, string>
 }
@@ -216,6 +223,7 @@ interface ServerSnapshot {
   apiBase: string
   servers: ServerInfo[]
   trafficById?: Record<string, TrafficView>
+  serverTimeOffset?: number
 }
 
 const state = {
@@ -235,6 +243,8 @@ const state = {
   tooltipServerId: '' as ServerId,
   snapshotAllowed: false,
   initialLoading: false,
+  serverTimeOffset: 0,
+  trafficResetTimer: 0,
 }
 
 let app: HTMLDivElement
@@ -323,6 +333,7 @@ async function init(token: number) {
   }
   renderEmptyState()
   connectWebSocket()
+  updateTrafficResetTimer()
 
   void loadBootstrap().then((structureChanged) => {
     if (token !== activeHomeToken) return
@@ -357,6 +368,7 @@ function resetServerState() {
   state.visibleIds.clear()
   state.snapshotAllowed = false
   state.initialLoading = true
+  state.serverTimeOffset = 0
 }
 
 function bindEvents() {
@@ -411,6 +423,8 @@ function bindEvents() {
   cardsEl.addEventListener('pointerout', cardsPointerOutHandler)
 
   visibilityHandler = () => {
+    updateTrafficResetTimer()
+    if (!document.hidden) refreshTrafficResetLabels()
     if (!document.hidden && state.pendingFrame) {
       scheduleFrame(state.pendingFrame)
     }
@@ -430,6 +444,8 @@ function cleanupHome() {
   if (tooltip) hideTooltip()
   window.clearTimeout(state.reconnectTimer)
   state.reconnectTimer = 0
+  window.clearInterval(state.trafficResetTimer)
+  state.trafficResetTimer = 0
 
   if (state.ws) {
     const ws = state.ws
@@ -499,6 +515,7 @@ async function loadServers() {
 }
 
 function applyServerPayload(payload: unknown, now?: number) {
+  syncServerClock(now)
   const list = normalizeServerList(payload)
   const previousIds = state.servers.map(serverId)
   const nextIds = list.map(serverId)
@@ -525,6 +542,7 @@ function restoreServerSnapshot() {
   if (!snapshot || snapshot.apiBase !== apiPath('') || Date.now() - snapshot.savedAt > SERVER_SNAPSHOT_MAX_AGE) return
   const list = normalizeServerList(snapshot.servers)
   if (list.length === 0) return
+  state.serverTimeOffset = finiteNumber(snapshot.serverTimeOffset, 0)
   state.servers = list
   state.serverById.clear()
   for (const server of list) {
@@ -541,6 +559,7 @@ function restoreServerSnapshot() {
         percent: Math.max(0, finiteNumber(value.percent, 0)),
         serverName: String(value.serverName || ''),
         cycleName: String(value.cycleName || ''),
+        cycleEnd: String(value.cycleEnd || ''),
       })
     }
   }
@@ -554,6 +573,7 @@ function storeServerSnapshot(list: ServerInfo[]) {
       apiBase: apiPath(''),
       servers: list,
       trafficById: trafficSnapshotRecord(),
+      serverTimeOffset: state.serverTimeOffset,
     } satisfies ServerSnapshot))
   } catch {
     // Snapshot is only a first-paint optimization.
@@ -709,6 +729,8 @@ function createServerCard(server: ServerInfo): CardRefs {
           <div class="metric-label">在线</div>
           <div class="metric-value">
             ${icon('clock', 'metric-svg icon-orange')}<span data-ref="uptime"></span>
+            <span class="metric-separator">|</span>
+            <span class="metric-reset"><span>重置</span>${icon('cycleReset', 'metric-svg icon-blue')}<span data-ref="trafficReset"></span></span>
           </div>
         </div>
       </div>
@@ -749,6 +771,9 @@ function createServerCard(server: ServerInfo): CardRefs {
     tcpCount: ref(root, 'tcpCount'),
     udpCount: ref(root, 'udpCount'),
     uptime: ref(root, 'uptime'),
+    trafficReset: ref(root, 'trafficReset'),
+    trafficResetCycle: '',
+    trafficResetAt: 0,
     loadingName: ref(root, 'loadingName'),
     cache: new Map(),
   }
@@ -811,8 +836,40 @@ function updateCard(server: ServerInfo, refs: CardRefs) {
   setText(refs.tcpCount, String(toNumber(stateInfo.TcpConnCount)), 'tcp', refs.cache)
   setText(refs.udpCount, String(toNumber(stateInfo.UdpConnCount)), 'udp', refs.cache)
   setText(refs.uptime, secondToDate(stateInfo.Uptime), 'uptime', refs.cache)
+  updateTrafficReset(refs, traffic)
 
   queueCpuMeasure(refs)
+}
+
+function syncServerClock(now?: number) {
+  if (typeof now === 'number' && Number.isFinite(now) && now > 0) {
+    state.serverTimeOffset = now - Date.now()
+  }
+}
+
+function updateTrafficReset(refs: CardRefs, traffic?: TrafficView) {
+  const cycleEnd = traffic?.cycleEnd || ''
+  if (refs.trafficResetCycle !== cycleEnd) {
+    refs.trafficResetCycle = cycleEnd
+    const end = Date.parse(cycleEnd)
+    refs.trafficResetAt = Number.isFinite(end) && end > 0 ? end : 0
+  }
+  const now = Date.now() + state.serverTimeOffset
+  const remaining = refs.trafficResetAt > 0 ? Math.max(0, Math.floor((refs.trafficResetAt - now) / 1000)) : null
+  setText(refs.trafficReset, remaining === null ? '--' : secondToDate(remaining, false), 'traffic-reset', refs.cache)
+}
+
+function updateTrafficResetTimer() {
+  window.clearInterval(state.trafficResetTimer)
+  state.trafficResetTimer = document.hidden ? 0 : window.setInterval(refreshTrafficResetLabels, 60000)
+}
+
+function refreshTrafficResetLabels() {
+  if (document.hidden) return
+  for (const id of state.visibleIds) {
+    const refs = state.cards.get(id)
+    if (refs) updateTrafficReset(refs, state.trafficById.get(id))
+  }
 }
 
 function setProgress(
@@ -1068,6 +1125,7 @@ function mergeFrame(previous: WebSocketFrame | null, next: WebSocketFrame): WebS
 }
 
 function applyFrame(frame: WebSocketFrame) {
+  syncServerClock(frame.now)
   let cardStructureChanged = false
 
   if (Array.isArray(frame.servers)) {
@@ -1150,6 +1208,7 @@ function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficRe
         percent,
         serverName: item.server_name || '',
         cycleName: item.cycle_name || '',
+        cycleEnd: item.cycle_end || '',
       })
     }
     pruneTrafficData(nextTrafficIds)
@@ -1168,6 +1227,7 @@ function updateTrafficData(payload: TrafficWireItem[] | Record<string, TrafficRe
       percent: trafficPercent(value.used_percent ?? value.percent, usedBytes, maxBytes),
       serverName: value.serverName || value.server_name || '',
       cycleName: value.cycleName || value.cycle_name || '',
+      cycleEnd: value.cycleEnd || value.cycle_end || '',
     })
   }
   pruneTrafficData(nextTrafficIds)
@@ -1392,6 +1452,7 @@ function trafficFor(server: ServerInfo): TrafficView {
     percent: 0,
     serverName: server.Name || '',
     cycleName: '',
+    cycleEnd: '',
   }
 }
 
@@ -1543,15 +1604,16 @@ function getK2Gb(bytes?: number) {
   return `${Math.ceil(mb / 1024)}GB`
 }
 
-function secondToDate(seconds?: number) {
+function secondToDate(seconds?: number, withSeconds = true) {
   const value = toNumber(seconds)
-  if (!value) return '0:00:00'
   const days = Math.floor(value / 3600 / 24)
   if (days > 0) return `${days} ${t('Day')}`
   const hours = Math.floor((value / 3600) % 24)
   const minutes = Math.floor((value / 60) % 60)
+  const time = `${hours}:${String(minutes).padStart(2, '0')}`
+  if (!withSeconds) return time
   const secs = Math.floor(value % 60)
-  return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+  return `${time}:${String(secs).padStart(2, '0')}`
 }
 
 function timeStamp(input: string | number) {

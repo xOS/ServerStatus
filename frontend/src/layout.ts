@@ -227,6 +227,9 @@ export const icon = (name: string, cls: string = '') => {
     case 'refresh':
       return `<svg ${base}><path d="M20.1 7.9a8.1 8.1 0 0 0-14.25-1.7"/><path class="svg-accent" d="M5.6 3.6v3.15h3.15"/><path d="M3.9 16.1a8.1 8.1 0 0 0 14.25 1.7"/><path class="svg-accent" d="M18.4 20.4v-3.15h-3.15"/></svg>`
 
+    case 'cycleReset':
+      return `<svg ${base}><path d="M17.5 10.3V7a2 2 0 0 0-2-2h-9a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3.6M8 3.5v3M14 3.5v3M4.5 9h13"/><path class="svg-soft" d="M7.5 12h2M7.5 15h1"/><g class="icon-orange"><path d="M12.7 15.7a3.7 3.7 0 1 1 .9 3.4M12.7 12.6v3.1h3.1"/><path d="M16.3 14.3v2.3l1.5.9"/></g></svg>`
+
     case 'clock':
       return `<svg ${base}><path d="M12 3.7a8.3 8.3 0 1 1-8.3 8.3"/><path class="svg-soft" d="M3.7 7.2V3.7h3.5"/><path class="svg-accent" d="M12 7.4v4.9l3.1 1.9"/></svg>`
 

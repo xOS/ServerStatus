@@ -281,6 +281,8 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 					newStats := model.CycleTransferStats{
 						Name: stats.Name,
 						Max:  stats.Max,
+						From: stats.From,
+						To:   stats.To,
 					}
 
 					// 深拷贝Transfer map
@@ -342,6 +344,8 @@ func (cp *commonPage) getServerStat(c *gin.Context, withPublicNote bool) ([]byte
 						"used_percent":    usedPercent,
 						"cycle_name":      stats.Name,
 						"cycle_id":        strconv.FormatUint(cycleID, 10),
+						"cycle_start":     stats.From.Format(time.RFC3339),
+						"cycle_end":       stats.To.Format(time.RFC3339),
 						"is_bytes_source": true, // 标识这是字节数据源
 					}
 					trafficData = append(trafficData, trafficItem)
@@ -647,6 +651,8 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 			newStats := model.CycleTransferStats{
 				Name: stats.Name,
 				Max:  stats.Max,
+				From: stats.From,
+				To:   stats.To,
 			}
 
 			// 深拷贝Transfer map
@@ -691,6 +697,8 @@ func (cp *commonPage) apiTraffic(c *gin.Context) {
 					"used_percent":    usedPercent,
 					"cycle_name":      stats.Name,
 					"cycle_id":        strconv.FormatUint(cycleID, 10),
+					"cycle_start":     stats.From.Format(time.RFC3339),
+					"cycle_end":       stats.To.Format(time.RFC3339),
 					"is_bytes_source": true, // 标识这是字节数据源
 				}
 				trafficData = append(trafficData, trafficItem)
@@ -806,6 +814,8 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 			newStats := model.CycleTransferStats{
 				Name: stats.Name,
 				Max:  stats.Max,
+				From: stats.From,
+				To:   stats.To,
 			}
 
 			// 深拷贝Transfer map
@@ -850,6 +860,8 @@ func (cp *commonPage) apiServerTraffic(c *gin.Context) {
 					"used_percent":    usedPercent,
 					"cycle_name":      stats.Name,
 					"cycle_id":        strconv.FormatUint(cycleID, 10),
+					"cycle_start":     stats.From.Format(time.RFC3339),
+					"cycle_end":       stats.To.Format(time.RFC3339),
 					"is_bytes_source": true, // 标识这是字节数据源
 				}
 				trafficData = append(trafficData, trafficItem)
