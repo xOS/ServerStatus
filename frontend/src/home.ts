@@ -726,11 +726,11 @@ function createServerCard(server: ServerInfo): CardRefs {
         </div>
 
         <div class="metric-row">
-          <div class="metric-label">在线</div>
+          <div class="metric-label">时间</div>
           <div class="metric-value">
-            ${icon('clock', 'metric-svg icon-orange')}<span data-ref="uptime"></span>
+            <span class="metric-reset">${icon('clock', 'metric-svg icon-orange')}<span data-ref="uptime"></span></span>
             <span class="metric-separator">|</span>
-            <span class="metric-reset"><span>重置</span>${icon('cycleReset', 'metric-svg icon-blue')}<span data-ref="trafficReset"></span></span>
+            <span class="metric-reset">${icon('cycleReset', 'metric-svg icon-blue')}<span data-ref="trafficReset"></span></span>
           </div>
         </div>
       </div>
